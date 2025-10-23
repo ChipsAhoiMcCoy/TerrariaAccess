@@ -27,6 +27,7 @@ public sealed class InGameNarrationSystem : ModSystem
     private readonly SmartCursorNarrator _smartCursorNarrator = new();
     private readonly CursorNarrator _cursorNarrator = new();
     private readonly InventoryNarrator _inventoryNarrator = new();
+    private readonly NpcDialogueNarrator _npcDialogueNarrator = new();
 
     public override void Load()
     {
@@ -37,6 +38,7 @@ public sealed class InGameNarrationSystem : ModSystem
 
         On_ItemSlot.MouseHover_ItemArray_int_int += HandleItemSlotHover;
         On_ItemSlot.MouseHover_refItem_int += HandleItemSlotHoverRef;
+        On_Main.DrawNPCChatButtons += CaptureNpcChatButtons;
     }
 
     public override void Unload()
@@ -49,6 +51,7 @@ public sealed class InGameNarrationSystem : ModSystem
         CursorNarrator.DisposeStaticResources();
         On_ItemSlot.MouseHover_ItemArray_int_int -= HandleItemSlotHover;
         On_ItemSlot.MouseHover_refItem_int -= HandleItemSlotHoverRef;
+        On_Main.DrawNPCChatButtons -= CaptureNpcChatButtons;
     }
 
     public override void PostUpdatePlayers()
@@ -68,12 +71,225 @@ public sealed class InGameNarrationSystem : ModSystem
         _inventoryNarrator.Update(player);
         _smartCursorNarrator.Update();
         _cursorNarrator.Update();
+        _npcDialogueNarrator.Update(player);
     }
 
     private static void HandleItemSlotHover(On_ItemSlot.orig_MouseHover_ItemArray_int_int orig, Item[] inv, int context, int slot)
     {
         orig(inv, context, slot);
         InventoryNarrator.RecordFocus(inv, context, slot);
+    }
+
+    private static void CaptureNpcChatButtons(On_Main.orig_DrawNPCChatButtons orig, int superColor, Color chatColor, int numLines, string focusText, string focusText3)
+    {
+        string? primary = focusText;
+        string? closeLabel = Lang.inter[52].Value;
+        string? secondary = string.IsNullOrWhiteSpace(focusText3) ? null : focusText3;
+
+        string? happiness = null;
+        if (!Main.remixWorld)
+        {
+            int playerIndex = Main.myPlayer;
+            if (playerIndex >= 0 && playerIndex < Main.maxPlayers)
+            {
+                Player? localPlayer = Main.player[playerIndex];
+                if (localPlayer is not null && !string.IsNullOrWhiteSpace(localPlayer.currentShoppingSettings.HappinessReport))
+                {
+                    happiness = Language.GetTextValue("UI.NPCCheckHappiness");
+                }
+            }
+        }
+
+        NpcDialogueNarrator.UpdateButtonLabels(primary, closeLabel, secondary, happiness);
+        orig(superColor, chatColor, numLines, focusText, focusText3);
+    }
+
+    private sealed class NpcDialogueNarrator
+    {
+        private int _lastNpc = -1;
+        private string? _lastChat;
+        private bool _lastPrimaryFocus;
+        private bool _lastCloseFocus;
+        private bool _lastSecondaryFocus;
+        private bool _lastHappinessFocus;
+        private bool _suppressNextButtonAnnouncement;
+
+        private static string? _currentPrimaryButton;
+        private static string? _currentCloseButton;
+        private static string? _currentSecondaryButton;
+        private static string? _currentHappinessButton;
+
+        public void Update(Player player)
+        {
+            int talkNpc = player.talkNPC;
+            bool hasNpc = talkNpc >= 0 && talkNpc < Main.npc.Length;
+
+            if (!hasNpc)
+            {
+                if (talkNpc == -1)
+                {
+                    _lastNpc = -1;
+                    _lastChat = null;
+                    _lastPrimaryFocus = false;
+                    _lastCloseFocus = false;
+                    _lastSecondaryFocus = false;
+                    _lastHappinessFocus = false;
+                    _suppressNextButtonAnnouncement = false;
+                }
+
+                return;
+            }
+
+            NPC npc = Main.npc[talkNpc];
+            if (!npc.active)
+            {
+                _lastNpc = -1;
+                _lastChat = null;
+                _lastPrimaryFocus = false;
+                _lastCloseFocus = false;
+                _lastSecondaryFocus = false;
+                _lastHappinessFocus = false;
+                _suppressNextButtonAnnouncement = false;
+                return;
+            }
+
+            if (talkNpc != _lastNpc)
+            {
+                string npcName = npc.GivenOrTypeName;
+                if (!string.IsNullOrWhiteSpace(npcName))
+                {
+                    ScreenReaderService.Announce($"Talking to {npcName}", force: true);
+                }
+
+                _lastNpc = talkNpc;
+                _lastChat = null;
+                _suppressNextButtonAnnouncement = true;
+            }
+
+            string chat = Main.npcChatText ?? string.Empty;
+            string normalizedText = NormalizeChat(chat);
+            if (!string.IsNullOrWhiteSpace(normalizedText) && !string.Equals(normalizedText, _lastChat, StringComparison.Ordinal))
+            {
+                string prefix = npc.GivenOrTypeName;
+                if (!string.IsNullOrWhiteSpace(prefix))
+                {
+                    ScreenReaderService.Announce($"{prefix} says: {normalizedText}");
+                }
+                else
+                {
+                    ScreenReaderService.Announce(normalizedText);
+                }
+
+                _lastChat = normalizedText;
+                _suppressNextButtonAnnouncement = true;
+            }
+            else if (string.IsNullOrWhiteSpace(normalizedText))
+            {
+                _lastChat = null;
+                _suppressNextButtonAnnouncement = false;
+            }
+
+            HandleButtonFocus(Main.npcChatFocus2, ref _lastPrimaryFocus, _currentPrimaryButton);
+            HandleButtonFocus(Main.npcChatFocus1, ref _lastCloseFocus, _currentCloseButton);
+            HandleButtonFocus(Main.npcChatFocus3, ref _lastSecondaryFocus, _currentSecondaryButton);
+            HandleButtonFocus(Main.npcChatFocus4, ref _lastHappinessFocus, _currentHappinessButton);
+        }
+
+        private static string NormalizeChat(string rawText)
+        {
+            if (string.IsNullOrWhiteSpace(rawText))
+            {
+                return string.Empty;
+            }
+
+            List<TextSnippet> snippets = ChatManager.ParseMessage(rawText, Color.White);
+            var collected = new StringBuilder(rawText.Length);
+
+            foreach (TextSnippet snippet in snippets)
+            {
+                if (!string.IsNullOrWhiteSpace(snippet.Text))
+                {
+                    collected.Append(snippet.Text);
+                }
+            }
+
+            if (collected.Length == 0)
+            {
+                return string.Empty;
+            }
+
+            string aggregated = collected.ToString();
+            var normalized = new StringBuilder(aggregated.Length);
+            bool previousWasWhitespace = false;
+
+            foreach (char character in aggregated)
+            {
+                if (char.IsWhiteSpace(character))
+                {
+                    if (!previousWasWhitespace)
+                    {
+                        normalized.Append(' ');
+                        previousWasWhitespace = true;
+                    }
+                }
+                else
+                {
+                    normalized.Append(character);
+                    previousWasWhitespace = false;
+                }
+            }
+
+            return normalized.ToString().Trim();
+        }
+
+        public static void UpdateButtonLabels(string? primary, string? close, string? secondary, string? happiness)
+        {
+            _currentPrimaryButton = NormalizeLabel(primary);
+            _currentCloseButton = NormalizeLabel(close);
+            _currentSecondaryButton = NormalizeLabel(secondary);
+            _currentHappinessButton = NormalizeLabel(happiness);
+        }
+
+        private static string? NormalizeLabel(string? rawText)
+        {
+            if (string.IsNullOrWhiteSpace(rawText))
+            {
+                return null;
+            }
+
+            string normalized = NormalizeChat(rawText);
+            return string.IsNullOrWhiteSpace(normalized) ? null : normalized;
+        }
+
+        private void HandleButtonFocus(bool isFocused, ref bool lastState, string? label)
+        {
+            if (!isFocused)
+            {
+                lastState = false;
+                return;
+            }
+
+            if (!lastState && !string.IsNullOrWhiteSpace(label))
+            {
+                if (_suppressNextButtonAnnouncement)
+                {
+                    _suppressNextButtonAnnouncement = false;
+                    lastState = true;
+                    return;
+                }
+
+                string trimmed = label.Trim();
+                string announcement = trimmed;
+                if (!trimmed.Contains("button", StringComparison.OrdinalIgnoreCase))
+                {
+                    announcement = $"{trimmed} button";
+                }
+
+                ScreenReaderService.Announce(announcement);
+            }
+
+            lastState = true;
+        }
     }
 
     private static void HandleItemSlotHoverRef(On_ItemSlot.orig_MouseHover_refItem_int orig, ref Item item, int context)
