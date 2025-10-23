@@ -3,13 +3,17 @@ using System;
 using System.Collections;
 using System.Collections.Generic;
 using System.Globalization;
+using System.Linq;
 using System.Reflection;
 using System.Text;
 using Microsoft.Xna.Framework;
 using Microsoft.Xna.Framework.Audio;
+using Microsoft.Xna.Framework.Graphics;
 using ScreenReaderMod.Common.Services;
 using Terraria;
 using Terraria.Audio;
+using Terraria.GameContent;
+using Terraria.GameContent.UI.BigProgressBar;
 using Terraria.GameInput;
 using Terraria.ID;
 using Terraria.Localization;
@@ -28,6 +32,7 @@ public sealed class InGameNarrationSystem : ModSystem
     private readonly CursorNarrator _cursorNarrator = new();
     private readonly InventoryNarrator _inventoryNarrator = new();
     private readonly NpcDialogueNarrator _npcDialogueNarrator = new();
+    private readonly IngameSettingsNarrator _ingameSettingsNarrator = new();
 
     public override void Load()
     {
@@ -39,6 +44,7 @@ public sealed class InGameNarrationSystem : ModSystem
         On_ItemSlot.MouseHover_ItemArray_int_int += HandleItemSlotHover;
         On_ItemSlot.MouseHover_refItem_int += HandleItemSlotHoverRef;
         On_Main.DrawNPCChatButtons += CaptureNpcChatButtons;
+        On_IngameOptions.Draw += HandleIngameOptionsDraw;
     }
 
     public override void Unload()
@@ -52,6 +58,7 @@ public sealed class InGameNarrationSystem : ModSystem
         On_ItemSlot.MouseHover_ItemArray_int_int -= HandleItemSlotHover;
         On_ItemSlot.MouseHover_refItem_int -= HandleItemSlotHoverRef;
         On_Main.DrawNPCChatButtons -= CaptureNpcChatButtons;
+        On_IngameOptions.Draw -= HandleIngameOptionsDraw;
     }
 
     public override void PostUpdatePlayers()
@@ -102,6 +109,16 @@ public sealed class InGameNarrationSystem : ModSystem
 
         NpcDialogueNarrator.UpdateButtonLabels(primary, closeLabel, secondary, happiness);
         orig(superColor, chatColor, numLines, focusText, focusText3);
+    }
+
+    private void HandleIngameOptionsDraw(On_IngameOptions.orig_Draw orig, Main self, SpriteBatch spriteBatch)
+    {
+        orig(self, spriteBatch);
+
+        if (!Main.gameMenu)
+        {
+            _ingameSettingsNarrator.Update();
+        }
     }
 
     private sealed class NpcDialogueNarrator
@@ -289,6 +306,447 @@ public sealed class InGameNarrationSystem : ModSystem
             }
 
             lastState = true;
+        }
+    }
+
+    private sealed class IngameSettingsNarrator
+    {
+        private static readonly string[] DefaultCategoryLabels =
+        {
+            Lang.menu[114].Value,
+            Lang.menu[210].Value,
+            Lang.menu[63].Value,
+            Lang.menu[65].Value,
+            Lang.menu[218].Value,
+            Lang.menu[219].Value,
+            Lang.menu[103].Value,
+        };
+
+        private FieldInfo? _leftHoverField;
+        private FieldInfo? _leftLockField;
+        private FieldInfo? _rightHoverField;
+        private FieldInfo? _rightLockField;
+        private FieldInfo? _categoryField;
+        private FieldInfo? _leftLabelsField;
+        private FieldInfo? _rightLabelsField;
+        private bool _fieldsResolved;
+
+        private int _lastLeftHover = int.MinValue;
+        private int _lastLoggedLeftHover = int.MinValue;
+        private int _lastLoggedRightHover = int.MinValue;
+        private int _lastLoggedCategory = int.MinValue;
+        private int _lastCategory = int.MinValue;
+        private int _lastRightHover = int.MinValue;
+        private int _lastRightLock = int.MinValue;
+        private int _lastSpecialFeature = int.MinValue;
+        private float _lastMusicVolume = -1f;
+        private float _lastSoundVolume = -1f;
+        private float _lastAmbientVolume = -1f;
+        private int _lastParallax = int.MinValue;
+
+        public void Update()
+        {
+            if (!Main.ingameOptionsWindow)
+            {
+                Reset();
+                return;
+            }
+
+            EnsureReflection();
+
+            int leftHover = ReadInt(_leftHoverField);
+            int leftLock = ReadInt(_leftLockField);
+            int rightHover = ReadInt(_rightHoverField);
+            int rightLock = ReadInt(_rightLockField);
+            int category = ReadInt(_categoryField);
+            int special = UILinkPointNavigator.Shortcuts.OPTIONS_BUTTON_SPECIALFEATURE;
+
+            LogStateChanges(leftHover, rightHover, category, special);
+
+            if (leftHover >= 0 && leftHover != _lastLeftHover)
+            {
+                string? label = GetCategoryLabel(leftHover);
+                if (!string.IsNullOrWhiteSpace(label))
+                {
+                    ScreenReaderService.Announce(label);
+                }
+
+                _lastLeftHover = leftHover;
+            }
+
+            int selectedCategory = category;
+            if (selectedCategory < 0)
+            {
+                selectedCategory = leftLock >= 0 ? leftLock : leftHover;
+            }
+
+            if (selectedCategory >= 0 && selectedCategory != _lastCategory)
+            {
+                string? label = GetCategoryLabel(selectedCategory);
+                if (!string.IsNullOrWhiteSpace(label))
+                {
+                    ScreenReaderService.Announce($"Settings: {label}");
+                }
+
+                _lastCategory = selectedCategory;
+            }
+
+            if (rightHover < 0)
+            {
+                rightHover = rightLock;
+            }
+
+            if (selectedCategory >= 0 && rightHover >= 0 && (rightHover != _lastRightHover || selectedCategory != _lastRightLock))
+            {
+                string? description = DescribeOption(selectedCategory, rightHover);
+                if (!string.IsNullOrWhiteSpace(description))
+                {
+                    ScreenReaderService.Announce(description);
+                }
+
+                _lastRightHover = rightHover;
+                _lastRightLock = selectedCategory;
+            }
+
+            AnnounceSpecialFeature(special);
+            _lastSpecialFeature = special;
+        }
+
+        private void AnnounceSpecialFeature(int specialFeature)
+        {
+            switch (specialFeature)
+            {
+                case 1:
+                {
+                    int parallax = Utils.Clamp(Main.bgScroll, 0, 100);
+                    if (parallax != _lastParallax)
+                    {
+                        ScreenReaderService.Announce($"Background parallax {parallax} percent");
+                        _lastParallax = parallax;
+                    }
+                    break;
+                }
+                case 2:
+                {
+                    float value = MathF.Round(Main.musicVolume * 100f);
+                    if (Math.Abs(value - _lastMusicVolume) >= 1f || _lastSpecialFeature != specialFeature)
+                    {
+                        ScreenReaderService.Announce($"Music volume {value:0}%");
+                        _lastMusicVolume = value;
+                    }
+                    break;
+                }
+                case 3:
+                {
+                    float value = MathF.Round(Main.soundVolume * 100f);
+                    if (Math.Abs(value - _lastSoundVolume) >= 1f || _lastSpecialFeature != specialFeature)
+                    {
+                        ScreenReaderService.Announce($"Sound volume {value:0}%");
+                        _lastSoundVolume = value;
+                    }
+                    break;
+                }
+                case 4:
+                {
+                    float value = MathF.Round(Main.ambientVolume * 100f);
+                    if (Math.Abs(value - _lastAmbientVolume) >= 1f || _lastSpecialFeature != specialFeature)
+                    {
+                        ScreenReaderService.Announce($"Ambient volume {value:0}%");
+                        _lastAmbientVolume = value;
+                    }
+                    break;
+                }
+            }
+        }
+
+        private void LogStateChanges(int leftHover, int rightHover, int category, int special)
+        {
+            if (ScreenReaderMod.Instance is null)
+            {
+                return;
+            }
+
+            if (leftHover == _lastLoggedLeftHover &&
+                rightHover == _lastLoggedRightHover &&
+                category == _lastLoggedCategory &&
+                special == _lastSpecialFeature)
+            {
+                return;
+            }
+
+            _lastLoggedLeftHover = leftHover;
+            _lastLoggedRightHover = rightHover;
+            _lastLoggedCategory = category;
+
+            ScreenReaderMod.Instance.Logger.Debug(
+                $"[IngameSettings] leftHover={leftHover}, rightHover={rightHover}, category={category}, specialFeature={special}");
+        }
+
+        private void EnsureReflection()
+        {
+            if (_fieldsResolved)
+            {
+                return;
+            }
+
+            try
+            {
+                Type optionsType = typeof(IngameOptions);
+                BindingFlags flags = BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Static;
+
+                FieldInfo[] fields = optionsType.GetFields(flags);
+                _leftHoverField = FindIntField(fields, "left", "hover");
+                _leftLockField = FindIntField(fields, "left", "lock");
+                _rightHoverField = FindIntField(fields, "right", "hover");
+                _rightLockField = FindIntField(fields, "right", "lock");
+                _categoryField = FindIntField(fields, "category");
+                _leftLabelsField = FindStringArrayField(fields, "Left");
+                _rightLabelsField = FindStringArrayField(fields, "Right");
+
+                _fieldsResolved = true;
+
+                ScreenReaderMod.Instance?.Logger.Debug("[IngameSettings] Reflection resolved: " +
+                    $"leftHover={_leftHoverField?.Name ?? "null"}, leftLock={_leftLockField?.Name ?? "null"}, " +
+                    $"rightHover={_rightHoverField?.Name ?? "null"}, rightLock={_rightLockField?.Name ?? "null"}, " +
+                    $"category={_categoryField?.Name ?? "null"}, leftLabels={_leftLabelsField?.Name ?? "null"}, rightLabels={_rightLabelsField?.Name ?? "null"}");
+            }
+            catch (Exception ex)
+            {
+                ScreenReaderMod.Instance?.Logger.Warn($"[IngameSettings] Reflection resolution failed: {ex.Message}");
+                _fieldsResolved = true;
+            }
+        }
+
+        private static FieldInfo? FindIntField(IEnumerable<FieldInfo> fields, params string[] keywords)
+        {
+            return fields.FirstOrDefault(field =>
+                field.FieldType == typeof(int) &&
+                keywords.All(k => field.Name.Contains(k, StringComparison.OrdinalIgnoreCase)));
+        }
+
+        private static FieldInfo? FindStringArrayField(IEnumerable<FieldInfo> fields, params string[] keywords)
+        {
+            return fields.FirstOrDefault(field =>
+                typeof(Array).IsAssignableFrom(field.FieldType) &&
+                field.FieldType.GetElementType() == typeof(string) &&
+                keywords.All(k => field.Name.Contains(k, StringComparison.OrdinalIgnoreCase)));
+        }
+
+        private static int ReadInt(FieldInfo? field)
+        {
+            try
+            {
+                if (field is not null && field.GetValue(null) is int value)
+                {
+                    return value;
+                }
+            }
+            catch (Exception ex)
+            {
+                ScreenReaderMod.Instance?.Logger.Debug($"[IngameSettings] Failed to read {field?.Name}: {ex.Message}");
+            }
+
+            return -1;
+        }
+
+        private string? GetCategoryLabel(int index)
+        {
+            if (index < 0)
+            {
+                return null;
+            }
+
+            if (_leftLabelsField?.GetValue(null) is string[] labels && index < labels.Length)
+            {
+                string value = labels[index];
+                if (!string.IsNullOrWhiteSpace(value))
+                {
+                    return value.Trim();
+                }
+            }
+
+            if (index < DefaultCategoryLabels.Length)
+            {
+                return DefaultCategoryLabels[index];
+            }
+
+            return null;
+        }
+
+        private string? DescribeOption(int category, int option)
+        {
+            if (category < 0 || option < 0)
+            {
+                return null;
+            }
+
+            if (_rightLabelsField?.GetValue(null) is Array outer &&
+                category < outer.Length &&
+                outer.GetValue(category) is string[] bucket &&
+                option < bucket.Length)
+            {
+                string candidate = bucket[option];
+                if (!string.IsNullOrWhiteSpace(candidate))
+                {
+                    return candidate.Trim();
+                }
+            }
+
+            return DescribeFallback(category, option);
+        }
+
+        private static string? DescribeFallback(int category, int option)
+        {
+            try
+            {
+                return category switch
+                {
+                    0 => DescribeGeneral(option),
+                    1 => DescribeAudio(option),
+                    2 => DescribeInterface(option),
+                    3 => DescribeVideo(option),
+                    4 => DescribeCursor(option),
+                    5 => DescribeGameplay(option),
+                    _ => null,
+                };
+            }
+            catch (Exception ex)
+            {
+                ScreenReaderMod.Instance?.Logger.Debug($"[IngameSettings] Fallback description failed: {ex.Message}");
+                return null;
+            }
+        }
+
+        private static string DescribeGeneral(int option)
+        {
+            return option switch
+            {
+                0 => Main.autoSave ? Lang.menu[67].Value : Lang.menu[68].Value,
+                1 => Main.autoPause ? Lang.menu[69].Value : Lang.menu[70].Value,
+                2 => Main.mapEnabled ? Lang.menu[112].Value : Lang.menu[113].Value,
+                3 => Main.HidePassword ? Lang.menu[212].Value : Lang.menu[211].Value,
+                4 => Lang.menu[5].Value,
+                _ => $"General option {option + 1}",
+            };
+        }
+
+        private static string DescribeAudio(int option)
+        {
+            return option switch
+            {
+                0 => $"{Lang.menu[98].Value}: {MathF.Round(Main.musicVolume * 100f):0}%",
+                1 => $"{Lang.menu[99].Value}: {MathF.Round(Main.soundVolume * 100f):0}%",
+                2 => $"{Lang.menu[119].Value}: {MathF.Round(Main.ambientVolume * 100f):0}%",
+                3 => Lang.menu[5].Value,
+                _ => $"Audio option {option + 1}",
+            };
+        }
+
+        private static string DescribeInterface(int option)
+        {
+            string mapBorder = string.Empty;
+            try
+            {
+                string key = Main.MinimapFrameManagerInstance?.ActiveSelectionKeyName ?? string.Empty;
+                if (!string.IsNullOrWhiteSpace(key))
+                {
+                    mapBorder = Language.GetTextValue("UI.MinimapFrame_" + key);
+                }
+            }
+            catch
+            {
+                mapBorder = string.Empty;
+            }
+
+            if (string.IsNullOrWhiteSpace(mapBorder))
+            {
+                mapBorder = Language.GetTextValue("UI.MinimapFrame_Classic");
+            }
+
+            return option switch
+            {
+                0 => Main.showItemText ? Lang.menu[71].Value : Lang.menu[72].Value,
+                1 => $"{Lang.menu[123].Value} {Lang.menu[124 + Utils.Clamp(Main.invasionProgressMode, 0, 2)].Value}",
+                2 => Main.placementPreview ? Lang.menu[128].Value : Lang.menu[129].Value,
+                3 => ItemSlot.Options.HighlightNewItems ? Lang.inter[117].Value : Lang.inter[116].Value,
+                4 => Main.MouseShowBuildingGrid ? Lang.menu[229].Value : Lang.menu[230].Value,
+                5 => Main.GamepadDisableInstructionsDisplay ? Lang.menu[241].Value : Lang.menu[242].Value,
+                6 => Language.GetTextValue("UI.SelectMapBorder", mapBorder),
+                7 => Language.GetTextValue("UI.SelectHealthStyle", Main.ResourceSetsManager?.ActiveSet.DisplayedName ?? string.Empty),
+                8 => Language.GetTextValue(BigProgressBarSystem.ShowText ? "UI.ShowBossLifeTextOn" : "UI.ShowBossLifeTextOff"),
+                9 => Language.GetTextValue("tModLoader.BossBarStyle", Terraria.ModLoader.BossBarLoader.CurrentStyle?.DisplayName ?? string.Empty),
+                10 => Lang.menu[5].Value,
+                _ => $"Interface option {option + 1}",
+            };
+        }
+
+        private static string DescribeVideo(int option)
+        {
+            int frameSkipIndex = (int)Main.FrameSkipMode;
+            return option switch
+            {
+                0 => Lang.menu[51].Value,
+                1 => Lang.menu[52].Value,
+                2 => Lang.menu[247 + Utils.Clamp(frameSkipIndex, 0, 3)].Value,
+                3 => Language.GetTextValue("UI.LightMode_" + Lighting.Mode),
+                4 => Main.qaStyle switch
+                {
+                    0 => Lang.menu[59].Value,
+                    1 => Lang.menu[60].Value,
+                    2 => Lang.menu[61].Value,
+                    _ => Lang.menu[62].Value,
+                },
+                5 => Main.BackgroundEnabled ? Lang.menu[100].Value : Lang.menu[101].Value,
+                6 => ChildSafety.Disabled ? Lang.menu[132].Value : Lang.menu[133].Value,
+                7 => Main.SettingsEnabled_MinersWobble ? Lang.menu[250].Value : Lang.menu[251].Value,
+                8 => Main.SettingsEnabled_TilesSwayInWind ? Language.GetTextValue("UI.TilesSwayInWindOn") : Language.GetTextValue("UI.TilesSwayInWindOff"),
+                9 => Language.GetTextValue("UI.Effects"),
+                10 => Lang.menu[5].Value,
+                _ => $"Video option {option + 1}",
+            };
+        }
+
+        private static string DescribeCursor(int option)
+        {
+            return option switch
+            {
+                0 => Lang.menu[214].Value,
+                1 => Lang.menu[215].Value,
+                2 => Lang.menu[216].Value,
+                3 => Lang.menu[217].Value,
+                4 => Lang.menu[218].Value,
+                5 => Lang.menu[219].Value,
+                6 => Lang.menu[5].Value,
+                _ => $"Cursor option {option + 1}",
+            };
+        }
+
+        private static string DescribeGameplay(int option)
+        {
+            return option switch
+            {
+                0 => Lang.menu[220].Value,
+                1 => Lang.menu[221].Value,
+                2 => Lang.menu[222].Value,
+                3 => Lang.menu[5].Value,
+                _ => $"Gameplay option {option + 1}",
+            };
+        }
+
+        private void Reset()
+        {
+            _lastLeftHover = int.MinValue;
+            _lastLoggedLeftHover = int.MinValue;
+            _lastLoggedRightHover = int.MinValue;
+            _lastLoggedCategory = int.MinValue;
+            _lastCategory = int.MinValue;
+            _lastRightHover = int.MinValue;
+            _lastRightLock = int.MinValue;
+            _lastSpecialFeature = int.MinValue;
+            _lastMusicVolume = -1f;
+            _lastSoundVolume = -1f;
+            _lastAmbientVolume = -1f;
+            _lastParallax = int.MinValue;
         }
     }
 
@@ -1900,6 +2358,16 @@ public sealed class InGameNarrationSystem : ModSystem
             if (!string.IsNullOrEmpty(label))
             {
                 return label;
+            }
+
+            string? tooltip = TryGetMouseText();
+            if (!string.IsNullOrWhiteSpace(tooltip))
+            {
+                string normalized = NormalizeGlyphTags(tooltip).Trim();
+                if (!string.IsNullOrWhiteSpace(normalized))
+                {
+                    return normalized;
+                }
             }
 
             LogIngameOptionsState(feature, hoverIsAir, location);
