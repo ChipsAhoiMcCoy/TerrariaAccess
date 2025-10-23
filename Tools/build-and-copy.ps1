@@ -3,16 +3,57 @@ Param()
 $modName = "ScreenReaderMod.tmod"
 $scriptRoot = Split-Path -Parent $MyInvocation.MyCommand.Path
 $repoRoot = Join-Path $scriptRoot ".."
-$distPath = Join-Path $repoRoot "tModLoader_dist"
+$defaultDistPath = Join-Path $repoRoot "tModLoader_dist"
 $modSourceRelative = "..\Mods\ScreenReaderMod"
 $dotnetExe = $null
 
-if (-not (Test-Path $distPath)) {
-    Write-Host "ERROR: tModLoader_dist directory not found at $distPath" -ForegroundColor Red
+[bool]$isWindows = [System.Runtime.InteropServices.RuntimeInformation]::IsOSPlatform([System.Runtime.InteropServices.OSPlatform]::Windows)
+
+$steamToolsPath = $null
+if ($isWindows) {
+    $programFilesX86 = [Environment]::GetEnvironmentVariable("ProgramFiles(x86)")
+    if (-not [string]::IsNullOrWhiteSpace($programFilesX86)) {
+        $candidateSteam = Join-Path $programFilesX86 "Steam\steamapps\common\tModLoader"
+        if (Test-Path $candidateSteam) {
+            $steamToolsPath = $candidateSteam
+            Write-Host "INFO: Found Steam tModLoader tools at $steamToolsPath"
+        }
+    }
+} else {
+    $candidateSteam = "/steam/steamapps/common/tModLoader"
+    if (-not (Test-Path $candidateSteam)) {
+        $candidateSteam = "/mnt/c/Program Files (x86)/Steam/steamapps/common/tModLoader"
+    }
+    if (Test-Path $candidateSteam) {
+        $steamToolsPath = $candidateSteam
+        Write-Host "INFO: Found Steam tModLoader tools at $steamToolsPath"
+    }
+}
+
+$distPathCandidates = @($defaultDistPath)
+if ($steamToolsPath) {
+    $distPathCandidates += $steamToolsPath
+}
+
+$distPath = $null
+foreach ($candidate in $distPathCandidates) {
+    if (Test-Path (Join-Path $candidate "tModLoader.dll")) {
+        $distPath = $candidate
+        break
+    }
+}
+
+if (-not $distPath) {
+    Write-Host "ERROR: Unable to locate tModLoader build tools. Checked paths:" -ForegroundColor Red
+    foreach ($candidate in $distPathCandidates) {
+        Write-Host " - $candidate"
+    }
     exit 1
 }
 
-[bool]$isWindows = [System.Runtime.InteropServices.RuntimeInformation]::IsOSPlatform([System.Runtime.InteropServices.OSPlatform]::Windows)
+if (-not ([string]::Equals($distPath, $defaultDistPath, [System.StringComparison]::OrdinalIgnoreCase))) {
+    Write-Host "INFO: Using external tModLoader tools at $distPath"
+}
 
 if ($isWindows) {
     $dotnetCommand = Get-Command dotnet -ErrorAction SilentlyContinue
@@ -34,6 +75,25 @@ if ($isWindows) {
             )
         }
         foreach ($candidate in $candidatePaths) {
+            if (Test-Path $candidate) {
+                $dotnetExe = $candidate
+                break
+            }
+        }
+    }
+    if (-not $dotnetExe) {
+        $dotnetCandidates = @()
+        $distDotnet = Join-Path $distPath "dotnet\dotnet.exe"
+        if (Test-Path $distDotnet) {
+            $dotnetCandidates += $distDotnet
+        }
+        if ($steamToolsPath) {
+            $steamDotnet = Join-Path $steamToolsPath "dotnet\dotnet.exe"
+            if (Test-Path $steamDotnet) {
+                $dotnetCandidates += $steamDotnet
+            }
+        }
+        foreach ($candidate in $dotnetCandidates) {
             if (Test-Path $candidate) {
                 $dotnetExe = $candidate
                 break
@@ -72,10 +132,22 @@ finally {
 }
 
 $documentsPath = [Environment]::GetFolderPath("MyDocuments")
-$docModsPath = Join-Path $documentsPath "My Games\Terraria\tModLoader\Mods\$modName"
+$docModsDirectory = Join-Path $documentsPath "My Games\Terraria\tModLoader\Mods"
+$targetModPath = Join-Path $docModsDirectory $modName
+
 $candidatePaths = @()
-if (Test-Path $docModsPath) {
-    $candidatePaths += $docModsPath
+if (Test-Path $targetModPath) {
+    $candidatePaths += $targetModPath
+}
+
+$repoModsPath = Join-Path $repoRoot "Mods\$modName"
+if (Test-Path $repoModsPath) {
+    $candidatePaths += $repoModsPath
+}
+
+$distModsPath = Join-Path $distPath "Mods\$modName"
+if (Test-Path $distModsPath) {
+    $candidatePaths += $distModsPath
 }
 
 $wslArtifact = & wsl.exe -e sh -c "if [ -f ~/.local/share/Terraria/tModLoader/Mods/$modName ]; then wslpath -w ~/.local/share/Terraria/tModLoader/Mods/$modName; fi"
@@ -84,7 +156,7 @@ if ($LASTEXITCODE -eq 0 -and -not [string]::IsNullOrWhiteSpace($wslArtifact)) {
 }
 
 $artifactPath = $null
-foreach ($candidate in $candidatePaths) {
+foreach ($candidate in ($candidatePaths | Select-Object -Unique)) {
     if (Test-Path $candidate) {
         $artifactPath = $candidate
         break
@@ -93,14 +165,43 @@ foreach ($candidate in $candidatePaths) {
 
 if (-not $artifactPath) {
     Write-Host "ERROR: Expected build artifact not found. Checked paths:" -ForegroundColor Red
-    foreach ($candidate in @($docModsPath, $wslArtifact)) {
+    foreach ($candidate in $candidatePaths) {
         Write-Host " - $candidate"
     }
     exit 1
 }
 
-$steamModsPath = Join-Path $repoRoot "Mods\$modName"
-Write-Host "INFO: Copying $artifactPath to $steamModsPath"
-Copy-Item -Path $artifactPath -Destination $steamModsPath -Force
+if (-not (Test-Path $docModsDirectory)) {
+    Write-Host "INFO: Creating Mods directory at $docModsDirectory"
+    New-Item -ItemType Directory -Path $docModsDirectory | Out-Null
+}
 
-Write-Host "SUCCESS: Terraria Access packaged to $steamModsPath" -ForegroundColor Green
+if (-not ([string]::Equals($artifactPath, $targetModPath, [System.StringComparison]::OrdinalIgnoreCase))) {
+    Write-Host "INFO: Copying $artifactPath to $targetModPath"
+    Copy-Item -Path $artifactPath -Destination $targetModPath -Force
+} else {
+    Write-Host "INFO: Build artifact already resides at $targetModPath"
+}
+
+$docModSourcesDirectory = Join-Path $documentsPath "My Games\Terraria\tModLoader\ModSources"
+if (-not (Test-Path $docModSourcesDirectory)) {
+    Write-Host "INFO: Creating ModSources directory at $docModSourcesDirectory"
+    New-Item -ItemType Directory -Path $docModSourcesDirectory | Out-Null
+}
+
+$sourceDirectory = Join-Path $repoRoot "Mods\ScreenReaderMod"
+if (-not (Test-Path $sourceDirectory)) {
+    Write-Host "ERROR: Source directory not found at $sourceDirectory" -ForegroundColor Red
+    exit 1
+}
+
+$targetSourceDirectory = Join-Path $docModSourcesDirectory "ScreenReaderMod"
+if (Test-Path $targetSourceDirectory) {
+    Write-Host "INFO: Clearing existing mod sources at $targetSourceDirectory"
+    Remove-Item -Path $targetSourceDirectory -Recurse -Force
+}
+
+Write-Host "INFO: Copying mod sources to $targetSourceDirectory"
+Copy-Item -Path $sourceDirectory -Destination $targetSourceDirectory -Recurse -Force
+
+Write-Host "SUCCESS: Terraria Access packaged to $targetModPath and sources synced to $targetSourceDirectory" -ForegroundColor Green

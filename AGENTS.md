@@ -1,10 +1,14 @@
 # Repository Guidelines
 
 ## Project Structure & Module Organization
-This repo exists to deliver a screen-reader-first Terraria experience via tModLoader. Source lives under `Mods/ScreenReaderMod/` (C# in `Common/`, future assets in `Content/` or `Assets/`). Tooling experiments belong in `Tools/`. The root `.gitignore` keeps the vanilla binaries, installers, `Content/`, and extracted `tModLoader_dist/` out of Git-leave that list intact when upgrading the base game. Store documentation in `Docs/` and keep any sample configs or logs lightweight.
+This repo exists to deliver a screen-reader-first Terraria experience via tModLoader. Source lives under `Mods/ScreenReaderMod/` (C# in `Common/`, future assets in `Content/` or `Assets/`). Tooling experiments belong in `Tools/`; the primary build helper is `Tools/build-and-copy.ps1`. The root `.gitignore` keeps the vanilla binaries, installers, `Content/`, and extracted `tModLoader_dist/` out of Git—leave that list intact when upgrading the base game. Store documentation in `Docs/` and keep any sample configs or logs lightweight.
 
 ## Build & Test Flow
-Agents: always handle builds by running `Tools/build-and-copy.ps1`. This wraps `dotnet tModLoader.dll -build "..\Mods\ScreenReaderMod"` and copies the resulting `.tmod` into `C:\Program Files (x86)\Steam\steamapps\common\Terraria\Mods\`. The in-game `Workshop > Develop Mods > Build + Reload` loop is still available for quick validation if needed by players.
+Agents: run the PowerShell helper at `Tools/build-and-copy.ps1` from the repo root (`powershell.exe -NoLogo -NoProfile -File Tools/build-and-copy.ps1`). The script invokes `dotnet tModLoader.dll -build "..\Mods\ScreenReaderMod"` and then:
+- copies `ScreenReaderMod.tmod` into `%USERPROFILE%\Documents\My Games\Terraria\tModLoader\Mods\`
+- mirrors the latest source tree into `%USERPROFILE%\Documents\My Games\Terraria\tModLoader\ModSources\ScreenReaderMod\`
+
+The build helper first prefers the bundled `tModLoader_dist` runtime and falls back to Steam’s install at `C:\Program Files (x86)\Steam\steamapps\common\tModLoader\` (or `/steam/steamapps/common/tModLoader` in WSL) when needed. Base Terraria content remains in the default Steam path `C:\Program Files (x86)\Steam\steamapps\common\Terraria\`. Close tModLoader before rebuilding to avoid `TML003` (locked .tmod). The in-game `Workshop > Develop Mods > Build + Reload` loop is still available for quick validation if needed by players.
 
 ## Coding Style & Naming Conventions
 Target C# 10 with four-space indentation and the `ScreenReaderMod.*` namespace hierarchy. Shared services live in `Common/Services`, systems and hooks in `Common/Systems`. JSON/NBT payloads should keep the project's lowercase-with-hyphen keys. Batch or PowerShell helpers must stay CRLF-terminated, with command verbs (`REM`, `SET`, `Write-Host`) uppercased for consistency.
