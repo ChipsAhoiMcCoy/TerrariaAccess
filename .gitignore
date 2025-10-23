@@ -1,0 +1,38 @@
+# Ignore vanilla Terraria binaries and installers
+CUESDK_2015.dll
+ChromaAppInfo.xml
+LogitechLedEnginesWrapper.dll
+ReLogic.Native.dll
+SteelSeriesEngineWrapper.dll
+Terraria.exe
+TerrariaServer.exe
+changelog.txt
+client-crashlog.txt
+dotNetFx40_Full_setup.exe
+dotNetFx40_Full_x86_x64.exe
+installscript.vdf
+nfd.dll
+serverconfig.txt
+start-server-steam-friends.bat
+start-server-steam-private.bat
+start-server.bat
+steam_api.dll
+steam_appid.txt
+xnafx40_redist.msi
+
+# Ignore unpacked game assets and tModLoader distribution
+Content/
+tModLoader_dist/
+tModLoader.zip
+
+# Ignore local build outputs
+*.tmod
+*.orig
+*.log
+
+# Ignore .NET build output
+**/bin/
+**/obj/
+
+# Ignore tooling dumps of decompiled Terraria code
+Tools/Decompiled/

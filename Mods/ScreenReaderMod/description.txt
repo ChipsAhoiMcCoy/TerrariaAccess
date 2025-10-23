@@ -1,0 +1,1 @@
+Terraria Access adds narration for menu selections, screens, and alerts to improve Terraria accessibility.
