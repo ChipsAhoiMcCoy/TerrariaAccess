@@ -2,7 +2,6 @@
 using System;
 using System.Collections;
 using System.Collections.Generic;
-using System.Globalization;
 using System.Linq;
 using System.Reflection;
 using System.Text;
@@ -10,6 +9,7 @@ using Microsoft.Xna.Framework;
 using Microsoft.Xna.Framework.Audio;
 using Microsoft.Xna.Framework.Graphics;
 using ScreenReaderMod.Common.Services;
+using ScreenReaderMod.Common.Utilities;
 using Terraria;
 using Terraria.Audio;
 using Terraria.GameContent;
@@ -35,31 +35,35 @@ public sealed class InGameNarrationSystem : ModSystem
     private readonly IngameSettingsNarrator _ingameSettingsNarrator = new();
 
     public override void Load()
-    {
-        if (Main.dedServ)
+        {
+            if (Main.dedServ)
+            {
+                return;
+            }
+
+            On_ItemSlot.MouseHover_ItemArray_int_int += HandleItemSlotHover;
+            On_ItemSlot.MouseHover_refItem_int += HandleItemSlotHoverRef;
+            On_Main.DrawNPCChatButtons += CaptureNpcChatButtons;
+            On_IngameOptions.Draw += HandleIngameOptionsDraw;
+            On_IngameOptions.DrawLeftSide += CaptureIngameOptionsLeft;
+            On_IngameOptions.DrawRightSide += CaptureIngameOptionsRight;
+        }
+
+        public override void Unload()
+        {
+            if (Main.dedServ)
         {
             return;
         }
 
-        On_ItemSlot.MouseHover_ItemArray_int_int += HandleItemSlotHover;
-        On_ItemSlot.MouseHover_refItem_int += HandleItemSlotHoverRef;
-        On_Main.DrawNPCChatButtons += CaptureNpcChatButtons;
-        On_IngameOptions.Draw += HandleIngameOptionsDraw;
-    }
-
-    public override void Unload()
-    {
-        if (Main.dedServ)
-        {
-            return;
+            CursorNarrator.DisposeStaticResources();
+            On_ItemSlot.MouseHover_ItemArray_int_int -= HandleItemSlotHover;
+            On_ItemSlot.MouseHover_refItem_int -= HandleItemSlotHoverRef;
+            On_Main.DrawNPCChatButtons -= CaptureNpcChatButtons;
+            On_IngameOptions.Draw -= HandleIngameOptionsDraw;
+            On_IngameOptions.DrawLeftSide -= CaptureIngameOptionsLeft;
+            On_IngameOptions.DrawRightSide -= CaptureIngameOptionsRight;
         }
-
-        CursorNarrator.DisposeStaticResources();
-        On_ItemSlot.MouseHover_ItemArray_int_int -= HandleItemSlotHover;
-        On_ItemSlot.MouseHover_refItem_int -= HandleItemSlotHoverRef;
-        On_Main.DrawNPCChatButtons -= CaptureNpcChatButtons;
-        On_IngameOptions.Draw -= HandleIngameOptionsDraw;
-    }
 
     public override void PostUpdatePlayers()
     {
@@ -111,15 +115,188 @@ public sealed class InGameNarrationSystem : ModSystem
         orig(superColor, chatColor, numLines, focusText, focusText3);
     }
 
-    private void HandleIngameOptionsDraw(On_IngameOptions.orig_Draw orig, Main self, SpriteBatch spriteBatch)
-    {
-        orig(self, spriteBatch);
-
-        if (!Main.gameMenu)
+        private void HandleIngameOptionsDraw(On_IngameOptions.orig_Draw orig, Main self, SpriteBatch spriteBatch)
         {
-            _ingameSettingsNarrator.Update();
+            _ingameSettingsNarrator.PrimeReflection();
+            IngameOptionsLabelTracker.BeginFrame();
+            orig(self, spriteBatch);
+            IngameOptionsLabelTracker.EndFrame();
+
+            if (!Main.gameMenu)
+            {
+                _ingameSettingsNarrator.Update();
+            }
         }
-    }
+
+        private static bool CaptureIngameOptionsLeft(On_IngameOptions.orig_DrawLeftSide orig, SpriteBatch spriteBatch, string label, int index, Vector2 anchorPosition, Vector2 offset, float[] scaleArray, float minScale, float maxScale, float scaleSpeed)
+        {
+            bool result = orig(spriteBatch, label, index, anchorPosition, offset, scaleArray, minScale, maxScale, scaleSpeed);
+            IngameOptionsLabelTracker.RecordLeft(index, label);
+            return result;
+        }
+
+        private static bool CaptureIngameOptionsRight(On_IngameOptions.orig_DrawRightSide orig, SpriteBatch spriteBatch, string label, int index, Vector2 anchorPosition, Vector2 offset, float scale, float lockedScale, Color color)
+        {
+            bool result = orig(spriteBatch, label, index, anchorPosition, offset, scale, lockedScale, color);
+            IngameOptionsLabelTracker.RecordRight(index, label);
+            return result;
+        }
+
+        private static class IngameOptionsLabelTracker
+        {
+            private static readonly Dictionary<int, string> LeftLabels = new();
+            private static readonly Dictionary<int, int> LeftIndexToCategory = new();
+            private static readonly Dictionary<int, string> CategoryLabels = new();
+            private static readonly Dictionary<(int category, int optionIndex), string> OptionLabels = new();
+            private static bool[] _skipRightSlotSnapshot = Array.Empty<bool>();
+
+            private static FieldInfo? _leftSideCategoryMappingField;
+            private static FieldInfo? _skipRightSlotField;
+            private static FieldInfo? _categoryField;
+
+            private static readonly Dictionary<int, int> EmptyMapping = new();
+
+            public static void Configure(FieldInfo? leftMapping, FieldInfo? skipField, FieldInfo? categoryField)
+            {
+                if (leftMapping is not null)
+                {
+                    _leftSideCategoryMappingField = leftMapping;
+                }
+
+                if (skipField is not null)
+                {
+                    _skipRightSlotField = skipField;
+                }
+
+                if (categoryField is not null)
+                {
+                    _categoryField = categoryField;
+                }
+            }
+
+            public static void BeginFrame()
+            {
+                LeftLabels.Clear();
+                LeftIndexToCategory.Clear();
+                CategoryLabels.Clear();
+                OptionLabels.Clear();
+
+                UpdateSkipSnapshot();
+            }
+
+            public static void EndFrame()
+            {
+                UpdateSkipSnapshot();
+            }
+
+            public static void RecordLeft(int index, string? label)
+            {
+                string sanitized = TextSanitizer.Clean(label ?? string.Empty);
+                if (!string.IsNullOrWhiteSpace(sanitized))
+                {
+                    LeftLabels[index] = sanitized;
+                }
+
+                foreach (KeyValuePair<int, int> kvp in GetLeftSideCategoryMapping())
+                {
+                    if (kvp.Key != index)
+                    {
+                        continue;
+                    }
+
+                    LeftIndexToCategory[index] = kvp.Value;
+                    if (!string.IsNullOrWhiteSpace(sanitized))
+                    {
+                        CategoryLabels[kvp.Value] = sanitized;
+                    }
+                    break;
+                }
+            }
+
+        public static void RecordRight(int index, string? label)
+        {
+            UpdateSkipSnapshot();
+
+            int category = GetCurrentCategory();
+            if (category < 0)
+            {
+                return;
+            }
+
+            if ((uint)index < (uint)_skipRightSlotSnapshot.Length && _skipRightSlotSnapshot[index])
+            {
+                return;
+            }
+
+            string sanitized = TextSanitizer.Clean(label ?? string.Empty);
+            if (!string.IsNullOrWhiteSpace(sanitized))
+            {
+                OptionLabels[(category, index)] = sanitized;
+            }
+        }
+
+            public static bool TryGetLeftLabel(int index, out string label)
+            {
+                return LeftLabels.TryGetValue(index, out label!);
+            }
+
+            public static bool TryGetCategoryLabel(int category, out string label)
+            {
+                return CategoryLabels.TryGetValue(category, out label!);
+            }
+
+            public static bool TryMapLeftToCategory(int leftIndex, out int category)
+            {
+                return LeftIndexToCategory.TryGetValue(leftIndex, out category);
+            }
+
+            public static bool TryGetOptionLabel(int category, int optionIndex, out string label)
+            {
+                return OptionLabels.TryGetValue((category, optionIndex), out label!);
+            }
+
+            public static bool IsOptionSkipped(int optionIndex)
+            {
+                return (uint)optionIndex < (uint)_skipRightSlotSnapshot.Length && _skipRightSlotSnapshot[optionIndex];
+            }
+
+            public static IReadOnlyDictionary<int, int> GetLeftMappingSnapshot()
+            {
+                return LeftIndexToCategory.Count == 0 ? EmptyMapping : new Dictionary<int, int>(LeftIndexToCategory);
+            }
+
+            private static void UpdateSkipSnapshot()
+            {
+                if (_skipRightSlotField?.GetValue(null) is bool[] array)
+                {
+                    _skipRightSlotSnapshot = array.Length == 0 ? Array.Empty<bool>() : (bool[])array.Clone();
+                }
+                else
+                {
+                    _skipRightSlotSnapshot = Array.Empty<bool>();
+                }
+            }
+
+            private static Dictionary<int, int> GetLeftSideCategoryMapping()
+            {
+                if (_leftSideCategoryMappingField?.GetValue(null) is Dictionary<int, int> mapping)
+                {
+                    return mapping;
+                }
+
+                return EmptyMapping;
+            }
+
+            private static int GetCurrentCategory()
+            {
+                if (_categoryField?.GetValue(null) is int value)
+                {
+                    return value;
+                }
+
+                return -1;
+            }
+        }
 
     private sealed class NpcDialogueNarrator
     {
@@ -313,13 +490,25 @@ public sealed class InGameNarrationSystem : ModSystem
     {
         private static readonly string[] DefaultCategoryLabels =
         {
-            Lang.menu[114].Value,
-            Lang.menu[210].Value,
-            Lang.menu[63].Value,
-            Lang.menu[65].Value,
-            Lang.menu[218].Value,
-            Lang.menu[219].Value,
-            Lang.menu[103].Value,
+            TextSanitizer.Clean(Lang.menu[114].Value),
+            TextSanitizer.Clean(Lang.menu[210].Value),
+            TextSanitizer.Clean(Lang.menu[63].Value),
+            TextSanitizer.Clean(Lang.menu[65].Value),
+            TextSanitizer.Clean(Lang.menu[218].Value),
+            TextSanitizer.Clean(Lang.menu[219].Value),
+            TextSanitizer.Clean(Lang.menu[103].Value),
+        };
+
+        private static readonly string[] CategoryLabelOverrides = BuildCategoryLabelOverrides();
+
+        private static readonly Dictionary<int, string> CategoryFallbackLabels = new()
+        {
+            [0] = TextSanitizer.Clean(Lang.menu[114].Value),
+            [1] = TextSanitizer.Clean(Lang.menu[210].Value),
+            [2] = TextSanitizer.Clean(Lang.menu[63].Value),
+            [3] = TextSanitizer.Clean(Lang.menu[65].Value),
+            [4] = TextSanitizer.Clean(Lang.menu[218].Value),
+            [5] = TextSanitizer.Clean(Lang.menu[219].Value),
         };
 
         private FieldInfo? _leftHoverField;
@@ -327,9 +516,70 @@ public sealed class InGameNarrationSystem : ModSystem
         private FieldInfo? _rightHoverField;
         private FieldInfo? _rightLockField;
         private FieldInfo? _categoryField;
-        private FieldInfo? _leftLabelsField;
-        private FieldInfo? _rightLabelsField;
+        private FieldInfo? _mouseOverTextField;
         private bool _fieldsResolved;
+        private FieldInfo? _leftSideCategoryMappingField;
+        private FieldInfo? _skipRightSlotField;
+        private static string[] BuildCategoryLabelOverrides()
+        {
+            return new[]
+            {
+                TextSanitizer.Clean(Lang.menu[114].Value),
+                TextSanitizer.Clean(Lang.menu[218].Value),
+                TextSanitizer.Clean(Lang.menu[219].Value),
+                ResolveModConfigurationLabel(),
+                TextSanitizer.Clean(Lang.menu[131].Value),
+                LocalizationHelper.GetTextOrFallback("Mods.ScreenReaderMod.IngameOptions.CloseMenu", "Close Menu"),
+                LocalizationHelper.GetTextOrFallback("Mods.ScreenReaderMod.IngameOptions.SaveAndExit", "Save & Exit"),
+            };
+        }
+
+        private static string ResolveModConfigurationLabel()
+        {
+            string[] candidates =
+            {
+                "tModLoader.ModConfiguration",
+                "tModLoader.MenuModConfiguration",
+                "ModConfiguration",
+            };
+
+            foreach (string key in candidates)
+            {
+                string value = TryGetLanguageValue(key);
+                if (!string.IsNullOrWhiteSpace(value))
+                {
+                    return value;
+                }
+            }
+
+            return LocalizationHelper.GetTextOrFallback("Mods.ScreenReaderMod.IngameOptions.ModConfiguration", "Mod Configuration");
+        }
+
+        private static string TryGetLanguageValue(string key)
+        {
+            if (string.IsNullOrWhiteSpace(key))
+            {
+                return string.Empty;
+            }
+
+            try
+            {
+                LocalizedText text = Language.GetText(key);
+                string value = text?.Value ?? string.Empty;
+                if (!string.IsNullOrWhiteSpace(value) && !string.Equals(value, key, StringComparison.Ordinal))
+                {
+                    return TextSanitizer.Clean(value);
+                }
+            }
+            catch (Exception ex)
+            {
+                ScreenReaderMod.Instance?.Logger.Debug($"[IngameSettings] Language key '{key}' lookup failed: {ex.Message}");
+            }
+
+            return string.Empty;
+        }
+
+        private static bool _loggedFieldCatalog;
 
         private int _lastLeftHover = int.MinValue;
         private int _lastLoggedLeftHover = int.MinValue;
@@ -339,10 +589,16 @@ public sealed class InGameNarrationSystem : ModSystem
         private int _lastRightHover = int.MinValue;
         private int _lastRightLock = int.MinValue;
         private int _lastSpecialFeature = int.MinValue;
+        private string? _lastCategoryLabel;
         private float _lastMusicVolume = -1f;
         private float _lastSoundVolume = -1f;
         private float _lastAmbientVolume = -1f;
         private int _lastParallax = int.MinValue;
+
+        public void PrimeReflection()
+        {
+            EnsureReflection();
+        }
 
         public void Update()
         {
@@ -358,14 +614,14 @@ public sealed class InGameNarrationSystem : ModSystem
             int leftLock = ReadInt(_leftLockField);
             int rightHover = ReadInt(_rightHoverField);
             int rightLock = ReadInt(_rightLockField);
-            int category = ReadInt(_categoryField);
+            int rawCategory = ReadInt(_categoryField);
             int special = UILinkPointNavigator.Shortcuts.OPTIONS_BUTTON_SPECIALFEATURE;
 
-            LogStateChanges(leftHover, rightHover, category, special);
+            LogStateChanges(leftHover, rightHover, rawCategory, special);
 
             if (leftHover >= 0 && leftHover != _lastLeftHover)
             {
-                string? label = GetCategoryLabel(leftHover);
+                string? label = GetLeftCategoryLabel(leftHover);
                 if (!string.IsNullOrWhiteSpace(label))
                 {
                     ScreenReaderService.Announce(label);
@@ -374,21 +630,24 @@ public sealed class InGameNarrationSystem : ModSystem
                 _lastLeftHover = leftHover;
             }
 
-            int selectedCategory = category;
-            if (selectedCategory < 0)
-            {
-                selectedCategory = leftLock >= 0 ? leftLock : leftHover;
-            }
+            int selectedLeftIndex = leftLock >= 0 ? leftLock : leftHover;
+            int categoryId = ResolveCategoryId(rawCategory, selectedLeftIndex);
 
-            if (selectedCategory >= 0 && selectedCategory != _lastCategory)
+            string? categoryLabel = GetCategoryLabelById(categoryId, selectedLeftIndex);
+            if (!string.IsNullOrWhiteSpace(categoryLabel))
             {
-                string? label = GetCategoryLabel(selectedCategory);
-                if (!string.IsNullOrWhiteSpace(label))
+                bool categoryChanged = categoryId != _lastCategory;
+                if (!categoryChanged && _lastCategoryLabel is not null)
                 {
-                    ScreenReaderService.Announce($"Settings: {label}");
+                    categoryChanged = !string.Equals(categoryLabel, _lastCategoryLabel, StringComparison.Ordinal);
                 }
 
-                _lastCategory = selectedCategory;
+                if (categoryChanged)
+                {
+                    ScreenReaderService.Announce(categoryLabel);
+                    _lastCategory = categoryId;
+                    _lastCategoryLabel = categoryLabel;
+                }
             }
 
             if (rightHover < 0)
@@ -396,16 +655,19 @@ public sealed class InGameNarrationSystem : ModSystem
                 rightHover = rightLock;
             }
 
-            if (selectedCategory >= 0 && rightHover >= 0 && (rightHover != _lastRightHover || selectedCategory != _lastRightLock))
+            if (categoryId >= 0 &&
+                rightHover >= 0 &&
+                !IngameOptionsLabelTracker.IsOptionSkipped(rightHover) &&
+                (rightHover != _lastRightHover || categoryId != _lastRightLock))
             {
-                string? description = DescribeOption(selectedCategory, rightHover);
+                string? description = DescribeOption(categoryId, rightHover);
                 if (!string.IsNullOrWhiteSpace(description))
                 {
                     ScreenReaderService.Announce(description);
                 }
 
                 _lastRightHover = rightHover;
-                _lastRightLock = selectedCategory;
+                _lastRightLock = categoryId;
             }
 
             AnnounceSpecialFeature(special);
@@ -478,8 +740,10 @@ public sealed class InGameNarrationSystem : ModSystem
             _lastLoggedRightHover = rightHover;
             _lastLoggedCategory = category;
 
+            string hoverText = ReadString(_mouseOverTextField);
+
             ScreenReaderMod.Instance.Logger.Debug(
-                $"[IngameSettings] leftHover={leftHover}, rightHover={rightHover}, category={category}, specialFeature={special}");
+                $"[IngameSettings] leftHover={leftHover}, rightHover={rightHover}, category={category}, specialFeature={special}, mouseOverText=\"{hoverText}\"");
         }
 
         private void EnsureReflection()
@@ -494,21 +758,39 @@ public sealed class InGameNarrationSystem : ModSystem
                 Type optionsType = typeof(IngameOptions);
                 BindingFlags flags = BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Static;
 
+                if (!_loggedFieldCatalog)
+                {
+                    foreach (FieldInfo field in optionsType.GetFields(flags).OrderBy(f => f.Name))
+                    {
+                        ScreenReaderMod.Instance?.Logger.Debug($"[IngameSettings] field: {field.FieldType.FullName} {field.Name}");
+                    }
+
+                    foreach (PropertyInfo property in optionsType.GetProperties(flags).OrderBy(p => p.Name))
+                    {
+                        ScreenReaderMod.Instance?.Logger.Debug($"[IngameSettings] property: {property.PropertyType.FullName} {property.Name}");
+                    }
+
+                    _loggedFieldCatalog = true;
+                }
+
                 FieldInfo[] fields = optionsType.GetFields(flags);
                 _leftHoverField = FindIntField(fields, "left", "hover");
                 _leftLockField = FindIntField(fields, "left", "lock");
                 _rightHoverField = FindIntField(fields, "right", "hover");
                 _rightLockField = FindIntField(fields, "right", "lock");
                 _categoryField = FindIntField(fields, "category");
-                _leftLabelsField = FindStringArrayField(fields, "Left");
-                _rightLabelsField = FindStringArrayField(fields, "Right");
+                _mouseOverTextField = FindStringField(fields, "mouse", "over", "text");
+                _leftSideCategoryMappingField ??= optionsType.GetField("_leftSideCategoryMapping", flags);
+                _skipRightSlotField ??= optionsType.GetField("skipRightSlot", flags);
+
+                IngameOptionsLabelTracker.Configure(_leftSideCategoryMappingField, _skipRightSlotField, _categoryField);
 
                 _fieldsResolved = true;
 
                 ScreenReaderMod.Instance?.Logger.Debug("[IngameSettings] Reflection resolved: " +
                     $"leftHover={_leftHoverField?.Name ?? "null"}, leftLock={_leftLockField?.Name ?? "null"}, " +
                     $"rightHover={_rightHoverField?.Name ?? "null"}, rightLock={_rightLockField?.Name ?? "null"}, " +
-                    $"category={_categoryField?.Name ?? "null"}, leftLabels={_leftLabelsField?.Name ?? "null"}, rightLabels={_rightLabelsField?.Name ?? "null"}");
+                    $"category={_categoryField?.Name ?? "null"}, mapping={_leftSideCategoryMappingField?.Name ?? "null"}, skipRightSlot={_skipRightSlotField?.Name ?? "null"}");
             }
             catch (Exception ex)
             {
@@ -524,11 +806,10 @@ public sealed class InGameNarrationSystem : ModSystem
                 keywords.All(k => field.Name.Contains(k, StringComparison.OrdinalIgnoreCase)));
         }
 
-        private static FieldInfo? FindStringArrayField(IEnumerable<FieldInfo> fields, params string[] keywords)
+        private static FieldInfo? FindStringField(IEnumerable<FieldInfo> fields, params string[] keywords)
         {
             return fields.FirstOrDefault(field =>
-                typeof(Array).IsAssignableFrom(field.FieldType) &&
-                field.FieldType.GetElementType() == typeof(string) &&
+                field.FieldType == typeof(string) &&
                 keywords.All(k => field.Name.Contains(k, StringComparison.OrdinalIgnoreCase)));
         }
 
@@ -549,28 +830,266 @@ public sealed class InGameNarrationSystem : ModSystem
             return -1;
         }
 
-        private string? GetCategoryLabel(int index)
+        private static string ReadString(FieldInfo? field)
+        {
+            try
+            {
+                if (field is not null && field.GetValue(null) is string value)
+                {
+                    return value;
+                }
+            }
+            catch (Exception ex)
+            {
+                ScreenReaderMod.Instance?.Logger.Debug($"[IngameSettings] Failed to read {field?.Name}: {ex.Message}");
+            }
+
+            return string.Empty;
+        }
+
+        private static string ConvertOptionEntry(object? entry)
+        {
+            if (entry is null)
+            {
+                return string.Empty;
+            }
+
+            switch (entry)
+            {
+                case string str:
+                    return TextSanitizer.Clean(str);
+                case LocalizedText localized:
+                    return TextSanitizer.Clean(localized.Value);
+                case float or double:
+                    return string.Empty;
+                case int menuIndex:
+                    return LookupMenu(menuIndex);
+                case sbyte signedByte:
+                    return ConvertOptionEntry((int)signedByte);
+                case byte byteValue:
+                    return ConvertOptionEntry((int)byteValue);
+                case short shortValue:
+                    return ConvertOptionEntry((int)shortValue);
+                case ushort ushortValue:
+                    return ConvertOptionEntry((int)ushortValue);
+                case uint uintValue when uintValue <= int.MaxValue:
+                    return ConvertOptionEntry((int)uintValue);
+                case uint uintValue:
+                    return uintValue.ToString();
+                case long longValue when longValue >= int.MinValue && longValue <= int.MaxValue:
+                    return ConvertOptionEntry((int)longValue);
+                case long longValue:
+                    return longValue.ToString();
+                case Enum enumValue:
+                    return ConvertOptionEntry(Convert.ToInt32(enumValue));
+                case Delegate del when del.Method.GetParameters().Length == 0:
+                    try
+                    {
+                        object? result = del.DynamicInvoke();
+                        string converted = ConvertOptionEntry(result);
+                        if (!string.IsNullOrWhiteSpace(converted))
+                        {
+                            return converted;
+                        }
+                    }
+                    catch (Exception ex)
+                    {
+                        ScreenReaderMod.Instance?.Logger.Debug($"[IngameSettings] Delegate conversion failed: {ex.Message}");
+                    }
+                    break;
+            }
+
+            string[] preferredMembers =
+            {
+                "Label",
+                "Text",
+                "DisplayName",
+                "Caption",
+                "Name",
+                "Description",
+                "Tooltip",
+            };
+
+            Type type = entry.GetType();
+            foreach (string member in preferredMembers)
+            {
+                string value = TryReadMemberText(type, entry, member);
+                if (!string.IsNullOrWhiteSpace(value))
+                {
+                    return TextSanitizer.Clean(value);
+                }
+            }
+
+            MethodInfo? getDisplayText = type.GetMethod("GetDisplayText", BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Instance, null, Type.EmptyTypes, null);
+            if (getDisplayText is not null)
+            {
+                try
+                {
+                    object? value = getDisplayText.Invoke(entry, Array.Empty<object>());
+                    string converted = ConvertOptionEntry(value);
+                    if (!string.IsNullOrWhiteSpace(converted))
+                    {
+                        return converted;
+                    }
+                }
+                catch (Exception ex)
+                {
+                    ScreenReaderMod.Instance?.Logger.Debug($"[IngameSettings] GetDisplayText invocation failed: {ex.Message}");
+                }
+            }
+
+            return TextSanitizer.Clean(entry.ToString() ?? string.Empty);
+        }
+
+        private static string LookupMenu(int index)
         {
             if (index < 0)
+            {
+                return string.Empty;
+            }
+
+            try
+            {
+                LocalizedText[] menu = Lang.menu;
+                if (index < menu.Length)
+                {
+                    string value = menu[index].Value;
+                    if (!string.IsNullOrWhiteSpace(value))
+                    {
+                        return TextSanitizer.Clean(value);
+                    }
+                }
+            }
+            catch (Exception ex)
+            {
+                ScreenReaderMod.Instance?.Logger.Debug($"[IngameSettings] LookupMenu failed for {index}: {ex.Message}");
+            }
+
+            return string.Empty;
+        }
+
+        private static string TryReadMemberText(Type type, object instance, string memberName)
+        {
+            const BindingFlags flags = BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Instance;
+
+            PropertyInfo? property = type.GetProperty(memberName, flags);
+            if (property is not null && property.GetIndexParameters().Length == 0)
+            {
+                try
+                {
+                    object? value = property.GetValue(instance, null);
+                    if (value is not null && !ReferenceEquals(instance, value))
+                    {
+                        string text = ConvertOptionEntry(value);
+                        if (!string.IsNullOrWhiteSpace(text))
+                        {
+                            return text;
+                        }
+                    }
+                }
+                catch
+                {
+                    // ignore property getter failures
+                }
+            }
+
+            FieldInfo? field = type.GetField(memberName, flags);
+            if (field is not null)
+            {
+                try
+                {
+                    object? value = field.GetValue(instance);
+                    if (value is not null && !ReferenceEquals(instance, value))
+                    {
+                        string text = ConvertOptionEntry(value);
+                        if (!string.IsNullOrWhiteSpace(text))
+                        {
+                            return text;
+                        }
+                    }
+                }
+                catch
+                {
+                    // ignore field access failures
+                }
+            }
+
+            return string.Empty;
+        }
+
+        private string? GetLeftCategoryLabel(int leftIndex)
+        {
+            if (leftIndex < 0)
             {
                 return null;
             }
 
-            if (_leftLabelsField?.GetValue(null) is string[] labels && index < labels.Length)
+            if (IngameOptionsLabelTracker.TryGetLeftLabel(leftIndex, out string label) && !string.IsNullOrWhiteSpace(label))
             {
-                string value = labels[index];
-                if (!string.IsNullOrWhiteSpace(value))
+                return label;
+            }
+
+            string mouseText = ReadString(_mouseOverTextField);
+            if (!string.IsNullOrWhiteSpace(mouseText))
+            {
+                return TextSanitizer.Clean(mouseText);
+            }
+
+            if ((uint)leftIndex < (uint)CategoryLabelOverrides.Length)
+            {
+                string overrideLabel = CategoryLabelOverrides[leftIndex];
+                if (!string.IsNullOrWhiteSpace(overrideLabel))
                 {
-                    return value.Trim();
+                    return overrideLabel;
                 }
             }
 
-            if (index < DefaultCategoryLabels.Length)
+            if ((uint)leftIndex < (uint)DefaultCategoryLabels.Length)
             {
-                return DefaultCategoryLabels[index];
+                return DefaultCategoryLabels[leftIndex];
             }
 
             return null;
+        }
+
+        private string? GetCategoryLabelById(int categoryId, int selectedLeftIndex)
+        {
+            if (categoryId >= 0 && IngameOptionsLabelTracker.TryGetCategoryLabel(categoryId, out string label) && !string.IsNullOrWhiteSpace(label))
+            {
+                return label;
+            }
+
+            if (selectedLeftIndex >= 0 && IngameOptionsLabelTracker.TryGetLeftLabel(selectedLeftIndex, out string leftLabel) && !string.IsNullOrWhiteSpace(leftLabel))
+            {
+                return leftLabel;
+            }
+
+            if (categoryId >= 0 && CategoryFallbackLabels.TryGetValue(categoryId, out string fallbackLabel))
+            {
+                return fallbackLabel;
+            }
+
+            if (selectedLeftIndex >= 0)
+            {
+                return GetLeftCategoryLabel(selectedLeftIndex);
+            }
+
+            return null;
+        }
+
+        private int ResolveCategoryId(int rawCategory, int selectedLeftIndex)
+        {
+            if (rawCategory >= 0)
+            {
+                return rawCategory;
+            }
+
+            if (selectedLeftIndex >= 0 && IngameOptionsLabelTracker.TryMapLeftToCategory(selectedLeftIndex, out int mapped))
+            {
+                return mapped;
+            }
+
+            return rawCategory;
         }
 
         private string? DescribeOption(int category, int option)
@@ -580,16 +1099,15 @@ public sealed class InGameNarrationSystem : ModSystem
                 return null;
             }
 
-            if (_rightLabelsField?.GetValue(null) is Array outer &&
-                category < outer.Length &&
-                outer.GetValue(category) is string[] bucket &&
-                option < bucket.Length)
+            if (IngameOptionsLabelTracker.TryGetOptionLabel(category, option, out string label) && !string.IsNullOrWhiteSpace(label))
             {
-                string candidate = bucket[option];
-                if (!string.IsNullOrWhiteSpace(candidate))
-                {
-                    return candidate.Trim();
-                }
+                return label;
+            }
+
+            string mouseText = ReadString(_mouseOverTextField);
+            if (!string.IsNullOrWhiteSpace(mouseText))
+            {
+                return TextSanitizer.Clean(mouseText);
             }
 
             return DescribeFallback(category, option);
@@ -619,7 +1137,7 @@ public sealed class InGameNarrationSystem : ModSystem
 
         private static string DescribeGeneral(int option)
         {
-            return option switch
+            string result = option switch
             {
                 0 => Main.autoSave ? Lang.menu[67].Value : Lang.menu[68].Value,
                 1 => Main.autoPause ? Lang.menu[69].Value : Lang.menu[70].Value,
@@ -628,11 +1146,13 @@ public sealed class InGameNarrationSystem : ModSystem
                 4 => Lang.menu[5].Value,
                 _ => $"General option {option + 1}",
             };
+
+            return TextSanitizer.Clean(result);
         }
 
         private static string DescribeAudio(int option)
         {
-            return option switch
+            string result = option switch
             {
                 0 => $"{Lang.menu[98].Value}: {MathF.Round(Main.musicVolume * 100f):0}%",
                 1 => $"{Lang.menu[99].Value}: {MathF.Round(Main.soundVolume * 100f):0}%",
@@ -640,6 +1160,8 @@ public sealed class InGameNarrationSystem : ModSystem
                 3 => Lang.menu[5].Value,
                 _ => $"Audio option {option + 1}",
             };
+
+            return TextSanitizer.Clean(result);
         }
 
         private static string DescribeInterface(int option)
@@ -663,7 +1185,7 @@ public sealed class InGameNarrationSystem : ModSystem
                 mapBorder = Language.GetTextValue("UI.MinimapFrame_Classic");
             }
 
-            return option switch
+            string result = option switch
             {
                 0 => Main.showItemText ? Lang.menu[71].Value : Lang.menu[72].Value,
                 1 => $"{Lang.menu[123].Value} {Lang.menu[124 + Utils.Clamp(Main.invasionProgressMode, 0, 2)].Value}",
@@ -678,12 +1200,14 @@ public sealed class InGameNarrationSystem : ModSystem
                 10 => Lang.menu[5].Value,
                 _ => $"Interface option {option + 1}",
             };
+
+            return TextSanitizer.Clean(result);
         }
 
         private static string DescribeVideo(int option)
         {
             int frameSkipIndex = (int)Main.FrameSkipMode;
-            return option switch
+            string result = option switch
             {
                 0 => Lang.menu[51].Value,
                 1 => Lang.menu[52].Value,
@@ -704,11 +1228,13 @@ public sealed class InGameNarrationSystem : ModSystem
                 10 => Lang.menu[5].Value,
                 _ => $"Video option {option + 1}",
             };
+
+            return TextSanitizer.Clean(result);
         }
 
         private static string DescribeCursor(int option)
         {
-            return option switch
+            string result = option switch
             {
                 0 => Lang.menu[214].Value,
                 1 => Lang.menu[215].Value,
@@ -719,11 +1245,13 @@ public sealed class InGameNarrationSystem : ModSystem
                 6 => Lang.menu[5].Value,
                 _ => $"Cursor option {option + 1}",
             };
+
+            return TextSanitizer.Clean(result);
         }
 
         private static string DescribeGameplay(int option)
         {
-            return option switch
+            string result = option switch
             {
                 0 => Lang.menu[220].Value,
                 1 => Lang.menu[221].Value,
@@ -731,6 +1259,8 @@ public sealed class InGameNarrationSystem : ModSystem
                 3 => Lang.menu[5].Value,
                 _ => $"Gameplay option {option + 1}",
             };
+
+            return TextSanitizer.Clean(result);
         }
 
         private void Reset()
@@ -740,6 +1270,7 @@ public sealed class InGameNarrationSystem : ModSystem
             _lastLoggedRightHover = int.MinValue;
             _lastLoggedCategory = int.MinValue;
             _lastCategory = int.MinValue;
+            _lastCategoryLabel = null;
             _lastRightHover = int.MinValue;
             _lastRightLock = int.MinValue;
             _lastSpecialFeature = int.MinValue;
@@ -813,71 +1344,6 @@ public sealed class InGameNarrationSystem : ModSystem
         private SlotFocus? _currentFocus;
 
         private static SlotFocus? _pendingFocus;
-
-        private static readonly Dictionary<string, string> GlyphTokenMap = new(StringComparer.OrdinalIgnoreCase)
-        {
-            ["1"] = "A button",
-            ["2"] = "B button",
-            ["3"] = "X button",
-            ["4"] = "Y button",
-            ["5"] = "Right bumper",
-            ["6"] = "Left bumper",
-            ["7"] = "Left trigger",
-            ["8"] = "Right trigger",
-            ["9"] = "View button",
-            ["10"] = "Menu button",
-            ["11"] = "Left stick",
-            ["12"] = "Right stick",
-            ["13"] = "D-pad up",
-            ["14"] = "D-pad down",
-            ["15"] = "D-pad left",
-            ["16"] = "D-pad right",
-            ["17"] = "Left stick click",
-            ["18"] = "Right stick click",
-            ["lb"] = "Left bumper",
-            ["rb"] = "Right bumper",
-            ["lt"] = "Left trigger",
-            ["rt"] = "Right trigger",
-            ["ls"] = "Left stick",
-            ["rs"] = "Right stick",
-            ["back"] = "View button",
-            ["select"] = "View button",
-            ["menu"] = "Menu button",
-            ["start"] = "Menu button",
-            ["up"] = "D-pad up",
-            ["down"] = "D-pad down",
-            ["left"] = "D-pad left",
-            ["right"] = "D-pad right",
-            ["mouseleft"] = "Left mouse button",
-            ["mouseright"] = "Right mouse button",
-            ["mousemiddle"] = "Middle mouse button",
-            ["mousewheelup"] = "Mouse wheel up",
-            ["mousewheeldown"] = "Mouse wheel down",
-            ["mousexbutton1"] = "Mouse button four",
-            ["mousexbutton2"] = "Mouse button five",
-        };
-
-        private static Type? _glyphSnippetType;
-
-        private static readonly string[] GlyphSnippetMemberCandidates =
-        {
-            "Glyph",
-            "_glyph",
-            "glyph",
-            "GlyphId",
-            "_glyphId",
-            "glyphId",
-            "GlyphIndex",
-            "_glyphIndex",
-            "glyphIndex",
-            "Id",
-            "_id",
-            "id",
-        };
-
-        private static readonly HashSet<string> ReportedGlyphSnippetTypes = new(StringComparer.Ordinal);
-
-        private static readonly TextInfo InvariantTextInfo = CultureInfo.InvariantCulture.TextInfo;
 
         private static readonly Lazy<PropertyInfo?> LinkPointsProperty = new(() =>
             typeof(UILinkPointNavigator).GetProperty("Points", BindingFlags.Static | BindingFlags.Public | BindingFlags.NonPublic));
@@ -965,7 +1431,7 @@ public sealed class InGameNarrationSystem : ModSystem
             Item hover = Main.HoverItem;
             ItemIdentity identity = ItemIdentity.From(hover);
             string rawTooltip = Main.hoverItemName ?? string.Empty;
-            string normalizedTooltip = NormalizeGlyphTags(rawTooltip);
+            string normalizedTooltip = GlyphTagFormatter.Normalize(rawTooltip);
 
             SlotFocus? focus = _currentFocus;
             string location = DescribeLocation(player, identity, focus);
@@ -1023,7 +1489,7 @@ public sealed class InGameNarrationSystem : ModSystem
             string? mouseText = TryGetMouseText();
             if (!string.IsNullOrWhiteSpace(mouseText))
             {
-                string trimmedMouseText = NormalizeGlyphTags(mouseText.Trim());
+                string trimmedMouseText = GlyphTagFormatter.Normalize(mouseText.Trim());
                 if (!string.Equals(trimmedMouseText, _lastHoverTooltip, StringComparison.Ordinal))
                 {
                     _lastHoverTooltip = trimmedMouseText;
@@ -1404,7 +1870,7 @@ public sealed class InGameNarrationSystem : ModSystem
 
         private static List<string> ExtractTooltipLines(string raw, HashSet<string> nameCandidates)
         {
-            string sanitized = SanitizeTooltipText(raw);
+            string sanitized = GlyphTagFormatter.SanitizeTooltip(raw);
             List<string> lines = new();
 
             string[] segments = sanitized.Split(new[] { '\r', '\n' }, StringSplitOptions.RemoveEmptyEntries);
@@ -1488,7 +1954,7 @@ public sealed class InGameNarrationSystem : ModSystem
                 return false;
             }
 
-            string normalizedLine = NormalizeGlyphTags(line).Trim();
+            string normalizedLine = GlyphTagFormatter.Normalize(line).Trim();
             return nameCandidates.Contains(normalizedLine);
         }
 
@@ -1509,191 +1975,10 @@ public sealed class InGameNarrationSystem : ModSystem
                 return;
             }
 
-            string normalized = NormalizeNameCandidate(value);
+            string normalized = GlyphTagFormatter.NormalizeNameCandidate(value);
             if (!string.IsNullOrWhiteSpace(normalized))
             {
                 candidates.Add(normalized);
-            }
-        }
-
-        private static string NormalizeNameCandidate(string? value)
-        {
-            if (string.IsNullOrWhiteSpace(value))
-            {
-                return string.Empty;
-            }
-
-            string sanitized = SanitizeTooltipText(value);
-            if (string.IsNullOrWhiteSpace(sanitized))
-            {
-                sanitized = value;
-            }
-
-            return NormalizeGlyphTags(sanitized).Trim();
-        }
-
-        private static string SanitizeTooltipText(string raw)
-        {
-            try
-            {
-                List<TextSnippet>? snippets = ChatManager.ParseMessage(raw, Color.White);
-                if (snippets is null || snippets.Count == 0)
-                {
-                    return raw;
-                }
-
-                StringBuilder builder = new();
-                foreach (TextSnippet snippet in snippets)
-                {
-                    if (snippet is null)
-                    {
-                        continue;
-                    }
-
-                    if (TryAppendGlyphSnippet(builder, snippet))
-                    {
-                        continue;
-                    }
-
-                    builder.Append(snippet.Text);
-                }
-
-                string sanitized = builder.ToString();
-                if (raw.IndexOf("open", StringComparison.OrdinalIgnoreCase) >= 0 ||
-                    sanitized.IndexOf(" to open", StringComparison.OrdinalIgnoreCase) >= 0)
-                {
-                    LogGlyphDebug(raw, sanitized, snippets);
-                }
-
-                return NormalizeGlyphTags(sanitized);
-            }
-            catch
-            {
-                return NormalizeGlyphTags(raw);
-            }
-        }
-
-        private static bool TryAppendGlyphSnippet(StringBuilder builder, TextSnippet snippet)
-        {
-            if (snippet is null)
-            {
-                return false;
-            }
-
-            Type snippetType = snippet.GetType();
-            if (!IsGlyphSnippetType(snippetType))
-            {
-                ReportGlyphSnippetType(snippetType, "UnrecognizedSnippetType");
-                return false;
-            }
-
-            string? glyphToken = ExtractGlyphToken(snippetType, snippet);
-            if (string.IsNullOrWhiteSpace(glyphToken))
-            {
-                ReportGlyphSnippetType(snippetType, "MissingGlyphToken");
-                return false;
-            }
-
-            glyphToken = glyphToken.Trim();
-
-            if (!TryTranslateGlyphToken(glyphToken, out string replacement) &&
-                !TryTranslateGlyphToken($"g{glyphToken}", out replacement))
-            {
-                string humanized = HumanizeToken(glyphToken);
-                if (string.IsNullOrWhiteSpace(humanized))
-                {
-                    ReportGlyphSnippetType(snippetType, $"UnmappedToken:{glyphToken}");
-                    return false;
-                }
-
-                replacement = humanized;
-            }
-
-            if (builder.Length > 0 && !char.IsWhiteSpace(builder[^1]))
-            {
-                builder.Append(' ');
-            }
-
-            builder.Append(replacement);
-            return true;
-        }
-
-        private static bool IsGlyphSnippetType(Type snippetType)
-        {
-            if (snippetType is null)
-            {
-                return false;
-            }
-
-            if (_glyphSnippetType is not null)
-            {
-                return snippetType == _glyphSnippetType || snippetType.IsSubclassOf(_glyphSnippetType);
-            }
-
-            string? fullName = snippetType.FullName;
-            if (string.IsNullOrWhiteSpace(fullName))
-            {
-                return false;
-            }
-
-            if (fullName.Contains("GlyphTagHandler", StringComparison.Ordinal) ||
-                fullName.Contains("GlyphSnippet", StringComparison.Ordinal))
-            {
-                _glyphSnippetType = snippetType;
-                return true;
-            }
-
-            ReportGlyphSnippetType(snippetType, "UnrecognizedSnippetType");
-            return false;
-        }
-
-        private static void ReportGlyphSnippetType(Type snippetType, string note)
-        {
-            if (snippetType is null)
-            {
-                return;
-            }
-
-            string name = snippetType.FullName ?? snippetType.Name;
-            if (string.IsNullOrWhiteSpace(name))
-            {
-                return;
-            }
-
-            string key = $"{name}:{note}";
-            lock (ReportedGlyphSnippetTypes)
-            {
-                if (!ReportedGlyphSnippetTypes.Add(key))
-                {
-                    return;
-                }
-            }
-
-            ScreenReaderMod.Instance?.Logger.Info($"[GlyphSnippet] {note} -> {name}");
-        }
-
-        private static void LogGlyphDebug(string raw, string sanitized, IEnumerable<TextSnippet> snippets)
-        {
-            try
-            {
-                ScreenReaderMod.Instance?.Logger.Info($"[GlyphDebug] raw: {raw}");
-                ScreenReaderMod.Instance?.Logger.Info($"[GlyphDebug] sanitized: {sanitized}");
-
-                foreach (TextSnippet snippet in snippets)
-                {
-                    if (snippet is null)
-                    {
-                        continue;
-                    }
-
-                    Type type = snippet.GetType();
-                    string typeName = type.FullName ?? type.Name;
-                    ScreenReaderMod.Instance?.Logger.Info($"[GlyphDebug] snippet: {typeName} -> \"{snippet.Text}\"");
-                }
-            }
-            catch
-            {
-                // ignore logging failures
             }
         }
 
@@ -1787,7 +2072,7 @@ public sealed class InGameNarrationSystem : ModSystem
         {
             if (id < 0)
             {
-                return id.ToString(CultureInfo.InvariantCulture);
+            return id.ToString(System.Globalization.CultureInfo.InvariantCulture);
             }
 
             return TryGetLinkPoint(id, out UILinkPoint? point) && point is not null
@@ -1877,89 +2162,15 @@ public sealed class InGameNarrationSystem : ModSystem
             return null;
         }
 
-        private static string? ExtractGlyphToken(Type snippetType, TextSnippet snippet)
-        {
-            foreach (string memberName in GlyphSnippetMemberCandidates)
-            {
-                object? value = TryGetMemberValue(snippetType, snippet, memberName);
-                if (value is null)
-                {
-                    continue;
-                }
-
-                string? token = ConvertGlyphMemberToString(value);
-                if (!string.IsNullOrWhiteSpace(token))
-                {
-                    return token;
-                }
-            }
-
-            return null;
-        }
-
-        private static object? TryGetMemberValue(Type type, object instance, string memberName)
-        {
-            if (type is null || string.IsNullOrWhiteSpace(memberName))
-            {
-                return null;
-            }
-
-            PropertyInfo? property = type.GetProperty(memberName, BindingFlags.Instance | BindingFlags.Public | BindingFlags.NonPublic);
-            if (property is not null && property.GetIndexParameters().Length == 0)
-            {
-                try
-                {
-                    return property.GetValue(instance);
-                }
-                catch
-                {
-                    // Ignore accessor failures.
-                }
-            }
-
-            FieldInfo? field = type.GetField(memberName, BindingFlags.Instance | BindingFlags.Public | BindingFlags.NonPublic);
-            if (field is not null)
-            {
-                try
-                {
-                    return field.GetValue(instance);
-                }
-                catch
-                {
-                    // Ignore accessor failures.
-                }
-            }
-
-            return null;
-        }
-
-        private static string? ConvertGlyphMemberToString(object value)
-        {
-            switch (value)
-            {
-                case null:
-                    return null;
-                case string text:
-                    return text;
-                case int number:
-                    return number.ToString(CultureInfo.InvariantCulture);
-                case Enum enumValue:
-                    return Convert.ToInt32(enumValue, CultureInfo.InvariantCulture).ToString(CultureInfo.InvariantCulture);
-                default:
-                    string? result = value.ToString();
-                    return string.IsNullOrWhiteSpace(result) ? null : result;
-            }
-        }
-
         private static string CombineItemAnnouncement(string message, string? details)
         {
-            string normalizedMessage = NormalizeGlyphTags(message.Trim());
+            string normalizedMessage = GlyphTagFormatter.Normalize(message.Trim());
             if (string.IsNullOrWhiteSpace(details))
             {
                 return normalizedMessage;
             }
 
-            string normalizedDetails = NormalizeGlyphTags(details.Trim());
+            string normalizedDetails = GlyphTagFormatter.Normalize(details.Trim());
             if (!HasTerminalPunctuation(normalizedMessage))
             {
                 normalizedMessage += ".";
@@ -2013,7 +2224,7 @@ public sealed class InGameNarrationSystem : ModSystem
             }
 
             string result = builder.ToString();
-            return NormalizeGlyphTags(result);
+            return GlyphTagFormatter.Normalize(result);
         }
 
         private static bool HasTerminalPunctuation(string text)
@@ -2026,246 +2237,6 @@ public sealed class InGameNarrationSystem : ModSystem
 
             char last = text[^1];
             return last == '.' || last == '!' || last == '?' || last == ':' || last == ')';
-        }
-
-        private static string NormalizeGlyphTags(string text)
-        {
-            if (string.IsNullOrWhiteSpace(text))
-            {
-                return text;
-            }
-
-            StringBuilder builder = new(text.Length);
-            bool replaced = false;
-            int index = 0;
-
-            while (index < text.Length)
-            {
-                if (text[index] == '[' && index + 2 < text.Length && (text[index + 1] == 'g' || text[index + 1] == 'G'))
-                {
-                    int end = index + 2;
-                    while (end < text.Length && text[end] != ']')
-                    {
-                        end++;
-                    }
-
-                    if (end < text.Length)
-                    {
-                        string token = text.Substring(index + 1, end - index - 1);
-                        if (TryTranslateGlyphToken(token, out string replacement))
-                        {
-                            builder.Append(replacement);
-                            index = end + 1;
-                            replaced = true;
-                            continue;
-                        }
-                    }
-                }
-
-                if ((text[index] == 'g' || text[index] == 'G') &&
-                    (index == 0 || !char.IsLetterOrDigit(text[index - 1])))
-                {
-                    int end = index + 1;
-                    while (end < text.Length && (char.IsLetterOrDigit(text[end]) || text[end] == '_'))
-                    {
-                        end++;
-                    }
-
-                    if (end > index + 1)
-                    {
-                        string token = text.Substring(index, end - index);
-                        if (TryTranslateGlyphToken(token, out string replacement))
-                        {
-                            builder.Append(replacement);
-                            index = end;
-                            replaced = true;
-                            continue;
-                        }
-                    }
-                }
-
-                builder.Append(text[index]);
-                index++;
-            }
-
-            string normalized = replaced ? builder.ToString() : text;
-            return ReplaceFallbackGlyphNumbers(normalized);
-        }
-
-        private static bool TryTranslateGlyphToken(string token, out string replacement)
-        {
-            replacement = string.Empty;
-            if (string.IsNullOrWhiteSpace(token))
-            {
-                return false;
-            }
-
-            string trimmed = token.Trim().Trim('[', ']');
-            if (trimmed.Length == 0)
-            {
-                return false;
-            }
-
-            string raw = trimmed;
-            if (trimmed.Length > 0 && (trimmed[0] == 'g' || trimmed[0] == 'G'))
-            {
-                trimmed = trimmed[1..];
-            }
-
-            if (trimmed.Length == 0)
-            {
-                return false;
-            }
-
-            string normalized = trimmed.TrimStart('_');
-
-            if (GlyphTokenMap.TryGetValue(normalized, out string? mapped) ||
-                GlyphTokenMap.TryGetValue(raw, out mapped))
-            {
-                replacement = mapped!;
-                return true;
-            }
-
-            string humanized = HumanizeToken(normalized);
-            if (!string.IsNullOrWhiteSpace(humanized))
-            {
-                replacement = humanized;
-                return true;
-            }
-
-            return false;
-        }
-
-        private static string ReplaceFallbackGlyphNumbers(string text)
-        {
-            if (string.IsNullOrWhiteSpace(text))
-            {
-                return text;
-            }
-
-            StringBuilder builder = new(text.Length + 8);
-            int index = 0;
-
-            while (index < text.Length)
-            {
-                char current = text[index];
-                if (char.IsDigit(current))
-                {
-                    int start = index;
-                    int end = index;
-                    while (end < text.Length && char.IsDigit(text[end]))
-                    {
-                        end++;
-                    }
-
-                    string token = text.Substring(start, end - start);
-                    if (TryTranslateGlyphToken(token, out string replacement) &&
-                        ShouldTreatAsGlyphNumber(text, start, end))
-                    {
-                        builder.Append(replacement);
-                    }
-                    else
-                    {
-                        builder.Append(token);
-                    }
-
-                    index = end;
-                    continue;
-                }
-
-                builder.Append(current);
-                index++;
-            }
-
-            return builder.ToString();
-        }
-
-        private static bool ShouldTreatAsGlyphNumber(string text, int start, int end)
-        {
-            static bool MatchesAny(ReadOnlySpan<char> span, params string[] candidates)
-            {
-                foreach (string candidate in candidates)
-                {
-                    if (span.StartsWith(candidate, StringComparison.OrdinalIgnoreCase))
-                    {
-                        return true;
-                    }
-                }
-
-                return false;
-            }
-
-            ReadOnlySpan<char> before = text.AsSpan(0, start);
-            ReadOnlySpan<char> after = text.AsSpan(end);
-
-            if (MatchesAny(after, " to ", " to_", " to-", " to.", " to,", " to!"))
-            {
-                return true;
-            }
-
-            if (MatchesAny(after, " button", " trigger", " shoulder", " stick"))
-            {
-                return true;
-            }
-
-            const int PressLength = 6; // "Press "
-            if (before.Length >= PressLength)
-            {
-                ReadOnlySpan<char> prefix = before.Slice(before.Length - PressLength);
-                if (prefix.Equals("Press ", StringComparison.OrdinalIgnoreCase))
-                {
-                    return true;
-                }
-            }
-
-            if (before.Length >= 2)
-            {
-                ReadOnlySpan<char> suffix = before.Slice(before.Length - 2);
-                if (suffix.Equals(": ", StringComparison.OrdinalIgnoreCase))
-                {
-                    return true;
-                }
-            }
-
-            return false;
-        }
-
-        private static string HumanizeToken(string token)
-        {
-            if (string.IsNullOrWhiteSpace(token))
-            {
-                return string.Empty;
-            }
-
-            StringBuilder builder = new(token.Length + 4);
-            for (int i = 0; i < token.Length; i++)
-            {
-                char current = token[i];
-                if (i > 0)
-                {
-                    char previous = token[i - 1];
-                    bool split = char.IsDigit(current) != char.IsDigit(previous) ||
-                                 (char.IsUpper(current) && !char.IsUpper(previous)) ||
-                                 current == '_';
-                    if (split)
-                    {
-                        builder.Append(' ');
-                    }
-                }
-
-                if (current != '_')
-                {
-                    builder.Append(char.ToLowerInvariant(current));
-                }
-            }
-
-            string spaced = builder.ToString().Trim();
-            if (spaced.Length == 0)
-            {
-                return string.Empty;
-            }
-
-            return InvariantTextInfo.ToTitleCase(spaced);
         }
 
         private bool TryAnnounceSpecialSelection(bool hoverIsAir, string? location)
@@ -2340,6 +2311,19 @@ public sealed class InGameNarrationSystem : ModSystem
 
         private static string? DescribeIngameOptionsFocus(bool hoverIsAir, string? location)
         {
+            int rightHover = IngameOptions.rightHover;
+            int rightLock = IngameOptions.rightLock;
+            int leftHover = GetStaticFieldValue(IngameOptionsLeftHoverField);
+
+            if (leftHover >= 0 && rightHover < 0 && rightLock < 0)
+            {
+                string categoryLabel = DescribeIngameOptionsCategory(leftHover);
+                if (!string.IsNullOrWhiteSpace(categoryLabel))
+                {
+                    return categoryLabel;
+                }
+            }
+
             int feature = UILinkPointNavigator.Shortcuts.OPTIONS_BUTTON_SPECIALFEATURE;
             string? label = feature switch
             {
@@ -2363,7 +2347,7 @@ public sealed class InGameNarrationSystem : ModSystem
             string? tooltip = TryGetMouseText();
             if (!string.IsNullOrWhiteSpace(tooltip))
             {
-                string normalized = NormalizeGlyphTags(tooltip).Trim();
+                string normalized = GlyphTagFormatter.Normalize(tooltip).Trim();
                 if (!string.IsNullOrWhiteSpace(normalized))
                 {
                     return normalized;
@@ -2372,6 +2356,18 @@ public sealed class InGameNarrationSystem : ModSystem
 
             LogIngameOptionsState(feature, hoverIsAir, location);
             return null;
+        }
+
+        private static string DescribeIngameOptionsCategory(int index)
+        {
+            return index switch
+            {
+                5 => TextSanitizer.Clean(Language.GetTextValue("tModLoader.ModControls")),
+                6 => TextSanitizer.Clean(Language.GetTextValue("tModLoader.ModConfiguration")),
+                7 => TextSanitizer.Clean(Language.GetTextValue("tModLoader.ModControls")),
+                8 => TextSanitizer.Clean(Language.GetTextValue("tModLoader.ModConfiguration")),
+                _ => string.Empty,
+            };
         }
 
         private static int _lastOptionsStateHash = int.MinValue;
@@ -2835,15 +2831,15 @@ public sealed class InGameNarrationSystem : ModSystem
 
     private static string ComposeItemLabel(Item item)
     {
-        string name = item.AffixName();
+        string name = TextSanitizer.Clean(item.AffixName());
         if (string.IsNullOrWhiteSpace(name))
         {
-            name = item.Name;
+            name = TextSanitizer.Clean(item.Name);
         }
 
         if (string.IsNullOrWhiteSpace(name))
         {
-            name = Lang.GetItemNameValue(item.type);
+            name = TextSanitizer.Clean(Lang.GetItemNameValue(item.type));
         }
 
         if (string.IsNullOrWhiteSpace(name))
@@ -2851,17 +2847,19 @@ public sealed class InGameNarrationSystem : ModSystem
             name = $"Item {item.type}";
         }
 
+        var parts = new List<string> { name };
+
         if (item.stack > 1)
         {
-            name = $"{name}, stack {item.stack}";
+            parts.Add($"stack {item.stack}");
         }
 
         if (item.favorited)
         {
-            name = $"{name}, favorited";
+            parts.Add("favorited");
         }
 
-        return name;
+        return TextSanitizer.JoinWithComma(parts.ToArray());
     }
 
     private static class TileDescriptor

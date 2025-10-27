@@ -4,7 +4,6 @@ using System.Collections;
 using System.Collections.Generic;
 using System.Linq;
 using System.Reflection;
-using System.Text;
 using ReLogic.OS;
 using Terraria;
 using Terraria.GameContent.UI.BigProgressBar;
@@ -17,6 +16,8 @@ using Terraria.ModLoader;
 using Terraria.ModLoader.UI;
 using Terraria.Social;
 using Terraria.UI;
+using Terraria.IO;
+using ScreenReaderMod.Common.Utilities;
 
 namespace ScreenReaderMod.Common.Systems;
 
@@ -33,7 +34,9 @@ internal static class MenuNarrationCatalog
         [17] = "Controls",
         [18] = "Credits",
         [26] = "Achievements",
+        [9] = "World deletion confirmation",
         [888] = "tModLoader menu",
+        [889] = "Host and play settings",
     };
 
     private static readonly Dictionary<int, Func<int, string>> ModeResolvers = new()
@@ -49,6 +52,8 @@ internal static class MenuNarrationCatalog
         [1125] = DescribeSettingsCursorMenu,
         [1127] = DescribeSettingsGameplayMenu,
         [12] = DescribeMultiplayerMenu,
+        [9] = DescribeWorldDeletionConfirmation,
+        [889] = DescribeHostAndPlayServerMenu,
     };
 
     private static FieldInfo? _menuItemsField;
@@ -92,7 +97,7 @@ internal static class MenuNarrationCatalog
             string option = items[focusedIndex];
             if (!string.IsNullOrWhiteSpace(option))
             {
-                return option.Trim();
+                return option;
             }
 
             if (menuMode == 26)
@@ -120,7 +125,7 @@ internal static class MenuNarrationCatalog
                 string value = menu[focusedIndex].Value;
                 if (!string.IsNullOrWhiteSpace(value))
                 {
-                    return Sanitize(value);
+                    return TextSanitizer.Clean(value);
                 }
             }
         }
@@ -187,9 +192,9 @@ internal static class MenuNarrationCatalog
         switch (raw)
         {
             case string[] stringArray:
-                return SanitizeArray(stringArray);
+                return Array.ConvertAll(stringArray, static value => TextSanitizer.Clean(value));
             case LocalizedText[] localizedArray:
-                return localizedArray.Select(t => Sanitize(t.Value)).ToArray();
+                return Array.ConvertAll(localizedArray, static text => TextSanitizer.Clean(text.Value));
             case IList list when raw is not Array:
                 return ConvertList(list);
             case Array array:
@@ -198,11 +203,6 @@ internal static class MenuNarrationCatalog
                 ScreenReaderMod.Instance?.Logger.Debug($"[MenuNarration] Unsupported menuItems type: {raw.GetType().FullName}");
                 return Array.Empty<string>();
         }
-    }
-
-    private static string[] SanitizeArray(IEnumerable<string> source)
-    {
-        return source.Select(Sanitize).ToArray();
     }
 
     private static string[] ConvertList(IList list)
@@ -236,63 +236,20 @@ internal static class MenuNarrationCatalog
 
         if (entry is string str)
         {
-            return Sanitize(str);
+            return TextSanitizer.Clean(str);
         }
 
         if (entry is LocalizedText localized)
         {
-            return Sanitize(localized.Value);
+            return TextSanitizer.Clean(localized.Value);
         }
 
-        return Sanitize(entry.ToString() ?? string.Empty);
+        return TextSanitizer.Clean(entry.ToString());
     }
 
-    private static string Sanitize(string text)
+    private static string OptionOrEmpty(IReadOnlyList<string> entries, int index)
     {
-        if (string.IsNullOrWhiteSpace(text))
-        {
-            return string.Empty;
-        }
-
-        string trimmed = text.Trim();
-        if (!trimmed.Contains('['))
-        {
-            return trimmed;
-        }
-
-        var builder = new StringBuilder(trimmed.Length);
-        for (int i = 0; i < trimmed.Length; i++)
-        {
-            char c = trimmed[i];
-            if (c == '[')
-            {
-                int closing = trimmed.IndexOf(']', i + 1);
-                if (closing > i)
-                {
-                    string token = trimmed.Substring(i + 1, closing - i - 1);
-                    if (token.StartsWith("c/", StringComparison.OrdinalIgnoreCase))
-                    {
-                        int colon = token.IndexOf(':');
-                        if (colon >= 0 && colon + 1 < token.Length)
-                        {
-                            builder.Append(token.Substring(colon + 1));
-                        }
-                        i = closing;
-                        continue;
-                    }
-
-                    if (token.StartsWith("i:", StringComparison.OrdinalIgnoreCase))
-                    {
-                        i = closing;
-                        continue;
-                    }
-                }
-            }
-
-            builder.Append(c);
-        }
-
-        return builder.ToString().Trim();
+        return (uint)index < (uint)entries.Count ? entries[index] : string.Empty;
     }
 
     private static string DescribeMainMenuItem(int index)
@@ -321,7 +278,7 @@ internal static class MenuNarrationCatalog
 
         if (index >= 0 && index < cursor)
         {
-            return Sanitize(names[index]);
+            return TextSanitizer.Clean(names[index]);
         }
 
         return string.Empty;
@@ -354,30 +311,196 @@ internal static class MenuNarrationCatalog
     {
         string[] entries =
         {
-            Lang.menu[114].Value,
-            Lang.menu[210].Value,
-            Lang.menu[63].Value,
-            Lang.menu[65].Value,
-            Lang.menu[218].Value,
-            Lang.menu[219].Value,
-            Lang.menu[103].Value,
-            Language.GetTextValue("tModLoader.tModLoaderSettings"),
-            Lang.menu[5].Value,
+            TextSanitizer.Clean(Lang.menu[114].Value),
+            TextSanitizer.Clean(Lang.menu[210].Value),
+            TextSanitizer.Clean(Lang.menu[63].Value),
+            TextSanitizer.Clean(Lang.menu[65].Value),
+            TextSanitizer.Clean(Lang.menu[218].Value),
+            TextSanitizer.Clean(Lang.menu[219].Value),
+            TextSanitizer.Clean(Lang.menu[103].Value),
+            TextSanitizer.Clean(Language.GetTextValue("tModLoader.tModLoaderSettings")),
+            TextSanitizer.Clean(Lang.menu[5].Value),
         };
 
-        if (index >= 0 && index < entries.Length)
+        return OptionOrEmpty(entries, index);
+    }
+
+    private static string DescribeWorldDeletionConfirmation(int index)
+    {
+        string worldName = GetSelectedWorldName();
+
+        switch (index)
         {
-            return Sanitize(entries[index]);
+            case 0:
+            {
+                string deletePrompt = TextSanitizer.Clean(Lang.menu[46].Value);
+                if (string.IsNullOrWhiteSpace(deletePrompt))
+                {
+                    deletePrompt = LocalizationHelper.GetTextOrFallback("UI.Delete", "Delete");
+                }
+
+                if (!string.IsNullOrWhiteSpace(worldName))
+                {
+                    return TextSanitizer.Clean($"{deletePrompt} {worldName}?");
+                }
+
+                return deletePrompt;
+            }
+
+            case 1:
+            {
+                string confirmLabel = TextSanitizer.Clean(Lang.menu[104].Value);
+                if (string.IsNullOrWhiteSpace(confirmLabel))
+                {
+                    confirmLabel = LocalizationHelper.GetTextOrFallback("UI.Delete", "Delete");
+                }
+
+                if (!string.IsNullOrWhiteSpace(worldName))
+                {
+                    return TextSanitizer.JoinWithComma(confirmLabel, worldName);
+                }
+
+                return confirmLabel;
+            }
+
+            case 2:
+            {
+                string cancelLabel = TextSanitizer.Clean(Lang.menu[105].Value);
+                if (string.IsNullOrWhiteSpace(cancelLabel))
+                {
+                    cancelLabel = LocalizationHelper.GetTextOrFallback("UI.Cancel", "Cancel");
+                }
+
+                return cancelLabel;
+            }
+
+            default:
+                return string.Empty;
+        }
+    }
+
+    private static string GetSelectedWorldName()
+    {
+        try
+        {
+            int selectedWorld = Main.selectedWorld;
+            if (selectedWorld >= 0)
+            {
+                List<WorldFileData> worlds = Main.WorldList;
+                if (worlds is not null && selectedWorld < worlds.Count)
+                {
+                    return TextSanitizer.Clean(worlds[selectedWorld].Name);
+                }
+            }
+        }
+        catch (Exception ex)
+        {
+            ScreenReaderMod.Instance?.Logger.Debug($"[MenuNarration] Failed to resolve selected world: {ex.Message}");
         }
 
         return string.Empty;
+    }
+
+    private static string DescribeHostAndPlayServerMenu(int index)
+    {
+        bool lobbyEnabled = MenuServerModeHasFlag("Lobby");
+        bool friendsEnabled = MenuServerModeHasFlag("FriendsCanJoin");
+        bool friendsOfFriendsEnabled = MenuServerModeHasFlag("FriendsOfFriends");
+        bool showConsole = Main.showServerConsole;
+
+        return index switch
+        {
+            0 => TextSanitizer.Clean(Lang.menu[135].Value),
+            1 => DescribeLobbyToggle(lobbyEnabled),
+            2 => DescribeFriendsToggle(lobbyEnabled, friendsEnabled),
+            3 => DescribeFriendsOfFriendsToggle(lobbyEnabled, friendsEnabled, friendsOfFriendsEnabled),
+            4 => TextSanitizer.Clean(Lang.menu[144].Value),
+            5 => TextSanitizer.Clean(Lang.menu[5].Value),
+            6 => DescribeShowConsoleToggle(showConsole),
+            _ => string.Empty,
+        };
+    }
+
+    private static string DescribeLobbyToggle(bool lobbyEnabled)
+    {
+        string label = LocalizationHelper.GetTextOrFallback("Mods.ScreenReaderMod.HostMenu.LobbyLabel", "Steam lobby");
+        string status = DescribeEnabledDisabled(lobbyEnabled);
+        return TextSanitizer.JoinWithComma(label, status);
+    }
+
+    private static string DescribeFriendsToggle(bool lobbyEnabled, bool friendsEnabled)
+    {
+        string label = LocalizationHelper.GetTextOrFallback("Mods.ScreenReaderMod.HostMenu.FriendsLabel", "Friends can join");
+        string status = DescribeEnabledDisabled(lobbyEnabled && friendsEnabled);
+        if (!lobbyEnabled)
+        {
+            string note = LocalizationHelper.GetTextOrFallback("Mods.ScreenReaderMod.HostMenu.RequiresLobby", "Enable the lobby to configure friend access");
+            return TextSanitizer.JoinWithComma(label, status, note);
+        }
+
+        return TextSanitizer.JoinWithComma(label, status);
+    }
+
+    private static string DescribeFriendsOfFriendsToggle(bool lobbyEnabled, bool friendsEnabled, bool friendsOfFriendsEnabled)
+    {
+        string label = LocalizationHelper.GetTextOrFallback("Mods.ScreenReaderMod.HostMenu.FriendsOfFriendsLabel", "Friends of friends can join");
+        string status = DescribeEnabledDisabled(lobbyEnabled && friendsEnabled && friendsOfFriendsEnabled);
+        if (!lobbyEnabled)
+        {
+            string note = LocalizationHelper.GetTextOrFallback("Mods.ScreenReaderMod.HostMenu.RequiresLobby", "Enable the lobby to configure friend access");
+            return TextSanitizer.JoinWithComma(label, status, note);
+        }
+
+        if (!friendsEnabled)
+        {
+            string note = LocalizationHelper.GetTextOrFallback("Mods.ScreenReaderMod.HostMenu.RequiresFriends", "Allow friends to join before enabling this option");
+            return TextSanitizer.JoinWithComma(label, status, note);
+        }
+
+        return TextSanitizer.JoinWithComma(label, status);
+    }
+
+    private static string DescribeShowConsoleToggle(bool showConsole)
+    {
+        string label = LocalizationHelper.GetTextOrFallback("Mods.ScreenReaderMod.HostMenu.ConsoleLabel", "Show server console");
+        string status = DescribeEnabledDisabled(showConsole);
+        return TextSanitizer.JoinWithComma(label, status);
+    }
+
+    private static string DescribeEnabledDisabled(bool enabled)
+    {
+        string key = enabled ? "GameUI.Enabled" : "GameUI.Disabled";
+        return TextSanitizer.Clean(Language.GetTextValue(key));
+    }
+
+    private static bool MenuServerModeHasFlag(string flagName)
+    {
+        try
+        {
+            object menuServerMode = Main.MenuServerMode;
+            Type? enumType = menuServerMode?.GetType();
+            if (enumType is null || !enumType.IsEnum)
+            {
+                return false;
+            }
+
+            object flag = Enum.Parse(enumType, flagName);
+            long modeValue = Convert.ToInt64(menuServerMode);
+            long flagValue = Convert.ToInt64(flag);
+            return (modeValue & flagValue) == flagValue;
+        }
+        catch (Exception ex)
+        {
+            ScreenReaderMod.Instance?.Logger.Debug($"[MenuNarration] Failed to inspect MenuServerMode flag '{flagName}': {ex.Message}");
+            return false;
+        }
     }
 
     private static string DescribeSettingsAudioMenu(int index)
     {
         if (index == 2)
         {
-            return Sanitize(Language.GetTextValue("UI.Back"));
+            return TextSanitizer.Clean(Language.GetTextValue("UI.Back"));
         }
 
         string[] menuItems = GetMenuItemArray();
@@ -392,7 +515,7 @@ internal static class MenuNarrationCatalog
 
         if (index is 0 or 1)
         {
-            return Sanitize(Lang.menu[65].Value);
+            return TextSanitizer.Clean(Lang.menu[65].Value);
         }
 
         return string.Empty;
@@ -402,53 +525,43 @@ internal static class MenuNarrationCatalog
     {
         string[] entries =
         {
-            Sanitize(Main.autoSave ? Lang.menu[67].Value : Lang.menu[68].Value),
-            Sanitize(Main.autoPause ? Lang.menu[69].Value : Lang.menu[70].Value),
-            Sanitize(Main.mapEnabled ? Lang.menu[112].Value : Lang.menu[113].Value),
-            Sanitize(Main.HidePassword ? Lang.menu[212].Value : Lang.menu[211].Value),
-            Sanitize(Lang.menu[5].Value),
+            TextSanitizer.Clean(Main.autoSave ? Lang.menu[67].Value : Lang.menu[68].Value),
+            TextSanitizer.Clean(Main.autoPause ? Lang.menu[69].Value : Lang.menu[70].Value),
+            TextSanitizer.Clean(Main.mapEnabled ? Lang.menu[112].Value : Lang.menu[113].Value),
+            TextSanitizer.Clean(Main.HidePassword ? Lang.menu[212].Value : Lang.menu[211].Value),
+            TextSanitizer.Clean(Lang.menu[5].Value),
         };
 
-        if (index >= 0 && index < entries.Length)
-        {
-            return entries[index];
-        }
-
-        return string.Empty;
+        return OptionOrEmpty(entries, index);
     }
 
     private static string DescribeSettingsInterfaceMenu(int index)
     {
         var items = new List<string>
         {
-            Sanitize(Main.showItemText ? Lang.menu[71].Value : Lang.menu[72].Value),
-            Sanitize($"{Lang.menu[123].Value} {Lang.menu[124 + Utils.Clamp(Main.invasionProgressMode, 0, 2)].Value}"),
-            Sanitize(Main.placementPreview ? Lang.menu[128].Value : Lang.menu[129].Value),
-            Sanitize(ItemSlot.Options.HighlightNewItems ? Lang.inter[117].Value : Lang.inter[116].Value),
-            Sanitize(Main.MouseShowBuildingGrid ? Lang.menu[229].Value : Lang.menu[230].Value),
-            Sanitize(Main.GamepadDisableInstructionsDisplay ? Lang.menu[241].Value : Lang.menu[242].Value),
+            TextSanitizer.Clean(Main.showItemText ? Lang.menu[71].Value : Lang.menu[72].Value),
+            TextSanitizer.Clean($"{Lang.menu[123].Value} {Lang.menu[124 + Utils.Clamp(Main.invasionProgressMode, 0, 2)].Value}"),
+            TextSanitizer.Clean(Main.placementPreview ? Lang.menu[128].Value : Lang.menu[129].Value),
+            TextSanitizer.Clean(ItemSlot.Options.HighlightNewItems ? Lang.inter[117].Value : Lang.inter[116].Value),
+            TextSanitizer.Clean(Main.MouseShowBuildingGrid ? Lang.menu[229].Value : Lang.menu[230].Value),
+            TextSanitizer.Clean(Main.GamepadDisableInstructionsDisplay ? Lang.menu[241].Value : Lang.menu[242].Value),
         };
 
         string mapBorderKey = Main.MinimapFrameManagerInstance?.ActiveSelectionKeyName ?? string.Empty;
         string mapBorder = Language.GetTextValue("UI.MinimapFrame_" + mapBorderKey);
-        items.Add(Sanitize(Language.GetTextValue("UI.SelectMapBorder", mapBorder)));
+        items.Add(TextSanitizer.Clean(Language.GetTextValue("UI.SelectMapBorder", mapBorder)));
 
         string resourceName = Main.ResourceSetsManager?.ActiveSet.DisplayedName ?? string.Empty;
-        items.Add(Sanitize(Language.GetTextValue("UI.SelectHealthStyle", resourceName)));
+        items.Add(TextSanitizer.Clean(Language.GetTextValue("UI.SelectHealthStyle", resourceName)));
 
-        items.Add(Sanitize(Language.GetTextValue(BigProgressBarSystem.ShowText ? "UI.ShowBossLifeTextOn" : "UI.ShowBossLifeTextOff")));
+        items.Add(TextSanitizer.Clean(Language.GetTextValue(BigProgressBarSystem.ShowText ? "UI.ShowBossLifeTextOn" : "UI.ShowBossLifeTextOff")));
 
         string bossBar = Language.GetTextValue("tModLoader.BossBarStyle", BossBarLoader.CurrentStyle?.DisplayName ?? string.Empty);
-        items.Add(Sanitize(bossBar));
+        items.Add(TextSanitizer.Clean(bossBar));
 
-        items.Add(Sanitize(Lang.menu[5].Value));
+        items.Add(TextSanitizer.Clean(Lang.menu[5].Value));
 
-        if (index >= 0 && index < items.Count)
-        {
-            return items[index];
-        }
-
-        return string.Empty;
+        return OptionOrEmpty(items, index);
     }
 
     private static string DescribeSettingsVideoMenu(int index)
@@ -456,34 +569,29 @@ internal static class MenuNarrationCatalog
         int frameSkipIndex = (int)Main.FrameSkipMode;
         var items = new List<string>
         {
-            Sanitize(Lang.menu[51].Value),
-            Sanitize(Lang.menu[52].Value),
-            Sanitize(Lang.menu[247 + Utils.Clamp(frameSkipIndex, 0, 3)].Value),
-            Sanitize(Language.GetTextValue("UI.LightMode_" + Lighting.Mode)),
+            TextSanitizer.Clean(Lang.menu[51].Value),
+            TextSanitizer.Clean(Lang.menu[52].Value),
+            TextSanitizer.Clean(Lang.menu[247 + Utils.Clamp(frameSkipIndex, 0, 3)].Value),
+            TextSanitizer.Clean(Language.GetTextValue("UI.LightMode_" + Lighting.Mode)),
         };
 
         string quality = Main.qaStyle switch
         {
-            0 => Lang.menu[59].Value,
-            1 => Lang.menu[60].Value,
-            2 => Lang.menu[61].Value,
-            _ => Lang.menu[62].Value,
+            0 => TextSanitizer.Clean(Lang.menu[59].Value),
+            1 => TextSanitizer.Clean(Lang.menu[60].Value),
+            2 => TextSanitizer.Clean(Lang.menu[61].Value),
+            _ => TextSanitizer.Clean(Lang.menu[62].Value),
         };
-        items.Add(Sanitize(quality));
+        items.Add(quality);
 
-        items.Add(Sanitize(Main.BackgroundEnabled ? Lang.menu[100].Value : Lang.menu[101].Value));
-        items.Add(Sanitize(ChildSafety.Disabled ? Lang.menu[132].Value : Lang.menu[133].Value));
-        items.Add(Sanitize(Main.SettingsEnabled_MinersWobble ? Lang.menu[250].Value : Lang.menu[251].Value));
-        items.Add(Sanitize(Main.SettingsEnabled_TilesSwayInWind ? Language.GetTextValue("UI.TilesSwayInWindOn") : Language.GetTextValue("UI.TilesSwayInWindOff")));
-        items.Add(Sanitize(Language.GetTextValue("UI.Effects")));
-        items.Add(Sanitize(Lang.menu[5].Value));
+        items.Add(TextSanitizer.Clean(Main.BackgroundEnabled ? Lang.menu[100].Value : Lang.menu[101].Value));
+        items.Add(TextSanitizer.Clean(ChildSafety.Disabled ? Lang.menu[132].Value : Lang.menu[133].Value));
+        items.Add(TextSanitizer.Clean(Main.SettingsEnabled_MinersWobble ? Lang.menu[250].Value : Lang.menu[251].Value));
+        items.Add(TextSanitizer.Clean(Main.SettingsEnabled_TilesSwayInWind ? Language.GetTextValue("UI.TilesSwayInWindOn") : Language.GetTextValue("UI.TilesSwayInWindOff")));
+        items.Add(TextSanitizer.Clean(Language.GetTextValue("UI.Effects")));
+        items.Add(TextSanitizer.Clean(Lang.menu[5].Value));
 
-        if (index >= 0 && index < items.Count)
-        {
-            return items[index];
-        }
-
-        return string.Empty;
+        return OptionOrEmpty(items, index);
     }
 
     private static string DescribeEffectsMenu(int index)
@@ -491,25 +599,20 @@ internal static class MenuNarrationCatalog
         var items = new List<string>
         {
             string.Empty,
-            Sanitize(Language.GetTextValue("UI.Effects")),
-            Sanitize(Language.GetTextValue("GameUI.StormEffects", Main.UseStormEffects ? Language.GetTextValue("GameUI.Enabled") : Language.GetTextValue("GameUI.Disabled"))),
-            Sanitize(Language.GetTextValue("GameUI.HeatDistortion", Main.UseHeatDistortion ? Language.GetTextValue("GameUI.Enabled") : Language.GetTextValue("GameUI.Disabled"))),
-            Sanitize(Language.GetTextValue("GameUI.WaveQuality", Main.WaveQuality switch
+            TextSanitizer.Clean(Language.GetTextValue("UI.Effects")),
+            TextSanitizer.Clean(Language.GetTextValue("GameUI.StormEffects", Main.UseStormEffects ? Language.GetTextValue("GameUI.Enabled") : Language.GetTextValue("GameUI.Disabled"))),
+            TextSanitizer.Clean(Language.GetTextValue("GameUI.HeatDistortion", Main.UseHeatDistortion ? Language.GetTextValue("GameUI.Enabled") : Language.GetTextValue("GameUI.Disabled"))),
+            TextSanitizer.Clean(Language.GetTextValue("GameUI.WaveQuality", Main.WaveQuality switch
             {
                 1 => Language.GetTextValue("GameUI.QualityLow"),
                 2 => Language.GetTextValue("GameUI.QualityMedium"),
                 3 => Language.GetTextValue("GameUI.QualityHigh"),
                 _ => Language.GetTextValue("GameUI.QualityOff"),
             })),
-            Sanitize(Lang.menu[5].Value),
+            TextSanitizer.Clean(Lang.menu[5].Value),
         };
 
-        if (index >= 0 && index < items.Count)
-        {
-            return items[index];
-        }
-
-        return string.Empty;
+        return OptionOrEmpty(items, index);
     }
 
     private static string DescribeResolutionMenu(int index)
@@ -517,71 +620,56 @@ internal static class MenuNarrationCatalog
         bool borderlessAvailable = Platform.IsWindows;
         var items = new List<string>
         {
-            Sanitize($"{Lang.menu[73].Value}: {Main.PendingResolutionWidth}x{Main.PendingResolutionHeight}"),
+            TextSanitizer.Clean($"{Lang.menu[73].Value}: {Main.PendingResolutionWidth}x{Main.PendingResolutionHeight}"),
         };
 
         if (borderlessAvailable)
         {
-            items.Add(Sanitize(Lang.menu[Main.PendingBorderlessState ? 245 : 246].Value));
+            items.Add(TextSanitizer.Clean(Lang.menu[Main.PendingBorderlessState ? 245 : 246].Value));
         }
 
-        items.Add(Sanitize(Main.graphics?.IsFullScreen == true ? Lang.menu[49].Value : Lang.menu[50].Value));
-        items.Add(Sanitize(Lang.menu[134].Value));
-        items.Add(Sanitize(Lang.menu[5].Value));
+        items.Add(TextSanitizer.Clean(Main.graphics?.IsFullScreen == true ? Lang.menu[49].Value : Lang.menu[50].Value));
+        items.Add(TextSanitizer.Clean(Lang.menu[134].Value));
+        items.Add(TextSanitizer.Clean(Lang.menu[5].Value));
 
-        if (index >= 0 && index < items.Count)
-        {
-            return items[index];
-        }
-
-        return string.Empty;
+        return OptionOrEmpty(items, index);
     }
 
     private static string DescribeSettingsCursorMenu(int index)
     {
         var items = new List<string>
         {
-            Sanitize(Lang.menu[64].Value),
-            Sanitize(Lang.menu[217].Value),
-            Sanitize(Main.cSmartCursorModeIsToggleAndNotHold ? Lang.menu[121].Value : Lang.menu[122].Value),
-            Sanitize(Player.SmartCursorSettings.SmartAxeAfterPickaxe ? Lang.menu[214].Value : Lang.menu[213].Value),
-            Sanitize(Player.SmartCursorSettings.SmartBlocksEnabled ? Lang.menu[215].Value : Lang.menu[216].Value),
+            TextSanitizer.Clean(Lang.menu[64].Value),
+            TextSanitizer.Clean(Lang.menu[217].Value),
+            TextSanitizer.Clean(Main.cSmartCursorModeIsToggleAndNotHold ? Lang.menu[121].Value : Lang.menu[122].Value),
+            TextSanitizer.Clean(Player.SmartCursorSettings.SmartAxeAfterPickaxe ? Lang.menu[214].Value : Lang.menu[213].Value),
+            TextSanitizer.Clean(Player.SmartCursorSettings.SmartBlocksEnabled ? Lang.menu[215].Value : Lang.menu[216].Value),
         };
 
         string lockOn = LockOnHelper.UseMode switch
         {
-            LockOnHelper.LockOnMode.FocusTarget => Lang.menu[232].Value,
-            LockOnHelper.LockOnMode.TargetClosest => Lang.menu[233].Value,
-            LockOnHelper.LockOnMode.ThreeDS => Lang.menu[234].Value,
+            LockOnHelper.LockOnMode.FocusTarget => TextSanitizer.Clean(Lang.menu[232].Value),
+            LockOnHelper.LockOnMode.TargetClosest => TextSanitizer.Clean(Lang.menu[233].Value),
+            LockOnHelper.LockOnMode.ThreeDS => TextSanitizer.Clean(Lang.menu[234].Value),
             _ => string.Empty,
         };
-        items.Add(Sanitize(lockOn));
-        items.Add(Sanitize(Lang.menu[5].Value));
+        items.Add(lockOn);
+        items.Add(TextSanitizer.Clean(Lang.menu[5].Value));
 
-        if (index >= 0 && index < items.Count)
-        {
-            return items[index];
-        }
-
-        return string.Empty;
+        return OptionOrEmpty(items, index);
     }
 
     private static string DescribeSettingsGameplayMenu(int index)
     {
         var items = new List<string>
         {
-            Sanitize(Main.ReversedUpDownArmorSetBonuses ? Lang.menu[220].Value : Lang.menu[221].Value),
-            Sanitize(ItemSlot.Options.DisableQuickTrash ? Lang.menu[253].Value : (ItemSlot.Options.DisableLeftShiftTrashCan ? Lang.menu[224].Value : Lang.menu[223].Value)),
-            Sanitize(Lang.menu[222].Value),
-            Sanitize(Lang.menu[5].Value),
+            TextSanitizer.Clean(Main.ReversedUpDownArmorSetBonuses ? Lang.menu[220].Value : Lang.menu[221].Value),
+            TextSanitizer.Clean(ItemSlot.Options.DisableQuickTrash ? Lang.menu[253].Value : (ItemSlot.Options.DisableLeftShiftTrashCan ? Lang.menu[224].Value : Lang.menu[223].Value)),
+            TextSanitizer.Clean(Lang.menu[222].Value),
+            TextSanitizer.Clean(Lang.menu[5].Value),
         };
 
-        if (index >= 0 && index < items.Count)
-        {
-            return items[index];
-        }
-
-        return string.Empty;
+        return OptionOrEmpty(items, index);
     }
 
     private static string DescribeMultiplayerMenu(int index)
@@ -590,23 +678,18 @@ internal static class MenuNarrationCatalog
         string[] entries = hasSocial
             ? new[]
             {
-                Lang.menu[146].Value,
-                Lang.menu[145].Value,
-                Lang.menu[88].Value,
-                Lang.menu[5].Value,
+                TextSanitizer.Clean(Lang.menu[146].Value),
+                TextSanitizer.Clean(Lang.menu[145].Value),
+                TextSanitizer.Clean(Lang.menu[88].Value),
+                TextSanitizer.Clean(Lang.menu[5].Value),
             }
             : new[]
             {
-                Lang.menu[87].Value,
-                Lang.menu[88].Value,
-                Lang.menu[5].Value,
+                TextSanitizer.Clean(Lang.menu[87].Value),
+                TextSanitizer.Clean(Lang.menu[88].Value),
+                TextSanitizer.Clean(Lang.menu[5].Value),
             };
 
-        if (index >= 0 && index < entries.Length)
-        {
-            return Sanitize(entries[index]);
-        }
-
-        return string.Empty;
+        return OptionOrEmpty(entries, index);
     }
 }

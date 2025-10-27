@@ -2,4 +2,4 @@ displayName = Terraria Access
 author = Accessibility Agents
 version = 0.1.0
 homepage = https://github.com/tModLoader/tModLoader
-modReferences = 
+side = Client

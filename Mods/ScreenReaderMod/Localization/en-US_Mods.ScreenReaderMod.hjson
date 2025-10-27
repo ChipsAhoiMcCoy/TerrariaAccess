@@ -1,0 +1,18 @@
+Mods: {
+	ScreenReaderMod: {
+		HostMenu: {
+			LobbyLabel: Steam lobby
+			FriendsLabel: Friends can join
+			FriendsOfFriendsLabel: Friends of friends can join
+			ConsoleLabel: Show server console
+			RequiresLobby: Enable the lobby to configure friend access
+			RequiresFriends: Allow friends to join before enabling this option
+		}
+
+		IngameOptions: {
+			ModConfiguration: Mod Configuration
+			CloseMenu: Close Menu
+			SaveAndExit: Save & Exit
+		}
+	}
+}

@@ -7,6 +7,7 @@ using Terraria;
 using Terraria.IO;
 using Terraria.Localization;
 using Terraria.UI;
+using ScreenReaderMod.Common.Utilities;
 
 namespace ScreenReaderMod.Common.Systems.MenuNarration;
 
@@ -251,15 +252,15 @@ internal sealed class MenuUiSelectionTracker
 
         string difficulty = data.Player?.difficulty switch
         {
-            1 => LocalizeOr("UI.Mediumcore", "Mediumcore"),
-            2 => LocalizeOr("UI.Hardcore", "Hardcore"),
-            3 => LocalizeOr("UI.Journey", "Journey"),
-            _ => LocalizeOr("UI.Classic", "Classic"),
+            1 => LocalizationHelper.GetTextOrFallback("UI.Mediumcore", "Mediumcore"),
+            2 => LocalizationHelper.GetTextOrFallback("UI.Hardcore", "Hardcore"),
+            3 => LocalizationHelper.GetTextOrFallback("UI.Journey", "Journey"),
+            _ => LocalizationHelper.GetTextOrFallback("UI.Classic", "Classic"),
         };
 
-        string favorite = data.IsFavorite ? LocalizeOr("UI.FavoriteTooltip", "Favorite") : string.Empty;
+        string favorite = data.IsFavorite ? LocalizationHelper.GetTextOrFallback("UI.FavoriteTooltip", "Favorite") : string.Empty;
 
-        return JoinParts(name, difficulty, favorite);
+        return TextSanitizer.JoinWithComma(name, difficulty, favorite);
     }
 
     private static string DescribeWorld(WorldFileData data)
@@ -270,71 +271,50 @@ internal sealed class MenuUiSelectionTracker
 
         string mode = data.GameMode switch
         {
-            1 => LocalizeOr("UI.Expert", "Expert"),
-            2 => LocalizeOr("UI.Master", "Master"),
-            3 => LocalizeOr("UI.Journey", "Journey"),
-            _ => LocalizeOr("UI.Classic", "Classic"),
+            1 => LocalizationHelper.GetTextOrFallback("UI.Expert", "Expert"),
+            2 => LocalizationHelper.GetTextOrFallback("UI.Master", "Master"),
+            3 => LocalizationHelper.GetTextOrFallback("UI.Journey", "Journey"),
+            _ => LocalizationHelper.GetTextOrFallback("UI.Classic", "Classic"),
         };
 
-        string favorite = data.IsFavorite ? LocalizeOr("UI.FavoriteTooltip", "Favorite") : string.Empty;
+        string favorite = data.IsFavorite ? LocalizationHelper.GetTextOrFallback("UI.FavoriteTooltip", "Favorite") : string.Empty;
 
-        return JoinParts(name, mode, size, favorite);
+        return TextSanitizer.JoinWithComma(name, mode, size, favorite);
     }
 
     private static string DescribePlayerName(PlayerFileData? data)
     {
         if (data is null || string.IsNullOrWhiteSpace(data.Name))
         {
-            return LocalizeOr("UI.PlayerNameDefault", "Player");
+            return LocalizationHelper.GetTextOrFallback("UI.PlayerNameDefault", "Player");
         }
 
-        return Sanitize(data.Name);
+        return TextSanitizer.Clean(data.Name);
     }
 
     private static string DescribeWorldName(WorldFileData? data)
     {
         if (data is null || string.IsNullOrWhiteSpace(data.Name))
         {
-            return LocalizeOr("UI.WorldNameDefault", "World");
+            return LocalizationHelper.GetTextOrFallback("UI.WorldNameDefault", "World");
         }
 
-        return Sanitize(data.Name);
+        return TextSanitizer.Clean(data.Name);
     }
 
     private static string DescribeWorldSize(int worldWidth)
     {
         if (worldWidth <= 4400)
         {
-            return Sanitize(Lang.menu[92].Value);
+            return TextSanitizer.Clean(Lang.menu[92].Value);
         }
 
         if (worldWidth <= 7000)
         {
-            return Sanitize(Lang.menu[93].Value);
+            return TextSanitizer.Clean(Lang.menu[93].Value);
         }
 
-        return Sanitize(Lang.menu[94].Value);
-    }
-
-    private static string JoinParts(params string[] parts)
-    {
-        return string.Join(", ", parts.Where(static part => !string.IsNullOrWhiteSpace(part)));
-    }
-
-    private static string LocalizeOr(string key, string fallback)
-    {
-        string value = Language.GetTextValue(key);
-        if (string.IsNullOrWhiteSpace(value) || string.Equals(value, key, StringComparison.Ordinal))
-        {
-            return fallback;
-        }
-
-        return Sanitize(value);
-    }
-
-    private static string Sanitize(string value)
-    {
-        return string.IsNullOrWhiteSpace(value) ? string.Empty : value.Trim();
+        return TextSanitizer.Clean(Lang.menu[94].Value);
     }
 
     private static readonly HashSet<Type> LoggedElementMetadata = new();
@@ -495,15 +475,17 @@ internal sealed class MenuUiSelectionTracker
         string playerName = DescribePlayerName(data);
         return index switch
         {
-            0 => JoinParts(LocalizeOr("UI.Play", "Play"), playerName),
-            1 => JoinParts(
-                LocalizeOr("UI.Favorite", "Favorite"),
-                (data?.IsFavorite ?? false) ? LocalizeOr("UI.FavoriteOn", "On") : LocalizeOr("UI.FavoriteOff", "Off"),
+            0 => TextSanitizer.JoinWithComma(LocalizationHelper.GetTextOrFallback("UI.Play", "Play"), playerName),
+            1 => TextSanitizer.JoinWithComma(
+                LocalizationHelper.GetTextOrFallback("UI.Favorite", "Favorite"),
+                (data?.IsFavorite ?? false)
+                    ? LocalizationHelper.GetTextOrFallback("UI.FavoriteOn", "On")
+                    : LocalizationHelper.GetTextOrFallback("UI.FavoriteOff", "Off"),
                 playerName),
-            2 => JoinParts(DescribeCloudToggle(data?.IsCloudSave ?? false), playerName),
-            3 => JoinParts(LocalizeOr("UI.Rename", "Rename"), playerName),
-            4 => JoinParts(LocalizeOr("UI.Delete", "Delete"), playerName),
-            _ => JoinParts(LocalizeOr("UI.Button", $"Button {index + 1}"), playerName),
+            2 => TextSanitizer.JoinWithComma(DescribeCloudToggle(data?.IsCloudSave ?? false), playerName),
+            3 => TextSanitizer.JoinWithComma(LocalizationHelper.GetTextOrFallback("UI.Rename", "Rename"), playerName),
+            4 => TextSanitizer.JoinWithComma(LocalizationHelper.GetTextOrFallback("UI.Delete", "Delete"), playerName),
+            _ => TextSanitizer.JoinWithComma(LocalizationHelper.GetTextOrFallback("UI.Button", $"Button {index + 1}"), playerName),
         };
     }
 
@@ -512,43 +494,46 @@ internal sealed class MenuUiSelectionTracker
         string worldName = DescribeWorldName(data);
         return index switch
         {
-            0 => JoinParts(LocalizeOr("UI.Play", "Play"), worldName),
-            1 => JoinParts(
-                LocalizeOr("UI.Favorite", "Favorite"),
-                (data?.IsFavorite ?? false) ? LocalizeOr("UI.FavoriteOn", "On") : LocalizeOr("UI.FavoriteOff", "Off"),
+            0 => TextSanitizer.JoinWithComma(LocalizationHelper.GetTextOrFallback("UI.Play", "Play"), worldName),
+            1 => TextSanitizer.JoinWithComma(
+                LocalizationHelper.GetTextOrFallback("UI.Favorite", "Favorite"),
+                (data?.IsFavorite ?? false)
+                    ? LocalizationHelper.GetTextOrFallback("UI.FavoriteOn", "On")
+                    : LocalizationHelper.GetTextOrFallback("UI.FavoriteOff", "Off"),
                 worldName),
-            2 => JoinParts(DescribeCloudToggle(data?.IsCloudSave ?? false), worldName),
-            3 => JoinParts(DescribeWorldSeed(data), worldName),
-            4 => JoinParts(LocalizeOr("UI.Rename", "Rename"), worldName),
-            5 => JoinParts(LocalizeOr("UI.Delete", "Delete"), worldName),
-            _ => JoinParts(LocalizeOr("UI.Button", $"Button {index + 1}"), worldName),
+            2 => TextSanitizer.JoinWithComma(DescribeCloudToggle(data?.IsCloudSave ?? false), worldName),
+            3 => TextSanitizer.JoinWithComma(DescribeWorldSeed(data), worldName),
+            4 => TextSanitizer.JoinWithComma(LocalizationHelper.GetTextOrFallback("UI.Rename", "Rename"), worldName),
+            5 => TextSanitizer.JoinWithComma(LocalizationHelper.GetTextOrFallback("UI.Delete", "Delete"), worldName),
+            6 => TextSanitizer.JoinWithComma(LocalizationHelper.GetTextOrFallback("UI.Delete", "Delete"), worldName),
+            _ => TextSanitizer.JoinWithComma(LocalizationHelper.GetTextOrFallback("UI.Button", $"Button {index + 1}"), worldName),
         };
     }
 
     private static string DescribeWorldSeed(WorldFileData? data)
     {
-        string label = LocalizeOr("UI.CopySeedToClipboard", "Copy seed");
+        string label = LocalizationHelper.GetTextOrFallback("UI.CopySeedToClipboard", "Copy seed");
         string seed = ExtractWorldSeed(data);
         return string.IsNullOrWhiteSpace(seed) ? label : $"{label}: {seed}";
     }
 
     private static string DescribeCloudToggle(bool isCloudSave)
     {
-        string label = LocalizeOr("UI.MoveToCloud", "Move to cloud");
+        string label = LocalizationHelper.GetTextOrFallback("UI.MoveToCloud", "Move to cloud");
         string status = DescribeCloudStatus(isCloudSave);
         if (string.IsNullOrWhiteSpace(status) || string.Equals(label, status, StringComparison.OrdinalIgnoreCase))
         {
             return label;
         }
 
-        return JoinParts(label, status);
+        return TextSanitizer.JoinWithComma(label, status);
     }
 
     private static string DescribeCloudStatus(bool isCloudSave)
     {
         if (isCloudSave)
         {
-            return LocalizeOr("UI.MoveFromCloud", "Stored in cloud");
+            return LocalizationHelper.GetTextOrFallback("UI.MoveFromCloud", "Stored in cloud");
         }
 
         string localized = Language.GetTextValue("UI.MoveToCloud");
@@ -562,7 +547,7 @@ internal sealed class MenuUiSelectionTracker
             return "Stored locally";
         }
 
-        return localized.Trim();
+        return TextSanitizer.Clean(localized);
     }
 
     private static string ExtractWorldSeed(WorldFileData? data)
@@ -579,7 +564,7 @@ internal sealed class MenuUiSelectionTracker
             MethodInfo? method = data.GetType().GetMethod("GetFullSeedText", flags, Array.Empty<Type>());
             if (method is not null && method.Invoke(data, Array.Empty<object?>()) is string value && !string.IsNullOrWhiteSpace(value))
             {
-                return value.Trim();
+                return TextSanitizer.Clean(value);
             }
         }
         catch
@@ -594,7 +579,7 @@ internal sealed class MenuUiSelectionTracker
                 PropertyInfo? property = source.GetType().GetProperty(name, propertyFlags);
                 if (property is not null && property.GetValue(source) is string value && !string.IsNullOrWhiteSpace(value))
                 {
-                    return value.Trim();
+                    return TextSanitizer.Clean(value);
                 }
             }
             catch
@@ -628,7 +613,7 @@ internal sealed class MenuUiSelectionTracker
             MethodInfo? method = data.GetType().GetMethod("GetSeedText", flags, Array.Empty<Type>());
             if (method is not null && method.Invoke(data, Array.Empty<object?>()) is string value && !string.IsNullOrWhiteSpace(value))
             {
-                return value.Trim();
+                return TextSanitizer.Clean(value);
             }
         }
         catch
