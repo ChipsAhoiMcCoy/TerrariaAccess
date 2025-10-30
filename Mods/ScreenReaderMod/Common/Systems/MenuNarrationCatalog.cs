@@ -35,8 +35,11 @@ internal static class MenuNarrationCatalog
         [18] = "Credits",
         [26] = "Achievements",
         [9] = "World deletion confirmation",
+        [1212] = "Language selection",
+        [1213] = "Language selection",
         [888] = "tModLoader menu",
         [889] = "Host and play settings",
+        [10017] = "tModLoader settings",
     };
 
     private static readonly Dictionary<int, Func<int, string>> ModeResolvers = new()
@@ -53,8 +56,32 @@ internal static class MenuNarrationCatalog
         [1127] = DescribeSettingsGameplayMenu,
         [12] = DescribeMultiplayerMenu,
         [9] = DescribeWorldDeletionConfirmation,
+        [1212] = static index => DescribeLanguageMenu(index, includeBackOption: false),
+        [1213] = static index => DescribeLanguageMenu(index, includeBackOption: true),
         [889] = DescribeHostAndPlayServerMenu,
+        [10017] = DescribeTmlSettingsMenu,
     };
+
+    private static readonly Lazy<FieldInfo?> ModNetDownloadModsField = new(() =>
+        typeof(ModNet).GetField("downloadModsFromServers", BindingFlags.NonPublic | BindingFlags.Static));
+
+    private static readonly Lazy<FieldInfo?> ModLoaderAutoReloadField = new(() =>
+        typeof(ModLoader).GetField("autoReloadRequiredModsLeavingModsScreen", BindingFlags.NonPublic | BindingFlags.Static));
+
+    private static readonly Lazy<FieldInfo?> ModLoaderRemoveMinZoomField = new(() =>
+        typeof(ModLoader).GetField("removeForcedMinimumZoom", BindingFlags.NonPublic | BindingFlags.Static));
+
+    private static readonly Lazy<FieldInfo?> ModLoaderAttackSpeedVisibilityField = new(() =>
+        typeof(ModLoader).GetField("attackSpeedScalingTooltipVisibility", BindingFlags.NonPublic | BindingFlags.Static));
+
+    private static readonly Lazy<FieldInfo?> ModLoaderNotifyMenuThemesField = new(() =>
+        typeof(ModLoader).GetField("notifyNewMainMenuThemes", BindingFlags.NonPublic | BindingFlags.Static));
+
+    private static readonly Lazy<FieldInfo?> ModLoaderShowUpdatedModsInfoField = new(() =>
+        typeof(ModLoader).GetField("showNewUpdatedModsInfo", BindingFlags.NonPublic | BindingFlags.Static));
+
+    private static readonly Lazy<FieldInfo?> ModLoaderShowConfirmationField = new(() =>
+        typeof(ModLoader).GetField("showConfirmationWindowWhenEnableDisableAllMods", BindingFlags.NonPublic | BindingFlags.Static));
 
     private static FieldInfo? _menuItemsField;
     private static readonly Lazy<MethodInfo?> AddMenuButtonsMethod = new(() =>
@@ -113,6 +140,35 @@ internal static class MenuNarrationCatalog
         }
 
         return $"Option {focusedIndex + 1}";
+    }
+
+    private static bool TryReadStatic<T>(Lazy<FieldInfo?> fieldHandle, out T value) where T : struct
+    {
+        try
+        {
+            if (fieldHandle.Value is FieldInfo field && field.GetValue(null) is T typed)
+            {
+                value = typed;
+                return true;
+            }
+        }
+        catch
+        {
+            // ignore reflection failures
+        }
+
+        value = default;
+        return false;
+    }
+
+    private static bool ReadBool(Lazy<FieldInfo?> fieldHandle, bool fallback)
+    {
+        return TryReadStatic(fieldHandle, out bool value) ? value : fallback;
+    }
+
+    private static int ReadInt(Lazy<FieldInfo?> fieldHandle, int fallback)
+    {
+        return TryReadStatic(fieldHandle, out int value) ? value : fallback;
     }
 
     private static string TryGetFromLangMenu(int focusedIndex)
@@ -564,9 +620,93 @@ internal static class MenuNarrationCatalog
         return OptionOrEmpty(items, index);
     }
 
+    private static string DescribeLanguageMenu(int index, bool includeBackOption)
+    {
+        string[] menuItems = GetMenuItemArray();
+        string header = TextSanitizer.Clean(Lang.menu[102].Value);
+        if (menuItems.Length > 0 && string.Equals(menuItems[0], header, StringComparison.OrdinalIgnoreCase))
+        {
+            return OptionOrEmpty(menuItems, index);
+        }
+
+        var entries = new List<string> { header };
+        string[] languageKeys =
+        {
+            "Language.English",
+            "Language.German",
+            "Language.Italian",
+            "Language.French",
+            "Language.Spanish",
+            "Language.Russian",
+            "Language.Chinese",
+            "Language.Portuguese",
+            "Language.Polish",
+        };
+
+        foreach (string key in languageKeys)
+        {
+            string value = TextSanitizer.Clean(Language.GetTextValue(key));
+            if (!string.IsNullOrWhiteSpace(value))
+            {
+                entries.Add(value);
+            }
+        }
+
+        if (includeBackOption)
+        {
+            entries.Add(TextSanitizer.Clean(Lang.menu[5].Value));
+        }
+
+        return OptionOrEmpty(entries, index);
+    }
+
+    private static string DescribeTmlSettingsMenu(int index)
+    {
+        string[] menuItems = GetMenuItemArray();
+        string expectedYes = TextSanitizer.Clean(Language.GetTextValue("tModLoader.DownloadFromServersYes"));
+        string expectedNo = TextSanitizer.Clean(Language.GetTextValue("tModLoader.DownloadFromServersNo"));
+        if (menuItems.Length >= 1 && (string.Equals(menuItems[0], expectedYes, StringComparison.OrdinalIgnoreCase) || string.Equals(menuItems[0], expectedNo, StringComparison.OrdinalIgnoreCase)))
+        {
+            return OptionOrEmpty(menuItems, index);
+        }
+
+        bool downloadMods = ReadBool(ModNetDownloadModsField, fallback: true);
+        bool autoReload = ReadBool(ModLoaderAutoReloadField, fallback: true);
+        bool removeMinimumZoom = ReadBool(ModLoaderRemoveMinZoomField, fallback: false);
+        int attackSpeedVisibility = ReadInt(ModLoaderAttackSpeedVisibilityField, fallback: 0);
+        bool notifyMenuThemes = ReadBool(ModLoaderNotifyMenuThemesField, fallback: true);
+        bool showUpdatedModsInfo = ReadBool(ModLoaderShowUpdatedModsInfoField, fallback: true);
+        bool showConfirmation = ReadBool(ModLoaderShowConfirmationField, fallback: true);
+
+        var entries = new List<string>
+        {
+            TextSanitizer.Clean(Language.GetTextValue(downloadMods ? "tModLoader.DownloadFromServersYes" : "tModLoader.DownloadFromServersNo")),
+            TextSanitizer.Clean(Language.GetTextValue(autoReload ? "tModLoader.AutomaticallyReloadRequiredModsLeavingModsScreenYes" : "tModLoader.AutomaticallyReloadRequiredModsLeavingModsScreenNo")),
+            TextSanitizer.Clean(Language.GetTextValue("tModLoader.RemoveForcedMinimumZoom" + (removeMinimumZoom ? "Yes" : "No"))),
+            TextSanitizer.Clean(Language.GetTextValue($"tModLoader.AttackSpeedScalingTooltipVisibility{attackSpeedVisibility}")),
+            TextSanitizer.Clean(Language.GetTextValue("tModLoader.ShowModMenuNotifications" + (notifyMenuThemes ? "Yes" : "No"))),
+            TextSanitizer.Clean(Language.GetTextValue("tModLoader.ShowNewUpdatedModsInfo" + (showUpdatedModsInfo ? "Yes" : "No"))),
+            TextSanitizer.Clean(Language.GetTextValue("tModLoader.ShowConfirmationWindowWhenEnableDisableAllMods" + (showConfirmation ? "Yes" : "No"))),
+            TextSanitizer.Clean(Lang.menu[5].Value),
+        };
+
+        return OptionOrEmpty(entries, index);
+    }
+
     private static string DescribeSettingsVideoMenu(int index)
     {
         int frameSkipIndex = (int)Main.FrameSkipMode;
+        string[] menuItems = GetMenuItemArray();
+        if ((uint)index < (uint)menuItems.Length)
+        {
+            string actual = TextSanitizer.Clean(menuItems[index]);
+            if (!string.IsNullOrWhiteSpace(actual))
+            {
+                string backLabel = TextSanitizer.Clean(Lang.menu[5].Value);
+                return string.Equals(actual, backLabel, StringComparison.OrdinalIgnoreCase) ? backLabel : actual;
+            }
+        }
+
         var items = new List<string>
         {
             TextSanitizer.Clean(Lang.menu[51].Value),

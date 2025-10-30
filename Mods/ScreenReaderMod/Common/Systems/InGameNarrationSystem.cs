@@ -1064,7 +1064,9 @@ public sealed class InGameNarrationSystem : ModSystem
                 return leftLabel;
             }
 
-            if (categoryId >= 0 && CategoryFallbackLabels.TryGetValue(categoryId, out string fallbackLabel))
+            if (categoryId >= 0 &&
+                CategoryFallbackLabels.TryGetValue(categoryId, out string? fallbackLabel) &&
+                !string.IsNullOrWhiteSpace(fallbackLabel))
             {
                 return fallbackLabel;
             }
@@ -2645,6 +2647,7 @@ public sealed class InGameNarrationSystem : ModSystem
         private int _lastTileX = int.MinValue;
         private int _lastTileY = int.MinValue;
         private bool _lastSmartCursorActive;
+        private bool _wasHoveringPlayer;
         private static SoundEffect? _cursorTone;
         private static readonly List<SoundEffectInstance> ActiveInstances = new();
 
@@ -2661,12 +2664,12 @@ public sealed class InGameNarrationSystem : ModSystem
             bool hasSmartInteract = Main.HasSmartInteractTarget;
             bool cursorIsFree = !smartCursorActive && !hasSmartInteract;
 
-            if (_lastSmartCursorActive && cursorIsFree)
+            if (_lastSmartCursorActive && !smartCursorActive && cursorIsFree)
             {
                 CenterCursorOnPlayer(player);
             }
 
-            _lastSmartCursorActive = smartCursorActive || hasSmartInteract;
+            _lastSmartCursorActive = smartCursorActive;
 
             if (!cursorIsFree)
             {
@@ -2678,19 +2681,40 @@ public sealed class InGameNarrationSystem : ModSystem
             int tileX = (int)(world.X / 16f);
             int tileY = (int)(world.Y / 16f);
 
+            bool wasHoveringPlayer = _wasHoveringPlayer;
             bool tileChanged = tileX != _lastTileX || tileY != _lastTileY;
-            if (!tileChanged)
+            if (tileChanged)
             {
+                Vector2 tileCenter = new(tileX * 16f + 8f, tileY * 16f + 8f);
+                PlayCursorCue(player, tileCenter);
+
+                _lastTileX = tileX;
+                _lastTileY = tileY;
+            }
+
+            bool hoveringPlayer = IsHoveringPlayer(player);
+
+            if (!PlayerInput.UsingGamepad)
+            {
+                _wasHoveringPlayer = hoveringPlayer;
                 return;
             }
 
-            Vector2 tileCenter = new(tileX * 16f + 8f, tileY * 16f + 8f);
-            PlayCursorCue(player, tileCenter);
+            if (hoveringPlayer)
+            {
+                if (!wasHoveringPlayer || tileChanged)
+                {
+                    AnnouncePlayer(player);
+                }
 
-            _lastTileX = tileX;
-            _lastTileY = tileY;
+                _wasHoveringPlayer = true;
+                return;
+            }
 
-            if (!PlayerInput.UsingGamepad)
+            _wasHoveringPlayer = false;
+
+            bool shouldAnnounceTile = tileChanged || wasHoveringPlayer;
+            if (!shouldAnnounceTile)
             {
                 return;
             }
@@ -2722,6 +2746,20 @@ public sealed class InGameNarrationSystem : ModSystem
         {
             _lastTileX = int.MinValue;
             _lastTileY = int.MinValue;
+            _wasHoveringPlayer = false;
+        }
+
+        private static bool IsHoveringPlayer(Player player)
+        {
+            Vector2 world = Main.MouseWorld;
+            Rectangle bounds = player.getRect();
+            bounds.Inflate(4, 4);
+            return bounds.Contains((int)world.X, (int)world.Y);
+        }
+
+        private void AnnouncePlayer(Player _)
+        {
+            ScreenReaderService.Announce("You", force: true);
         }
 
         private static void CenterCursorOnPlayer(Player player)
@@ -2745,7 +2783,7 @@ public sealed class InGameNarrationSystem : ModSystem
 
             float pan = MathHelper.Clamp(offset.X / 480f, -1f, 1f);
             float pitch = MathHelper.Clamp(-offset.Y / 320f, -0.6f, 0.6f);
-            float volume = MathHelper.Clamp(0.6f + Math.Abs(pitch) * 0.3f, 0f, 1f);
+            float volume = MathHelper.Clamp(0.35f + Math.Abs(pitch) * 0.2f, 0f, 0.7f);
 
             SoundEffectInstance instance = tone.CreateInstance();
             instance.IsLooped = false;
