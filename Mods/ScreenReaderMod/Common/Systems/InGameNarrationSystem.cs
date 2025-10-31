@@ -2671,6 +2671,8 @@ public sealed class InGameNarrationSystem : ModSystem
         private int _lastTileY = int.MinValue;
         private bool _lastSmartCursorActive;
         private bool _wasHoveringPlayer;
+        private int _originTileX = int.MinValue;
+        private int _originTileY = int.MinValue;
         private static SoundEffect? _cursorTone;
         private static readonly List<SoundEffectInstance> ActiveInstances = new();
 
@@ -2713,6 +2715,12 @@ public sealed class InGameNarrationSystem : ModSystem
 
                 _lastTileX = tileX;
                 _lastTileY = tileY;
+
+                if (_originTileX == int.MinValue || _originTileY == int.MinValue)
+                {
+                    _originTileX = tileX;
+                    _originTileY = tileY;
+                }
             }
 
             bool hoveringPlayer = IsHoveringPlayer(player);
@@ -2742,16 +2750,20 @@ public sealed class InGameNarrationSystem : ModSystem
                 return;
             }
 
-            if (!TileDescriptor.TryDescribe(tileX, tileY, out int tileType, out string? name))
+            TileDescriptor.TryDescribe(tileX, tileY, out _, out string? name);
+
+            string coordinates = BuildCoordinateMessage(tileX, tileY);
+            if (string.IsNullOrWhiteSpace(name))
             {
-                ScreenReaderService.Announce("Empty", force: true);
+                if (!string.IsNullOrWhiteSpace(coordinates))
+                {
+                    ScreenReaderService.Announce(coordinates, force: true);
+                }
                 return;
             }
 
-            if (!string.IsNullOrWhiteSpace(name))
-            {
-                ScreenReaderService.Announce(name, force: true);
-            }
+            string message = string.IsNullOrWhiteSpace(coordinates) ? name : $"{name}, {coordinates}";
+            ScreenReaderService.Announce(message, force: true);
         }
 
         private void ResetAll()
@@ -2770,6 +2782,8 @@ public sealed class InGameNarrationSystem : ModSystem
             _lastTileX = int.MinValue;
             _lastTileY = int.MinValue;
             _wasHoveringPlayer = false;
+            _originTileX = int.MinValue;
+            _originTileY = int.MinValue;
         }
 
         private static bool IsHoveringPlayer(Player player)
@@ -2795,6 +2809,27 @@ public sealed class InGameNarrationSystem : ModSystem
             Main.mouseY = centeredY;
             PlayerInput.MouseX = centeredX;
             PlayerInput.MouseY = centeredY;
+        }
+
+        private string BuildCoordinateMessage(int tileX, int tileY)
+        {
+            if (_originTileX == int.MinValue || _originTileY == int.MinValue)
+            {
+                return string.Empty;
+            }
+
+            int offsetX = tileX - _originTileX;
+            int offsetY = tileY - _originTileY;
+
+            string Format(int value) =>
+                value switch
+                {
+                    > 0 => $"+{value}",
+                    < 0 => value.ToString(),
+                    _ => "0",
+                };
+
+            return $"X {Format(offsetX)}, Y {Format(offsetY)}";
         }
 
         private static void PlayCursorCue(Player player, Vector2 tileCenterWorld)
