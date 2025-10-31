@@ -67,7 +67,30 @@ public sealed class InGameNarrationSystem : ModSystem
 
     public override void PostUpdatePlayers()
     {
-        if (Main.dedServ)
+        TryUpdateNarrators(requirePaused: false);
+    }
+
+    public override void UpdateUI(GameTime gameTime)
+    {
+        TryUpdateNarrators(requirePaused: true);
+    }
+
+    private void TryUpdateNarrators(bool requirePaused)
+    {
+        if (Main.dedServ || Main.gameMenu)
+        {
+            return;
+        }
+
+        bool isPaused = Main.gamePaused;
+        if (requirePaused)
+        {
+            if (!isPaused)
+            {
+                return;
+            }
+        }
+        else if (isPaused)
         {
             return;
         }
