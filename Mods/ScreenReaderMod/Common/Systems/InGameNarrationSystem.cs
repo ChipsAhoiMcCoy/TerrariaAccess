@@ -29,6 +29,7 @@ public sealed class InGameNarrationSystem : ModSystem
 {
     private readonly HotbarNarrator _hotbarNarrator = new();
     private readonly SmartCursorNarrator _smartCursorNarrator = new();
+    private readonly CraftingNarrator _craftingNarrator = new();
     private readonly CursorNarrator _cursorNarrator = new();
     private readonly InventoryNarrator _inventoryNarrator = new();
     private readonly NpcDialogueNarrator _npcDialogueNarrator = new();
@@ -103,6 +104,7 @@ public sealed class InGameNarrationSystem : ModSystem
 
         _hotbarNarrator.Update(player);
         _inventoryNarrator.Update(player);
+        _craftingNarrator.Update(player);
         _smartCursorNarrator.Update();
         _cursorNarrator.Update();
         _npcDialogueNarrator.Update(player);
@@ -644,7 +646,7 @@ public sealed class InGameNarrationSystem : ModSystem
 
             if (leftHover >= 0 && leftHover != _lastLeftHover)
             {
-                string? label = GetLeftCategoryLabel(leftHover);
+                string? label = GetLeftCategoryLabel(leftHover, allowMouseTextFallback: true);
                 if (!string.IsNullOrWhiteSpace(label))
                 {
                     ScreenReaderService.Announce(label);
@@ -656,7 +658,7 @@ public sealed class InGameNarrationSystem : ModSystem
             int selectedLeftIndex = leftLock >= 0 ? leftLock : leftHover;
             int categoryId = ResolveCategoryId(rawCategory, selectedLeftIndex);
 
-            string? categoryLabel = GetCategoryLabelById(categoryId, selectedLeftIndex);
+            string? categoryLabel = GetCategoryLabelById(categoryId, selectedLeftIndex, leftHover);
             if (!string.IsNullOrWhiteSpace(categoryLabel))
             {
                 bool categoryChanged = categoryId != _lastCategory;
@@ -1040,7 +1042,7 @@ public sealed class InGameNarrationSystem : ModSystem
             return string.Empty;
         }
 
-        private string? GetLeftCategoryLabel(int leftIndex)
+        private string? GetLeftCategoryLabel(int leftIndex, bool allowMouseTextFallback)
         {
             if (leftIndex < 0)
             {
@@ -1052,10 +1054,13 @@ public sealed class InGameNarrationSystem : ModSystem
                 return label;
             }
 
-            string mouseText = ReadString(_mouseOverTextField);
-            if (!string.IsNullOrWhiteSpace(mouseText))
+            if (allowMouseTextFallback)
             {
-                return TextSanitizer.Clean(mouseText);
+                string mouseText = ReadString(_mouseOverTextField);
+                if (!string.IsNullOrWhiteSpace(mouseText))
+                {
+                    return TextSanitizer.Clean(mouseText);
+                }
             }
 
             if ((uint)leftIndex < (uint)CategoryLabelOverrides.Length)
@@ -1075,7 +1080,7 @@ public sealed class InGameNarrationSystem : ModSystem
             return null;
         }
 
-        private string? GetCategoryLabelById(int categoryId, int selectedLeftIndex)
+        private string? GetCategoryLabelById(int categoryId, int selectedLeftIndex, int leftHover)
         {
             if (categoryId >= 0 && IngameOptionsLabelTracker.TryGetCategoryLabel(categoryId, out string label) && !string.IsNullOrWhiteSpace(label))
             {
@@ -1096,7 +1101,8 @@ public sealed class InGameNarrationSystem : ModSystem
 
             if (selectedLeftIndex >= 0)
             {
-                return GetLeftCategoryLabel(selectedLeftIndex);
+                bool allowMouseFallback = leftHover == selectedLeftIndex;
+                return GetLeftCategoryLabel(selectedLeftIndex, allowMouseTextFallback: allowMouseFallback);
             }
 
             return null;
@@ -1321,6 +1327,12 @@ public sealed class InGameNarrationSystem : ModSystem
 
         public void Update(Player player)
         {
+            if (ShouldSuppressHotbarNarration(player))
+            {
+                Reset();
+                return;
+            }
+
             int selectedSlot = player.selectedItem;
             Item held = player.HeldItem ?? new Item();
 
@@ -1342,6 +1354,31 @@ public sealed class InGameNarrationSystem : ModSystem
             {
                 ScreenReaderService.Announce(description);
             }
+        }
+
+        private void Reset()
+        {
+            _lastSelectedSlot = -1;
+            _lastItemType = -1;
+            _lastPrefix = -1;
+            _lastStack = -1;
+        }
+
+        private static bool ShouldSuppressHotbarNarration(Player player)
+        {
+            int selectedSlot = player.selectedItem;
+            if (selectedSlot < 0 || selectedSlot > 9)
+            {
+                return true;
+            }
+
+            if (!PlayerInput.UsingGamepadUI)
+            {
+                return false;
+            }
+
+            int point = UILinkPointNavigator.CurrentPoint;
+            return CraftingNarrator.IsCraftingLinkPoint(point);
         }
 
         private static string DescribeHeldItem(int slot, Item item)
@@ -1369,6 +1406,10 @@ public sealed class InGameNarrationSystem : ModSystem
         private SlotFocus? _currentFocus;
 
         private static SlotFocus? _pendingFocus;
+        private static readonly Dictionary<int, SlotFocus> LinkPointFocusCache = new();
+        private static (int X, int Y)? _storedCursorPosition;
+        private static (int X, int Y)? _preInventoryCursorPosition;
+        private static bool _wasInventoryUiOpen;
 
         private static readonly Lazy<PropertyInfo?> LinkPointsProperty = new(() =>
             typeof(UILinkPointNavigator).GetProperty("Points", BindingFlags.Static | BindingFlags.Public | BindingFlags.NonPublic));
@@ -1391,35 +1432,59 @@ public sealed class InGameNarrationSystem : ModSystem
 
         public static void RecordFocus(Item[] inventory, int context, int slot)
         {
-            _pendingFocus = new SlotFocus(inventory, null, context, slot);
+            SlotFocus focus = new(inventory, null, context, slot);
+            _pendingFocus = focus;
+            CacheLinkPointFocus(focus);
             LogLinkPointState(context, slot);
         }
 
         public static void RecordFocus(Item item, int context)
         {
-            _pendingFocus = new SlotFocus(null, item, context, -1);
+            SlotFocus focus = new(null, item, context, -1);
+            _pendingFocus = focus;
+            CacheLinkPointFocus(focus);
             LogLinkPointState(context, -1);
         }
 
         public void Update(Player player)
         {
-            if (!IsInventoryUiOpen(player))
+            bool inventoryOpen = IsInventoryUiOpen(player);
+            if (!inventoryOpen)
             {
+                RestoreCursorPosition();
                 Reset();
+                CacheCursorPositionWhileFree();
+                _wasInventoryUiOpen = false;
                 return;
             }
+
+            if (!_wasInventoryUiOpen)
+            {
+                InitializeCursorRestore();
+            }
+
+            _wasInventoryUiOpen = true;
 
             if (_pendingFocus.HasValue)
             {
                 _currentFocus = _pendingFocus;
                 _pendingFocus = null;
             }
+            else if (PlayerInput.UsingGamepadUI)
+            {
+                SlotFocus? resolved = ResolveFocusFromLinkPoint();
+                if (resolved.HasValue)
+                {
+                    _currentFocus = resolved;
+                }
+            }
 
+            MaintainCursorWhileInventoryOpen();
             HandleMouseItem();
             HandleHoverItem(player);
         }
 
-        private static bool IsInventoryUiOpen(Player player)
+        internal static bool IsInventoryUiOpen(Player player)
         {
             return Main.playerInventory ||
                    player.chest != -1 ||
@@ -1453,12 +1518,33 @@ public sealed class InGameNarrationSystem : ModSystem
 
         private void HandleHoverItem(Player player)
         {
-            Item hover = Main.HoverItem;
+            SlotFocus? focus = _currentFocus;
+            Item? focusedItem = GetItemFromFocus(focus);
+            bool usingGamepadFocus = PlayerInput.UsingGamepadUI && focusedItem is not null;
+
+            if (PlayerInput.UsingGamepadUI)
+            {
+                int currentPoint = UILinkPointNavigator.CurrentPoint;
+                if (CraftingNarrator.IsCraftingLinkPoint(currentPoint))
+                {
+                    return;
+                }
+            }
+
+            Item hover = usingGamepadFocus ? focusedItem! : Main.HoverItem;
             ItemIdentity identity = ItemIdentity.From(hover);
-            string rawTooltip = Main.hoverItemName ?? string.Empty;
+
+            string rawTooltip;
+            if (usingGamepadFocus)
+            {
+                rawTooltip = GetHoverNameForItem(hover);
+            }
+            else
+            {
+                rawTooltip = Main.hoverItemName ?? string.Empty;
+            }
             string normalizedTooltip = GlyphTagFormatter.Normalize(rawTooltip);
 
-            SlotFocus? focus = _currentFocus;
             string location = DescribeLocation(player, identity, focus);
 
             if (TryAnnounceSpecialSelection(identity.IsAir, location))
@@ -1470,7 +1556,7 @@ public sealed class InGameNarrationSystem : ModSystem
             {
                 string label = ComposeItemLabel(hover);
                 string message = string.IsNullOrEmpty(location) ? label : $"{label}, {location}";
-                string? details = BuildTooltipDetails(hover, rawTooltip);
+                string? details = BuildTooltipDetails(hover, rawTooltip, allowMouseText: !usingGamepadFocus);
                 string combined = CombineItemAnnouncement(message, details);
 
                 if (identity.Equals(_lastHover) &&
@@ -1511,6 +1597,11 @@ public sealed class InGameNarrationSystem : ModSystem
                 return;
             }
 
+            if (usingGamepadFocus)
+            {
+                return;
+            }
+
             string? mouseText = TryGetMouseText();
             if (!string.IsNullOrWhiteSpace(mouseText))
             {
@@ -1542,6 +1633,177 @@ public sealed class InGameNarrationSystem : ModSystem
             }
         }
 
+        private static void CacheLinkPointFocus(SlotFocus focus)
+        {
+            if (!PlayerInput.UsingGamepadUI)
+            {
+                return;
+            }
+
+            int point = UILinkPointNavigator.CurrentPoint;
+            if (point < 0)
+            {
+                return;
+            }
+
+            LinkPointFocusCache[point] = focus;
+        }
+
+        private static SlotFocus? ResolveFocusFromLinkPoint()
+        {
+            int point = UILinkPointNavigator.CurrentPoint;
+            if (point < 0)
+            {
+                return null;
+            }
+
+            if (!LinkPointFocusCache.TryGetValue(point, out SlotFocus focus))
+            {
+                return null;
+            }
+
+            if (IsFocusValid(focus))
+            {
+                return focus;
+            }
+
+            LinkPointFocusCache.Remove(point);
+            return null;
+        }
+
+        private static void CacheCursorPositionWhileFree()
+        {
+            if (PlayerInput.UsingGamepadUI)
+            {
+                return;
+            }
+
+            if (Main.SmartCursorIsUsed || Main.SmartCursorWanted)
+            {
+                _preInventoryCursorPosition = null;
+                return;
+            }
+
+            int clampedX = Math.Clamp(Main.mouseX, 0, Main.screenWidth - 1);
+            int clampedY = Math.Clamp(Main.mouseY, 0, Main.screenHeight - 1);
+            _preInventoryCursorPosition = (clampedX, clampedY);
+        }
+
+        private static void InitializeCursorRestore()
+        {
+            if (Main.SmartCursorIsUsed || Main.SmartCursorWanted)
+            {
+                _storedCursorPosition = null;
+                return;
+            }
+
+            if (_preInventoryCursorPosition.HasValue)
+            {
+                _storedCursorPosition = _preInventoryCursorPosition;
+                return;
+            }
+
+            if (!PlayerInput.UsingGamepadUI)
+            {
+                _storedCursorPosition = null;
+                return;
+            }
+
+            int clampedX = Math.Clamp(PlayerInput.MouseX, 0, Main.screenWidth - 1);
+            int clampedY = Math.Clamp(PlayerInput.MouseY, 0, Main.screenHeight - 1);
+            _storedCursorPosition = (clampedX, clampedY);
+        }
+
+        private static void MaintainCursorWhileInventoryOpen()
+        {
+            if (!PlayerInput.UsingGamepadUI)
+            {
+                return;
+            }
+
+            int clampedX = Math.Clamp(PlayerInput.MouseX, 0, Main.screenWidth - 1);
+            int clampedY = Math.Clamp(PlayerInput.MouseY, 0, Main.screenHeight - 1);
+
+            if (!_storedCursorPosition.HasValue)
+            {
+                _storedCursorPosition = (clampedX, clampedY);
+            }
+        }
+
+        private static void RestoreCursorPosition()
+        {
+            if (!_storedCursorPosition.HasValue)
+            {
+                return;
+            }
+
+            (int x, int y) = _storedCursorPosition.Value;
+            SetCursorPosition(x, y);
+            _storedCursorPosition = null;
+        }
+
+        private static void SetCursorPosition(int x, int y)
+        {
+            int clampedX = Math.Clamp(x, 0, Main.screenWidth - 1);
+            int clampedY = Math.Clamp(y, 0, Main.screenHeight - 1);
+
+            Main.mouseX = clampedX;
+            Main.mouseY = clampedY;
+            PlayerInput.MouseX = clampedX;
+            PlayerInput.MouseY = clampedY;
+        }
+
+        private static bool IsFocusValid(SlotFocus focus)
+        {
+            if (focus.Items is Item[] items)
+            {
+                int index = focus.Slot;
+                return (uint)index < (uint)items.Length;
+            }
+
+            return focus.SingleItem is not null;
+        }
+
+        private static Item? GetItemFromFocus(SlotFocus? focus)
+        {
+            if (!focus.HasValue)
+            {
+                return null;
+            }
+
+            SlotFocus value = focus.Value;
+
+            if (value.Items is Item[] items)
+            {
+                int index = value.Slot;
+                if ((uint)index < (uint)items.Length)
+                {
+                    return items[index];
+                }
+
+                return null;
+            }
+
+            return value.SingleItem;
+        }
+
+        private static string GetHoverNameForItem(Item item)
+        {
+            string name = item.AffixName();
+            if (!string.IsNullOrWhiteSpace(name))
+            {
+                return name;
+            }
+
+            if (!string.IsNullOrWhiteSpace(item.Name))
+            {
+                return item.Name;
+            }
+
+            string fallback = Lang.GetItemNameValue(item.type);
+            return string.IsNullOrWhiteSpace(fallback) ? string.Empty : fallback;
+        }
+
         private void Reset()
         {
             _lastHover = ItemIdentity.Empty;
@@ -1554,6 +1816,8 @@ public sealed class InGameNarrationSystem : ModSystem
             _lastAnnouncedMessage = null;
             _currentFocus = null;
             _pendingFocus = null;
+            LinkPointFocusCache.Clear();
+            _storedCursorPosition = null;
         }
 
         private static string DescribeLocation(Player player, ItemIdentity identity, SlotFocus? focus)
@@ -1864,7 +2128,7 @@ public sealed class InGameNarrationSystem : ModSystem
             return null;
         }
 
-        private static string? BuildTooltipDetails(Item item, string hoverName)
+        internal static string? BuildTooltipDetails(Item item, string hoverName, bool allowMouseText = true)
         {
             if (item is null || item.IsAir)
             {
@@ -1873,10 +2137,13 @@ public sealed class InGameNarrationSystem : ModSystem
 
             HashSet<string> nameCandidates = BuildItemNameCandidates(item, hoverName);
             List<string>? lines = null;
-            string? raw = TryGetMouseText();
-            if (!string.IsNullOrWhiteSpace(raw))
+            if (allowMouseText)
             {
-                lines = ExtractTooltipLines(raw, nameCandidates);
+                string? raw = TryGetMouseText();
+                if (!string.IsNullOrWhiteSpace(raw))
+                {
+                    lines = ExtractTooltipLines(raw, nameCandidates);
+                }
             }
 
             if (lines is null || lines.Count == 0)
@@ -2187,7 +2454,7 @@ public sealed class InGameNarrationSystem : ModSystem
             return null;
         }
 
-        private static string CombineItemAnnouncement(string message, string? details)
+        internal static string CombineItemAnnouncement(string message, string? details)
         {
             string normalizedMessage = GlyphTagFormatter.Normalize(message.Trim());
             if (string.IsNullOrWhiteSpace(details))
@@ -2328,71 +2595,10 @@ public sealed class InGameNarrationSystem : ModSystem
 
             if (Main.ingameOptionsWindow)
             {
-                return DescribeIngameOptionsFocus(hoverIsAir, location);
+                return null;
             }
 
             return null;
-        }
-
-        private static string? DescribeIngameOptionsFocus(bool hoverIsAir, string? location)
-        {
-            int rightHover = IngameOptions.rightHover;
-            int rightLock = IngameOptions.rightLock;
-            int leftHover = GetStaticFieldValue(IngameOptionsLeftHoverField);
-
-            if (leftHover >= 0 && rightHover < 0 && rightLock < 0)
-            {
-                string categoryLabel = DescribeIngameOptionsCategory(leftHover);
-                if (!string.IsNullOrWhiteSpace(categoryLabel))
-                {
-                    return categoryLabel;
-                }
-            }
-
-            int feature = UILinkPointNavigator.Shortcuts.OPTIONS_BUTTON_SPECIALFEATURE;
-            string? label = feature switch
-            {
-                1 => $"Background parallax {Main.bgScroll} percent",
-                2 => $"Music volume {Math.Round(Main.musicVolume * 100f)} percent",
-                3 => $"Sound volume {Math.Round(Main.soundVolume * 100f)} percent",
-                4 => $"Ambient volume {Math.Round(Main.ambientVolume * 100f)} percent",
-                5 => "Cursor color hue slider",
-                6 => "Cursor color saturation slider",
-                7 => "Cursor color brightness slider",
-                8 => "Cursor color opacity slider",
-                9 => "Hair style selector",
-                _ => null,
-            };
-
-            if (!string.IsNullOrEmpty(label))
-            {
-                return label;
-            }
-
-            string? tooltip = TryGetMouseText();
-            if (!string.IsNullOrWhiteSpace(tooltip))
-            {
-                string normalized = GlyphTagFormatter.Normalize(tooltip).Trim();
-                if (!string.IsNullOrWhiteSpace(normalized))
-                {
-                    return normalized;
-                }
-            }
-
-            LogIngameOptionsState(feature, hoverIsAir, location);
-            return null;
-        }
-
-        private static string DescribeIngameOptionsCategory(int index)
-        {
-            return index switch
-            {
-                5 => TextSanitizer.Clean(Language.GetTextValue("tModLoader.ModControls")),
-                6 => TextSanitizer.Clean(Language.GetTextValue("tModLoader.ModConfiguration")),
-                7 => TextSanitizer.Clean(Language.GetTextValue("tModLoader.ModControls")),
-                8 => TextSanitizer.Clean(Language.GetTextValue("tModLoader.ModConfiguration")),
-                _ => string.Empty,
-            };
         }
 
         private static int _lastOptionsStateHash = int.MinValue;
@@ -2506,6 +2712,209 @@ public sealed class InGameNarrationSystem : ModSystem
         }
     }
 
+    private sealed class CraftingNarrator
+    {
+        private int _lastFocusIndex = -1;
+        private int _lastRecipeIndex = -1;
+        private string? _lastAnnouncement;
+        private int _lastCount = -1;
+        private string? _lastIngredientsMessage;
+
+        private static readonly Lazy<HashSet<int>> CraftingLinkPoints = new(() =>
+        {
+            HashSet<int> points = new();
+            try
+            {
+                FieldInfo[] fields = typeof(UILinkPointNavigator.Shortcuts).GetFields(BindingFlags.Static | BindingFlags.Public | BindingFlags.NonPublic);
+                foreach (FieldInfo field in fields)
+                {
+                    if (field.FieldType != typeof(int))
+                    {
+                        continue;
+                    }
+
+                    string name = field.Name;
+                    if (string.IsNullOrWhiteSpace(name))
+                    {
+                        continue;
+                    }
+
+                    if (!name.Contains("CRAFT", StringComparison.OrdinalIgnoreCase))
+                    {
+                        continue;
+                    }
+
+                    if (field.GetValue(null) is int value && value >= 0)
+                    {
+                        points.Add(value);
+                    }
+                }
+            }
+            catch (Exception ex)
+            {
+                ScreenReaderMod.Instance?.Logger.Warn($"[CraftingNarrator] Failed to discover crafting link points: {ex}");
+            }
+
+            return points;
+        });
+
+        public void Update(Player player)
+        {
+            if (!InventoryNarrator.IsInventoryUiOpen(player))
+            {
+                Reset();
+                return;
+            }
+
+            if (!PlayerInput.UsingGamepadUI)
+            {
+                Reset();
+                return;
+            }
+
+            int currentPoint = UILinkPointNavigator.CurrentPoint;
+            if (!IsCraftingLinkPoint(currentPoint))
+            {
+                ResetFocus();
+                return;
+            }
+
+            int available = Math.Clamp(Main.numAvailableRecipes, 0, Main.availableRecipe.Length);
+            if (available <= 0)
+            {
+                ResetFocus();
+                return;
+            }
+
+            int focus = Utils.Clamp(Main.focusRecipe, 0, available - 1);
+            int recipeIndex = (focus >= 0 && focus < Main.availableRecipe.Length) ? Main.availableRecipe[focus] : -1;
+            if (recipeIndex < 0 || recipeIndex >= Main.recipe.Length)
+            {
+                ResetFocus();
+                return;
+            }
+
+            Recipe recipe = Main.recipe[recipeIndex];
+            Item result = recipe.createItem;
+            if (result is null || result.IsAir)
+            {
+                ResetFocus();
+                return;
+            }
+
+            string label = ComposeItemLabel(result);
+            if (result.stack > 1)
+            {
+                label = $"{result.stack} {label}";
+            }
+
+            string? details = InventoryNarrator.BuildTooltipDetails(result, result.Name ?? string.Empty, allowMouseText: false);
+            string combined = InventoryNarrator.CombineItemAnnouncement(label, details);
+            if (string.IsNullOrWhiteSpace(combined))
+            {
+                combined = label;
+            }
+
+            string itemMessage = $"{combined}. Recipe {focus + 1} of {available}";
+            itemMessage = GlyphTagFormatter.Normalize(itemMessage);
+
+            string? ingredientMessage = BuildIngredientMessage(recipe);
+
+            bool itemChanged =
+                focus != _lastFocusIndex ||
+                recipeIndex != _lastRecipeIndex ||
+                available != _lastCount ||
+                !string.Equals(itemMessage, _lastAnnouncement, StringComparison.Ordinal);
+
+            bool ingredientsChanged = !string.Equals(ingredientMessage, _lastIngredientsMessage, StringComparison.Ordinal);
+
+            if (!itemChanged && !ingredientsChanged)
+            {
+                return;
+            }
+
+            _lastFocusIndex = focus;
+            _lastRecipeIndex = recipeIndex;
+            _lastAnnouncement = itemMessage;
+            _lastCount = available;
+            _lastIngredientsMessage = ingredientMessage;
+
+            if (itemChanged)
+            {
+                string announcement = itemMessage;
+                if (!string.IsNullOrWhiteSpace(ingredientMessage))
+                {
+                    announcement = $"{itemMessage}. {ingredientMessage}";
+                }
+
+                ScreenReaderService.Announce(announcement, force: true);
+            }
+            else if (ingredientsChanged && !string.IsNullOrWhiteSpace(ingredientMessage))
+            {
+                ScreenReaderService.Announce(ingredientMessage, force: true);
+            }
+        }
+
+        public static bool IsCraftingLinkPoint(int point)
+        {
+            if (point < 0)
+            {
+                return false;
+            }
+
+            HashSet<int> points = CraftingLinkPoints.Value;
+            return points.Contains(point);
+        }
+
+        private void Reset()
+        {
+            ResetFocus();
+            _lastAnnouncement = null;
+            _lastIngredientsMessage = null;
+        }
+
+        private void ResetFocus()
+        {
+            _lastFocusIndex = -1;
+            _lastRecipeIndex = -1;
+            _lastCount = -1;
+            _lastIngredientsMessage = null;
+        }
+
+        private static string? BuildIngredientMessage(Recipe recipe)
+        {
+            if (recipe is null)
+            {
+                return null;
+            }
+
+            List<string> parts = new();
+            foreach (Item ingredient in recipe.requiredItem)
+            {
+                if (ingredient is null || ingredient.IsAir)
+                {
+                    continue;
+                }
+
+                string name = ComposeItemLabel(ingredient);
+                if (ingredient.stack > 1)
+                {
+                    name = $"{ingredient.stack} {name}";
+                }
+
+                parts.Add(name);
+            }
+
+            if (parts.Count == 0)
+            {
+                return null;
+            }
+
+            string joined = string.Join(", ", parts);
+            return $"Requires {joined}";
+        }
+    }
+
     private sealed class SmartCursorNarrator
     {
         private string? _lastAnnouncement;
@@ -2515,14 +2924,52 @@ public sealed class InGameNarrationSystem : ModSystem
         private int _lastProj = -1;
         private int _lastInteractTileType = -1;
         private int _lastCursorTileType = -1;
+        private bool _lastSmartCursorEnabled;
+        private string? _pendingStatePrefix;
+        private bool _suppressCursorAnnouncement;
 
         public void Update()
         {
+            Player player = Main.LocalPlayer;
+            if (player is null || !player.active)
+            {
+                Reset();
+                return;
+            }
+
+            if (InventoryNarrator.IsInventoryUiOpen(player))
+            {
+                Reset();
+                return;
+            }
+
             bool hasInteract = Main.HasSmartInteractTarget;
             bool hasSmartCursor = Main.SmartCursorIsUsed || Main.SmartCursorWanted;
 
+            if (_lastSmartCursorEnabled != hasSmartCursor)
+            {
+                if (hasSmartCursor)
+                {
+                    _pendingStatePrefix = "Smart cursor enabled";
+                }
+                else
+                {
+                    _pendingStatePrefix = null;
+                    _suppressCursorAnnouncement = false;
+                }
+
+                ResetStateTracking();
+                _lastSmartCursorEnabled = hasSmartCursor;
+
+                if (!hasSmartCursor)
+                {
+                    AnnouncePendingStateIfAny(force: true);
+                }
+            }
+
             if (!hasInteract && !hasSmartCursor)
             {
+                AnnouncePendingStateIfAny(force: true);
                 Reset();
                 return;
             }
@@ -2530,7 +2977,14 @@ public sealed class InGameNarrationSystem : ModSystem
             string? message = hasInteract ? DescribeSmartInteract() : DescribeSmartCursor();
             if (string.IsNullOrWhiteSpace(message))
             {
+                AnnouncePendingStateIfAny();
                 return;
+            }
+
+            if (!string.IsNullOrWhiteSpace(_pendingStatePrefix))
+            {
+                message = $"{_pendingStatePrefix}, {message}";
+                _pendingStatePrefix = null;
             }
 
             if (string.Equals(message, _lastAnnouncement, StringComparison.Ordinal))
@@ -2542,7 +2996,7 @@ public sealed class InGameNarrationSystem : ModSystem
             ScreenReaderService.Announce(message);
         }
 
-        private void Reset()
+        private void ResetStateTracking()
         {
             _lastAnnouncement = null;
             _lastTileX = int.MinValue;
@@ -2551,6 +3005,13 @@ public sealed class InGameNarrationSystem : ModSystem
             _lastProj = -1;
             _lastInteractTileType = -1;
             _lastCursorTileType = -1;
+        }
+
+        private void Reset()
+        {
+            ResetStateTracking();
+            _pendingStatePrefix = null;
+            _suppressCursorAnnouncement = false;
         }
 
         private string? DescribeSmartInteract()
@@ -2663,6 +3124,31 @@ public sealed class InGameNarrationSystem : ModSystem
             return tileName;
         }
 
+        private void AnnouncePendingStateIfAny(bool force = false)
+        {
+            if (string.IsNullOrWhiteSpace(_pendingStatePrefix))
+            {
+                return;
+            }
+
+            string prefix = _pendingStatePrefix;
+            _pendingStatePrefix = null;
+
+            if (_suppressCursorAnnouncement)
+            {
+                CursorNarrator.SuppressNextAnnouncement();
+                _suppressCursorAnnouncement = false;
+            }
+
+            if (string.Equals(prefix, _lastAnnouncement, StringComparison.Ordinal))
+            {
+                return;
+            }
+
+            _lastAnnouncement = prefix;
+            ScreenReaderService.Announce(prefix, force: force);
+        }
+
     }
 
     private sealed class CursorNarrator
@@ -2675,6 +3161,7 @@ public sealed class InGameNarrationSystem : ModSystem
         private int _originTileY = int.MinValue;
         private static SoundEffect? _cursorTone;
         private static readonly List<SoundEffectInstance> ActiveInstances = new();
+        private static bool _suppressNextAnnouncement;
 
         public void Update()
         {
@@ -2702,6 +3189,19 @@ public sealed class InGameNarrationSystem : ModSystem
                 return;
             }
 
+            UpdateOriginFromPlayer(player);
+
+            if (ConsumeSuppressionFlag())
+            {
+                _wasHoveringPlayer = IsHoveringPlayer(player);
+                return;
+            }
+
+            if (PlayerInput.UsingGamepadUI && InventoryNarrator.IsInventoryUiOpen(player))
+            {
+                return;
+            }
+
             Vector2 world = Main.MouseWorld;
             int tileX = (int)(world.X / 16f);
             int tileY = (int)(world.Y / 16f);
@@ -2715,12 +3215,6 @@ public sealed class InGameNarrationSystem : ModSystem
 
                 _lastTileX = tileX;
                 _lastTileY = tileY;
-
-                if (_originTileX == int.MinValue || _originTileY == int.MinValue)
-                {
-                    _originTileX = tileX;
-                    _originTileY = tileY;
-                }
             }
 
             bool hoveringPlayer = IsHoveringPlayer(player);
@@ -2799,6 +3293,22 @@ public sealed class InGameNarrationSystem : ModSystem
             ScreenReaderService.Announce("You", force: true);
         }
 
+        public static void SuppressNextAnnouncement()
+        {
+            _suppressNextAnnouncement = true;
+        }
+
+        private static bool ConsumeSuppressionFlag()
+        {
+            if (!_suppressNextAnnouncement)
+            {
+                return false;
+            }
+
+            _suppressNextAnnouncement = false;
+            return true;
+        }
+
         private static void CenterCursorOnPlayer(Player player)
         {
             Vector2 screenSpace = player.Center - Main.screenPosition;
@@ -2811,6 +3321,20 @@ public sealed class InGameNarrationSystem : ModSystem
             PlayerInput.MouseY = centeredY;
         }
 
+        private void UpdateOriginFromPlayer(Player player)
+        {
+            Vector2 chestWorld = GetPlayerChestWorld(player);
+            _originTileX = (int)(chestWorld.X / 16f);
+            _originTileY = (int)(chestWorld.Y / 16f);
+        }
+
+        private static Vector2 GetPlayerChestWorld(Player player)
+        {
+            const float chestFraction = 0.25f;
+            float verticalOffset = player.height * chestFraction * player.gravDir;
+            return player.Center - new Vector2(0f, verticalOffset);
+        }
+
         private string BuildCoordinateMessage(int tileX, int tileY)
         {
             if (_originTileX == int.MinValue || _originTileY == int.MinValue)
@@ -2821,15 +3345,26 @@ public sealed class InGameNarrationSystem : ModSystem
             int offsetX = tileX - _originTileX;
             int offsetY = tileY - _originTileY;
 
-            string Format(int value) =>
-                value switch
-                {
-                    > 0 => $"+{value}",
-                    < 0 => value.ToString(),
-                    _ => "0",
-                };
+            List<string> parts = new();
 
-            return $"X {Format(offsetX)}, Y {Format(offsetY)}";
+            if (offsetX != 0)
+            {
+                string direction = offsetX > 0 ? "right" : "left";
+                parts.Add($"{Math.Abs(offsetX)} {direction}");
+            }
+
+            if (offsetY != 0)
+            {
+                string direction = offsetY > 0 ? "down" : "up";
+                parts.Add($"{Math.Abs(offsetY)} {direction}");
+            }
+
+            if (parts.Count == 0)
+            {
+                return "origin";
+            }
+
+            return string.Join(", ", parts);
         }
 
         private static void PlayCursorCue(Player player, Vector2 tileCenterWorld)

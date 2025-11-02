@@ -696,16 +696,8 @@ internal static class MenuNarrationCatalog
     private static string DescribeSettingsVideoMenu(int index)
     {
         int frameSkipIndex = (int)Main.FrameSkipMode;
-        string[] menuItems = GetMenuItemArray();
-        if ((uint)index < (uint)menuItems.Length)
-        {
-            string actual = TextSanitizer.Clean(menuItems[index]);
-            if (!string.IsNullOrWhiteSpace(actual))
-            {
-                string backLabel = TextSanitizer.Clean(Lang.menu[5].Value);
-                return string.Equals(actual, backLabel, StringComparison.OrdinalIgnoreCase) ? backLabel : actual;
-            }
-        }
+        string backLabel = TextSanitizer.Clean(Lang.menu[5].Value);
+        string effectsLabel = TextSanitizer.Clean(Language.GetTextValue("UI.Effects"));
 
         var items = new List<string>
         {
@@ -728,10 +720,40 @@ internal static class MenuNarrationCatalog
         items.Add(TextSanitizer.Clean(ChildSafety.Disabled ? Lang.menu[132].Value : Lang.menu[133].Value));
         items.Add(TextSanitizer.Clean(Main.SettingsEnabled_MinersWobble ? Lang.menu[250].Value : Lang.menu[251].Value));
         items.Add(TextSanitizer.Clean(Main.SettingsEnabled_TilesSwayInWind ? Language.GetTextValue("UI.TilesSwayInWindOn") : Language.GetTextValue("UI.TilesSwayInWindOff")));
-        items.Add(TextSanitizer.Clean(Language.GetTextValue("UI.Effects")));
-        items.Add(TextSanitizer.Clean(Lang.menu[5].Value));
+        items.Add(effectsLabel);
+        items.Add(backLabel);
 
-        return OptionOrEmpty(items, index);
+        string expected = OptionOrEmpty(items, index);
+
+        string[] menuItems = GetMenuItemArray();
+        if ((uint)index < (uint)menuItems.Length)
+        {
+            string actual = TextSanitizer.Clean(menuItems[index]);
+            if (!string.IsNullOrWhiteSpace(actual))
+            {
+                if (string.Equals(actual, backLabel, StringComparison.OrdinalIgnoreCase))
+                {
+                    return backLabel;
+                }
+
+                bool actualIsEffects = string.Equals(actual, effectsLabel, StringComparison.OrdinalIgnoreCase);
+                if (!string.IsNullOrWhiteSpace(expected) &&
+                    string.Equals(expected, backLabel, StringComparison.OrdinalIgnoreCase) &&
+                    actualIsEffects)
+                {
+                    return backLabel;
+                }
+
+                if (actualIsEffects && index == menuItems.Length - 1)
+                {
+                    return backLabel;
+                }
+
+                return actual;
+            }
+        }
+
+        return expected;
     }
 
     private static string DescribeEffectsMenu(int index)

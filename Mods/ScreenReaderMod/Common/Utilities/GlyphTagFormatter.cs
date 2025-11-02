@@ -352,6 +352,11 @@ internal static class GlyphTagFormatter
             trimmed = trimmed[1..];
         }
 
+        if (trimmed.Length > 0 && trimmed[0] == ':')
+        {
+            trimmed = trimmed[1..];
+        }
+
         if (trimmed.Length == 0)
         {
             return false;
@@ -366,11 +371,52 @@ internal static class GlyphTagFormatter
             return true;
         }
 
-        string humanized = HumanizeToken(normalized);
-        if (!string.IsNullOrWhiteSpace(humanized))
+        if (LooksLikeGlyphToken(raw, normalized))
         {
-            replacement = humanized;
+            string humanized = HumanizeToken(normalized);
+            if (!string.IsNullOrWhiteSpace(humanized))
+            {
+                replacement = humanized;
+                return true;
+            }
+        }
+
+        return false;
+    }
+
+    private static bool LooksLikeGlyphToken(string raw, string normalized)
+    {
+        if (string.IsNullOrWhiteSpace(raw) || string.IsNullOrWhiteSpace(normalized))
+        {
+            return false;
+        }
+
+        if (normalized.Length <= 1)
+        {
+            return false;
+        }
+
+        for (int i = 0; i < normalized.Length; i++)
+        {
+            char c = normalized[i];
+            if (char.IsUpper(c) || char.IsDigit(c) || c == '_' || c == '-')
+            {
+                return true;
+            }
+        }
+
+        if (raw.IndexOf(':', StringComparison.Ordinal) >= 0)
+        {
             return true;
+        }
+
+        for (int i = 1; i < raw.Length; i++)
+        {
+            char c = raw[i];
+            if (char.IsUpper(c) || char.IsDigit(c) || c == '_' || c == '-')
+            {
+                return true;
+            }
         }
 
         return false;
