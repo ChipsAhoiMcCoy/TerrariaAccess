@@ -1422,24 +1422,24 @@ public sealed class InGameNarrationSystem : ModSystem
 
         public static void RecordFocus(Item[] inventory, int context, int slot)
         {
-            if (!ShouldCaptureFocusForContext(context))
-            {
-                return;
-            }
-
             SlotFocus focus = new(inventory, null, context, slot);
-            StorePendingFocus(focus);
+            CacheLinkPointFocus(focus);
+
+            if (ShouldCaptureFocusForContext(context))
+            {
+                StorePendingFocus(focus);
+            }
         }
 
         public static void RecordFocus(Item item, int context)
         {
-            if (!ShouldCaptureFocusForContext(context))
-            {
-                return;
-            }
-
             SlotFocus focus = new(null, item, context, -1);
-            StorePendingFocus(focus);
+            CacheLinkPointFocus(focus);
+
+            if (ShouldCaptureFocusForContext(context))
+            {
+                StorePendingFocus(focus);
+            }
         }
 
         private static bool ShouldCaptureFocusForContext(int context)
@@ -1451,7 +1451,6 @@ public sealed class InGameNarrationSystem : ModSystem
         private static void StorePendingFocus(SlotFocus focus)
         {
             _pendingFocus = focus;
-            CacheLinkPointFocus(focus);
         }
 
         public void Update(Player player)
@@ -1479,7 +1478,7 @@ public sealed class InGameNarrationSystem : ModSystem
             {
                 _currentFocus = nextFocus;
             }
-            else if (!usingGamepad)
+            else
             {
                 _currentFocus = null;
             }
@@ -1653,6 +1652,11 @@ public sealed class InGameNarrationSystem : ModSystem
             }
 
             if (!LinkPointFocusCache.TryGetValue(point, out SlotFocus focus))
+            {
+                return null;
+            }
+
+            if (!ShouldCaptureFocusForContext(focus.Context))
             {
                 return null;
             }
@@ -2052,7 +2056,7 @@ public sealed class InGameNarrationSystem : ModSystem
             return null;
         }
 
-        internal static string? BuildTooltipDetails(Item item, string hoverName, bool allowMouseText = true)
+        internal static string? BuildTooltipDetails(Item item, string hoverName, bool allowMouseText = true, bool suppressControllerPrompts = false)
         {
             if (item is null || item.IsAir)
             {
@@ -2066,13 +2070,13 @@ public sealed class InGameNarrationSystem : ModSystem
                 string? raw = TryGetMouseText();
                 if (!string.IsNullOrWhiteSpace(raw))
                 {
-                    lines = ExtractTooltipLines(raw, nameCandidates);
+                    lines = ExtractTooltipLines(raw, nameCandidates, suppressControllerPrompts);
                 }
             }
 
             if (lines is null || lines.Count == 0)
             {
-                lines = ExtractTooltipLinesFromItem(item, nameCandidates);
+                lines = ExtractTooltipLinesFromItem(item, nameCandidates, suppressControllerPrompts);
             }
 
             if (lines.Count == 0)
@@ -2084,7 +2088,7 @@ public sealed class InGameNarrationSystem : ModSystem
             return string.IsNullOrWhiteSpace(formatted) ? null : formatted;
         }
 
-        private static List<string> ExtractTooltipLines(string raw, HashSet<string> nameCandidates)
+        private static List<string> ExtractTooltipLines(string raw, HashSet<string> nameCandidates, bool suppressControllerPrompts)
         {
             string sanitized = GlyphTagFormatter.SanitizeTooltip(raw);
             List<string> lines = new();
@@ -2093,7 +2097,9 @@ public sealed class InGameNarrationSystem : ModSystem
             foreach (string segment in segments)
             {
                 string trimmed = segment.Trim();
-                if (trimmed.Length > 0 && !IsItemNameLine(trimmed, nameCandidates))
+                if (trimmed.Length > 0 &&
+                    !IsItemNameLine(trimmed, nameCandidates) &&
+                    (!suppressControllerPrompts || !ShouldRemoveControllerPromptLine(trimmed)))
                 {
                     lines.Add(trimmed);
                 }
@@ -2102,7 +2108,7 @@ public sealed class InGameNarrationSystem : ModSystem
             return lines;
         }
 
-        private static List<string> ExtractTooltipLinesFromItem(Item item, HashSet<string> nameCandidates)
+        private static List<string> ExtractTooltipLinesFromItem(Item item, HashSet<string> nameCandidates, bool suppressControllerPrompts)
         {
             List<string> lines = new();
 
@@ -2152,6 +2158,11 @@ public sealed class InGameNarrationSystem : ModSystem
                         continue;
                     }
 
+                    if (suppressControllerPrompts && ShouldRemoveControllerPromptLine(trimmed))
+                    {
+                        continue;
+                    }
+
                     lines.Add(trimmed);
                 }
             }
@@ -2172,6 +2183,41 @@ public sealed class InGameNarrationSystem : ModSystem
 
             string normalizedLine = GlyphTagFormatter.Normalize(line).Trim();
             return nameCandidates.Contains(normalizedLine);
+        }
+
+        private static bool ShouldRemoveControllerPromptLine(string line)
+        {
+            if (string.IsNullOrWhiteSpace(line))
+            {
+                return false;
+            }
+
+            string normalized = GlyphTagFormatter.Normalize(line).Trim();
+            if (string.IsNullOrWhiteSpace(normalized))
+            {
+                return false;
+            }
+
+            string lower = normalized.ToLowerInvariant();
+            if (!lower.Contains("craft", StringComparison.Ordinal))
+            {
+                return false;
+            }
+
+            if (lower.Contains("right bumper", StringComparison.Ordinal) ||
+                lower.Contains("left bumper", StringComparison.Ordinal) ||
+                lower.Contains("right trigger", StringComparison.Ordinal) ||
+                lower.Contains("left trigger", StringComparison.Ordinal) ||
+                lower.Contains("button", StringComparison.Ordinal) ||
+                lower.Contains("bumper", StringComparison.Ordinal) ||
+                lower.Contains("trigger", StringComparison.Ordinal) ||
+                lower.Contains("gamepad", StringComparison.Ordinal) ||
+                lower.Contains("controller", StringComparison.Ordinal))
+            {
+                return true;
+            }
+
+            return false;
         }
 
         private static HashSet<string> BuildItemNameCandidates(Item item, string hoverName)
@@ -2531,7 +2577,11 @@ public sealed class InGameNarrationSystem : ModSystem
                 label = $"{result.stack} {label}";
             }
 
-            string? details = InventoryNarrator.BuildTooltipDetails(result, result.Name ?? string.Empty, allowMouseText: false);
+            string? details = InventoryNarrator.BuildTooltipDetails(
+                result,
+                result.Name ?? string.Empty,
+                allowMouseText: false,
+                suppressControllerPrompts: true);
             string combined = InventoryNarrator.CombineItemAnnouncement(label, details);
             if (string.IsNullOrWhiteSpace(combined))
             {
