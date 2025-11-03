@@ -1372,9 +1372,15 @@ public sealed class InGameNarrationSystem : ModSystem
                 return true;
             }
 
-            if (!PlayerInput.UsingGamepadUI)
+            bool usingGamepadUi = PlayerInput.UsingGamepadUI;
+            if (!usingGamepadUi)
             {
                 return false;
+            }
+
+            if (InventoryNarrator.IsInventoryUiOpen(player))
+            {
+                return true;
             }
 
             int point = UILinkPointNavigator.CurrentPoint;
@@ -1404,8 +1410,11 @@ public sealed class InGameNarrationSystem : ModSystem
         private string? _lastEmptyMessage;
         private string? _lastAnnouncedMessage;
         private SlotFocus? _currentFocus;
+        private bool _usingSelectedHotbarFocus;
+        private int _lastSelectedHotbarSlot = -1;
 
         private static SlotFocus? _pendingFocus;
+        private static int _pendingLinkPoint = -1;
         private static readonly Dictionary<int, SlotFocus> LinkPointFocusCache = new();
         private static (int X, int Y)? _storedCursorPosition;
         private static (int X, int Y)? _preInventoryCursorPosition;
@@ -1432,18 +1441,75 @@ public sealed class InGameNarrationSystem : ModSystem
 
         public static void RecordFocus(Item[] inventory, int context, int slot)
         {
+            if (!ShouldCaptureFocusForContext(context))
+            {
+                return;
+            }
+
             SlotFocus focus = new(inventory, null, context, slot);
-            _pendingFocus = focus;
-            CacheLinkPointFocus(focus);
+            StorePendingFocus(focus);
             LogLinkPointState(context, slot);
         }
 
         public static void RecordFocus(Item item, int context)
         {
+            if (!ShouldCaptureFocusForContext(context))
+            {
+                return;
+            }
+
             SlotFocus focus = new(null, item, context, -1);
-            _pendingFocus = focus;
-            CacheLinkPointFocus(focus);
+            StorePendingFocus(focus);
             LogLinkPointState(context, -1);
+        }
+
+        private static bool ShouldCaptureFocusForContext(int context)
+        {
+            int normalized = Math.Abs(context);
+            return normalized != ItemSlot.Context.CraftingMaterial;
+        }
+
+        private static void StorePendingFocus(SlotFocus focus)
+        {
+            _pendingFocus = focus;
+
+            if (PlayerInput.UsingGamepadUI)
+            {
+                _pendingLinkPoint = UILinkPointNavigator.CurrentPoint;
+            }
+            else
+            {
+                _pendingLinkPoint = -1;
+            }
+
+            CacheLinkPointFocus(focus);
+        }
+
+        private static bool ShouldAdoptPendingFocus(SlotFocus focus, int linkPoint, bool justOpened)
+        {
+            if (!ShouldCaptureFocusForContext(focus.Context))
+            {
+                return false;
+            }
+
+            if (ShouldDeferFocusOnOpen(linkPoint, justOpened))
+            {
+                return false;
+            }
+
+            return true;
+        }
+
+        private static bool ShouldDeferFocusOnOpen(int linkPoint, bool justOpened)
+        {
+            if (!justOpened || !PlayerInput.UsingGamepadUI)
+            {
+                return false;
+            }
+
+            // The crafting interface steals the first link point when the inventory opens on gamepad.
+            // Skip that initial handoff so we narrate the active hotbar selection instead.
+            return linkPoint >= 0 && CraftingNarrator.IsCraftingLinkPoint(linkPoint);
         }
 
         public void Update(Player player)
@@ -1458,6 +1524,8 @@ public sealed class InGameNarrationSystem : ModSystem
                 return;
             }
 
+            bool justOpened = !_wasInventoryUiOpen;
+
             if (!_wasInventoryUiOpen)
             {
                 InitializeCursorRestore();
@@ -1465,19 +1533,52 @@ public sealed class InGameNarrationSystem : ModSystem
 
             _wasInventoryUiOpen = true;
 
+            bool adoptedFocus = false;
+
             if (_pendingFocus.HasValue)
             {
-                _currentFocus = _pendingFocus;
+                SlotFocus focus = _pendingFocus.Value;
+                int pendingPoint = _pendingLinkPoint;
                 _pendingFocus = null;
-            }
-            else if (PlayerInput.UsingGamepadUI)
-            {
-                SlotFocus? resolved = ResolveFocusFromLinkPoint();
-                if (resolved.HasValue)
+                _pendingLinkPoint = -1;
+
+                if (ShouldAdoptPendingFocus(focus, pendingPoint, justOpened))
                 {
-                    _currentFocus = resolved;
+                    _currentFocus = focus;
+                    _usingSelectedHotbarFocus = false;
+                    adoptedFocus = true;
                 }
             }
+
+            if (!adoptedFocus)
+            {
+                if (PlayerInput.UsingGamepadUI)
+                {
+                    SlotFocus? resolved = ResolveFocusFromLinkPoint();
+                    if (resolved.HasValue &&
+                        ShouldCaptureFocusForContext(resolved.Value.Context) &&
+                        !ShouldDeferFocusOnOpen(UILinkPointNavigator.CurrentPoint, justOpened))
+                    {
+                        _currentFocus = resolved;
+                        _usingSelectedHotbarFocus = false;
+                        adoptedFocus = true;
+                    }
+                    else if (TryAdoptSelectedHotbarFocus(player, forceAdopt: justOpened))
+                    {
+                        adoptedFocus = true;
+                    }
+                    else
+                    {
+                        _usingSelectedHotbarFocus = false;
+                    }
+                }
+                else
+                {
+                    _usingSelectedHotbarFocus = false;
+                }
+            }
+
+            _lastSelectedHotbarSlot = player.selectedItem;
 
             MaintainCursorWhileInventoryOpen();
             HandleMouseItem();
@@ -1525,7 +1626,7 @@ public sealed class InGameNarrationSystem : ModSystem
             if (PlayerInput.UsingGamepadUI)
             {
                 int currentPoint = UILinkPointNavigator.CurrentPoint;
-                if (CraftingNarrator.IsCraftingLinkPoint(currentPoint))
+                if (!_usingSelectedHotbarFocus && CraftingNarrator.IsCraftingLinkPoint(currentPoint))
                 {
                     return;
                 }
@@ -1669,6 +1770,18 @@ public sealed class InGameNarrationSystem : ModSystem
 
             LinkPointFocusCache.Remove(point);
             return null;
+        }
+
+        public static bool TryGetContextForLinkPoint(int point, out int context)
+        {
+            if (point >= 0 && LinkPointFocusCache.TryGetValue(point, out SlotFocus focus))
+            {
+                context = focus.Context;
+                return true;
+            }
+
+            context = -1;
+            return false;
         }
 
         private static void CacheCursorPositionWhileFree()
@@ -1815,7 +1928,10 @@ public sealed class InGameNarrationSystem : ModSystem
             _lastEmptyMessage = null;
             _lastAnnouncedMessage = null;
             _currentFocus = null;
+            _usingSelectedHotbarFocus = false;
+            _lastSelectedHotbarSlot = -1;
             _pendingFocus = null;
+            _pendingLinkPoint = -1;
             LinkPointFocusCache.Clear();
             _storedCursorPosition = null;
         }
@@ -2372,6 +2488,50 @@ public sealed class InGameNarrationSystem : ModSystem
                 : $"{id}(missing)";
         }
 
+        private bool TryAdoptSelectedHotbarFocus(Player player, bool forceAdopt = false)
+        {
+            if (player is null)
+            {
+                return false;
+            }
+
+            if (player.chest != -1 ||
+                Main.npcShop != 0 ||
+                Main.InGuideCraftMenu ||
+                Main.InReforgeMenu ||
+                Main.ingameOptionsWindow)
+            {
+                return false;
+            }
+
+            int selectedSlot = player.selectedItem;
+            if (selectedSlot < 0 || selectedSlot > 9)
+            {
+                return false;
+            }
+
+            if (!forceAdopt && selectedSlot == _lastSelectedHotbarSlot && !_usingSelectedHotbarFocus)
+            {
+                return false;
+            }
+
+            Item[] inventory = player.inventory;
+            if (inventory is null || selectedSlot >= inventory.Length)
+            {
+                return false;
+            }
+
+            SlotFocus focus = new(inventory, null, ItemSlot.Context.InventoryItem, selectedSlot);
+            _currentFocus = focus;
+            if (!CraftingNarrator.IsCraftingLinkPoint(UILinkPointNavigator.CurrentPoint))
+            {
+                CacheLinkPointFocus(focus);
+            }
+
+            _usingSelectedHotbarFocus = true;
+            return true;
+        }
+
         private static void HandleInventoryBottomRowHop(int currentPoint, int context)
         {
             bool inInventory = context == ItemSlot.Context.InventoryItem;
@@ -2720,43 +2880,15 @@ public sealed class InGameNarrationSystem : ModSystem
         private int _lastCount = -1;
         private string? _lastIngredientsMessage;
 
-        private static readonly Lazy<HashSet<int>> CraftingLinkPoints = new(() =>
-        {
-            HashSet<int> points = new();
-            try
-            {
-                FieldInfo[] fields = typeof(UILinkPointNavigator.Shortcuts).GetFields(BindingFlags.Static | BindingFlags.Public | BindingFlags.NonPublic);
-                foreach (FieldInfo field in fields)
-                {
-                    if (field.FieldType != typeof(int))
-                    {
-                        continue;
-                    }
+        private static readonly FieldInfo[] CraftingShortcutFields = typeof(UILinkPointNavigator.Shortcuts)
+            .GetFields(BindingFlags.Static | BindingFlags.Public | BindingFlags.NonPublic)
+            .Where(field => field.FieldType == typeof(int) &&
+                            field.Name.Contains("CRAFT", StringComparison.OrdinalIgnoreCase))
+            .ToArray();
 
-                    string name = field.Name;
-                    if (string.IsNullOrWhiteSpace(name))
-                    {
-                        continue;
-                    }
+        private static readonly FieldInfo[] CraftingLinkIdFields = DiscoverCraftingLinkIdFields();
 
-                    if (!name.Contains("CRAFT", StringComparison.OrdinalIgnoreCase))
-                    {
-                        continue;
-                    }
-
-                    if (field.GetValue(null) is int value && value >= 0)
-                    {
-                        points.Add(value);
-                    }
-                }
-            }
-            catch (Exception ex)
-            {
-                ScreenReaderMod.Instance?.Logger.Warn($"[CraftingNarrator] Failed to discover crafting link points: {ex}");
-            }
-
-            return points;
-        });
+        private static bool _loggedShortcutReflectionWarning;
 
         public void Update(Player player)
         {
@@ -2773,6 +2905,13 @@ public sealed class InGameNarrationSystem : ModSystem
             }
 
             int currentPoint = UILinkPointNavigator.CurrentPoint;
+            if (InventoryNarrator.TryGetContextForLinkPoint(currentPoint, out int context) &&
+                context != ItemSlot.Context.CraftingMaterial)
+            {
+                ResetFocus();
+                return;
+            }
+
             if (!IsCraftingLinkPoint(currentPoint))
             {
                 ResetFocus();
@@ -2851,9 +2990,15 @@ public sealed class InGameNarrationSystem : ModSystem
             }
             else if (ingredientsChanged && !string.IsNullOrWhiteSpace(ingredientMessage))
             {
-                ScreenReaderService.Announce(ingredientMessage, force: true);
+                string announcement = ingredientMessage;
+                if (!string.IsNullOrWhiteSpace(itemMessage))
+                {
+                    announcement = $"{itemMessage}. {ingredientMessage}";
+                }
+
+                ScreenReaderService.Announce(announcement, force: true);
             }
-        }
+            }
 
         public static bool IsCraftingLinkPoint(int point)
         {
@@ -2862,8 +3007,17 @@ public sealed class InGameNarrationSystem : ModSystem
                 return false;
             }
 
-            HashSet<int> points = CraftingLinkPoints.Value;
-            return points.Contains(point);
+            if (MatchesCraftingField(point, CraftingShortcutFields))
+            {
+                return true;
+            }
+
+            if (MatchesCraftingField(point, CraftingLinkIdFields))
+            {
+                return true;
+            }
+
+            return false;
         }
 
         private void Reset()
@@ -2879,6 +3033,44 @@ public sealed class InGameNarrationSystem : ModSystem
             _lastRecipeIndex = -1;
             _lastCount = -1;
             _lastIngredientsMessage = null;
+        }
+
+        private static FieldInfo[] DiscoverCraftingLinkIdFields()
+        {
+            Type? linkIdType = typeof(UILinkPointNavigator).Assembly.GetType("Terraria.UI.Gamepad.UILinkPointID");
+            if (linkIdType is null)
+            {
+                return Array.Empty<FieldInfo>();
+            }
+
+            return linkIdType
+                .GetFields(BindingFlags.Static | BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.FlattenHierarchy)
+                .Where(field => field.FieldType == typeof(int) &&
+                                (field.Name.Contains("CRAFT", StringComparison.OrdinalIgnoreCase) ||
+                                 field.Name.Contains("RECIPE", StringComparison.OrdinalIgnoreCase)))
+                .ToArray();
+        }
+
+        private static bool MatchesCraftingField(int point, FieldInfo[] fields)
+        {
+            foreach (FieldInfo field in fields)
+            {
+                try
+                {
+                    object? value = field.GetValue(null);
+                    if (value is int intValue && intValue >= 0 && intValue == point)
+                    {
+                        return true;
+                    }
+                }
+                catch (Exception ex) when (!_loggedShortcutReflectionWarning)
+                {
+                    _loggedShortcutReflectionWarning = true;
+                    ScreenReaderMod.Instance?.Logger.Warn($"[CraftingNarrator] Failed to inspect crafting link field {field.Name}: {ex}");
+                }
+            }
+
+            return false;
         }
 
         private static string? BuildIngredientMessage(Recipe recipe)

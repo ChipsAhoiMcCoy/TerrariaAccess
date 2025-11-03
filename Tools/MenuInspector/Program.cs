@@ -83,6 +83,213 @@ foreach (var property in mainType
     Console.WriteLine($" - {property.PropertyType.FullName} {property.Name}");
 }
 
+var shortcutsType = assembly.GetType("Terraria.UI.Gamepad.UILinkPointNavigator+Shortcuts");
+if (shortcutsType is not null)
+{
+    Console.WriteLine();
+    Console.WriteLine("UILinkPointNavigator shortcuts containing 'CRAFT':");
+    foreach (var field in shortcutsType
+                 .GetFields(BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Static)
+                 .Where(f => f.FieldType == typeof(int) && f.Name.Contains("CRAFT", StringComparison.OrdinalIgnoreCase))
+                 .OrderBy(f => f.Name, StringComparer.OrdinalIgnoreCase))
+    {
+        if (field.GetValue(null) is int value)
+        {
+            Console.WriteLine($" - {field.Name} = {value}");
+        }
+    }
+}
+
+var linkPageIdType = assembly.GetType("Terraria.UI.Gamepad.UILinkPageID");
+if (linkPageIdType is not null)
+{
+    Console.WriteLine();
+    Console.WriteLine("UILinkPageID constants containing 'CRAFT':");
+    foreach (var field in linkPageIdType
+                 .GetFields(BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Static | BindingFlags.FlattenHierarchy)
+                 .Where(f => f.FieldType == typeof(int) && f.Name.Contains("CRAFT", StringComparison.OrdinalIgnoreCase))
+                 .OrderBy(f => f.Name, StringComparer.OrdinalIgnoreCase))
+    {
+        if (field.GetValue(null) is int value)
+        {
+            Console.WriteLine($" - {field.Name} = {value}");
+        }
+    }
+}
+
+Console.WriteLine();
+Console.WriteLine("Fields containing 'recipe':");
+foreach (var field in mainType
+             .GetFields(BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Static | BindingFlags.Instance)
+             .Where(f => f.Name.Contains("recipe", StringComparison.OrdinalIgnoreCase))
+             .OrderBy(f => f.Name))
+{
+    Console.WriteLine($" - {field.FieldType.FullName} {field.Name}");
+}
+
+Console.WriteLine();
+Console.WriteLine("Fields containing 'rec':");
+foreach (var field in mainType
+             .GetFields(BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Static | BindingFlags.Instance)
+             .Where(f => f.Name.Contains("rec", StringComparison.OrdinalIgnoreCase))
+             .OrderBy(f => f.Name))
+{
+    Console.WriteLine($" - {field.FieldType.FullName} {field.Name}");
+}
+
+var linkPointIdType = assembly.GetType("Terraria.UI.Gamepad.UILinkPointID");
+if (linkPointIdType is not null)
+{
+    Console.WriteLine();
+    Console.WriteLine("UILinkPointID constants containing 'CRAFT':");
+    foreach (var field in linkPointIdType
+                 .GetFields(BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Static | BindingFlags.FlattenHierarchy)
+                 .Where(f => f.FieldType == typeof(int) && f.Name.Contains("CRAFT", StringComparison.OrdinalIgnoreCase))
+                 .OrderBy(f => f.Name, StringComparer.OrdinalIgnoreCase))
+    {
+        if (field.GetValue(null) is int value)
+        {
+            Console.WriteLine($" - {field.Name} = {value}");
+        }
+    }
+
+    Console.WriteLine();
+    Console.WriteLine("UILinkPointID constants containing 'RECIPE':");
+    foreach (var field in linkPointIdType
+                 .GetFields(BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Static | BindingFlags.FlattenHierarchy)
+                 .Where(f => f.FieldType == typeof(int) && f.Name.Contains("RECIPE", StringComparison.OrdinalIgnoreCase))
+                 .OrderBy(f => f.Name, StringComparer.OrdinalIgnoreCase))
+    {
+        if (field.GetValue(null) is int value)
+        {
+            Console.WriteLine($" - {field.Name} = {value}");
+        }
+    }
+
+    Console.WriteLine();
+    Console.WriteLine("UILinkPointID constants containing 'CRAFTING':");
+    foreach (var field in linkPointIdType
+                 .GetFields(BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Static | BindingFlags.FlattenHierarchy)
+                 .Where(f => f.FieldType == typeof(int) && f.Name.Contains("CRAFTING", StringComparison.OrdinalIgnoreCase))
+                 .OrderBy(f => f.Name, StringComparer.OrdinalIgnoreCase))
+    {
+        if (field.GetValue(null) is int value)
+        {
+            Console.WriteLine($" - {field.Name} = {value}");
+        }
+    }
+}
+
+var pointsFieldInfo = assembly.GetType("Terraria.UI.Gamepad.UILinkPointNavigator")
+    ?.GetField("Points", BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Static);
+var pagesFieldInfo = assembly.GetType("Terraria.UI.Gamepad.UILinkPointNavigator")
+    ?.GetField("Pages", BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Static);
+if (pointsFieldInfo?.GetValue(null) is System.Collections.IDictionary pointsDictionary && pointsDictionary.Count > 0)
+{
+    Console.WriteLine();
+    Console.WriteLine($"UILinkPointNavigator has {pointsDictionary.Count} points loaded.");
+    int printed = 0;
+    foreach (System.Collections.DictionaryEntry entry in pointsDictionary)
+    {
+        var pointType = entry.Value?.GetType();
+        if (pointType is null)
+        {
+            continue;
+        }
+
+        if (pointType.GetProperty("ID")?.GetValue(entry.Value) is int id &&
+            pointType.GetProperty("PageID")?.GetValue(entry.Value) is int pageId)
+        {
+            string? positionString = pointType.GetProperty("Position", BindingFlags.Public | BindingFlags.Instance)
+                ?.GetValue(entry.Value)?.ToString();
+
+            string? name = null;
+            var displayNameProperty = pointType.GetProperty("DisplayName", BindingFlags.Public | BindingFlags.Instance);
+            if (displayNameProperty is not null)
+            {
+                name = displayNameProperty.GetValue(entry.Value)?.ToString();
+            }
+
+            Console.WriteLine($" - Point {id} on page {pageId} at {positionString ?? "<unknown>"} display '{name ?? "<none>"}'");
+        }
+
+        printed++;
+        if (printed >= 20)
+        {
+            Console.WriteLine(" ...");
+            break;
+        }
+    }
+}
+
+if (pagesFieldInfo?.GetValue(null) is System.Collections.IDictionary pagesDictionary && pagesDictionary.Count > 0)
+{
+    Console.WriteLine();
+    Console.WriteLine($"UILinkPointNavigator has {pagesDictionary.Count} pages loaded.");
+    int printed = 0;
+    foreach (System.Collections.DictionaryEntry entry in pagesDictionary)
+    {
+        var pageType = entry.Value?.GetType();
+        if (pageType is null)
+        {
+            continue;
+        }
+
+        string? name = pageType.GetField("Name", BindingFlags.Public | BindingFlags.Instance)?.GetValue(entry.Value)?.ToString();
+        string? idString = entry.Key?.ToString();
+        Console.WriteLine($" - Page {idString}: '{name ?? "<none>"}'");
+
+        printed++;
+        if (printed >= 20)
+        {
+            Console.WriteLine(" ...");
+            break;
+        }
+    }
+}
+
+var itemSlotContextType = assembly.GetType("Terraria.UI.ItemSlot+Context");
+if (itemSlotContextType is not null)
+{
+    Console.WriteLine();
+    Console.WriteLine("ItemSlot.Context constants:");
+    foreach (var field in itemSlotContextType
+                 .GetFields(BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Static | BindingFlags.FlattenHierarchy)
+                 .Where(f => f.FieldType == typeof(int))
+                 .OrderBy(f => f.Name, StringComparer.OrdinalIgnoreCase))
+    {
+        if (field.GetValue(null) is int value)
+        {
+            Console.WriteLine($" - {field.Name} = {value}");
+        }
+    }
+}
+
+var uiLinkPointType = assembly.GetType("Terraria.UI.Gamepad.UILinkPoint");
+if (uiLinkPointType is not null)
+{
+    Console.WriteLine();
+    Console.WriteLine("UILinkPoint members:");
+    foreach (var member in uiLinkPointType
+                 .GetMembers(BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Instance | BindingFlags.Static)
+                 .Where(m => m.MemberType is MemberTypes.Property or MemberTypes.Field or MemberTypes.Method)
+                 .OrderBy(m => m.Name, StringComparer.OrdinalIgnoreCase))
+    {
+        switch (member)
+        {
+            case PropertyInfo property:
+                Console.WriteLine($" - Property {property.PropertyType.FullName} {property.Name}");
+                break;
+            case FieldInfo field:
+                Console.WriteLine($" - Field {field.FieldType.FullName} {field.Name}");
+                break;
+            case MethodInfo method when method.IsSpecialName is false:
+                Console.WriteLine($" - Method {method.Name}()");
+                break;
+        }
+    }
+}
+
 var ingameOptionsType = assembly.GetType("Terraria.IngameOptions");
 if (ingameOptionsType is not null)
 {

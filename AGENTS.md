@@ -1,20 +1,39 @@
-﻿# Repository Guidelines
+# Repository Guidelines
+
+These instructions help contributors keep the screen-reader-first Terraria mod aligned with tModLoader expectations and accessible testing flows.
 
 ## Project Structure & Module Organization
-This repo exists to deliver a screen-reader-first Terraria experience via tModLoader. Source lives under `Mods/ScreenReaderMod/` (C# in `Common/`, future assets in `Content/` or `Assets/`). Tooling experiments belong in `Tools/`. The root `.gitignore` keeps the vanilla binaries, installers, `Content/`, and extracted `tModLoader_dist/` out of Gitâ€”leave that list intact when upgrading the base game. Store documentation in `Docs/` and keep any sample configs or logs lightweight.
+
+- Core source lives under `Mods/ScreenReaderMod/`; C# logic belongs in `Common/`, with systems/hooks in `Common/Systems` and shared services in `Common/Services`.
+- Future assets land in `Content/` or `Assets/`; documentation and accessibility notes stay in `Docs/`; tooling experiments belong in `Tools/`.
+- Decompiled references reside in `Tools/Decompiled/` plus the Steam installs at `/steam/steamapps/common/terraria` and `/steam/steamapps/common/tmodloader` for cross-checking menu arrays.
+- Keep `Content/`, vanilla binaries, installers, and `tModLoader_dist/` out of Git per the root `.gitignore`.
+
+## Build, Test, and Development Commands
+
+```powershell
+powershell -ExecutionPolicy Bypass -File Tools/build.ps1
+```
+Always build through the `Tools/` script; it wraps the tModLoader host and places outputs where the game expects them. Manual testing requires NVDA running with `nvdaControllerClient64.dll` beside `tModLoader.exe` (or `Libraries/` under the mod). Watch `tModLoader-Logs/client.log` for `[Narration]`, `[MenuNarration]`, and `[NVDA]` breadcrumbs when validating speech.
 
 ## Coding Style & Naming Conventions
-Target C# 10 with four-space indentation and the `ScreenReaderMod.*` namespace hierarchy. Shared services live in `Common/Services`, systems and hooks in `Common/Systems`. JSON/NBT payloads should keep the project's lowercase-with-hyphen keys. Batch or PowerShell helpers must stay CRLF-terminated, with command verbs (`REM`, `SET`, `Write-Host`) uppercased for consistency.
 
-## Speech Integration & Accessibility Targets
-`ScreenReaderService` now routes narration through NVDA when `nvdaControllerClient64.dll` is placed beside `tModLoader.exe` (or inside `Libraries/` under the mod source). Always keep NVDA running during manual tests; log output falls back to on-screen chat so players without NVDA still see status. Current focus is main menu narration-map every `menuMode` you touch and document gaps in `Docs/accessibility-notes.md`.
+- Target C# 10 with four-space indentation and namespace prefix `ScreenReaderMod.*`.
+- JSON/NBT payload keys stay lowercase-with-hyphen. Batch or PowerShell helpers remain CRLF-terminated with uppercase verbs (`REM`, `SET`, `Write-Host`).
+- Extend menu narration via `MenuNarrationCatalog.ModeResolvers`, using reflection-safe lookups (`Lang.menu[...]` plus live state) instead of hard-coded strings.
 
-## Diagnostics & Troubleshooting
-Enable verbose logging by watching `tModLoader-Logs/client.log`. Key breadcrumbs: `[Narration]` (final speech queue), `[MenuNarration]` (focus tracking source), `[NVDA]` (controller status). When something misaligns, capture the focus index plus the expected label; add a targeted lookup rather than relying on `Lang.menu`. Leave repro steps in the nightly commit body so testers can validate quickly.
-- Steam installs drop the log at `C:\Program Files (x86)\Steam\steamapps\common\tModLoader\tModLoader-Logs\client.log`; surface new findings there when sharing logs.
-- That `tModLoader-Logs` directory also captures auxiliary files (crash, networking, etc.); keep an eye on the set when you need deeper traces beyond `client.log`.
-- Single-player menu work in progress: `feature/singleplayer-menu-gamepad`. We restored vanilla gamepad navigation, hooked menu narration into UI reflection, and now annotate button actions by index. Player rows: Play/Favorite/Move to Cloud/Rename/Delete. World rows: Play/Favorite/Move to Cloud/Copy Seed/Rename/Delete, with seeds read aloud and favorite/cloud states announced.
-- `Tools/Decompiled/` stores `ilspycmd` dumps of `Main` and UI helper typesâ€”handy for cross-checking menuMode arrays when narration falls out of sync.
-- Additional decompiled sources live under `C:\Program Files (x86)\Steam\steamapps\common\Terraria`, and `C:\Program Files (x86)\Steam\steamapps\common\tModLoader` often contains helper implementations worth cross-checking.
-- Main menu narration resolves via `MenuNarrationCatalog.ModeResolvers`; add new menuMode keys there with reflection-safe lookups (prefer `Lang.menu[...]` + live state) so the focus system stays accurate. 
-- Primary builds should run through the Windows install: `"C:\Program Files (x86)\Steam\steamapps\common\tModLoader\dotnet\dotnet.exe" tModLoader.dll -build "<Windows path to Mods\ScreenReaderMod>"`.
+## Testing Guidelines
+
+- No automated suite yet; log NVDA walkthroughs and expected narration in `Docs/accessibility-notes.md`.
+- Capture focus indices, spoken text, and reproduction steps whenever menu narration drifts so nightly testers can replay scenarios quickly.
+
+## Commit & Pull Request Guidelines
+
+- Use concise, imperative commit titles and include NVDA observations or repro notes in the body when relevant.
+- Reference related branches (e.g., `feature/singleplayer-menu-gamepad`) and attach snippets from `tModLoader-Logs/` when they inform reviewers.
+- Pull requests should outline menu modes touched, linked issues, controller/keyboard coverage, and any remaining narration gaps.
+
+## Accessibility & Diagnostics Tips
+
+- Keep NVDA active during playtests; the in-game chat fallback is secondary and should be noted if used.
+- When narration desynchronizes, validate against the decompiled helpers in `Tools/Decompiled/` or the Steam directories noted above, then document findings before merging.
