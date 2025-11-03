@@ -1410,28 +1410,9 @@ public sealed class InGameNarrationSystem : ModSystem
         private string? _lastEmptyMessage;
         private string? _lastAnnouncedMessage;
         private SlotFocus? _currentFocus;
-        private bool _usingSelectedHotbarFocus;
-        private int _lastSelectedHotbarSlot = -1;
 
         private static SlotFocus? _pendingFocus;
-        private static int _pendingLinkPoint = -1;
         private static readonly Dictionary<int, SlotFocus> LinkPointFocusCache = new();
-        private static (int X, int Y)? _storedCursorPosition;
-        private static (int X, int Y)? _preInventoryCursorPosition;
-        private static bool _wasInventoryUiOpen;
-
-        private static readonly Lazy<PropertyInfo?> LinkPointsProperty = new(() =>
-            typeof(UILinkPointNavigator).GetProperty("Points", BindingFlags.Static | BindingFlags.Public | BindingFlags.NonPublic));
-
-        private static readonly Lazy<FieldInfo?> LinkPointsField = new(() =>
-            typeof(UILinkPointNavigator).GetField("Points", BindingFlags.Static | BindingFlags.Public | BindingFlags.NonPublic));
-
-        private static readonly Dictionary<int, int> OriginalLinkPointRight = new();
-
-        private static int _lastLinkPoint = -1;
-        private static bool _lastHopFromBottomInventory;
-
-        private static int _lastLoggedLinkPoint = int.MinValue;
 
         private static readonly Lazy<FieldInfo?> MouseTextCacheField = new(() =>
             typeof(Main).GetField("_mouseTextCache", BindingFlags.Instance | BindingFlags.NonPublic));
@@ -1448,7 +1429,6 @@ public sealed class InGameNarrationSystem : ModSystem
 
             SlotFocus focus = new(inventory, null, context, slot);
             StorePendingFocus(focus);
-            LogLinkPointState(context, slot);
         }
 
         public static void RecordFocus(Item item, int context)
@@ -1460,7 +1440,6 @@ public sealed class InGameNarrationSystem : ModSystem
 
             SlotFocus focus = new(null, item, context, -1);
             StorePendingFocus(focus);
-            LogLinkPointState(context, -1);
         }
 
         private static bool ShouldCaptureFocusForContext(int context)
@@ -1472,115 +1451,39 @@ public sealed class InGameNarrationSystem : ModSystem
         private static void StorePendingFocus(SlotFocus focus)
         {
             _pendingFocus = focus;
-
-            if (PlayerInput.UsingGamepadUI)
-            {
-                _pendingLinkPoint = UILinkPointNavigator.CurrentPoint;
-            }
-            else
-            {
-                _pendingLinkPoint = -1;
-            }
-
             CacheLinkPointFocus(focus);
-        }
-
-        private static bool ShouldAdoptPendingFocus(SlotFocus focus, int linkPoint, bool justOpened)
-        {
-            if (!ShouldCaptureFocusForContext(focus.Context))
-            {
-                return false;
-            }
-
-            if (ShouldDeferFocusOnOpen(linkPoint, justOpened))
-            {
-                return false;
-            }
-
-            return true;
-        }
-
-        private static bool ShouldDeferFocusOnOpen(int linkPoint, bool justOpened)
-        {
-            if (!justOpened || !PlayerInput.UsingGamepadUI)
-            {
-                return false;
-            }
-
-            // The crafting interface steals the first link point when the inventory opens on gamepad.
-            // Skip that initial handoff so we narrate the active hotbar selection instead.
-            return linkPoint >= 0 && CraftingNarrator.IsCraftingLinkPoint(linkPoint);
         }
 
         public void Update(Player player)
         {
-            bool inventoryOpen = IsInventoryUiOpen(player);
-            if (!inventoryOpen)
+            if (!IsInventoryUiOpen(player))
             {
-                RestoreCursorPosition();
                 Reset();
-                CacheCursorPositionWhileFree();
-                _wasInventoryUiOpen = false;
                 return;
             }
 
-            bool justOpened = !_wasInventoryUiOpen;
+            bool usingGamepad = PlayerInput.UsingGamepadUI;
 
-            if (!_wasInventoryUiOpen)
-            {
-                InitializeCursorRestore();
-            }
-
-            _wasInventoryUiOpen = true;
-
-            bool adoptedFocus = false;
-
+            SlotFocus? nextFocus = null;
             if (_pendingFocus.HasValue)
             {
-                SlotFocus focus = _pendingFocus.Value;
-                int pendingPoint = _pendingLinkPoint;
+                nextFocus = _pendingFocus;
                 _pendingFocus = null;
-                _pendingLinkPoint = -1;
-
-                if (ShouldAdoptPendingFocus(focus, pendingPoint, justOpened))
-                {
-                    _currentFocus = focus;
-                    _usingSelectedHotbarFocus = false;
-                    adoptedFocus = true;
-                }
             }
-
-            if (!adoptedFocus)
+            else if (usingGamepad)
             {
-                if (PlayerInput.UsingGamepadUI)
-                {
-                    SlotFocus? resolved = ResolveFocusFromLinkPoint();
-                    if (resolved.HasValue &&
-                        ShouldCaptureFocusForContext(resolved.Value.Context) &&
-                        !ShouldDeferFocusOnOpen(UILinkPointNavigator.CurrentPoint, justOpened))
-                    {
-                        _currentFocus = resolved;
-                        _usingSelectedHotbarFocus = false;
-                        adoptedFocus = true;
-                    }
-                    else if (TryAdoptSelectedHotbarFocus(player, forceAdopt: justOpened))
-                    {
-                        adoptedFocus = true;
-                    }
-                    else
-                    {
-                        _usingSelectedHotbarFocus = false;
-                    }
-                }
-                else
-                {
-                    _usingSelectedHotbarFocus = false;
-                }
+                nextFocus = ResolveFocusFromLinkPoint();
             }
 
-            _lastSelectedHotbarSlot = player.selectedItem;
+            if (nextFocus.HasValue && IsFocusValid(nextFocus.Value))
+            {
+                _currentFocus = nextFocus;
+            }
+            else if (!usingGamepad)
+            {
+                _currentFocus = null;
+            }
 
-            MaintainCursorWhileInventoryOpen();
             HandleMouseItem();
             HandleHoverItem(player);
         }
@@ -1622,15 +1525,6 @@ public sealed class InGameNarrationSystem : ModSystem
             SlotFocus? focus = _currentFocus;
             Item? focusedItem = GetItemFromFocus(focus);
             bool usingGamepadFocus = PlayerInput.UsingGamepadUI && focusedItem is not null;
-
-            if (PlayerInput.UsingGamepadUI)
-            {
-                int currentPoint = UILinkPointNavigator.CurrentPoint;
-                if (!_usingSelectedHotbarFocus && CraftingNarrator.IsCraftingLinkPoint(currentPoint))
-                {
-                    return;
-                }
-            }
 
             Item hover = usingGamepadFocus ? focusedItem! : Main.HoverItem;
             ItemIdentity identity = ItemIdentity.From(hover);
@@ -1784,88 +1678,6 @@ public sealed class InGameNarrationSystem : ModSystem
             return false;
         }
 
-        private static void CacheCursorPositionWhileFree()
-        {
-            if (PlayerInput.UsingGamepadUI)
-            {
-                return;
-            }
-
-            if (Main.SmartCursorIsUsed || Main.SmartCursorWanted)
-            {
-                _preInventoryCursorPosition = null;
-                return;
-            }
-
-            int clampedX = Math.Clamp(Main.mouseX, 0, Main.screenWidth - 1);
-            int clampedY = Math.Clamp(Main.mouseY, 0, Main.screenHeight - 1);
-            _preInventoryCursorPosition = (clampedX, clampedY);
-        }
-
-        private static void InitializeCursorRestore()
-        {
-            if (Main.SmartCursorIsUsed || Main.SmartCursorWanted)
-            {
-                _storedCursorPosition = null;
-                return;
-            }
-
-            if (_preInventoryCursorPosition.HasValue)
-            {
-                _storedCursorPosition = _preInventoryCursorPosition;
-                return;
-            }
-
-            if (!PlayerInput.UsingGamepadUI)
-            {
-                _storedCursorPosition = null;
-                return;
-            }
-
-            int clampedX = Math.Clamp(PlayerInput.MouseX, 0, Main.screenWidth - 1);
-            int clampedY = Math.Clamp(PlayerInput.MouseY, 0, Main.screenHeight - 1);
-            _storedCursorPosition = (clampedX, clampedY);
-        }
-
-        private static void MaintainCursorWhileInventoryOpen()
-        {
-            if (!PlayerInput.UsingGamepadUI)
-            {
-                return;
-            }
-
-            int clampedX = Math.Clamp(PlayerInput.MouseX, 0, Main.screenWidth - 1);
-            int clampedY = Math.Clamp(PlayerInput.MouseY, 0, Main.screenHeight - 1);
-
-            if (!_storedCursorPosition.HasValue)
-            {
-                _storedCursorPosition = (clampedX, clampedY);
-            }
-        }
-
-        private static void RestoreCursorPosition()
-        {
-            if (!_storedCursorPosition.HasValue)
-            {
-                return;
-            }
-
-            (int x, int y) = _storedCursorPosition.Value;
-            SetCursorPosition(x, y);
-            _storedCursorPosition = null;
-        }
-
-        private static void SetCursorPosition(int x, int y)
-        {
-            int clampedX = Math.Clamp(x, 0, Main.screenWidth - 1);
-            int clampedY = Math.Clamp(y, 0, Main.screenHeight - 1);
-
-            Main.mouseX = clampedX;
-            Main.mouseY = clampedY;
-            PlayerInput.MouseX = clampedX;
-            PlayerInput.MouseY = clampedY;
-        }
-
         private static bool IsFocusValid(SlotFocus focus)
         {
             if (focus.Items is Item[] items)
@@ -1928,12 +1740,8 @@ public sealed class InGameNarrationSystem : ModSystem
             _lastEmptyMessage = null;
             _lastAnnouncedMessage = null;
             _currentFocus = null;
-            _usingSelectedHotbarFocus = false;
-            _lastSelectedHotbarSlot = -1;
             _pendingFocus = null;
-            _pendingLinkPoint = -1;
             LinkPointFocusCache.Clear();
-            _storedCursorPosition = null;
         }
 
         private static string DescribeLocation(Player player, ItemIdentity identity, SlotFocus? focus)
@@ -2388,230 +2196,6 @@ public sealed class InGameNarrationSystem : ModSystem
             {
                 candidates.Add(normalized);
             }
-        }
-
-        private static void LogLinkPointState(int context, int slot)
-        {
-            try
-            {
-                if (!PlayerInput.UsingGamepad)
-                {
-                    return;
-                }
-
-                int currentPoint = UILinkPointNavigator.CurrentPoint;
-                if (currentPoint == _lastLoggedLinkPoint)
-                {
-                    return;
-                }
-
-                _lastLoggedLinkPoint = currentPoint;
-                if (!TryGetLinkPoint(currentPoint, out UILinkPoint? linkPoint) || linkPoint is null)
-                {
-                    ScreenReaderMod.Instance?.Logger.Debug($"[InventoryNav] point={currentPoint} missing (context={context}, slot={slot})");
-                    return;
-                }
-
-                ScreenReaderMod.Instance?.Logger.Debug(
-                    $"[InventoryNav] point={currentPoint} up={linkPoint.Up} down={linkPoint.Down} left={linkPoint.Left} right={linkPoint.Right} page={linkPoint.Page} ctx={context} slot={slot}");
-
-                if (slot >= 30 && slot <= 40)
-                {
-                    ScreenReaderMod.Instance?.Logger.Debug(
-                        $"[InventoryNavDetail] point={currentPoint} upPoint={DescribeLinkPoint(linkPoint.Up)} downPoint={DescribeLinkPoint(linkPoint.Down)} leftPoint={DescribeLinkPoint(linkPoint.Left)} rightPoint={DescribeLinkPoint(linkPoint.Right)}");
-                }
-
-                HandleInventoryBottomRowHop(currentPoint, context);
-                _lastLinkPoint = currentPoint;
-            }
-            catch (Exception ex)
-            {
-                ScreenReaderMod.Instance?.Logger.Debug($"[InventoryNav] Failed to log link point: {ex.Message}");
-            }
-        }
-
-        private static bool TryGetLinkPoint(int id, out UILinkPoint? linkPoint)
-        {
-            linkPoint = null;
-
-            object? collection = GetLinkPointCollection();
-
-            if (collection is UILinkPoint[] array)
-            {
-                if (id >= 0 && id < array.Length)
-                {
-                    UILinkPoint? candidate = array[id];
-                    if (candidate is not null)
-                    {
-                        linkPoint = candidate;
-                        return true;
-                    }
-                }
-
-                return false;
-            }
-
-            if (collection is Dictionary<int, UILinkPoint> dict)
-            {
-                if (dict.TryGetValue(id, out UILinkPoint? value) && value is not null)
-                {
-                    linkPoint = value;
-                    return true;
-                }
-
-                return false;
-            }
-
-            if (collection is IList list)
-            {
-                if (id >= 0 && id < list.Count && list[id] is UILinkPoint element && element is not null)
-                {
-                    linkPoint = element;
-                    return true;
-                }
-
-                return false;
-            }
-
-            return false;
-        }
-
-        private static string DescribeLinkPoint(int id)
-        {
-            if (id < 0)
-            {
-            return id.ToString(System.Globalization.CultureInfo.InvariantCulture);
-            }
-
-            return TryGetLinkPoint(id, out UILinkPoint? point) && point is not null
-                ? $"{id}(L={point.Left},R={point.Right},U={point.Up},D={point.Down})"
-                : $"{id}(missing)";
-        }
-
-        private bool TryAdoptSelectedHotbarFocus(Player player, bool forceAdopt = false)
-        {
-            if (player is null)
-            {
-                return false;
-            }
-
-            if (player.chest != -1 ||
-                Main.npcShop != 0 ||
-                Main.InGuideCraftMenu ||
-                Main.InReforgeMenu ||
-                Main.ingameOptionsWindow)
-            {
-                return false;
-            }
-
-            int selectedSlot = player.selectedItem;
-            if (selectedSlot < 0 || selectedSlot > 9)
-            {
-                return false;
-            }
-
-            if (!forceAdopt && selectedSlot == _lastSelectedHotbarSlot && !_usingSelectedHotbarFocus)
-            {
-                return false;
-            }
-
-            Item[] inventory = player.inventory;
-            if (inventory is null || selectedSlot >= inventory.Length)
-            {
-                return false;
-            }
-
-            SlotFocus focus = new(inventory, null, ItemSlot.Context.InventoryItem, selectedSlot);
-            _currentFocus = focus;
-            if (!CraftingNarrator.IsCraftingLinkPoint(UILinkPointNavigator.CurrentPoint))
-            {
-                CacheLinkPointFocus(focus);
-            }
-
-            _usingSelectedHotbarFocus = true;
-            return true;
-        }
-
-        private static void HandleInventoryBottomRowHop(int currentPoint, int context)
-        {
-            bool inInventory = context == ItemSlot.Context.InventoryItem;
-
-            if (_lastLinkPoint == 40 && currentPoint == 311 && inInventory)
-            {
-                _lastHopFromBottomInventory = true;
-            }
-            else if (currentPoint != 311)
-            {
-                _lastHopFromBottomInventory = false;
-            }
-
-            if (currentPoint == 311)
-            {
-                EnsureQuickAccessFromQuickStack(inventoryHop: inInventory && _lastHopFromBottomInventory);
-            }
-            else if (currentPoint == 40)
-            {
-                EnsureQuickAccessFromQuickStack(inventoryHop: false);
-            }
-        }
-
-        private static void EnsureQuickAccessFromQuickStack(bool inventoryHop)
-        {
-            if (!TryGetLinkPoint(311, out UILinkPoint? quickStack) || quickStack is null)
-            {
-                return;
-            }
-
-            if (!OriginalLinkPointRight.ContainsKey(311))
-            {
-                OriginalLinkPointRight[311] = quickStack.Right;
-            }
-
-            if (inventoryHop)
-            {
-                if (TryGetLinkPoint(41, out UILinkPoint? neighbor) && neighbor is not null)
-                {
-                    quickStack.Right = 41;
-                }
-
-                return;
-            }
-
-            if (OriginalLinkPointRight.TryGetValue(311, out int originalRight))
-            {
-                quickStack.Right = originalRight;
-            }
-        }
-
-        private static object? GetLinkPointCollection()
-        {
-            PropertyInfo? property = LinkPointsProperty.Value;
-            if (property is not null)
-            {
-                try
-                {
-                    return property.GetValue(null);
-                }
-                catch
-                {
-                    // ignore
-                }
-            }
-
-            FieldInfo? field = LinkPointsField.Value;
-            if (field is not null)
-            {
-                try
-                {
-                    return field.GetValue(null);
-                }
-                catch
-                {
-                    // ignore
-                }
-            }
-
-            return null;
         }
 
         internal static string CombineItemAnnouncement(string message, string? details)
