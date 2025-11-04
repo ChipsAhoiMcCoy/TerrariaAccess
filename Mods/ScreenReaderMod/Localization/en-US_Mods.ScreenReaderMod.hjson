@@ -14,5 +14,20 @@ Mods: {
 			CloseMenu: Close Menu
 			SaveAndExit: Save & Exit
 		}
+
+		Keybinds: {
+			WaypointNext.DisplayName: Next Waypoint
+			WaypointPrevious.DisplayName: Previous Waypoint
+			WaypointCreate.DisplayName: Create Waypoint
+		}
 	}
+}
+
+Keybinds: {
+	"Next Waypoint.DisplayName": Next  Waypoint
+	"Previous Waypoint.DisplayName": Previous  Waypoint
+	"Create Waypoint.DisplayName": Create  Waypoint
+	WaypointNext.DisplayName: Waypoint Next
+	WaypointPrevious.DisplayName: Waypoint Previous
+	WaypointCreate.DisplayName: Waypoint Create
 }
