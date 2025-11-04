@@ -3882,6 +3882,7 @@ public sealed class InGameNarrationSystem : ModSystem
         private static SoundEffect? _cursorTone;
         private static readonly List<SoundEffectInstance> ActiveInstances = new();
         private static bool _suppressNextAnnouncement;
+        private string? _lastSmartCursorTileAnnouncement;
 
         public void Update()
         {
@@ -3894,16 +3895,16 @@ public sealed class InGameNarrationSystem : ModSystem
 
             bool smartCursorActive = Main.SmartCursorIsUsed || Main.SmartCursorWanted;
             bool hasSmartInteract = Main.HasSmartInteractTarget;
-            bool cursorIsFree = !smartCursorActive && !hasSmartInteract;
+            bool canProvideCursorFeedback = !hasSmartInteract;
 
-            if (_lastSmartCursorActive && !smartCursorActive && cursorIsFree)
+            if (_lastSmartCursorActive && !smartCursorActive && canProvideCursorFeedback)
             {
                 CenterCursorOnPlayer(player);
             }
 
             _lastSmartCursorActive = smartCursorActive;
 
-            if (!cursorIsFree)
+            if (!canProvideCursorFeedback)
             {
                 ResetCursorFeedback();
                 return;
@@ -3911,9 +3912,36 @@ public sealed class InGameNarrationSystem : ModSystem
 
             UpdateOriginFromPlayer(player);
 
+            int tileX;
+            int tileY;
+            Vector2 tileCenterWorld;
+            Vector2 cursorWorld;
+
+            if (smartCursorActive)
+            {
+                tileX = Main.SmartCursorX;
+                tileY = Main.SmartCursorY;
+
+                if (tileX < 0 || tileY < 0)
+                {
+                    ResetTileTracking();
+                    return;
+                }
+
+                tileCenterWorld = new Vector2(tileX * 16f + 8f, tileY * 16f + 8f);
+                cursorWorld = tileCenterWorld;
+            }
+            else
+            {
+                cursorWorld = Main.MouseWorld;
+                tileX = (int)(cursorWorld.X / 16f);
+                tileY = (int)(cursorWorld.Y / 16f);
+                tileCenterWorld = new Vector2(tileX * 16f + 8f, tileY * 16f + 8f);
+            }
+
             if (ConsumeSuppressionFlag())
             {
-                _wasHoveringPlayer = IsHoveringPlayer(player);
+                _wasHoveringPlayer = IsHoveringPlayer(player, cursorWorld);
                 return;
             }
 
@@ -3922,22 +3950,17 @@ public sealed class InGameNarrationSystem : ModSystem
                 return;
             }
 
-            Vector2 world = Main.MouseWorld;
-            int tileX = (int)(world.X / 16f);
-            int tileY = (int)(world.Y / 16f);
-
             bool wasHoveringPlayer = _wasHoveringPlayer;
             bool tileChanged = tileX != _lastTileX || tileY != _lastTileY;
             if (tileChanged)
             {
-                Vector2 tileCenter = new(tileX * 16f + 8f, tileY * 16f + 8f);
-                PlayCursorCue(player, tileCenter);
+                PlayCursorCue(player, tileCenterWorld);
 
                 _lastTileX = tileX;
                 _lastTileY = tileY;
             }
 
-            bool hoveringPlayer = IsHoveringPlayer(player);
+            bool hoveringPlayer = IsHoveringPlayer(player, cursorWorld);
 
             if (!PlayerInput.UsingGamepad)
             {
@@ -3964,16 +3987,40 @@ public sealed class InGameNarrationSystem : ModSystem
                 return;
             }
 
-            TileDescriptor.TryDescribe(tileX, tileY, out _, out string? name);
+            string coordinates = smartCursorActive ? string.Empty : BuildCoordinateMessage(tileX, tileY);
 
-            string coordinates = BuildCoordinateMessage(tileX, tileY);
-            if (string.IsNullOrWhiteSpace(name))
+            if (!TileDescriptor.TryDescribe(tileX, tileY, out _, out string? name))
             {
-                if (!string.IsNullOrWhiteSpace(coordinates))
+                _lastSmartCursorTileAnnouncement = null;
+                if (!smartCursorActive && !string.IsNullOrWhiteSpace(coordinates))
                 {
                     ScreenReaderService.Announce(coordinates, force: true);
                 }
                 return;
+            }
+
+            if (string.IsNullOrWhiteSpace(name))
+            {
+                _lastSmartCursorTileAnnouncement = null;
+                if (!smartCursorActive && !string.IsNullOrWhiteSpace(coordinates))
+                {
+                    ScreenReaderService.Announce(coordinates, force: true);
+                }
+                return;
+            }
+
+            if (smartCursorActive)
+            {
+                if (string.Equals(name, _lastSmartCursorTileAnnouncement, StringComparison.Ordinal))
+                {
+                    return;
+                }
+
+                _lastSmartCursorTileAnnouncement = name;
+            }
+            else
+            {
+                _lastSmartCursorTileAnnouncement = null;
             }
 
             string message = string.IsNullOrWhiteSpace(coordinates) ? name : $"{name}, {coordinates}";
@@ -3998,14 +4045,14 @@ public sealed class InGameNarrationSystem : ModSystem
             _wasHoveringPlayer = false;
             _originTileX = int.MinValue;
             _originTileY = int.MinValue;
+            _lastSmartCursorTileAnnouncement = null;
         }
 
-        private static bool IsHoveringPlayer(Player player)
+        private static bool IsHoveringPlayer(Player player, Vector2 cursorWorld)
         {
-            Vector2 world = Main.MouseWorld;
             Rectangle bounds = player.getRect();
             bounds.Inflate(4, 4);
-            return bounds.Contains((int)world.X, (int)world.Y);
+            return bounds.Contains((int)cursorWorld.X, (int)cursorWorld.Y);
         }
 
         private void AnnouncePlayer(Player _)
