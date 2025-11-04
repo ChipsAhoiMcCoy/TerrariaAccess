@@ -2,16 +2,16 @@
 using System;
 using System.Collections.Generic;
 using Microsoft.Xna.Framework;
-using Microsoft.Xna.Framework.Audio;
 using Microsoft.Xna.Framework.Graphics;
 using Microsoft.Xna.Framework.Input;
-using ReLogic.Content;
 using ScreenReaderMod.Common.Services;
+using ScreenReaderMod.Common.Systems.Waypoints;
 using Terraria;
 using Terraria.Audio;
 using Terraria.GameContent;
 using Terraria.GameContent.UI.Elements;
 using Terraria.GameInput;
+using Terraria.ID;
 using Terraria.ModLoader;
 using Terraria.ModLoader.IO;
 using Terraria.UI;
@@ -26,11 +26,7 @@ public sealed class WaypointSystem : ModSystem
     private const float ArrivalTileThreshold = 4f;
     private const int MinPingDelayFrames = 12;
     private const int MaxPingDelayFrames = 70;
-    private const string MenuTickSoundPath = "Terraria/Sounds/Menu_Tick";
-
-    private static ModKeybind? _nextWaypointKey;
-    private static ModKeybind? _previousWaypointKey;
-    private static ModKeybind? _createWaypointKey;
+    private const float PitchScale = 320f;
 
     private static readonly List<Waypoint> Waypoints = new();
     private static int _selectedIndex = -1;
@@ -39,8 +35,6 @@ public sealed class WaypointSystem : ModSystem
     private static WaypointNamingState? _namingState;
     private static GameTime? _lastUiGameTime;
 
-    private static Asset<SoundEffect>? _menuTickSound;
-    private static readonly List<SoundEffectInstance> ActiveSoundInstances = new();
     private static int _nextPingUpdateFrame = -1;
     private static bool _arrivalAnnounced;
 
@@ -63,9 +57,7 @@ public sealed class WaypointSystem : ModSystem
             return;
         }
 
-        _nextWaypointKey = KeybindLoader.RegisterKeybind(Mod, "WaypointNext", Keys.OemCloseBrackets);
-        _previousWaypointKey = KeybindLoader.RegisterKeybind(Mod, "WaypointPrevious", Keys.OemOpenBrackets);
-        _createWaypointKey = KeybindLoader.RegisterKeybind(Mod, "WaypointCreate", Keys.OemPipe);
+        WaypointKeybinds.EnsureInitialized(Mod);
 
         _namingInterface = new UserInterface();
     }
@@ -80,12 +72,6 @@ public sealed class WaypointSystem : ModSystem
         _lastUiGameTime = null;
         _nextPingUpdateFrame = -1;
         _arrivalAnnounced = false;
-
-        _nextWaypointKey = null;
-        _previousWaypointKey = null;
-        _createWaypointKey = null;
-
-        DisposeSoundResources();
     }
 
     public override void OnWorldUnload()
@@ -205,7 +191,6 @@ public sealed class WaypointSystem : ModSystem
             }
         }
 
-        CleanupFinishedSoundInstances();
     }
 
     public override void UpdateUI(GameTime gameTime)
@@ -312,19 +297,19 @@ public sealed class WaypointSystem : ModSystem
             return;
         }
 
-        if (_createWaypointKey?.JustPressed ?? false)
+        if (WaypointKeybinds.Create?.JustPressed ?? false)
         {
             BeginNaming(player);
             return;
         }
 
-        if (_nextWaypointKey?.JustPressed ?? false)
+        if (WaypointKeybinds.Next?.JustPressed ?? false)
         {
             CycleSelection(1, player);
             return;
         }
 
-        if (_previousWaypointKey?.JustPressed ?? false)
+        if (WaypointKeybinds.Previous?.JustPressed ?? false)
         {
             CycleSelection(-1, player);
         }
@@ -429,23 +414,15 @@ public sealed class WaypointSystem : ModSystem
             return;
         }
 
-        CleanupFinishedSoundInstances();
-
-        SoundEffect tone = EnsureWaypointSound();
         Vector2 offset = worldPosition - player.Center;
+        float pitch = MathHelper.Clamp(-offset.Y / PitchScale, -0.6f, 0.6f);
+        float volume = MathHelper.Clamp(0.35f + Math.Abs(pitch) * 0.2f, 0f, 0.75f);
 
-        float pan = MathHelper.Clamp(offset.X / 480f, -1f, 1f);
-        float pitch = MathHelper.Clamp(-offset.Y / 320f, -0.6f, 0.6f);
-        float baseVolume = MathHelper.Clamp(0.35f + Math.Abs(pitch) * 0.2f, 0f, 0.75f);
+        SoundStyle style = SoundID.MenuTick
+            .WithVolumeScale(volume)
+            .WithPitchOffset(pitch);
 
-        SoundEffectInstance instance = tone.CreateInstance();
-        instance.IsLooped = false;
-        instance.Volume = baseVolume * Main.soundVolume;
-        instance.Pitch = pitch;
-        instance.Pan = pan;
-        instance.Play();
-
-        ActiveSoundInstances.Add(instance);
+        SoundEngine.PlaySound(style, worldPosition);
     }
 
     private static int ComputeNextPingFrame(Player player, Vector2 waypointPosition)
@@ -482,49 +459,6 @@ public sealed class WaypointSystem : ModSystem
         }
 
         return (int)target;
-    }
-
-    private static SoundEffect EnsureWaypointSound()
-    {
-        if (_menuTickSound is null || !_menuTickSound.IsLoaded)
-        {
-            _menuTickSound = Main.Assets.Request<SoundEffect>(MenuTickSoundPath, AssetRequestMode.ImmediateLoad);
-        }
-
-        return _menuTickSound.Value;
-    }
-
-    private static void CleanupFinishedSoundInstances()
-    {
-        for (int i = ActiveSoundInstances.Count - 1; i >= 0; i--)
-        {
-            SoundEffectInstance instance = ActiveSoundInstances[i];
-            if (instance.State == SoundState.Stopped)
-            {
-                instance.Dispose();
-                ActiveSoundInstances.RemoveAt(i);
-            }
-        }
-    }
-
-    private static void DisposeSoundResources()
-    {
-        foreach (SoundEffectInstance instance in ActiveSoundInstances)
-        {
-            try
-            {
-                instance.Stop();
-            }
-            catch
-            {
-                // ignored
-            }
-
-            instance.Dispose();
-        }
-
-        ActiveSoundInstances.Clear();
-        _menuTickSound = null;
     }
 
     private sealed class WaypointNamingState : UIState
