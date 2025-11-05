@@ -2,14 +2,11 @@
 using System;
 using System.Collections.Generic;
 using Microsoft.Xna.Framework;
-using Microsoft.Xna.Framework.Graphics;
-using Microsoft.Xna.Framework.Input;
 using ScreenReaderMod.Common.Services;
 using ScreenReaderMod.Common.Systems.Waypoints;
 using Terraria;
 using Terraria.Audio;
-using Terraria.GameContent;
-using Terraria.GameContent.UI.Elements;
+using Terraria.GameContent.UI.States;
 using Terraria.GameInput;
 using Terraria.ID;
 using Terraria.ModLoader;
@@ -31,9 +28,7 @@ public sealed class WaypointSystem : ModSystem
     private static readonly List<Waypoint> Waypoints = new();
     private static int _selectedIndex = -1;
 
-    private static UserInterface? _namingInterface;
-    private static WaypointNamingState? _namingState;
-    private static GameTime? _lastUiGameTime;
+    private static bool _namingActive;
 
     private static int _nextPingUpdateFrame = -1;
     private static bool _arrivalAnnounced;
@@ -58,8 +53,6 @@ public sealed class WaypointSystem : ModSystem
         }
 
         WaypointKeybinds.EnsureInitialized(Mod);
-
-        _namingInterface = new UserInterface();
     }
 
     public override void Unload()
@@ -67,9 +60,7 @@ public sealed class WaypointSystem : ModSystem
         Waypoints.Clear();
         _selectedIndex = -1;
 
-        _namingInterface = null;
-        _namingState = null;
-        _lastUiGameTime = null;
+        _namingActive = false;
         _nextPingUpdateFrame = -1;
         _arrivalAnnounced = false;
     }
@@ -138,7 +129,7 @@ public sealed class WaypointSystem : ModSystem
 
     public override void PostUpdatePlayers()
     {
-        if (Main.dedServ || Main.gameMenu || _namingState is not null)
+        if (Main.dedServ || Main.gameMenu || _namingActive)
         {
             _nextPingUpdateFrame = -1;
             _arrivalAnnounced = false;
@@ -193,91 +184,89 @@ public sealed class WaypointSystem : ModSystem
 
     }
 
-    public override void UpdateUI(GameTime gameTime)
-    {
-        _lastUiGameTime = gameTime;
-
-        if (_namingInterface?.CurrentState is null)
-        {
-            return;
-        }
-
-        _namingInterface.Update(gameTime);
-    }
-
-    public override void ModifyInterfaceLayers(List<GameInterfaceLayer> layers)
-    {
-        if (_namingInterface?.CurrentState is null)
-        {
-            return;
-        }
-
-        int mouseTextIndex = layers.FindIndex(layer => layer.Name.Equals("Vanilla: Mouse Text", StringComparison.Ordinal));
-        if (mouseTextIndex < 0)
-        {
-            mouseTextIndex = layers.Count;
-        }
-
-        layers.Insert(mouseTextIndex, new LegacyGameInterfaceLayer("ScreenReaderMod: Waypoint Naming", DrawNamingUi, InterfaceScaleType.UI));
-    }
-
-    private static bool DrawNamingUi()
-    {
-        if (_namingInterface is null)
-        {
-            return true;
-        }
-
-        GameTime time = _lastUiGameTime ?? new GameTime();
-        _namingInterface.Draw(Main.spriteBatch, time);
-        return true;
-    }
-
     private static void BeginNaming(Player player)
     {
-        if (_namingInterface is null)
+        if (_namingActive)
         {
             return;
         }
 
         Vector2 worldPosition = player.Center;
-        string defaultName = BuildDefaultName(worldPosition);
+        string fallbackName = BuildDefaultName();
         _nextPingUpdateFrame = -1;
 
-        _namingState = new WaypointNamingState(defaultName, name =>
+        int playerIndex = player.whoAmI;
+        _namingActive = true;
+
+        Main.blockInput = true;
+        PlayerInput.WritingText = true;
+        Main.clrInput();
+
+        Player? ResolvePlayer()
         {
-            string resolvedName = string.IsNullOrWhiteSpace(name) ? defaultName : name.Trim();
+            if (playerIndex < 0 || playerIndex >= Main.maxPlayers)
+            {
+                return null;
+            }
+
+            Player candidate = Main.player[playerIndex];
+            return candidate?.active == true ? candidate : null;
+        }
+
+        void Submit(string input)
+        {
+            string resolvedName = string.IsNullOrWhiteSpace(input) ? fallbackName : input.Trim();
+            global::ScreenReaderMod.ScreenReaderMod.Instance?.Logger.Info($"[WaypointNaming] Resolved name: \"{resolvedName}\" (input: \"{input}\")");
+
             Waypoints.Add(new Waypoint(resolvedName, worldPosition));
             _selectedIndex = Waypoints.Count - 1;
-            RescheduleWaypointPing(player);
 
-            ScreenReaderService.Announce($"Created waypoint {resolvedName}");
-            EmitPing(player, worldPosition);
-            CloseNamingUi();
-        }, () =>
-        {
-            ScreenReaderService.Announce("Waypoint creation cancelled");
-            CloseNamingUi();
-            if (_selectedIndex >= 0 && _selectedIndex < Waypoints.Count)
+            Player? owner = ResolvePlayer();
+            if (owner is not null)
             {
-                RescheduleWaypointPing(player);
+                RescheduleWaypointPing(owner);
+                ScreenReaderService.Announce($"Created waypoint {resolvedName}");
+                EmitPing(owner, worldPosition);
             }
-        });
 
-        _namingInterface.SetState(_namingState);
+            CloseNamingUi();
+        }
+
+        void Cancel()
+        {
+            Player? owner = ResolvePlayer();
+            ScreenReaderService.Announce("Waypoint creation cancelled");
+
+            if (owner is not null && _selectedIndex >= 0 && _selectedIndex < Waypoints.Count)
+            {
+                RescheduleWaypointPing(owner);
+            }
+
+            CloseNamingUi();
+        }
+
+        UIVirtualKeyboard keyboard = new("Create Waypoint", string.Empty, Submit, Cancel, 0, true);
+        IngameFancyUI.OpenUIState(keyboard);
+
         Main.NewText("Waypoint naming: type a name, press Enter to save, or Escape to cancel.", Color.LightSkyBlue);
         ScreenReaderService.Announce("Type the waypoint name, then press Enter to save or Escape to cancel.");
     }
 
     private static void CloseNamingUi()
     {
-        if (_namingInterface is null)
+        if (!_namingActive)
         {
             return;
         }
 
-        _namingInterface.SetState(null);
-        _namingState = null;
+        _namingActive = false;
+        if (Main.InGameUI?.CurrentState is UIVirtualKeyboard)
+        {
+            IngameFancyUI.Close();
+        }
+
+        PlayerInput.WritingText = false;
+        Main.blockInput = false;
     }
 
     internal static void HandleKeybinds(Player player)
@@ -292,7 +281,7 @@ public sealed class WaypointSystem : ModSystem
             return;
         }
 
-        if (_namingState is not null)
+        if (_namingActive || Main.InGameUI?.CurrentState is UIVirtualKeyboard)
         {
             return;
         }
@@ -315,11 +304,10 @@ public sealed class WaypointSystem : ModSystem
         }
     }
 
-    private static string BuildDefaultName(Vector2 worldPosition)
+    private static string BuildDefaultName()
     {
-        int tileX = (int)Math.Round(worldPosition.X / 16f);
-        int tileY = (int)Math.Round(worldPosition.Y / 16f);
-        return $"Waypoint {tileX}, {tileY}";
+        int nextIndex = Waypoints.Count + 1;
+        return $"Waypoint {nextIndex}";
     }
 
     private static void CycleSelection(int direction, Player player)
@@ -350,7 +338,7 @@ public sealed class WaypointSystem : ModSystem
         Waypoint waypoint = Waypoints[_selectedIndex];
         EmitPing(player, waypoint.WorldPosition);
         RescheduleWaypointPing(player);
-        ScreenReaderService.Announce(ComposeWaypointAnnouncement(waypoint, player));
+        ScreenReaderService.Announce(ComposeWaypointAnnouncement(waypoint));
     }
 
     private static void RescheduleWaypointPing(Player player)
@@ -366,45 +354,17 @@ public sealed class WaypointSystem : ModSystem
         _nextPingUpdateFrame = ComputeNextPingFrame(player, Waypoints[_selectedIndex].WorldPosition);
     }
 
-    private static string ComposeWaypointAnnouncement(Waypoint waypoint, Player player)
+    private static string ComposeWaypointAnnouncement(Waypoint waypoint)
     {
-        Vector2 offsetWorld = waypoint.WorldPosition - player.Center;
-        int offsetX = (int)Math.Round(offsetWorld.X / 16f);
-        int offsetY = (int)Math.Round(offsetWorld.Y / 16f);
+        int total = Waypoints.Count;
+        int position = _selectedIndex + 1;
 
-        string horizontal = offsetX switch
+        if (total <= 0 || position <= 0 || position > total)
         {
-            > 0 => $"{offsetX} right",
-            < 0 => $"{Math.Abs(offsetX)} left",
-            _ => string.Empty,
-        };
-
-        string vertical = offsetY switch
-        {
-            > 0 => $"{offsetY} down",
-            < 0 => $"{Math.Abs(offsetY)} up",
-            _ => string.Empty,
-        };
-
-        string offsetDescription;
-        if (!string.IsNullOrEmpty(horizontal) && !string.IsNullOrEmpty(vertical))
-        {
-            offsetDescription = $"{horizontal}, {vertical}";
-        }
-        else if (!string.IsNullOrEmpty(horizontal))
-        {
-            offsetDescription = horizontal;
-        }
-        else if (!string.IsNullOrEmpty(vertical))
-        {
-            offsetDescription = vertical;
-        }
-        else
-        {
-            offsetDescription = "here";
+            return waypoint.Name;
         }
 
-        return $"Selected waypoint {waypoint.Name} ({offsetDescription})";
+        return $"{waypoint.Name} {position} of {total}";
     }
 
     private static void EmitPing(Player player, Vector2 worldPosition)
@@ -460,230 +420,5 @@ public sealed class WaypointSystem : ModSystem
 
         return (int)target;
     }
-
-    private sealed class WaypointNamingState : UIState
-    {
-        private readonly Action<string> _submit;
-        private readonly Action _cancel;
-        private readonly string _defaultText;
-
-        private WaypointTextInput? _textInput;
-        private KeyboardState _previousKeyboardState;
-
-        public WaypointNamingState(string defaultText, Action<string> submit, Action cancel)
-        {
-            _submit = submit;
-            _cancel = cancel;
-            _defaultText = defaultText;
-        }
-
-        public override void OnInitialize()
-        {
-            UIPanel panel = new()
-            {
-                Width = { Pixels = 420f },
-                Height = { Pixels = 180f },
-                HAlign = 0.5f,
-                VAlign = 0.35f,
-                BackgroundColor = new Color(24, 28, 50) * 0.92f,
-                BorderColor = new Color(89, 116, 213),
-                PaddingTop = 14f,
-            };
-
-            Append(panel);
-
-            UIText header = new("Create Waypoint")
-            {
-                HAlign = 0.5f,
-                Top = { Pixels = 6f },
-            };
-            panel.Append(header);
-
-            UIText instructions = new("Type a name, Enter to save, Escape to cancel.")
-            {
-                HAlign = 0.5f,
-                Top = { Pixels = 36f },
-                TextOriginX = 0.5f,
-            };
-            panel.Append(instructions);
-
-            _textInput = new WaypointTextInput(_defaultText)
-            {
-                Top = { Pixels = 70f },
-                Left = { Pixels = 20f },
-                Width = { Percent = 1f, Pixels = -40f },
-                Height = { Pixels = 40f },
-            };
-            panel.Append(_textInput);
-
-            UITextPanel<string> cancelButton = new("Cancel")
-            {
-                Top = { Pixels = 126f },
-                Left = { Pixels = 20f },
-                Width = { Pixels = 120f },
-                Height = { Pixels = 34f },
-            };
-            cancelButton.OnLeftClick += (_, _) => Cancel();
-            panel.Append(cancelButton);
-
-            UITextPanel<string> submitButton = new("Save")
-            {
-                Top = { Pixels = 126f },
-                Left = { Pixels = -140f, Percent = 1f },
-                Width = { Pixels = 120f },
-                Height = { Pixels = 34f },
-            };
-            submitButton.OnLeftClick += (_, _) => Submit();
-            panel.Append(submitButton);
-        }
-
-        public override void OnActivate()
-        {
-            Main.blockInput = true;
-            PlayerInput.WritingText = true;
-
-            Player? localPlayer = Main.LocalPlayer;
-            if (localPlayer is not null)
-            {
-                localPlayer.mouseInterface = true;
-            }
-
-            _textInput?.Focus();
-            _previousKeyboardState = Keyboard.GetState();
-        }
-
-        public override void OnDeactivate()
-        {
-            PlayerInput.WritingText = false;
-            Main.blockInput = false;
-            _textInput?.Unfocus();
-        }
-
-        public override void Update(GameTime gameTime)
-        {
-            base.Update(gameTime);
-
-            KeyboardState current = Keyboard.GetState();
-            if (_textInput is not null && _textInput.IsFocused)
-            {
-                if (WasKeyPressed(current, Keys.Enter))
-                {
-                    Submit();
-                }
-                else if (WasKeyPressed(current, Keys.Escape))
-                {
-                    Cancel();
-                }
-            }
-
-            _previousKeyboardState = current;
-        }
-
-        private bool WasKeyPressed(KeyboardState current, Keys key)
-        {
-            return current.IsKeyDown(key) && !_previousKeyboardState.IsKeyDown(key);
-        }
-
-        private void Submit()
-        {
-            string text = _textInput?.Text ?? string.Empty;
-            _submit(text);
-        }
-
-        private void Cancel()
-        {
-            _cancel();
-        }
-    }
-
-    private sealed class WaypointTextInput : UIPanel
-    {
-        private readonly UIText _text;
-        private string _currentText;
-        private bool _focused;
-
-        public WaypointTextInput(string defaultText)
-        {
-            _currentText = defaultText;
-            BackgroundColor = new Color(54, 64, 104) * 0.95f;
-            BorderColor = new Color(146, 182, 255);
-            PaddingLeft = 10f;
-            PaddingRight = 10f;
-            PaddingTop = 6f;
-            PaddingBottom = 6f;
-
-            _text = new UIText(defaultText ?? string.Empty)
-            {
-                TextOriginX = 0f,
-                TextOriginY = 0f,
-                Top = { Pixels = 0f },
-                Left = { Pixels = 0f },
-            };
-            Append(_text);
-        }
-
-        public string Text => _currentText;
-
-        public bool IsFocused => _focused;
-
-        public override void LeftClick(UIMouseEvent evt)
-        {
-            base.LeftClick(evt);
-            Focus();
-        }
-
-        public void Focus()
-        {
-            _focused = true;
-            Main.clrInput();
-            PlayerInput.WritingText = true;
-            Main.instance?.HandleIME();
-        }
-
-        public void Unfocus()
-        {
-            _focused = false;
-        }
-
-        public override void Update(GameTime gameTime)
-        {
-            base.Update(gameTime);
-
-            if (ContainsPoint(Main.MouseScreen) && Main.LocalPlayer is not null)
-            {
-                Main.LocalPlayer.mouseInterface = true;
-            }
-
-            if (_focused)
-            {
-                Main.instance?.HandleIME();
-                string next = Main.GetInputText(_currentText);
-                if (!string.Equals(next, _currentText, StringComparison.Ordinal))
-                {
-                    _currentText = next;
-                    _text.SetText(_currentText);
-                }
-            }
-        }
-
-        protected override void DrawSelf(SpriteBatch spriteBatch)
-        {
-            base.DrawSelf(spriteBatch);
-
-            if (!_focused)
-            {
-                return;
-            }
-
-            float pulse = (float)Math.Sin(Main.GlobalTimeWrappedHourly * MathHelper.TwoPi) * 0.5f + 0.5f;
-            Color caretColor = Color.Lerp(Color.White, new Color(177, 225, 255), pulse);
-
-            CalculatedStyle inner = GetInnerDimensions();
-            Vector2 textSize = FontAssets.MouseText.Value.MeasureString(_currentText ?? string.Empty);
-            float caretX = inner.X + textSize.X;
-            float caretY = inner.Y;
-            var rectangle = new Rectangle((int)caretX + 2, (int)caretY, 2, FontAssets.MouseText.Value.LineSpacing);
-            spriteBatch.Draw(TextureAssets.MagicPixel.Value, rectangle, caretColor);
-        }
-    }
 }
+
