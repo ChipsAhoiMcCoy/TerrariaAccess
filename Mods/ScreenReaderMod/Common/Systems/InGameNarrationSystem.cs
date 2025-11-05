@@ -1353,9 +1353,14 @@ public sealed class InGameNarrationSystem : ModSystem
         private int _lastItemType = -1;
         private int _lastPrefix = -1;
         private int _lastStack = -1;
+        private static string? _pendingAnnouncement;
+        private static int _pendingAnnouncementTicks;
+        private const int PendingAnnouncementTimeoutTicks = 1;
 
         public void Update(Player player)
         {
+            TickPendingAnnouncement();
+
             if (ShouldSuppressHotbarNarration(player))
             {
                 Reset();
@@ -1381,7 +1386,15 @@ public sealed class InGameNarrationSystem : ModSystem
             string description = DescribeHeldItem(selectedSlot, held);
             if (!string.IsNullOrWhiteSpace(description))
             {
-                ScreenReaderService.Announce(description);
+                bool smartCursorActive = Main.SmartCursorIsUsed || Main.SmartCursorWanted;
+                if (smartCursorActive)
+                {
+                    QueuePendingAnnouncement(description);
+                }
+                else
+                {
+                    ScreenReaderService.Announce(description);
+                }
             }
         }
 
@@ -1391,6 +1404,7 @@ public sealed class InGameNarrationSystem : ModSystem
             _lastItemType = -1;
             _lastPrefix = -1;
             _lastStack = -1;
+            ClearPendingAnnouncement();
         }
 
         private static bool ShouldSuppressHotbarNarration(Player player)
@@ -1425,6 +1439,48 @@ public sealed class InGameNarrationSystem : ModSystem
 
             string label = ComposeItemLabel(item);
             return $"{label}, slot {slot + 1}";
+        }
+
+        private static void TickPendingAnnouncement()
+        {
+            if (_pendingAnnouncementTicks <= 0)
+            {
+                return;
+            }
+
+            _pendingAnnouncementTicks--;
+
+            if (_pendingAnnouncementTicks == 0 && _pendingAnnouncement is not null)
+            {
+                ScreenReaderService.Announce(_pendingAnnouncement, force: true);
+                _pendingAnnouncement = null;
+            }
+        }
+
+        private static void QueuePendingAnnouncement(string description)
+        {
+            _pendingAnnouncement = description;
+            _pendingAnnouncementTicks = PendingAnnouncementTimeoutTicks;
+        }
+
+        private static void ClearPendingAnnouncement()
+        {
+            _pendingAnnouncement = null;
+            _pendingAnnouncementTicks = 0;
+        }
+
+        internal static bool TryDequeuePendingAnnouncement(out string announcement)
+        {
+            if (_pendingAnnouncement is null)
+            {
+                announcement = string.Empty;
+                return false;
+            }
+
+            announcement = _pendingAnnouncement;
+            _pendingAnnouncement = null;
+            _pendingAnnouncementTicks = 0;
+            return true;
         }
     }
 
@@ -4649,7 +4705,7 @@ public sealed class InGameNarrationSystem : ModSystem
                 _lastSmartCursorTileAnnouncement = null;
                 if (!smartCursorActive && !string.IsNullOrWhiteSpace(coordinates))
                 {
-                    ScreenReaderService.Announce(coordinates, force: true);
+                    AnnounceCursorMessage(coordinates, force: true);
                 }
                 return;
             }
@@ -4659,7 +4715,7 @@ public sealed class InGameNarrationSystem : ModSystem
                 _lastSmartCursorTileAnnouncement = null;
                 if (!smartCursorActive && !string.IsNullOrWhiteSpace(coordinates))
                 {
-                    ScreenReaderService.Announce(coordinates, force: true);
+                    AnnounceCursorMessage(coordinates, force: true);
                 }
                 return;
             }
@@ -4679,7 +4735,7 @@ public sealed class InGameNarrationSystem : ModSystem
             }
 
             string message = string.IsNullOrWhiteSpace(coordinates) ? name : $"{name}, {coordinates}";
-            ScreenReaderService.Announce(message, force: true);
+            AnnounceCursorMessage(message, force: true);
         }
 
         private void ResetAll()
@@ -4748,6 +4804,21 @@ public sealed class InGameNarrationSystem : ModSystem
             Vector2 chestWorld = GetPlayerChestWorld(player);
             _originTileX = (int)(chestWorld.X / 16f);
             _originTileY = (int)(chestWorld.Y / 16f);
+        }
+
+        private static void AnnounceCursorMessage(string message, bool force)
+        {
+            if (HotbarNarrator.TryDequeuePendingAnnouncement(out string hotbarAnnouncement))
+            {
+                string combined = string.IsNullOrWhiteSpace(hotbarAnnouncement)
+                    ? message
+                    : $"{hotbarAnnouncement}. {message}";
+
+                ScreenReaderService.Announce(combined, force: force);
+                return;
+            }
+
+            ScreenReaderService.Announce(message, force: force);
         }
 
         private static Vector2 GetPlayerChestWorld(Player player)
