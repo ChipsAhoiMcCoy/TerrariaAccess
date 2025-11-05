@@ -13,12 +13,14 @@ public class ScreenReaderMod : Mod
     {
         Instance = this;
         ScreenReaderService.Initialize();
+        WorldAnnouncementService.Initialize();
         WaypointKeybinds.EnsureInitialized(this);
     }
 
     public override void Unload()
     {
         WaypointKeybinds.Unload();
+        WorldAnnouncementService.Unload();
         ScreenReaderService.Unload();
         Instance = null;
     }

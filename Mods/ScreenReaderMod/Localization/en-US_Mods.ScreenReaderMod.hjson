@@ -15,6 +15,57 @@ Mods: {
 			SaveAndExit: Save & Exit
 		}
 
+		CursorLiquids: {
+			Water: Water
+			Lava: Lava
+			Honey: Honey
+		}
+
+		WorldAnnouncements: {
+			BloodMoonStart: The Blood Moon is rising.
+			BloodMoonEnd: The Blood Moon has ended.
+			GoblinArmyApproaching: A goblin army is approaching.
+			GoblinArmyArrived: The goblin army has arrived.
+			GoblinArmyDefeated: The goblin army has been defeated.
+			GoblinArmyRetreated: The goblin army has departed.
+			PirateArmyApproaching: A pirate invasion is approaching.
+			PirateArmyArrived: The pirates have invaded!
+			PirateArmyDefeated: The pirates have been defeated.
+			PirateArmyRetreated: The pirates have retreated.
+			FrostLegionApproaching: The Frost Legion is approaching.
+			FrostLegionArrived: The Frost Legion has arrived.
+			FrostLegionDefeated: The Frost Legion has been defeated.
+			FrostLegionRetreated: The Frost Legion has departed.
+			MartianMadnessApproaching: Martians are approaching!
+			MartianMadnessArrived: Martians have landed!
+			MartianMadnessDefeated: The Martian invasion has been defeated.
+			MartianMadnessRetreated: The Martians have retreated.
+			CelestialInvasionApproaching: Impending doom approaches.
+			CelestialInvasionArrived: The celestial pillars have arrived.
+			CelestialInvasionDefeated: The celestial invasion has been repelled.
+			CelestialInvasionRetreated: The celestial invasion has departed.
+			SolarEclipseStart: A solar eclipse has begun.
+			SolarEclipseEnd: The solar eclipse has ended.
+			PumpkinMoonStart: The Pumpkin Moon is rising.
+			PumpkinMoonEnd: The Pumpkin Moon has ended.
+			FrostMoonStart: The Frost Moon is rising.
+			FrostMoonEnd: The Frost Moon has ended.
+			RainStart: It has started raining.
+			RainEnd: The rain has stopped.
+			SandstormStart: A sandstorm has begun.
+			SandstormEnd: The sandstorm has ended.
+			SlimeRainStart: Slime is falling from the sky!
+			SlimeRainEnd: The slime rain has ended.
+			LanternNightStart: Lantern Night has begun.
+			LanternNightEnd: Lantern Night has ended.
+			PartyStart: It's a party!
+			PartyEnd: The party is over.
+			OldOnesArmyStart: The Old One's Army is advancing.
+			OldOnesArmyEnd: The Old One's Army has been defeated.
+			WorldLoaded: World loaded.
+			NpcArrived: "{0} has arrived."
+		}
+
 		Keybinds: {
 			WaypointNext.DisplayName: Next Waypoint
 			WaypointPrevious.DisplayName: Previous Waypoint
