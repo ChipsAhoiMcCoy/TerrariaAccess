@@ -32,6 +32,7 @@ public sealed class InGameNarrationSystem : ModSystem
     private readonly SmartCursorNarrator _smartCursorNarrator = new();
     private readonly CraftingNarrator _craftingNarrator = new();
     private readonly CursorNarrator _cursorNarrator = new();
+    private readonly WorldInteractableCueEmitter _worldInteractableCueEmitter = new();
     private readonly InventoryNarrator _inventoryNarrator = new();
     private readonly NpcDialogueNarrator _npcDialogueNarrator = new();
     private readonly IngameSettingsNarrator _ingameSettingsNarrator = new();
@@ -60,6 +61,7 @@ public sealed class InGameNarrationSystem : ModSystem
         }
 
             CursorNarrator.DisposeStaticResources();
+            WorldInteractableCueEmitter.DisposeStaticResources();
             On_ItemSlot.MouseHover_ItemArray_int_int -= HandleItemSlotHover;
             On_ItemSlot.MouseHover_refItem_int -= HandleItemSlotHoverRef;
             On_Main.DrawNPCChatButtons -= CaptureNpcChatButtons;
@@ -129,6 +131,11 @@ public sealed class InGameNarrationSystem : ModSystem
         _craftingNarrator.Update(player);
         _smartCursorNarrator.Update();
         _cursorNarrator.Update();
+        if (!isPaused)
+        {
+            _worldInteractableCueEmitter.Update(player);
+        }
+
         _npcDialogueNarrator.Update(player);
     }
 
@@ -4214,6 +4221,307 @@ public sealed class InGameNarrationSystem : ModSystem
         }
     }
 
+    private sealed class WorldInteractableCueEmitter
+    {
+        private const int ScanRadiusTiles = 70;
+        private const int UpdateIntervalTicks = 18;
+
+        private int _ticksUntilNextScan;
+
+        private static readonly List<SoundEffectInstance> ActiveInstances = new();
+        private static readonly Dictionary<InteractableKind, SoundEffect> ToneCache = new();
+
+        private static readonly InteractableDefinition[] Definitions =
+        {
+            new(
+                InteractableKind.Chest,
+                new[] { (int)TileID.Containers, (int)TileID.Containers2 },
+                frameWidth: 36,
+                frameHeight: 36,
+                widthTiles: 2,
+                heightTiles: 2,
+                baseFrequency: 620f,
+                baseVolume: 0.52f,
+                partialMultipliers: new[] { 1.5f }),
+            new(
+                InteractableKind.HeartCrystal,
+                new[] { (int)TileID.Heart },
+                frameWidth: 36,
+                frameHeight: 54,
+                widthTiles: 2,
+                heightTiles: 3,
+                baseFrequency: 880f,
+                baseVolume: 0.5f,
+                partialMultipliers: new[] { 2f, 2.5f }),
+            new(
+                InteractableKind.DemonAltar,
+                new[] { (int)TileID.DemonAltar },
+                frameWidth: 54,
+                frameHeight: 36,
+                widthTiles: 3,
+                heightTiles: 2,
+                baseFrequency: 480f,
+                baseVolume: 0.48f,
+                partialMultipliers: new[] { 1.25f, 1.5f })
+        };
+
+        public void Update(Player player)
+        {
+            if (_ticksUntilNextScan > 0)
+            {
+                _ticksUntilNextScan--;
+                return;
+            }
+
+            _ticksUntilNextScan = UpdateIntervalTicks;
+            CleanupFinishedInstances();
+
+            Vector2 playerCenter = player.Center;
+
+            foreach (InteractableDefinition definition in Definitions)
+            {
+                if (!TryFindNearest(playerCenter, definition, out Vector2 worldPosition))
+                {
+                    continue;
+                }
+
+                PlayCue(playerCenter, worldPosition, definition);
+            }
+        }
+
+        private static bool TryFindNearest(Vector2 playerCenter, InteractableDefinition definition, out Vector2 worldPosition)
+        {
+            int playerTileX = (int)(playerCenter.X / 16f);
+            int playerTileY = (int)(playerCenter.Y / 16f);
+
+            int minX = Math.Max(0, playerTileX - ScanRadiusTiles);
+            int maxX = Math.Min(Main.maxTilesX - 1, playerTileX + ScanRadiusTiles);
+            int minY = Math.Max(0, playerTileY - ScanRadiusTiles);
+            int maxY = Math.Min(Main.maxTilesY - 1, playerTileY + ScanRadiusTiles);
+
+            float bestDistanceSq = float.MaxValue;
+            Vector2 bestWorld = default;
+            bool found = false;
+
+            for (int x = minX; x <= maxX; x++)
+            {
+                for (int y = minY; y <= maxY; y++)
+                {
+                    Tile tile = Main.tile[x, y];
+                    if (!tile.HasTile)
+                    {
+                        continue;
+                    }
+
+                    if (!definition.MatchesTile(tile.TileType))
+                    {
+                        continue;
+                    }
+
+                    if (!IsAnchorTile(tile, definition))
+                    {
+                        continue;
+                    }
+
+                    Vector2 definitionCenter = GetObjectCenterWorld(x, y, definition);
+                    float distanceSq = Vector2.DistanceSquared(definitionCenter, playerCenter);
+                    if (distanceSq >= bestDistanceSq)
+                    {
+                        continue;
+                    }
+
+                    bestDistanceSq = distanceSq;
+                    bestWorld = definitionCenter;
+                    found = true;
+                }
+            }
+
+            worldPosition = bestWorld;
+            return found;
+        }
+
+        private static Vector2 GetObjectCenterWorld(int tileX, int tileY, InteractableDefinition definition)
+        {
+            float centerX = (tileX + definition.WidthTiles * 0.5f) * 16f;
+            float centerY = (tileY + definition.HeightTiles * 0.5f) * 16f;
+            return new Vector2(centerX, centerY);
+        }
+
+        private static bool IsAnchorTile(Tile tile, InteractableDefinition definition)
+        {
+            if (definition.FrameWidth <= 0 || definition.FrameHeight <= 0)
+            {
+                return true;
+            }
+
+            int frameX = tile.TileFrameX;
+            int frameY = tile.TileFrameY;
+
+            if (frameX < 0 || frameY < 0)
+            {
+                return false;
+            }
+
+            return frameX % definition.FrameWidth == 0 && frameY % definition.FrameHeight == 0;
+        }
+
+        private static void PlayCue(Vector2 playerCenter, Vector2 worldPosition, InteractableDefinition definition)
+        {
+            Vector2 offset = worldPosition - playerCenter;
+            float distance = offset.Length();
+            float normalizedDistance = MathHelper.Clamp(1f - distance / (ScanRadiusTiles * 16f), 0.1f, 1f);
+            float pan = MathHelper.Clamp(offset.X / (ScanRadiusTiles * 16f * 0.75f), -1f, 1f);
+            float pitch = MathHelper.Clamp(-offset.Y / 320f, -0.75f, 0.75f);
+            float volume = definition.BaseVolume * normalizedDistance * Main.soundVolume;
+            volume = MathHelper.Clamp(volume, 0f, 1f);
+
+            SoundEffect tone = EnsureTone(definition);
+            SoundEffectInstance instance = tone.CreateInstance();
+            instance.IsLooped = false;
+            instance.Pan = pan;
+            instance.Pitch = pitch;
+            instance.Volume = volume;
+            instance.Play();
+            ActiveInstances.Add(instance);
+        }
+
+        private static SoundEffect EnsureTone(InteractableDefinition definition)
+        {
+            if (ToneCache.TryGetValue(definition.Kind, out SoundEffect? tone) && tone is not null && !tone.IsDisposed)
+            {
+                return tone;
+            }
+
+            tone?.Dispose();
+            SoundEffect created = CreateTone(definition.BaseFrequency, definition.PartialMultipliers);
+            ToneCache[definition.Kind] = created;
+            return created;
+        }
+
+        private static SoundEffect CreateTone(float fundamental, float[] partialMultipliers)
+        {
+            const int sampleRate = 44100;
+            const float durationSeconds = 0.18f;
+            int sampleCount = Math.Max(1, (int)(sampleRate * durationSeconds));
+            byte[] buffer = new byte[sampleCount * sizeof(short)];
+
+            for (int i = 0; i < sampleCount; i++)
+            {
+                float t = i / (float)sampleRate;
+                float window = 0.5f - 0.5f * MathF.Cos((2f * MathF.PI * i) / Math.Max(1, sampleCount - 1));
+                float sample = MathF.Sin(MathHelper.TwoPi * fundamental * t);
+
+                for (int p = 0; p < partialMultipliers.Length; p++)
+                {
+                    float multiplier = partialMultipliers[p];
+                    float partialAmplitude = 0.6f / (p + 1f);
+                    sample += MathF.Sin(MathHelper.TwoPi * fundamental * multiplier * t) * partialAmplitude;
+                }
+
+                sample *= window * 0.35f;
+                short value = (short)Math.Clamp(sample * short.MaxValue, short.MinValue, short.MaxValue);
+
+                int index = i * 2;
+                buffer[index] = (byte)(value & 0xFF);
+                buffer[index + 1] = (byte)((value >> 8) & 0xFF);
+            }
+
+            return new SoundEffect(buffer, sampleRate, AudioChannels.Mono);
+        }
+
+        private static void CleanupFinishedInstances()
+        {
+            for (int i = ActiveInstances.Count - 1; i >= 0; i--)
+            {
+                SoundEffectInstance instance = ActiveInstances[i];
+                if (instance.State == SoundState.Stopped)
+                {
+                    instance.Dispose();
+                    ActiveInstances.RemoveAt(i);
+                }
+            }
+        }
+
+        public static void DisposeStaticResources()
+        {
+            foreach (SoundEffectInstance instance in ActiveInstances)
+            {
+                try
+                {
+                    instance.Stop();
+                }
+                catch
+                {
+                }
+
+                instance.Dispose();
+            }
+
+            ActiveInstances.Clear();
+
+            foreach ((InteractableKind kind, SoundEffect tone) in ToneCache.ToArray())
+            {
+                tone.Dispose();
+                ToneCache.Remove(kind);
+            }
+        }
+
+        private enum InteractableKind
+        {
+            Chest,
+            HeartCrystal,
+            DemonAltar
+        }
+
+        private readonly struct InteractableDefinition
+        {
+            public InteractableDefinition(
+                InteractableKind kind,
+                int[] tileTypes,
+                int frameWidth,
+                int frameHeight,
+                int widthTiles,
+                int heightTiles,
+                float baseFrequency,
+                float baseVolume,
+                float[] partialMultipliers)
+            {
+                Kind = kind;
+                TileTypes = tileTypes;
+                FrameWidth = frameWidth;
+                FrameHeight = frameHeight;
+                WidthTiles = widthTiles;
+                HeightTiles = heightTiles;
+                BaseFrequency = baseFrequency;
+                BaseVolume = baseVolume;
+                PartialMultipliers = partialMultipliers;
+            }
+
+            public InteractableKind Kind { get; }
+            public int[] TileTypes { get; }
+            public int FrameWidth { get; }
+            public int FrameHeight { get; }
+            public int WidthTiles { get; }
+            public int HeightTiles { get; }
+            public float BaseFrequency { get; }
+            public float BaseVolume { get; }
+            public float[] PartialMultipliers { get; }
+
+            public bool MatchesTile(int tileType)
+            {
+                foreach (int type in TileTypes)
+                {
+                    if (type == tileType)
+                    {
+                        return true;
+                    }
+                }
+
+                return false;
+            }
+        }
+    }
+
     private sealed class CursorNarrator
     {
         private int _lastTileX = int.MinValue;
@@ -4304,6 +4612,10 @@ public sealed class InGameNarrationSystem : ModSystem
             }
 
             bool hoveringPlayer = IsHoveringPlayer(player, cursorWorld);
+            if (smartCursorActive && hoveringPlayer)
+            {
+                hoveringPlayer = false;
+            }
 
             if (!PlayerInput.UsingGamepad)
             {
