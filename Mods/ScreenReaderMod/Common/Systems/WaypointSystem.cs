@@ -213,10 +213,10 @@ public sealed class WaypointSystem : ModSystem
             return candidate?.active == true ? candidate : null;
         }
 
-        void Submit(string input)
+        void FinalizeCreation(string rawInput, string logContext)
         {
-            string resolvedName = string.IsNullOrWhiteSpace(input) ? fallbackName : input.Trim();
-            global::ScreenReaderMod.ScreenReaderMod.Instance?.Logger.Info($"[WaypointNaming] Resolved name: \"{resolvedName}\" (input: \"{input}\")");
+            string resolvedName = string.IsNullOrWhiteSpace(rawInput) ? fallbackName : rawInput.Trim();
+            global::ScreenReaderMod.ScreenReaderMod.Instance?.Logger.Info($"[WaypointNaming:{logContext}] Resolved name: \"{resolvedName}\" (input: \"{rawInput}\")");
 
             Waypoints.Add(new Waypoint(resolvedName, worldPosition));
             _selectedIndex = Waypoints.Count - 1;
@@ -232,10 +232,17 @@ public sealed class WaypointSystem : ModSystem
             CloseNamingUi();
         }
 
+        void Submit(string input) => FinalizeCreation(input, "Submit");
+
         void Cancel()
         {
             Player? owner = ResolvePlayer();
             ScreenReaderService.Announce("Waypoint creation cancelled");
+            string discarded = Main.chatText?.Trim() ?? string.Empty;
+            if (!string.IsNullOrEmpty(discarded))
+            {
+                global::ScreenReaderMod.ScreenReaderMod.Instance?.Logger.Info($"[WaypointNaming:Cancel] Discarded input: \"{discarded}\"");
+            }
 
             if (owner is not null && _selectedIndex >= 0 && _selectedIndex < Waypoints.Count)
             {
@@ -267,6 +274,14 @@ public sealed class WaypointSystem : ModSystem
 
         PlayerInput.WritingText = false;
         Main.blockInput = false;
+        Main.playerInventory = false;
+        Main.editSign = false;
+        Main.editChest = false;
+        Main.drawingPlayerChat = false;
+        Main.inFancyUI = false;
+        Main.gameMenu = false;
+        Main.clrInput();
+        Main.chatText = string.Empty;
     }
 
     internal static void HandleKeybinds(Player player)

@@ -4281,10 +4281,11 @@ public sealed class InGameNarrationSystem : ModSystem
     {
         private const int ScanRadiusTiles = 70;
         private const int UpdateIntervalTicks = 18;
+        private const int MaxConcurrentPlayingCues = 8;
 
         private int _ticksUntilNextScan;
 
-        private static readonly List<SoundEffectInstance> ActiveInstances = new();
+        private static readonly Dictionary<InteractableKind, SoundEffectInstance> InstanceCache = new();
         private static readonly Dictionary<InteractableKind, SoundEffect> ToneCache = new();
 
         private static readonly InteractableDefinition[] Definitions =
@@ -4323,6 +4324,8 @@ public sealed class InGameNarrationSystem : ModSystem
 
         public void Update(Player player)
         {
+            CleanupFinishedInstances();
+
             if (_ticksUntilNextScan > 0)
             {
                 _ticksUntilNextScan--;
@@ -4330,7 +4333,6 @@ public sealed class InGameNarrationSystem : ModSystem
             }
 
             _ticksUntilNextScan = UpdateIntervalTicks;
-            CleanupFinishedInstances();
 
             Vector2 playerCenter = player.Center;
 
@@ -4423,22 +4425,86 @@ public sealed class InGameNarrationSystem : ModSystem
 
         private static void PlayCue(Vector2 playerCenter, Vector2 worldPosition, InteractableDefinition definition)
         {
+            if (Main.soundVolume <= 0f)
+            {
+                return;
+            }
+
+            if (CountPlayingInstances() >= MaxConcurrentPlayingCues)
+            {
+                return;
+            }
+
             Vector2 offset = worldPosition - playerCenter;
             float distance = offset.Length();
             float normalizedDistance = MathHelper.Clamp(1f - distance / (ScanRadiusTiles * 16f), 0.1f, 1f);
             float pan = MathHelper.Clamp(offset.X / (ScanRadiusTiles * 16f * 0.75f), -1f, 1f);
             float pitch = MathHelper.Clamp(-offset.Y / 320f, -0.75f, 0.75f);
-            float volume = definition.BaseVolume * normalizedDistance * Main.soundVolume;
-            volume = MathHelper.Clamp(volume, 0f, 1f);
+            float baseVolume = definition.BaseVolume * normalizedDistance;
+            float finalVolume = MathHelper.Clamp(baseVolume * Main.soundVolume, 0f, 1f);
+            if (finalVolume <= 0f)
+            {
+                return;
+            }
 
-            SoundEffect tone = EnsureTone(definition);
-            SoundEffectInstance instance = tone.CreateInstance();
+            SoundEffectInstance instance = RentInstance(definition);
             instance.IsLooped = false;
             instance.Pan = pan;
             instance.Pitch = pitch;
-            instance.Volume = volume;
+            instance.Volume = finalVolume;
             instance.Play();
-            ActiveInstances.Add(instance);
+        }
+
+        private static int CountPlayingInstances()
+        {
+            int playing = 0;
+            foreach (SoundEffectInstance instance in InstanceCache.Values)
+            {
+                if (instance.IsDisposed)
+                {
+                    continue;
+                }
+
+                if (instance.State == SoundState.Playing)
+                {
+                    playing++;
+                }
+            }
+
+            return playing;
+        }
+
+        private static SoundEffectInstance RentInstance(InteractableDefinition definition)
+        {
+            if (InstanceCache.TryGetValue(definition.Kind, out SoundEffectInstance? cached))
+            {
+                if (cached.IsDisposed)
+                {
+                    InstanceCache.Remove(definition.Kind);
+                }
+                else
+                {
+                    try
+                    {
+                        if (cached.State == SoundState.Playing)
+                        {
+                            cached.Stop();
+                        }
+                    }
+                    catch
+                    {
+                        // ignore stop exceptions and recreate below
+                    }
+
+                    return cached;
+                }
+            }
+
+            SoundEffect tone = EnsureTone(definition);
+            SoundEffectInstance created = tone.CreateInstance();
+            created.IsLooped = false;
+            InstanceCache[definition.Kind] = created;
+            return created;
         }
 
         private static SoundEffect EnsureTone(InteractableDefinition definition)
@@ -4487,20 +4553,35 @@ public sealed class InGameNarrationSystem : ModSystem
 
         private static void CleanupFinishedInstances()
         {
-            for (int i = ActiveInstances.Count - 1; i >= 0; i--)
+            foreach ((InteractableKind kind, SoundEffectInstance instance) in InstanceCache.ToArray())
             {
-                SoundEffectInstance instance = ActiveInstances[i];
-                if (instance.State == SoundState.Stopped)
+                if (instance.IsDisposed)
                 {
-                    instance.Dispose();
-                    ActiveInstances.RemoveAt(i);
+                    InstanceCache.Remove(kind);
+                    continue;
+                }
+
+                if (instance.State != SoundState.Stopped)
+                {
+                    continue;
+                }
+
+                if (Main.soundVolume <= 0f)
+                {
+                    try
+                    {
+                        instance.Stop();
+                    }
+                    catch
+                    {
+                    }
                 }
             }
         }
 
         public static void DisposeStaticResources()
         {
-            foreach (SoundEffectInstance instance in ActiveInstances)
+            foreach ((InteractableKind kind, SoundEffectInstance instance) in InstanceCache.ToArray())
             {
                 try
                 {
@@ -4511,9 +4592,8 @@ public sealed class InGameNarrationSystem : ModSystem
                 }
 
                 instance.Dispose();
+                InstanceCache.Remove(kind);
             }
-
-            ActiveInstances.Clear();
 
             foreach ((InteractableKind kind, SoundEffect tone) in ToneCache.ToArray())
             {
