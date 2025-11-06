@@ -9,17 +9,21 @@ using Microsoft.Xna.Framework;
 using Microsoft.Xna.Framework.Audio;
 using Microsoft.Xna.Framework.Graphics;
 using ScreenReaderMod.Common.Services;
+using ScreenReaderMod.Common.Systems.MenuNarration;
 using ScreenReaderMod.Common.Utilities;
 using Terraria;
 using Terraria.Audio;
 using Terraria.GameContent;
 using Terraria.GameContent.UI.BigProgressBar;
 using Terraria.GameContent.Events;
+using Terraria.GameContent.UI.Elements;
+using Terraria.GameContent.UI.States;
 using Terraria.GameInput;
 using Terraria.ID;
 using Terraria.Localization;
 using Terraria.Map;
 using Terraria.ModLoader;
+using Terraria.ModLoader.IO;
 using Terraria.UI;
 using Terraria.UI.Gamepad;
 using Terraria.UI.Chat;
@@ -28,15 +32,19 @@ namespace ScreenReaderMod.Common.Systems;
 
 public sealed class InGameNarrationSystem : ModSystem
 {
+    private const string OpenedChestAnchorsKey = "screenReaderOpenedChestAnchors";
+
     private readonly HotbarNarrator _hotbarNarrator = new();
     private readonly SmartCursorNarrator _smartCursorNarrator = new();
     private readonly CraftingNarrator _craftingNarrator = new();
     private readonly CursorNarrator _cursorNarrator = new();
     private readonly WorldInteractableCueEmitter _worldInteractableCueEmitter = new();
+    private readonly TreasureBagBeaconEmitter _treasureBagBeaconEmitter = new();
     private readonly InventoryNarrator _inventoryNarrator = new();
     private readonly NpcDialogueNarrator _npcDialogueNarrator = new();
     private readonly IngameSettingsNarrator _ingameSettingsNarrator = new();
     private readonly WorldEventNarrator _worldEventNarrator = new();
+    private readonly ControlsMenuNarrator _controlsMenuNarrator = new();
 
     public override void Load()
         {
@@ -60,8 +68,10 @@ public sealed class InGameNarrationSystem : ModSystem
             return;
         }
 
+            _treasureBagBeaconEmitter.Reset();
             CursorNarrator.DisposeStaticResources();
             WorldInteractableCueEmitter.DisposeStaticResources();
+            TreasureBagBeaconEmitter.DisposeStaticResources();
             On_ItemSlot.MouseHover_ItemArray_int_int -= HandleItemSlotHover;
             On_ItemSlot.MouseHover_refItem_int -= HandleItemSlotHoverRef;
             On_Main.DrawNPCChatButtons -= CaptureNpcChatButtons;
@@ -83,6 +93,64 @@ public sealed class InGameNarrationSystem : ModSystem
     public override void OnWorldUnload()
     {
         _worldEventNarrator.Reset();
+        _worldInteractableCueEmitter.Reset();
+        _treasureBagBeaconEmitter.Reset();
+    }
+
+    public override void LoadWorldData(TagCompound tag)
+    {
+        _worldInteractableCueEmitter.Reset();
+
+        if (!tag.ContainsKey(OpenedChestAnchorsKey))
+        {
+            return;
+        }
+
+        IList<TagCompound> entries = tag.GetList<TagCompound>(OpenedChestAnchorsKey);
+        if (entries.Count == 0)
+        {
+            return;
+        }
+
+        Span<Point> buffer = entries.Count <= 256 ? stackalloc Point[entries.Count] : new Point[entries.Count];
+        int index = 0;
+        foreach (TagCompound entry in entries)
+        {
+            if (!entry.ContainsKey("x") || !entry.ContainsKey("y"))
+            {
+                continue;
+            }
+
+            int x = entry.GetInt("x");
+            int y = entry.GetInt("y");
+            buffer[index++] = new Point(x, y);
+        }
+
+        if (index > 0)
+        {
+            _worldInteractableCueEmitter.SetOpenedChestAnchors(buffer[..index]);
+        }
+    }
+
+    public override void SaveWorldData(TagCompound tag)
+    {
+        IReadOnlyCollection<Point> anchors = _worldInteractableCueEmitter.GetOpenedChestAnchors();
+        if (anchors.Count == 0)
+        {
+            return;
+        }
+
+        List<TagCompound> serialized = new(anchors.Count);
+        foreach (Point anchor in anchors)
+        {
+            serialized.Add(new TagCompound
+            {
+                ["x"] = anchor.X,
+                ["y"] = anchor.Y,
+            });
+        }
+
+        tag[OpenedChestAnchorsKey] = serialized;
     }
 
     public override void PostUpdateWorld()
@@ -133,10 +201,12 @@ public sealed class InGameNarrationSystem : ModSystem
         _cursorNarrator.Update();
         if (!isPaused)
         {
-            _worldInteractableCueEmitter.Update(player);
+        _worldInteractableCueEmitter.Update(player);
+        _treasureBagBeaconEmitter.Update(player);
         }
 
         _npcDialogueNarrator.Update(player);
+        _controlsMenuNarrator.Update(isPaused);
     }
 
     private static void HandleItemSlotHover(On_ItemSlot.orig_MouseHover_ItemArray_int_int orig, Item[] inv, int context, int slot)
@@ -1339,6 +1409,166 @@ public sealed class InGameNarrationSystem : ModSystem
             _lastAmbientVolume = -1f;
             _lastParallax = int.MinValue;
         }
+    }
+
+    private sealed class ControlsMenuNarrator
+    {
+        private readonly MenuUiSelectionTracker _uiTracker = new();
+        private static readonly FieldInfo? UiListField = typeof(UIManageControls).GetField("_uilist", BindingFlags.NonPublic | BindingFlags.Instance);
+
+        private UIState? _lastState;
+        private string? _lastAnnouncement;
+        private bool _announcedEntry;
+        private bool _wasListening;
+
+        public void Update(bool requiresPause)
+        {
+            if (!requiresPause)
+            {
+                Reset();
+                return;
+            }
+
+            if (!TryGetControlsState(out UIManageControls? maybeState))
+            {
+                Reset();
+                return;
+            }
+
+            UIManageControls state = maybeState!;
+
+            if (!ReferenceEquals(_lastState, state))
+            {
+                _lastState = state;
+                _uiTracker.Reset();
+                _lastAnnouncement = null;
+                _announcedEntry = false;
+                _wasListening = false;
+                PositionCursorAtListCenter(state);
+            }
+
+            if (!_announcedEntry)
+            {
+                string intro = LocalizationHelper.GetTextOrFallback("Mods.ScreenReaderMod.ControlsMenu.Opened", "Controls menu.");
+                ScreenReaderService.Announce(intro, force: true);
+                _announcedEntry = true;
+            }
+
+            if (HandleRebindingPrompt())
+            {
+                return;
+            }
+
+            if (TryAnnounceHover())
+            {
+                return;
+            }
+        }
+
+        public void Reset()
+        {
+            _lastState = null;
+            _lastAnnouncement = null;
+            _announcedEntry = false;
+            _wasListening = false;
+            _uiTracker.Reset();
+        }
+
+        private bool HandleRebindingPrompt()
+        {
+            string trigger = PlayerInput.ListeningTrigger;
+            bool isListening = !string.IsNullOrEmpty(trigger);
+
+            if (isListening && !_wasListening)
+            {
+                string prompt = LocalizationHelper.GetTextOrFallback("Mods.ScreenReaderMod.ControlsMenu.RebindingPrompt", "Press the key or button to assign.");
+                ScreenReaderService.Announce(prompt, force: true);
+            }
+
+            _wasListening = isListening;
+            return isListening;
+        }
+
+        private bool TryAnnounceHover()
+        {
+            if (!_uiTracker.TryGetHoverLabel(Main.InGameUI, out MenuUiLabel hover))
+            {
+                return false;
+            }
+
+            if (!hover.IsNew)
+            {
+                return true;
+            }
+
+            string normalized = NormalizeLabel(hover.Text);
+            if (string.IsNullOrWhiteSpace(normalized))
+            {
+                return true;
+            }
+
+            if (string.Equals(normalized, _lastAnnouncement, StringComparison.Ordinal))
+            {
+                return true;
+            }
+
+            _lastAnnouncement = normalized;
+            ScreenReaderService.Announce(normalized);
+            return true;
+        }
+
+        private static string NormalizeLabel(string text)
+        {
+            string sanitized = TextSanitizer.Clean(text);
+            if (string.IsNullOrWhiteSpace(sanitized))
+            {
+                return string.Empty;
+            }
+
+            return sanitized;
+        }
+
+        private static bool TryGetControlsState(out UIManageControls? state)
+        {
+            state = Main.InGameUI?.CurrentState as UIManageControls;
+            return state is not null;
+        }
+
+        private static UIList? GetControlsList(UIManageControls state)
+        {
+            if (UiListField?.GetValue(state) is UIList list)
+            {
+                return list;
+            }
+
+            return null;
+        }
+
+        private static void PositionCursorAtListCenter(UIManageControls state)
+        {
+            UIList? list = GetControlsList(state);
+            if (list is null)
+            {
+                return;
+            }
+
+            CalculatedStyle dims = list.GetInnerDimensions();
+            PositionCursorAtCenter(dims);
+        }
+
+        private static void PositionCursorAtCenter(CalculatedStyle dims)
+        {
+            float x = dims.X + (dims.Width * 0.5f);
+            float y = dims.Y + (dims.Height * 0.5f);
+            int clampedX = (int)MathHelper.Clamp(x, 0f, Main.screenWidth - 1);
+            int clampedY = (int)MathHelper.Clamp(y, 0f, Main.screenHeight - 1);
+
+            Main.mouseX = clampedX;
+            Main.mouseY = clampedY;
+            PlayerInput.MouseX = clampedX;
+            PlayerInput.MouseY = clampedY;
+        }
+
     }
 
     private static void HandleItemSlotHoverRef(On_ItemSlot.orig_MouseHover_refItem_int orig, ref Item item, int context)
@@ -4284,6 +4514,8 @@ public sealed class InGameNarrationSystem : ModSystem
         private const int MaxConcurrentPlayingCues = 8;
 
         private int _ticksUntilNextScan;
+        private int _lastRecordedChestIndex = -1;
+        private readonly HashSet<Point> _openedChestAnchors = new();
 
         private static readonly Dictionary<InteractableKind, SoundEffectInstance> InstanceCache = new();
         private static readonly Dictionary<InteractableKind, SoundEffect> ToneCache = new();
@@ -4325,6 +4557,7 @@ public sealed class InGameNarrationSystem : ModSystem
         public void Update(Player player)
         {
             CleanupFinishedInstances();
+            TrackOpenedChest(player);
 
             if (_ticksUntilNextScan > 0)
             {
@@ -4347,7 +4580,54 @@ public sealed class InGameNarrationSystem : ModSystem
             }
         }
 
-        private static bool TryFindNearest(Vector2 playerCenter, InteractableDefinition definition, out Vector2 worldPosition)
+        public void Reset()
+        {
+            _openedChestAnchors.Clear();
+            _lastRecordedChestIndex = -1;
+            _ticksUntilNextScan = 0;
+        }
+
+        public void SetOpenedChestAnchors(ReadOnlySpan<Point> anchors)
+        {
+            _openedChestAnchors.Clear();
+            foreach (Point anchor in anchors)
+            {
+                _openedChestAnchors.Add(anchor);
+            }
+        }
+
+        public IReadOnlyCollection<Point> GetOpenedChestAnchors() => _openedChestAnchors;
+
+        private void TrackOpenedChest(Player player)
+        {
+            int chestIndex = player.chest;
+            if (chestIndex == _lastRecordedChestIndex)
+            {
+                return;
+            }
+
+            _lastRecordedChestIndex = chestIndex;
+
+            if (chestIndex < 0 || chestIndex >= Main.chest.Length)
+            {
+                return;
+            }
+
+            Chest? chest = Main.chest[chestIndex];
+            if (chest is null)
+            {
+                return;
+            }
+
+            if (chest.x < 0 || chest.y < 0)
+            {
+                return;
+            }
+
+            _openedChestAnchors.Add(new Point(chest.x, chest.y));
+        }
+
+        private bool TryFindNearest(Vector2 playerCenter, InteractableDefinition definition, out Vector2 worldPosition)
         {
             int playerTileX = (int)(playerCenter.X / 16f);
             int playerTileY = (int)(playerCenter.Y / 16f);
@@ -4377,6 +4657,11 @@ public sealed class InGameNarrationSystem : ModSystem
                     }
 
                     if (!IsAnchorTile(tile, definition))
+                    {
+                        continue;
+                    }
+
+                    if (definition.Kind == InteractableKind.Chest && _openedChestAnchors.Contains(new Point(x, y)))
                     {
                         continue;
                     }
@@ -4655,6 +4940,228 @@ public sealed class InGameNarrationSystem : ModSystem
 
                 return false;
             }
+        }
+    }
+
+    // Emits a continuous tone for boss treasure bags until collected.
+    private sealed class TreasureBagBeaconEmitter
+    {
+        private const float PitchScale = 320f;
+        private const float PanScalePixels = 480f;
+        private const float DistanceReferenceTiles = 110f;
+        private const float MinVolume = 0.24f;
+        private const float VolumeRange = 0.72f;
+        private const int SampleRate = 44100;
+        private const int BaseFrequencyHz = 490;
+        private const int CyclesPerBuffer = 64;
+
+        private readonly Dictionary<int, SoundEffectInstance> _activeInstances = new();
+        private readonly HashSet<int> _currentFrameIndices = new();
+        private readonly List<int> _staleIndices = new();
+        private static SoundEffect? _treasureBagTone;
+
+        public void Update(Player player)
+        {
+            if (Main.dedServ)
+            {
+                return;
+            }
+
+            if (Main.soundVolume <= 0f)
+            {
+                StopAllInstances();
+                return;
+            }
+
+            _currentFrameIndices.Clear();
+            Vector2 playerCenter = player.Center;
+
+            for (int i = 0; i < Main.maxItems; i++)
+            {
+                Item item = Main.item[i];
+                if (!item.active || item.stack <= 0)
+                {
+                    continue;
+                }
+
+                if (!ItemID.Sets.BossBag[item.type])
+                {
+                    continue;
+                }
+
+                _currentFrameIndices.Add(i);
+                EmitOrUpdateInstance(i, item.Center, playerCenter);
+            }
+
+            if (_activeInstances.Count == 0)
+            {
+                return;
+            }
+
+            _staleIndices.Clear();
+
+            foreach (int index in _activeInstances.Keys)
+            {
+                if (!_currentFrameIndices.Contains(index))
+                {
+                    _staleIndices.Add(index);
+                }
+            }
+
+            foreach (int index in _staleIndices)
+            {
+                if (_activeInstances.TryGetValue(index, out SoundEffectInstance? instance))
+                {
+                    StopInstance(index, instance);
+                }
+            }
+
+            _staleIndices.Clear();
+        }
+
+        public void Reset()
+        {
+            StopAllInstances();
+        }
+
+        public static void DisposeStaticResources()
+        {
+            _treasureBagTone?.Dispose();
+            _treasureBagTone = null;
+        }
+
+        private void EmitOrUpdateInstance(int itemIndex, Vector2 bagCenter, Vector2 playerCenter)
+        {
+            try
+            {
+                SoundEffectInstance instance = EnsureInstance(itemIndex);
+
+                Vector2 offset = bagCenter - playerCenter;
+                float pitch = MathHelper.Clamp(-offset.Y / PitchScale, -0.6f, 0.6f);
+                float pan = MathHelper.Clamp(offset.X / PanScalePixels, -1f, 1f);
+                float distancePixels = offset.Length();
+                float distanceTiles = distancePixels / 16f;
+                float distanceFactor = 1f / (1f + (distanceTiles / Math.Max(1f, DistanceReferenceTiles)));
+                float volume = MathHelper.Clamp(MinVolume + distanceFactor * VolumeRange, 0f, 1f) * Main.soundVolume;
+
+                instance.Pitch = pitch;
+                instance.Pan = pan;
+                instance.Volume = volume;
+
+                if (instance.State != SoundState.Playing)
+                {
+                    try
+                    {
+                        instance.Play();
+                    }
+                    catch (Exception inner)
+                    {
+                        instance.Dispose();
+                        _activeInstances.Remove(itemIndex);
+                        global::ScreenReaderMod.ScreenReaderMod.Instance?.Logger.Debug($"[TreasureBagTone] Play failed: {inner.Message}");
+                    }
+                }
+            }
+            catch (Exception ex)
+            {
+                global::ScreenReaderMod.ScreenReaderMod.Instance?.Logger.Warn($"[TreasureBagTone] Update failed: {ex.Message}");
+                if (_activeInstances.TryGetValue(itemIndex, out SoundEffectInstance? existing))
+                {
+                    StopInstance(itemIndex, existing);
+                }
+            }
+        }
+
+        private SoundEffectInstance EnsureInstance(int itemIndex)
+        {
+            if (_activeInstances.TryGetValue(itemIndex, out SoundEffectInstance? existing))
+            {
+                if (!existing.IsDisposed)
+                {
+                    return existing;
+                }
+
+                _activeInstances.Remove(itemIndex);
+            }
+
+            SoundEffect tone = EnsureTreasureBagTone();
+            SoundEffectInstance instance = tone.CreateInstance();
+            instance.IsLooped = true;
+            _activeInstances[itemIndex] = instance;
+            return instance;
+        }
+
+        private static SoundEffect EnsureTreasureBagTone()
+        {
+            if (_treasureBagTone is { IsDisposed: false })
+            {
+                return _treasureBagTone;
+            }
+
+            _treasureBagTone?.Dispose();
+            _treasureBagTone = CreateTreasureBagTone();
+            return _treasureBagTone;
+        }
+
+        private static SoundEffect CreateTreasureBagTone()
+        {
+            const int samplesPerCycle = SampleRate / BaseFrequencyHz;
+            int sampleCount = samplesPerCycle * CyclesPerBuffer;
+            byte[] buffer = new byte[sampleCount * sizeof(short)];
+
+            for (int i = 0; i < sampleCount; i++)
+            {
+                float sample = MathF.Sin(MathHelper.TwoPi * i / samplesPerCycle) * 0.32f;
+                short value = (short)Math.Clamp(sample * short.MaxValue, short.MinValue, short.MaxValue);
+
+                int index = i * 2;
+                buffer[index] = (byte)(value & 0xFF);
+                buffer[index + 1] = (byte)((value >> 8) & 0xFF);
+            }
+
+            return new SoundEffect(buffer, SampleRate, AudioChannels.Mono);
+        }
+
+        private void StopInstance(int itemIndex, SoundEffectInstance instance)
+        {
+            try
+            {
+                if (!instance.IsDisposed)
+                {
+                    instance.Stop();
+                }
+            }
+            catch
+            {
+            }
+
+            instance.Dispose();
+            _activeInstances.Remove(itemIndex);
+        }
+
+        private void StopAllInstances()
+        {
+            if (_activeInstances.Count > 0)
+            {
+                _staleIndices.Clear();
+                foreach (int index in _activeInstances.Keys)
+                {
+                    _staleIndices.Add(index);
+                }
+
+                foreach (int index in _staleIndices)
+                {
+                    if (_activeInstances.TryGetValue(index, out SoundEffectInstance? instance))
+                    {
+                        StopInstance(index, instance);
+                    }
+                }
+
+                _staleIndices.Clear();
+                _activeInstances.Clear();
+            }
+
+            _currentFrameIndices.Clear();
         }
     }
 

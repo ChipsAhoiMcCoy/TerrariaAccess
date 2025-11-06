@@ -21,6 +21,11 @@ Mods: {
 			Honey: Honey
 		}
 
+		ControlsMenu: {
+			Opened: Controls menu.
+			RebindingPrompt: Press the key or button to assign.
+		}
+
 		WorldAnnouncements: {
 			BloodMoonStart: The Blood Moon is rising.
 			BloodMoonEnd: The Blood Moon has ended.
