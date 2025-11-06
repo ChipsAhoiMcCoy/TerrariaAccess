@@ -50,7 +50,7 @@ internal sealed class MenuUiSelectionTracker
         bool isNew = !ReferenceEquals(hovered, _lastElement) || !string.Equals(text, _lastLabel, StringComparison.OrdinalIgnoreCase);
         _lastElement = hovered;
         _lastLabel = text;
-        label = new MenuUiLabel(text, isNew);
+        label = new MenuUiLabel(hovered, text, isNew);
         return true;
     }
 
@@ -837,4 +837,4 @@ internal sealed class MenuUiSelectionTracker
     }
 }
 
-internal readonly record struct MenuUiLabel(string Text, bool IsNew);
+internal readonly record struct MenuUiLabel(UIElement Element, string Text, bool IsNew);

@@ -45,6 +45,7 @@ public sealed class InGameNarrationSystem : ModSystem
     private readonly IngameSettingsNarrator _ingameSettingsNarrator = new();
     private readonly WorldEventNarrator _worldEventNarrator = new();
     private readonly ControlsMenuNarrator _controlsMenuNarrator = new();
+    private readonly ModConfigMenuNarrator _modConfigMenuNarrator = new();
 
     public override void Load()
         {
@@ -207,6 +208,7 @@ public sealed class InGameNarrationSystem : ModSystem
 
         _npcDialogueNarrator.Update(player);
         _controlsMenuNarrator.Update(isPaused);
+        _modConfigMenuNarrator.TryHandleIngameUi(Main.InGameUI, isPaused);
     }
 
     private static void HandleItemSlotHover(On_ItemSlot.orig_MouseHover_ItemArray_int_int orig, Item[] inv, int context, int slot)
