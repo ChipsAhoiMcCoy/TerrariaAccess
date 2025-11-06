@@ -10,6 +10,7 @@ using Terraria.GameContent.UI.BigProgressBar;
 using Terraria.GameContent.UI.Minimap;
 using Terraria.GameContent.UI.ResourceSets;
 using Terraria.GameInput;
+using Terraria.ID;
 using Terraria.Localization;
 using Terraria.GameContent;
 using Terraria.ModLoader;
@@ -34,6 +35,8 @@ internal static class MenuNarrationCatalog
         [17] = "Controls",
         [18] = "Credits",
         [26] = "Achievements",
+        [MenuID.CharacterDeletion] = "Player deletion",
+        [MenuID.CharacterDeletionConfirmation] = "Player deletion",
         [9] = "World deletion confirmation",
         [1212] = "Language selection",
         [1213] = "Language selection",
@@ -44,7 +47,9 @@ internal static class MenuNarrationCatalog
 
     private static readonly Dictionary<int, Func<int, string>> ModeResolvers = new()
     {
-        [0] = DescribeMainMenuItem,
+        [MenuID.Title] = DescribeMainMenuItem,
+        [MenuID.CharacterDeletion] = DescribePlayerDeletionConfirmation,
+        [MenuID.CharacterDeletionConfirmation] = DescribePlayerDeletionConfirmation,
         [11] = DescribeSettingsMenu,
         [26] = DescribeSettingsAudioMenu,
         [112] = DescribeSettingsGeneralMenu,
@@ -55,7 +60,7 @@ internal static class MenuNarrationCatalog
         [1125] = DescribeSettingsCursorMenu,
         [1127] = DescribeSettingsGameplayMenu,
         [12] = DescribeMultiplayerMenu,
-        [9] = DescribeWorldDeletionConfirmation,
+        [MenuID.WorldDeletionConfirmation] = DescribeWorldDeletionConfirmation,
         [1212] = static index => DescribeLanguageMenu(index, includeBackOption: false),
         [1213] = static index => DescribeLanguageMenu(index, includeBackOption: true),
         [889] = DescribeHostAndPlayServerMenu,
@@ -381,6 +386,60 @@ internal static class MenuNarrationCatalog
         return OptionOrEmpty(entries, index);
     }
 
+    private static string DescribePlayerDeletionConfirmation(int index)
+    {
+        string playerName = GetSelectedPlayerName();
+
+        switch (index)
+        {
+            case 0:
+            {
+                string deletePrompt = TextSanitizer.Clean(Lang.menu[46].Value);
+                if (string.IsNullOrWhiteSpace(deletePrompt))
+                {
+                    deletePrompt = LocalizationHelper.GetTextOrFallback("UI.Delete", "Delete");
+                }
+
+                if (!string.IsNullOrWhiteSpace(playerName))
+                {
+                    return TextSanitizer.Clean($"{deletePrompt} {playerName}?");
+                }
+
+                return deletePrompt;
+            }
+
+            case 1:
+            {
+                string confirmLabel = TextSanitizer.Clean(Lang.menu[104].Value);
+                if (string.IsNullOrWhiteSpace(confirmLabel))
+                {
+                    confirmLabel = LocalizationHelper.GetTextOrFallback("UI.Delete", "Delete");
+                }
+
+                if (!string.IsNullOrWhiteSpace(playerName))
+                {
+                    return TextSanitizer.JoinWithComma(confirmLabel, playerName);
+                }
+
+                return confirmLabel;
+            }
+
+            case 2:
+            {
+                string cancelLabel = TextSanitizer.Clean(Lang.menu[105].Value);
+                if (string.IsNullOrWhiteSpace(cancelLabel))
+                {
+                    cancelLabel = LocalizationHelper.GetTextOrFallback("UI.Cancel", "Cancel");
+                }
+
+                return cancelLabel;
+            }
+
+            default:
+                return string.Empty;
+        }
+    }
+
     private static string DescribeWorldDeletionConfirmation(int index)
     {
         string worldName = GetSelectedWorldName();
@@ -433,6 +492,91 @@ internal static class MenuNarrationCatalog
             default:
                 return string.Empty;
         }
+    }
+
+    public static bool TryBuildDeletionAnnouncement(int menuMode, int focusIndex, out string combinedLabel)
+    {
+        combinedLabel = string.Empty;
+
+        if (focusIndex is not (1 or 2))
+        {
+            return false;
+        }
+
+        if (!IsDeletionMenuMode(menuMode))
+        {
+            return false;
+        }
+
+        string prompt = DescribeMenuItem(menuMode, 0);
+        if (string.IsNullOrWhiteSpace(prompt))
+        {
+            return false;
+        }
+
+        string response = focusIndex == 1 ? GetDeletionConfirmLabel() : GetDeletionCancelLabel();
+        if (string.IsNullOrWhiteSpace(response))
+        {
+            return false;
+        }
+
+        combinedLabel = TextSanitizer.Clean($"{prompt} {response}".Trim());
+        return !string.IsNullOrWhiteSpace(combinedLabel);
+    }
+
+    private static bool IsDeletionMenuMode(int menuMode)
+    {
+        return menuMode == MenuID.CharacterDeletion
+            || menuMode == MenuID.CharacterDeletionConfirmation
+            || menuMode == MenuID.WorldDeletionConfirmation;
+    }
+
+    private static string GetDeletionConfirmLabel()
+    {
+        string label = TextSanitizer.Clean(Lang.menu[104].Value);
+        if (!string.IsNullOrWhiteSpace(label))
+        {
+            return label;
+        }
+
+        return LocalizationHelper.GetTextOrFallback("UI.Yes", "Yes");
+    }
+
+    private static string GetDeletionCancelLabel()
+    {
+        string label = TextSanitizer.Clean(Lang.menu[105].Value);
+        if (!string.IsNullOrWhiteSpace(label))
+        {
+            return label;
+        }
+
+        return LocalizationHelper.GetTextOrFallback("UI.No", "No");
+    }
+
+    private static string GetSelectedPlayerName()
+    {
+        try
+        {
+            int selectedPlayer = Main.selectedPlayer;
+            if (selectedPlayer >= 0)
+            {
+                List<PlayerFileData> players = Main.PlayerList;
+                if (players is not null && selectedPlayer < players.Count)
+                {
+                    string? name = players[selectedPlayer].Name;
+                    if (!string.IsNullOrWhiteSpace(name))
+                    {
+                        return TextSanitizer.Clean(name);
+                    }
+                }
+            }
+        }
+        catch (Exception ex)
+        {
+            ScreenReaderMod.Instance?.Logger.Debug($"[MenuNarration] Failed to resolve selected player: {ex.Message}");
+        }
+
+        return LocalizationHelper.GetTextOrFallback("UI.PlayerNameDefault", "Player");
     }
 
     private static string GetSelectedWorldName()
@@ -698,6 +842,8 @@ internal static class MenuNarrationCatalog
         int frameSkipIndex = (int)Main.FrameSkipMode;
         string backLabel = TextSanitizer.Clean(Lang.menu[5].Value);
         string effectsLabel = TextSanitizer.Clean(Language.GetTextValue("UI.Effects"));
+        string[] menuItems = GetMenuItemArray();
+        bool hasEffectsButton = menuItems.Any(item => string.Equals(TextSanitizer.Clean(item), effectsLabel, StringComparison.OrdinalIgnoreCase));
 
         var items = new List<string>
         {
@@ -720,12 +866,14 @@ internal static class MenuNarrationCatalog
         items.Add(TextSanitizer.Clean(ChildSafety.Disabled ? Lang.menu[132].Value : Lang.menu[133].Value));
         items.Add(TextSanitizer.Clean(Main.SettingsEnabled_MinersWobble ? Lang.menu[250].Value : Lang.menu[251].Value));
         items.Add(TextSanitizer.Clean(Main.SettingsEnabled_TilesSwayInWind ? Language.GetTextValue("UI.TilesSwayInWindOn") : Language.GetTextValue("UI.TilesSwayInWindOff")));
-        items.Add(effectsLabel);
+        if (hasEffectsButton)
+        {
+            items.Add(effectsLabel);
+        }
         items.Add(backLabel);
 
         string expected = OptionOrEmpty(items, index);
 
-        string[] menuItems = GetMenuItemArray();
         if ((uint)index < (uint)menuItems.Length)
         {
             string actual = TextSanitizer.Clean(menuItems[index]);

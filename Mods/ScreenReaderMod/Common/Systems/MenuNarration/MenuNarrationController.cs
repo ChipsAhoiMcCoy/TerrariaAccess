@@ -4,6 +4,7 @@ using ScreenReaderMod.Common.Services;
 using Terraria;
 using Terraria.GameContent.UI;
 using Terraria.UI;
+using Terraria.ID;
 
 namespace ScreenReaderMod.Common.Systems.MenuNarration;
 
@@ -199,7 +200,15 @@ internal sealed class MenuNarrationController
             {
                 ScreenReaderMod.Instance?.Logger.Info($"[MenuNarration] Focus {focus.Index} via {focus.Source} -> {optionLabel}");
                 bool forceSpeech = force || _forceNextFocus;
-                ScreenReaderService.Announce(optionLabel, forceSpeech);
+                if (MenuNarrationCatalog.TryBuildDeletionAnnouncement(currentMode, focus.Index, out string combinedLabel))
+                {
+                    ScreenReaderService.Announce(combinedLabel, forceSpeech);
+                }
+                else
+                {
+                    ScreenReaderService.Announce(optionLabel, forceSpeech);
+                }
+
                 _forceNextFocus = false;
             }
             else

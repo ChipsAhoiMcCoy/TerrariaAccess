@@ -36,7 +36,7 @@ public static class ScreenReaderService
         NvdaSpeechProvider.Interrupt();
     }
 
-    public static void Announce(string? message, bool force = false)
+    public static void Announce(string? message, bool force = false, bool interrupt = true)
     {
         if (string.IsNullOrWhiteSpace(message))
         {
@@ -58,7 +58,11 @@ public static class ScreenReaderService
             RecentMessages.Dequeue();
         }
 
-        NvdaSpeechProvider.Interrupt();
+        if (interrupt)
+        {
+            NvdaSpeechProvider.Interrupt();
+        }
+
         NvdaSpeechProvider.Speak(trimmed);
         ScreenReaderMod.Instance?.Logger.Info($"[Narration] {trimmed}");
 
