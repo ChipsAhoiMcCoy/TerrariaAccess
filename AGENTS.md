@@ -14,7 +14,7 @@ These instructions help contributors keep the screen-reader-first Terraria mod a
 ```powershell
 powershell -ExecutionPolicy Bypass -File Tools/build.ps1
 ```
-Always build through the `Tools/` script; it wraps the tModLoader host and places outputs where the game expects them. Manual testing requires NVDA running with `nvdaControllerClient64.dll` beside `tModLoader.exe` (or `Libraries/` under the mod). Watch `tModLoader-Logs/client.log` for `[Narration]`, `[MenuNarration]`, and `[NVDA]` breadcrumbs when validating speech.
+Always build through the `Tools/` script; it wraps the tModLoader host and places outputs where the game expects them. We develop and run commands inside Windows Subsystem for Linux (WSL) so paths stay consistent with the mod tooling. Manual testing requires NVDA running with `nvdaControllerClient64.dll` beside `tModLoader.exe` (or `Libraries/` under the mod). Watch `tModLoader-Logs/client.log` for `[Narration]`, `[MenuNarration]`, and `[NVDA]` breadcrumbs when validating speech.
 
 ## Coding Style & Naming Conventions
 

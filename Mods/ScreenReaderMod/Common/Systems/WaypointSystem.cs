@@ -2,13 +2,12 @@
 using System;
 using System.Collections.Generic;
 using Microsoft.Xna.Framework;
+using Microsoft.Xna.Framework.Audio;
 using ScreenReaderMod.Common.Services;
 using ScreenReaderMod.Common.Systems.Waypoints;
 using Terraria;
-using Terraria.Audio;
 using Terraria.GameContent.UI.States;
 using Terraria.GameInput;
-using Terraria.ID;
 using Terraria.ModLoader;
 using Terraria.ModLoader.IO;
 using Terraria.UI;
@@ -21,9 +20,13 @@ public sealed class WaypointSystem : ModSystem
     private const string SelectedIndexKey = "screenReaderSelectedWaypoint";
 
     private const float ArrivalTileThreshold = 4f;
-    private const int MinPingDelayFrames = 12;
-    private const int MaxPingDelayFrames = 70;
+    private const int MinPingDelayFrames = 8;
+    private const int MaxPingDelayFrames = 54;
+    private const float PingDelayScale = 1.35f;
     private const float PitchScale = 320f;
+    private const float PanScalePixels = 480f;
+    private const float DistanceReferenceTiles = 90f;
+    private const float MinVolume = 0.18f;
 
     private static readonly List<Waypoint> Waypoints = new();
     private static int _selectedIndex = -1;
@@ -32,6 +35,10 @@ public sealed class WaypointSystem : ModSystem
 
     private static int _nextPingUpdateFrame = -1;
     private static bool _arrivalAnnounced;
+    private static SoundEffect? _waypointTone;
+    private static readonly List<SoundEffectInstance> ActiveWaypointInstances = new();
+    private static UIVirtualKeyboard? _activeKeyboard;
+    private static InputSnapshot? _inputSnapshot;
 
     private struct Waypoint
     {
@@ -63,6 +70,9 @@ public sealed class WaypointSystem : ModSystem
         _namingActive = false;
         _nextPingUpdateFrame = -1;
         _arrivalAnnounced = false;
+        DisposeToneResources();
+        _activeKeyboard = null;
+        _inputSnapshot = null;
     }
 
     public override void OnWorldUnload()
@@ -71,6 +81,27 @@ public sealed class WaypointSystem : ModSystem
         _selectedIndex = -1;
         _nextPingUpdateFrame = -1;
         _arrivalAnnounced = false;
+        CloseNamingUi();
+        DisposeToneResources();
+        _inputSnapshot = null;
+        _activeKeyboard = null;
+    }
+
+    public override void UpdateUI(GameTime gameTime)
+    {
+        if (!_namingActive)
+        {
+            return;
+        }
+
+        UIState? currentState = Main.InGameUI?.CurrentState;
+        if (currentState is UIVirtualKeyboard keyboard && ReferenceEquals(keyboard, _activeKeyboard))
+        {
+            return;
+        }
+
+        // The naming UI was dismissed externally (e.g. Escape on keyboard or controller B),
+        // so restore the captured input snapshot to avoid leaving the game in a blocked state.
         CloseNamingUi();
     }
 
@@ -198,6 +229,20 @@ public sealed class WaypointSystem : ModSystem
         int playerIndex = player.whoAmI;
         _namingActive = true;
 
+        _inputSnapshot = new InputSnapshot
+        {
+            BlockInput = Main.blockInput,
+            WritingText = PlayerInput.WritingText,
+            PlayerInventory = Main.playerInventory,
+            EditSign = Main.editSign,
+            EditChest = Main.editChest,
+            DrawingPlayerChat = Main.drawingPlayerChat,
+            InFancyUI = Main.inFancyUI,
+            GameMenu = Main.gameMenu,
+            ChatText = Main.chatText ?? string.Empty,
+            PreviousUiState = Main.InGameUI?.CurrentState
+        };
+
         Main.blockInput = true;
         PlayerInput.WritingText = true;
         Main.clrInput();
@@ -225,8 +270,13 @@ public sealed class WaypointSystem : ModSystem
             if (owner is not null)
             {
                 RescheduleWaypointPing(owner);
-                ScreenReaderService.Announce($"Created waypoint {resolvedName}");
+                string creationAnnouncement = ComposeCreationAnnouncement(resolvedName, owner, worldPosition);
+                ScreenReaderService.Announce(creationAnnouncement);
                 EmitPing(owner, worldPosition);
+            }
+            else
+            {
+                ScreenReaderService.Announce($"Created waypoint {resolvedName}");
             }
 
             CloseNamingUi();
@@ -253,6 +303,7 @@ public sealed class WaypointSystem : ModSystem
         }
 
         UIVirtualKeyboard keyboard = new("Create Waypoint", string.Empty, Submit, Cancel, 0, true);
+        _activeKeyboard = keyboard;
         IngameFancyUI.OpenUIState(keyboard);
 
         Main.NewText("Waypoint naming: type a name, press Enter to save, or Escape to cancel.", Color.LightSkyBlue);
@@ -267,21 +318,59 @@ public sealed class WaypointSystem : ModSystem
         }
 
         _namingActive = false;
-        if (Main.InGameUI?.CurrentState is UIVirtualKeyboard)
+        if (Main.InGameUI is not null)
         {
-            IngameFancyUI.Close();
+            if (_activeKeyboard is not null && ReferenceEquals(Main.InGameUI.CurrentState, _activeKeyboard))
+            {
+                IngameFancyUI.Close();
+            }
+            else if (Main.InGameUI.CurrentState is UIVirtualKeyboard)
+            {
+                IngameFancyUI.Close();
+            }
         }
 
-        PlayerInput.WritingText = false;
-        Main.blockInput = false;
-        Main.playerInventory = false;
-        Main.editSign = false;
-        Main.editChest = false;
-        Main.drawingPlayerChat = false;
-        Main.inFancyUI = false;
-        Main.gameMenu = false;
         Main.clrInput();
-        Main.chatText = string.Empty;
+
+        if (_inputSnapshot is InputSnapshot snapshot)
+        {
+            PlayerInput.WritingText = snapshot.WritingText;
+            Main.blockInput = snapshot.BlockInput;
+            Main.playerInventory = snapshot.PlayerInventory;
+            Main.editSign = snapshot.EditSign;
+            Main.editChest = snapshot.EditChest;
+            Main.drawingPlayerChat = snapshot.DrawingPlayerChat;
+            Main.inFancyUI = snapshot.InFancyUI;
+            Main.gameMenu = snapshot.GameMenu;
+            Main.chatText = snapshot.ChatText;
+
+            if (Main.InGameUI is not null)
+            {
+                if (snapshot.PreviousUiState is null)
+                {
+                    Main.InGameUI.SetState(null);
+                }
+                else if (!ReferenceEquals(Main.InGameUI.CurrentState, snapshot.PreviousUiState))
+                {
+                    Main.InGameUI.SetState(snapshot.PreviousUiState);
+                }
+            }
+        }
+        else
+        {
+            PlayerInput.WritingText = false;
+            Main.blockInput = false;
+            Main.playerInventory = false;
+            Main.editSign = false;
+            Main.editChest = false;
+            Main.drawingPlayerChat = false;
+            Main.inFancyUI = false;
+            Main.gameMenu = false;
+            Main.chatText = string.Empty;
+        }
+
+        _inputSnapshot = null;
+        _activeKeyboard = null;
     }
 
     internal static void HandleKeybinds(Player player)
@@ -351,9 +440,10 @@ public sealed class WaypointSystem : ModSystem
         }
 
         Waypoint waypoint = Waypoints[_selectedIndex];
-        EmitPing(player, waypoint.WorldPosition);
+        string announcement = ComposeWaypointAnnouncement(waypoint, player);
+        ScreenReaderService.Announce(announcement);
         RescheduleWaypointPing(player);
-        ScreenReaderService.Announce(ComposeWaypointAnnouncement(waypoint));
+        EmitPing(player, waypoint.WorldPosition);
     }
 
     private static void RescheduleWaypointPing(Player player)
@@ -369,35 +459,204 @@ public sealed class WaypointSystem : ModSystem
         _nextPingUpdateFrame = ComputeNextPingFrame(player, Waypoints[_selectedIndex].WorldPosition);
     }
 
-    private static string ComposeWaypointAnnouncement(Waypoint waypoint)
+    private static string ComposeWaypointAnnouncement(Waypoint waypoint, Player player)
     {
         int total = Waypoints.Count;
         int position = _selectedIndex + 1;
 
-        if (total <= 0 || position <= 0 || position > total)
+        string announcement = waypoint.Name;
+        if (total > 0 && position > 0 && position <= total)
         {
-            return waypoint.Name;
+            announcement = $"{waypoint.Name} {position} of {total}";
         }
 
-        return $"{waypoint.Name} {position} of {total}";
+        string relative = DescribeRelativeOffset(player.Center, waypoint.WorldPosition);
+        if (string.IsNullOrWhiteSpace(relative))
+        {
+            return announcement;
+        }
+
+        return $"{announcement}, {relative}";
+    }
+
+    private static string ComposeCreationAnnouncement(string waypointName, Player player, Vector2 worldPosition)
+    {
+        string relative = DescribeRelativeOffset(player.Center, worldPosition);
+        if (string.IsNullOrWhiteSpace(relative))
+        {
+            return $"Created waypoint {waypointName}";
+        }
+
+        return $"Created waypoint {waypointName}, {relative}";
+    }
+
+    private static string DescribeRelativeOffset(Vector2 origin, Vector2 target)
+    {
+        Vector2 offset = target - origin;
+        int tilesX = (int)MathF.Round(offset.X / 16f);
+        int tilesY = (int)MathF.Round(offset.Y / 16f);
+
+        if (tilesX == 0 && tilesY == 0)
+        {
+            return "at your position";
+        }
+
+        List<string> parts = new(3);
+        if (tilesX != 0)
+        {
+            string direction = tilesX > 0 ? "right" : "left";
+            parts.Add($"{Math.Abs(tilesX)} {direction}");
+        }
+
+        if (tilesY != 0)
+        {
+            string direction = tilesY > 0 ? "down" : "up";
+            parts.Add($"{Math.Abs(tilesY)} {direction}");
+        }
+
+        return string.Join(", ", parts);
     }
 
     private static void EmitPing(Player player, Vector2 worldPosition)
     {
-        if (Main.dedServ)
+        if (Main.dedServ || Main.soundVolume <= 0f)
         {
             return;
         }
 
-        Vector2 offset = worldPosition - player.Center;
-        float pitch = MathHelper.Clamp(-offset.Y / PitchScale, -0.6f, 0.6f);
-        float volume = MathHelper.Clamp(0.35f + Math.Abs(pitch) * 0.2f, 0f, 0.75f);
+        try
+        {
+            CleanupFinishedWaypointInstances();
 
-        SoundStyle style = SoundID.MenuTick
-            .WithVolumeScale(volume)
-            .WithPitchOffset(pitch);
+            Vector2 offset = worldPosition - player.Center;
+            float pitch = MathHelper.Clamp(-offset.Y / PitchScale, -0.7f, 0.7f);
+            float pan = MathHelper.Clamp(offset.X / PanScalePixels, -1f, 1f);
 
-        SoundEngine.PlaySound(style, worldPosition);
+            float distanceTiles = offset.Length() / 16f;
+            float distanceFactor = 1f / (1f + (distanceTiles / Math.Max(1f, DistanceReferenceTiles)));
+            float volume = MathHelper.Clamp(MinVolume + distanceFactor * 0.85f, 0f, 1f) * Main.soundVolume;
+
+            SoundEffect tone = EnsureWaypointTone();
+            SoundEffectInstance instance = tone.CreateInstance();
+            instance.IsLooped = false;
+            instance.Pan = pan;
+            instance.Pitch = pitch;
+            instance.Volume = MathHelper.Clamp(volume, 0f, 1f);
+
+            try
+            {
+                instance.Play();
+                ActiveWaypointInstances.Add(instance);
+            }
+            catch (Exception inner)
+            {
+                instance.Dispose();
+                global::ScreenReaderMod.ScreenReaderMod.Instance?.Logger.Debug($"[WaypointPing] Play failed: {inner.Message}");
+            }
+        }
+        catch (Exception ex)
+        {
+            global::ScreenReaderMod.ScreenReaderMod.Instance?.Logger.Warn($"[WaypointPing] Tone setup failed: {ex.Message}");
+        }
+    }
+
+    private static SoundEffect EnsureWaypointTone()
+    {
+        if (_waypointTone is { IsDisposed: false })
+        {
+            return _waypointTone;
+        }
+
+        _waypointTone?.Dispose();
+        _waypointTone = CreateWaypointTone();
+        return _waypointTone;
+    }
+
+    private static SoundEffect CreateWaypointTone()
+    {
+        const int sampleRate = 44100;
+        const float durationSeconds = 0.13f;
+        const float baseFrequency = 720f;
+
+        int sampleCount = Math.Max(1, (int)(sampleRate * durationSeconds));
+        byte[] buffer = new byte[sampleCount * sizeof(short)];
+
+        for (int i = 0; i < sampleCount; i++)
+        {
+            float t = i / (float)sampleRate;
+            float window = (float)(0.5 - 0.5 * Math.Cos((2 * Math.PI * i) / Math.Max(1, sampleCount - 1)));
+            float attack = MathHelper.Clamp(i / (float)(sampleCount * 0.3f), 0f, 1f);
+            float release = MathHelper.Clamp(1f - (i / Math.Max(1f, sampleCount - 1f)), 0f, 1f);
+            float envelope = window * attack * release;
+
+            float sample = MathF.Sin(MathHelper.TwoPi * baseFrequency * t);
+            sample *= envelope * 0.75f;
+
+            short value = (short)Math.Clamp(sample * short.MaxValue, short.MinValue, short.MaxValue);
+            int index = i * 2;
+            buffer[index] = (byte)(value & 0xFF);
+            buffer[index + 1] = (byte)((value >> 8) & 0xFF);
+        }
+
+        return new SoundEffect(buffer, sampleRate, AudioChannels.Mono);
+    }
+
+    private sealed class InputSnapshot
+    {
+        public bool BlockInput;
+        public bool WritingText;
+        public bool PlayerInventory;
+        public bool EditSign;
+        public bool EditChest;
+        public bool DrawingPlayerChat;
+        public bool InFancyUI;
+        public bool GameMenu;
+        public string ChatText = string.Empty;
+        public UIState? PreviousUiState;
+    }
+
+    private static void CleanupFinishedWaypointInstances()
+    {
+        for (int i = ActiveWaypointInstances.Count - 1; i >= 0; i--)
+        {
+            SoundEffectInstance instance = ActiveWaypointInstances[i];
+            if (instance.IsDisposed || instance.State == SoundState.Stopped)
+            {
+                instance.Dispose();
+                ActiveWaypointInstances.RemoveAt(i);
+            }
+        }
+    }
+
+    private static void DisposeToneResources()
+    {
+        foreach (SoundEffectInstance instance in ActiveWaypointInstances)
+        {
+            try
+            {
+                if (!instance.IsDisposed)
+                {
+                    instance.Stop();
+                }
+            }
+            catch
+            {
+            }
+
+            instance.Dispose();
+        }
+
+        ActiveWaypointInstances.Clear();
+
+        if (_waypointTone is not null)
+        {
+            if (!_waypointTone.IsDisposed)
+            {
+                _waypointTone.Dispose();
+            }
+
+            _waypointTone = null;
+        }
     }
 
     private static int ComputeNextPingFrame(Player player, Vector2 waypointPosition)
@@ -419,7 +678,7 @@ public sealed class WaypointSystem : ModSystem
             return -1;
         }
 
-        float frames = MathHelper.Clamp(distanceTiles * 2f, MinPingDelayFrames, MaxPingDelayFrames);
+        float frames = MathHelper.Clamp(distanceTiles * PingDelayScale, MinPingDelayFrames, MaxPingDelayFrames);
         return (int)MathF.Round(frames);
     }
 
