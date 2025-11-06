@@ -3,7 +3,9 @@ using System;
 using System.Collections.Generic;
 using System.Linq;
 using System.Reflection;
+using System.Text;
 using Terraria;
+using Terraria.GameInput;
 using Terraria.IO;
 using Terraria.Localization;
 using Terraria.UI;
@@ -160,6 +162,14 @@ internal sealed class MenuUiSelectionTracker
                     return DescribeWorld(worldData);
                 }
                 break;
+            case "Terraria.GameContent.UI.Elements.UIKeybindingSimpleListItem":
+                return DescribeKeybindingSimpleItem(element);
+            case "Terraria.GameContent.UI.Elements.UIKeybindingListItem":
+                return DescribeKeybindingListItem(element);
+            case "Terraria.GameContent.UI.Elements.UIKeybindingSliderItem":
+                return DescribeKeybindingSliderItem(element);
+            case "Terraria.GameContent.UI.Elements.UIKeybindingToggleListItem":
+                return DescribeKeybindingToggleItem(element);
             case "Terraria.GameContent.UI.Elements.UIImageButton":
                 return DescribeImageButton(element);
             default:
@@ -188,6 +198,208 @@ internal sealed class MenuUiSelectionTracker
         }
 
         return string.Empty;
+    }
+
+    private static string DescribeKeybindingSimpleItem(UIElement element)
+    {
+        const BindingFlags flags = BindingFlags.Instance | BindingFlags.NonPublic | BindingFlags.Public;
+
+        Type type = element.GetType();
+        FieldInfo? textFuncField = type.GetField("_GetTextFunction", flags);
+        if (textFuncField?.GetValue(element) is Delegate textFunc)
+        {
+            try
+            {
+                object? value = textFunc.DynamicInvoke();
+                if (value is not null)
+                {
+                    return TextSanitizer.Clean(value.ToString() ?? string.Empty);
+                }
+            }
+            catch (Exception ex)
+            {
+                ScreenReaderMod.Instance?.Logger.Debug($"[MenuNarration] Keybinding text extraction failed: {ex.Message}");
+            }
+        }
+
+        return string.Empty;
+    }
+
+    private static string DescribeKeybindingListItem(UIElement element)
+    {
+        Type type = element.GetType();
+
+        string friendly = InvokeFriendlyName(type, element);
+        InputMode mode = ReadField<InputMode>(type, element, "_inputmode");
+        string? keybind = ReadField<string>(type, element, "_keybind");
+
+        string assignment = DescribeBindingAssignment(mode, keybind);
+        if (string.IsNullOrWhiteSpace(friendly))
+        {
+            return assignment;
+        }
+
+        if (string.IsNullOrWhiteSpace(assignment))
+        {
+            return friendly;
+        }
+
+            return TextSanitizer.Clean($"{friendly}: {assignment}");
+    }
+
+    private static string DescribeKeybindingSliderItem(UIElement element)
+    {
+        string label = InvokeFunc<string>(element, "_TextDisplayFunction");
+        float value = InvokeFunc<float>(element, "_GetStatusFunction");
+
+        if (float.IsNaN(value) || float.IsInfinity(value))
+        {
+            value = 0f;
+        }
+
+        string valueText = value is >= 0f and <= 1f
+            ? $"{Math.Round(value * 100f):0}%"
+            : value.ToString("0.##");
+
+        if (string.IsNullOrWhiteSpace(label))
+        {
+            return valueText;
+        }
+
+        return TextSanitizer.Clean($"{label}: {valueText}");
+    }
+
+    private static string DescribeKeybindingToggleItem(UIElement element)
+    {
+        string label = InvokeFunc<string>(element, "_TextDisplayFunction");
+        bool isOn = InvokeFunc<bool>(element, "_IsOnFunction");
+        string state = isOn
+            ? LocalizationHelper.GetTextOrFallback("Mods.ScreenReaderMod.Controls.ToggleOn", "On")
+            : LocalizationHelper.GetTextOrFallback("Mods.ScreenReaderMod.Controls.ToggleOff", "Off");
+
+        if (string.IsNullOrWhiteSpace(label))
+        {
+            return state;
+        }
+
+        return TextSanitizer.Clean($"{label}: {state}");
+    }
+
+    private static string InvokeFriendlyName(Type type, UIElement element)
+    {
+        try
+        {
+            MethodInfo? method = type.GetMethod("GetFriendlyName", BindingFlags.Instance | BindingFlags.Public | BindingFlags.NonPublic);
+            if (method is not null && method.Invoke(element, Array.Empty<object>()) is string result)
+            {
+                return TextSanitizer.Clean(result);
+            }
+        }
+        catch (Exception ex)
+        {
+            ScreenReaderMod.Instance?.Logger.Debug($"[MenuNarration] Friendly name lookup failed for {type.Name}: {ex.Message}");
+        }
+
+        return string.Empty;
+    }
+
+    private static T InvokeFunc<T>(UIElement element, string fieldName)
+    {
+        const BindingFlags flags = BindingFlags.Instance | BindingFlags.NonPublic | BindingFlags.Public;
+        try
+        {
+            FieldInfo? field = element.GetType().GetField(fieldName, flags);
+            if (field?.GetValue(element) is Delegate del)
+            {
+                object? value = del.DynamicInvoke();
+                if (value is T typed)
+                {
+                    return typed;
+                }
+            }
+        }
+        catch (Exception ex)
+        {
+            ScreenReaderMod.Instance?.Logger.Debug($"[MenuNarration] Delegate '{fieldName}' invocation failed: {ex.Message}");
+        }
+
+        return default!;
+    }
+
+    private static T ReadField<T>(Type type, object instance, string fieldName)
+    {
+        const BindingFlags flags = BindingFlags.Instance | BindingFlags.NonPublic | BindingFlags.Public;
+        try
+        {
+            FieldInfo? field = type.GetField(fieldName, flags);
+            if (field is not null && field.GetValue(instance) is T value)
+            {
+                return value;
+            }
+        }
+        catch (Exception ex)
+        {
+            ScreenReaderMod.Instance?.Logger.Debug($"[MenuNarration] Field '{fieldName}' read failed: {ex.Message}");
+        }
+
+        return default!;
+    }
+
+    private static string DescribeBindingAssignment(InputMode mode, string? keybind)
+    {
+        if (string.IsNullOrWhiteSpace(keybind))
+        {
+            return string.Empty;
+        }
+
+        PlayerInputProfile? profile = PlayerInput.CurrentProfile;
+        if (profile is null || profile.InputModes is null || !profile.InputModes.TryGetValue(mode, out KeyConfiguration? configuration))
+        {
+            return string.Empty;
+        }
+
+        if (!configuration.KeyStatus.TryGetValue(keybind, out List<string>? entries))
+        {
+            return string.Empty;
+        }
+
+        var filtered = entries.Where(entry => !string.IsNullOrWhiteSpace(entry)).ToList();
+        if (filtered.Count == 0)
+        {
+            return LocalizationHelper.GetTextOrFallback("Mods.ScreenReaderMod.Controls.Unbound", "Unbound");
+        }
+
+        string joined = string.Join(", ", filtered.Select(ConvertBindingToken));
+        return TextSanitizer.Clean(joined);
+    }
+
+    private static string ConvertBindingToken(string token)
+    {
+        if (string.IsNullOrWhiteSpace(token))
+        {
+            return string.Empty;
+        }
+
+        // PlayerInput stores identifiers like MouseRight, DpadUp, Button1, etc.
+        // Insert spaces before capital letters/numbers to make them readable.
+        var builder = new System.Text.StringBuilder(token.Length + 4);
+        char previous = '\0';
+        foreach (char c in token)
+        {
+            if (builder.Length > 0 && char.IsUpper(c) && !char.IsUpper(previous))
+            {
+                builder.Append(' ');
+            }
+            else if (builder.Length > 0 && char.IsDigit(c) && !char.IsDigit(previous))
+            {
+                builder.Append(' ');
+            }
+
+            builder.Append(c);
+            previous = c;
+        }
+
+        return builder.ToString().Replace("Mouse", "Mouse ").Replace("Axis", "Axis ").Trim();
     }
 
     private static bool TryGetData<T>(UIElement element, out T? data) where T : class
