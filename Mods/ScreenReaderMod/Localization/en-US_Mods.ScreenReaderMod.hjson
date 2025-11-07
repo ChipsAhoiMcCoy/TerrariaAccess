@@ -15,6 +15,14 @@ Mods: {
 			SaveAndExit: Save & Exit
 		}
 
+		ModConfigMenu: {
+			ListIntro: Mod configuration list.
+			SelectedMod: Selected mod: {0}
+			ConfigIntro: "{0} from {1}"
+			ConfigIntroNoMod: "{0} configuration."
+			ConfigFallback: Configuration
+		}
+
 		CursorLiquids: {
 			Water: Water
 			Lava: Lava

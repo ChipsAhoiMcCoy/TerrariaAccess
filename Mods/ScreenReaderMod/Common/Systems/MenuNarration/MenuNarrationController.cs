@@ -12,6 +12,7 @@ internal sealed class MenuNarrationController
 {
     private readonly MenuFocusResolver _focusResolver = new();
     private readonly MenuUiSelectionTracker _uiSelectionTracker = new();
+    private readonly ModConfigMenuNarrator _modConfigNarrator = new();
 
     private int _lastMenuMode = -1;
     private MenuFocus? _lastFocus;
@@ -48,6 +49,11 @@ internal sealed class MenuNarrationController
             return;
         }
 
+        if (_modConfigNarrator.TryHandleFancyUi(Main.menuMode, Main.MenuUI))
+        {
+            return;
+        }
+
         if (!TryHandleFocus(main, currentMode, force: false))
         {
             AnnounceFallback(currentMode);
@@ -63,6 +69,7 @@ internal sealed class MenuNarrationController
         _forceNextFocus = true;
         _focusResolver.Reset();
         _uiSelectionTracker.Reset();
+        _modConfigNarrator.Reset();
         ResetSliderTracking();
 
         string modeLabel = MenuNarrationCatalog.DescribeMenuMode(currentMode);
@@ -255,6 +262,7 @@ internal sealed class MenuNarrationController
         _announcedFallback = false;
         _focusFailureCount = 0;
         _forceNextFocus = false;
+        _modConfigNarrator.Reset();
         ResetSliderTracking();
     }
 }
