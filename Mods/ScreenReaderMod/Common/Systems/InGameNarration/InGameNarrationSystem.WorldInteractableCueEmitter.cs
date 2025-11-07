@@ -76,8 +76,63 @@ public sealed partial class InGameNarrationSystem
                 heightTiles: 2,
                 baseFrequency: 480f,
                 baseVolume: 0.48f,
-                partialMultipliers: new[] { 1.25f, 1.5f })
+                partialMultipliers: new[] { 1.25f, 1.5f },
+                tilePredicate: static _ => !WorldGen.crimson),
+            new(
+                InteractableKind.CrimsonAltar,
+                new[] { (int)TileID.DemonAltar },
+                frameWidth: 54,
+                frameHeight: 36,
+                widthTiles: 3,
+                heightTiles: 2,
+                baseFrequency: 540f,
+                baseVolume: 0.5f,
+                partialMultipliers: new[] { 1.15f, 1.45f },
+                tilePredicate: static _ => WorldGen.crimson),
+            new(
+                InteractableKind.ShadowOrb,
+                new[] { (int)TileID.ShadowOrbs },
+                frameWidth: 36,
+                frameHeight: 36,
+                widthTiles: 2,
+                heightTiles: 2,
+                baseFrequency: 360f,
+                baseVolume: 0.46f,
+                partialMultipliers: new[] { 1.33f },
+                tilePredicate: static _ => !WorldGen.crimson),
+            new(
+                InteractableKind.CrimsonHeart,
+                new[] { (int)TileID.ShadowOrbs },
+                frameWidth: 36,
+                frameHeight: 36,
+                widthTiles: 2,
+                heightTiles: 2,
+                baseFrequency: 430f,
+                baseVolume: 0.47f,
+                partialMultipliers: new[] { 1.25f, 1.6f },
+                tilePredicate: static _ => WorldGen.crimson),
+            new(
+                InteractableKind.BeeLarva,
+                new[] { (int)TileID.Larva },
+                frameWidth: 36,
+                frameHeight: 36,
+                widthTiles: 2,
+                heightTiles: 2,
+                baseFrequency: 720f,
+                baseVolume: 0.58f,
+                partialMultipliers: new[] { 1.25f, 1.75f })
         };
+
+        private static readonly InteractableDefinition FallenStarDefinition = new(
+            InteractableKind.FallenStar,
+            Array.Empty<int>(),
+            frameWidth: 0,
+            frameHeight: 0,
+            widthTiles: 1,
+            heightTiles: 1,
+            baseFrequency: 1180f,
+            baseVolume: 0.44f,
+            partialMultipliers: new[] { 1.4f, 2f, 2.8f });
 
         public void Update(Player player)
         {
@@ -102,6 +157,11 @@ public sealed partial class InGameNarrationSystem
                 }
 
                 PlayCue(playerCenter, worldPosition, definition);
+            }
+
+            if (TryFindNearestItem(playerCenter, ItemID.FallenStar, out Vector2 fallenStarPosition))
+            {
+                PlayCue(playerCenter, fallenStarPosition, FallenStarDefinition);
             }
         }
 
@@ -176,7 +236,7 @@ public sealed partial class InGameNarrationSystem
                         continue;
                     }
 
-                    if (!definition.MatchesTile(tile.TileType))
+                    if (!definition.MatchesTile(tile))
                     {
                         continue;
                     }
@@ -231,6 +291,38 @@ public sealed partial class InGameNarrationSystem
             }
 
             return frameX % definition.FrameWidth == 0 && frameY % definition.FrameHeight == 0;
+        }
+
+        private static bool TryFindNearestItem(Vector2 playerCenter, int itemType, out Vector2 worldPosition)
+        {
+            float maxDistancePixels = ScanRadiusTiles * 16f;
+            float maxDistanceSq = maxDistancePixels * maxDistancePixels;
+            float bestDistanceSq = float.MaxValue;
+            Vector2 bestWorld = default;
+            bool found = false;
+
+            for (int i = 0; i < Main.maxItems; i++)
+            {
+                Item item = Main.item[i];
+                if (!item.active || item.type != itemType)
+                {
+                    continue;
+                }
+
+                Vector2 itemCenter = item.Center;
+                float distanceSq = Vector2.DistanceSquared(itemCenter, playerCenter);
+                if (distanceSq >= bestDistanceSq || distanceSq > maxDistanceSq)
+                {
+                    continue;
+                }
+
+                bestDistanceSq = distanceSq;
+                bestWorld = itemCenter;
+                found = true;
+            }
+
+            worldPosition = bestWorld;
+            return found;
         }
 
         private static void PlayCue(Vector2 playerCenter, Vector2 worldPosition, InteractableDefinition definition)
@@ -416,7 +508,12 @@ public sealed partial class InGameNarrationSystem
         {
             Chest,
             HeartCrystal,
-            DemonAltar
+            DemonAltar,
+            CrimsonAltar,
+            FallenStar,
+            ShadowOrb,
+            CrimsonHeart,
+            BeeLarva
         }
 
         private readonly struct InteractableDefinition
@@ -430,7 +527,8 @@ public sealed partial class InGameNarrationSystem
                 int heightTiles,
                 float baseFrequency,
                 float baseVolume,
-                float[] partialMultipliers)
+                float[] partialMultipliers,
+                Func<Tile, bool>? tilePredicate = null)
             {
                 Kind = kind;
                 TileTypes = tileTypes;
@@ -441,6 +539,7 @@ public sealed partial class InGameNarrationSystem
                 BaseFrequency = baseFrequency;
                 BaseVolume = baseVolume;
                 PartialMultipliers = partialMultipliers;
+                TilePredicate = tilePredicate;
             }
 
             public InteractableKind Kind { get; }
@@ -452,15 +551,18 @@ public sealed partial class InGameNarrationSystem
             public float BaseFrequency { get; }
             public float BaseVolume { get; }
             public float[] PartialMultipliers { get; }
+            public Func<Tile, bool>? TilePredicate { get; }
 
-            public bool MatchesTile(int tileType)
+            public bool MatchesTile(Tile tile)
             {
                 foreach (int type in TileTypes)
                 {
-                    if (type == tileType)
+                    if (type != tile.TileType)
                     {
-                        return true;
+                        continue;
                     }
+
+                    return TilePredicate?.Invoke(tile) ?? true;
                 }
 
                 return false;

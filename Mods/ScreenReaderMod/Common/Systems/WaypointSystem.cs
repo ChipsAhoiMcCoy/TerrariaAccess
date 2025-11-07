@@ -421,9 +421,16 @@ public sealed class WaypointSystem : ModSystem
 
     private static void CycleSelection(int direction, Player player)
     {
+        if (direction == 0)
+        {
+            direction = 1;
+        }
+
         if (Waypoints.Count == 0)
         {
-            ScreenReaderService.Announce("No waypoints available");
+            _selectedIndex = -1;
+            RescheduleWaypointPing(player);
+            AnnounceNoneSelection();
             return;
         }
 
@@ -434,14 +441,17 @@ public sealed class WaypointSystem : ModSystem
         else
         {
             _selectedIndex += direction;
-            if (_selectedIndex >= Waypoints.Count)
+            if (_selectedIndex >= Waypoints.Count || _selectedIndex < 0)
             {
-                _selectedIndex = 0;
+                _selectedIndex = -1;
             }
-            else if (_selectedIndex < 0)
-            {
-                _selectedIndex = Waypoints.Count - 1;
-            }
+        }
+
+        if (_selectedIndex < 0)
+        {
+            RescheduleWaypointPing(player);
+            AnnounceNoneSelection();
+            return;
         }
 
         Waypoint waypoint = Waypoints[_selectedIndex];
@@ -501,6 +511,14 @@ public sealed class WaypointSystem : ModSystem
 
         _arrivalAnnounced = false;
         _nextPingUpdateFrame = ComputeNextPingFrame(player, Waypoints[_selectedIndex].WorldPosition);
+    }
+
+    private static void AnnounceNoneSelection()
+    {
+        string message = Waypoints.Count == 0
+            ? "None. No waypoints saved."
+            : "None. Waypoint tracking disabled.";
+        ScreenReaderService.Announce(message);
     }
 
     private static string ComposeWaypointAnnouncement(Waypoint waypoint, Player player)

@@ -94,4 +94,5 @@ Keybinds: {
 	WaypointNext.DisplayName: Waypoint Next
 	WaypointPrevious.DisplayName: Waypoint Previous
 	WaypointCreate.DisplayName: Waypoint Create
+	WaypointDelete.DisplayName: Waypoint Delete
 }

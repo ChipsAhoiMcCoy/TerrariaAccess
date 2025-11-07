@@ -57,6 +57,8 @@ public sealed partial class InGameNarrationSystem
             [5] = TextSanitizer.Clean(Lang.menu[219].Value),
         };
 
+        private static readonly Dictionary<string, int> CategoryLabelLookup = BuildCategoryLookup();
+
         private FieldInfo? _leftHoverField;
         private FieldInfo? _leftLockField;
         private FieldInfo? _rightHoverField;
@@ -206,7 +208,7 @@ public sealed partial class InGameNarrationSystem
                 !IngameOptionsLabelTracker.IsOptionSkipped(rightHover) &&
                 (rightHover != _lastRightHover || categoryId != _lastRightLock))
             {
-                string? description = DescribeOption(categoryId, rightHover);
+                string? description = DescribeOption(categoryId, rightHover, categoryLabel);
                 if (!string.IsNullOrWhiteSpace(description))
                 {
                     ScreenReaderService.Announce(description);
@@ -644,7 +646,7 @@ public sealed partial class InGameNarrationSystem
             return rawCategory;
         }
 
-        private string? DescribeOption(int category, int option)
+        private string? DescribeOption(int category, int option, string? categoryLabel)
         {
             if (category < 0 || option < 0)
             {
@@ -662,19 +664,21 @@ public sealed partial class InGameNarrationSystem
                 return TextSanitizer.Clean(mouseText);
             }
 
-            return DescribeFallback(category, option);
+            return DescribeFallback(category, option, categoryLabel);
         }
 
-        private static string? DescribeFallback(int category, int option)
+        private static string? DescribeFallback(int category, int option, string? categoryLabel)
         {
+            int normalizedCategory = NormalizeCategoryId(category, categoryLabel);
+
             try
             {
-                return category switch
+                return normalizedCategory switch
                 {
                     0 => DescribeGeneral(option),
-                    1 => DescribeAudio(option),
-                    2 => DescribeInterface(option),
-                    3 => DescribeVideo(option),
+                    1 => DescribeInterface(option),
+                    2 => DescribeVideo(option),
+                    3 => DescribeAudio(option),
                     4 => DescribeCursor(option),
                     5 => DescribeGameplay(option),
                     _ => null,
@@ -813,6 +817,54 @@ public sealed partial class InGameNarrationSystem
             };
 
             return TextSanitizer.Clean(result);
+        }
+
+        private static int NormalizeCategoryId(int category, string? categoryLabel)
+        {
+            if (!string.IsNullOrWhiteSpace(categoryLabel) && CategoryLabelLookup.TryGetValue(categoryLabel, out int mapped))
+            {
+                return mapped;
+            }
+
+            if (category >= 0)
+            {
+                return category;
+            }
+
+            return -1;
+        }
+
+        private static Dictionary<string, int> BuildCategoryLookup()
+        {
+            var lookup = new Dictionary<string, int>(StringComparer.OrdinalIgnoreCase);
+
+            void AddMapping(int id, string? label)
+            {
+                string sanitized = TextSanitizer.Clean(label ?? string.Empty);
+                if (string.IsNullOrWhiteSpace(sanitized))
+                {
+                    return;
+                }
+
+                lookup[sanitized] = id;
+            }
+
+            foreach ((int id, string label) in CategoryFallbackLabels)
+            {
+                AddMapping(id, label);
+            }
+
+            for (int i = 0; i < DefaultCategoryLabels.Length; i++)
+            {
+                AddMapping(i, DefaultCategoryLabels[i]);
+            }
+
+            for (int i = 0; i < CategoryLabelOverrides.Length; i++)
+            {
+                AddMapping(i, CategoryLabelOverrides[i]);
+            }
+
+            return lookup;
         }
 
         private void Reset()

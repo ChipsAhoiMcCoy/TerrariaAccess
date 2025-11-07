@@ -46,6 +46,16 @@ public sealed partial class InGameNarrationSystem : ModSystem
     private readonly WorldEventNarrator _worldEventNarrator = new();
     private readonly ControlsMenuNarrator _controlsMenuNarrator = new();
     private readonly ModConfigMenuNarrator _modConfigMenuNarrator = new();
+    private readonly FootstepAudioEmitter _footstepAudioEmitter = new();
+    private readonly NpcFootstepAudioEmitter _npcFootstepAudioEmitter = new();
+
+    private const int FootstepVariantCount = 5;
+
+    private enum FootstepSide
+    {
+        Left,
+        Right
+    }
 
     public override void Load()
         {
@@ -70,9 +80,12 @@ public sealed partial class InGameNarrationSystem : ModSystem
         }
 
             _treasureBagBeaconEmitter.Reset();
+            _footstepAudioEmitter.Reset();
+            _npcFootstepAudioEmitter.Reset();
             CursorNarrator.DisposeStaticResources();
             WorldInteractableCueEmitter.DisposeStaticResources();
             TreasureBagBeaconEmitter.DisposeStaticResources();
+            FootstepToneProvider.DisposeStaticResources();
             On_ItemSlot.MouseHover_ItemArray_int_int -= HandleItemSlotHover;
             On_ItemSlot.MouseHover_refItem_int -= HandleItemSlotHoverRef;
             On_Main.DrawNPCChatButtons -= CaptureNpcChatButtons;
@@ -96,6 +109,8 @@ public sealed partial class InGameNarrationSystem : ModSystem
         _worldEventNarrator.Reset();
         _worldInteractableCueEmitter.Reset();
         _treasureBagBeaconEmitter.Reset();
+        _footstepAudioEmitter.Reset();
+        _npcFootstepAudioEmitter.Reset();
     }
 
     public override void LoadWorldData(TagCompound tag)
@@ -202,8 +217,10 @@ public sealed partial class InGameNarrationSystem : ModSystem
         _cursorNarrator.Update();
         if (!isPaused)
         {
-        _worldInteractableCueEmitter.Update(player);
-        _treasureBagBeaconEmitter.Update(player);
+            _worldInteractableCueEmitter.Update(player);
+            _treasureBagBeaconEmitter.Update(player);
+            _footstepAudioEmitter.Update(player);
+            _npcFootstepAudioEmitter.Update(player);
         }
 
         _npcDialogueNarrator.Update(player);
