@@ -406,6 +406,11 @@ public sealed class WaypointSystem : ModSystem
         {
             CycleSelection(-1, player);
         }
+
+        if (WaypointKeybinds.Delete?.JustPressed ?? false)
+        {
+            DeleteSelectedWaypoint(player);
+        }
     }
 
     private static string BuildDefaultName()
@@ -444,6 +449,45 @@ public sealed class WaypointSystem : ModSystem
         ScreenReaderService.Announce(announcement);
         RescheduleWaypointPing(player);
         EmitPing(player, waypoint.WorldPosition);
+    }
+
+
+    private static void DeleteSelectedWaypoint(Player player)
+    {
+        if (Waypoints.Count == 0)
+        {
+            ScreenReaderService.Announce("No waypoints saved.");
+            return;
+        }
+
+        if (_selectedIndex < 0 || _selectedIndex >= Waypoints.Count)
+        {
+            ScreenReaderService.Announce("No waypoint selected.");
+            return;
+        }
+
+        Waypoint removed = Waypoints[_selectedIndex];
+        Waypoints.RemoveAt(_selectedIndex);
+
+        if (Waypoints.Count == 0)
+        {
+            _selectedIndex = -1;
+            _nextPingUpdateFrame = -1;
+            _arrivalAnnounced = false;
+            ScreenReaderService.Announce($"Deleted waypoint {removed.Name}. None. No waypoints saved.");
+            return;
+        }
+
+        if (_selectedIndex >= Waypoints.Count)
+        {
+            _selectedIndex = Waypoints.Count - 1;
+        }
+
+        Waypoint nextWaypoint = Waypoints[_selectedIndex];
+        string nextAnnouncement = ComposeWaypointAnnouncement(nextWaypoint, player);
+        ScreenReaderService.Announce($"Deleted waypoint {removed.Name}. {nextAnnouncement}");
+        RescheduleWaypointPing(player);
+        EmitPing(player, nextWaypoint.WorldPosition);
     }
 
     private static void RescheduleWaypointPing(Player player)

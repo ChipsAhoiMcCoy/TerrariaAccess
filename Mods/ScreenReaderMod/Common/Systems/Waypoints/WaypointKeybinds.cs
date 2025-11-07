@@ -10,6 +10,7 @@ internal static class WaypointKeybinds
     internal static ModKeybind? Next { get; private set; }
     internal static ModKeybind? Previous { get; private set; }
     internal static ModKeybind? Create { get; private set; }
+    internal static ModKeybind? Delete { get; private set; }
 
     private static bool _initialized;
 
@@ -23,6 +24,7 @@ internal static class WaypointKeybinds
         Next = KeybindLoader.RegisterKeybind(mod, "WaypointNext", Keys.OemCloseBrackets);
         Previous = KeybindLoader.RegisterKeybind(mod, "WaypointPrevious", Keys.OemOpenBrackets);
         Create = KeybindLoader.RegisterKeybind(mod, "WaypointCreate", Keys.OemPipe);
+        Delete = KeybindLoader.RegisterKeybind(mod, "WaypointDelete", Keys.Delete);
 
         _initialized = true;
     }
@@ -33,5 +35,6 @@ internal static class WaypointKeybinds
         Next = null;
         Previous = null;
         Create = null;
+        Delete = null;
     }
 }
