@@ -32,14 +32,12 @@ namespace ScreenReaderMod.Common.Systems;
 
 public sealed partial class InGameNarrationSystem : ModSystem
 {
-    private const string OpenedChestAnchorsKey = "screenReaderOpenedChestAnchors";
-
     private readonly HotbarNarrator _hotbarNarrator = new();
     private readonly SmartCursorNarrator _smartCursorNarrator = new();
     private readonly CraftingNarrator _craftingNarrator = new();
     private readonly CursorNarrator _cursorNarrator = new();
-    private readonly WorldInteractableCueEmitter _worldInteractableCueEmitter = new();
     private readonly TreasureBagBeaconEmitter _treasureBagBeaconEmitter = new();
+    private readonly WorldInteractableTracker _worldInteractableTracker = new();
     private readonly InventoryNarrator _inventoryNarrator = new();
     private readonly NpcDialogueNarrator _npcDialogueNarrator = new();
     private readonly IngameSettingsNarrator _ingameSettingsNarrator = new();
@@ -82,10 +80,11 @@ public sealed partial class InGameNarrationSystem : ModSystem
             _treasureBagBeaconEmitter.Reset();
             _footstepAudioEmitter.Reset();
             _npcFootstepAudioEmitter.Reset();
+            _worldInteractableTracker.Reset();
             CursorNarrator.DisposeStaticResources();
-            WorldInteractableCueEmitter.DisposeStaticResources();
             TreasureBagBeaconEmitter.DisposeStaticResources();
             FootstepToneProvider.DisposeStaticResources();
+            WorldInteractableTracker.DisposeStaticResources();
             On_ItemSlot.MouseHover_ItemArray_int_int -= HandleItemSlotHover;
             On_ItemSlot.MouseHover_refItem_int -= HandleItemSlotHoverRef;
             On_Main.DrawNPCChatButtons -= CaptureNpcChatButtons;
@@ -107,66 +106,10 @@ public sealed partial class InGameNarrationSystem : ModSystem
     public override void OnWorldUnload()
     {
         _worldEventNarrator.Reset();
-        _worldInteractableCueEmitter.Reset();
         _treasureBagBeaconEmitter.Reset();
         _footstepAudioEmitter.Reset();
         _npcFootstepAudioEmitter.Reset();
-    }
-
-    public override void LoadWorldData(TagCompound tag)
-    {
-        _worldInteractableCueEmitter.Reset();
-
-        if (!tag.ContainsKey(OpenedChestAnchorsKey))
-        {
-            return;
-        }
-
-        IList<TagCompound> entries = tag.GetList<TagCompound>(OpenedChestAnchorsKey);
-        if (entries.Count == 0)
-        {
-            return;
-        }
-
-        Span<Point> buffer = entries.Count <= 256 ? stackalloc Point[entries.Count] : new Point[entries.Count];
-        int index = 0;
-        foreach (TagCompound entry in entries)
-        {
-            if (!entry.ContainsKey("x") || !entry.ContainsKey("y"))
-            {
-                continue;
-            }
-
-            int x = entry.GetInt("x");
-            int y = entry.GetInt("y");
-            buffer[index++] = new Point(x, y);
-        }
-
-        if (index > 0)
-        {
-            _worldInteractableCueEmitter.SetOpenedChestAnchors(buffer[..index]);
-        }
-    }
-
-    public override void SaveWorldData(TagCompound tag)
-    {
-        IReadOnlyCollection<Point> anchors = _worldInteractableCueEmitter.GetOpenedChestAnchors();
-        if (anchors.Count == 0)
-        {
-            return;
-        }
-
-        List<TagCompound> serialized = new(anchors.Count);
-        foreach (Point anchor in anchors)
-        {
-            serialized.Add(new TagCompound
-            {
-                ["x"] = anchor.X,
-                ["y"] = anchor.Y,
-            });
-        }
-
-        tag[OpenedChestAnchorsKey] = serialized;
+        _worldInteractableTracker.Reset();
     }
 
     public override void PostUpdateWorld()
@@ -217,10 +160,10 @@ public sealed partial class InGameNarrationSystem : ModSystem
         _cursorNarrator.Update();
         if (!isPaused)
         {
-            _worldInteractableCueEmitter.Update(player);
             _treasureBagBeaconEmitter.Update(player);
             _footstepAudioEmitter.Update(player);
             _npcFootstepAudioEmitter.Update(player);
+            _worldInteractableTracker.Update(player, WaypointSystem.IsExplorationTrackingEnabled);
         }
 
         _npcDialogueNarrator.Update(player);
