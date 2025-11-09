@@ -77,6 +77,30 @@ Mods: {
 			OldOnesArmyEnd: The Old One's Army has been defeated.
 			WorldLoaded: World loaded.
 			NpcArrived: "{0} has arrived."
+			BiomeEntered: Entered {0}.
+
+			BiomeNames: {
+				Forest: Forest
+				Underworld: Underworld
+				Temple: Jungle Temple
+				Dungeon: Dungeon
+				Sky: Sky
+				Shimmer: Shimmer
+				Jungle: Jungle
+				UndergroundDesert: Underground Desert
+				Desert: Desert
+				Snow: Snow
+				Hallow: Hallow
+				Corruption: Corruption
+				Crimson: Crimson
+				Glowshroom: Glowing Mushroom
+				Granite: Granite Cave
+				Marble: Marble Cave
+				Meteor: Meteorite
+				Hive: Bee Hive
+				Graveyard: Graveyard
+				Beach: Beach
+			}
 		}
 
 		Keybinds: {

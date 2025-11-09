@@ -46,6 +46,7 @@ public sealed partial class InGameNarrationSystem : ModSystem
     private readonly ModConfigMenuNarrator _modConfigMenuNarrator = new();
     private readonly FootstepAudioEmitter _footstepAudioEmitter = new();
     private readonly NpcFootstepAudioEmitter _npcFootstepAudioEmitter = new();
+    private readonly BiomeAnnouncementEmitter _biomeAnnouncementEmitter = new();
 
     private const int FootstepVariantCount = 5;
 
@@ -81,6 +82,7 @@ public sealed partial class InGameNarrationSystem : ModSystem
             _footstepAudioEmitter.Reset();
             _npcFootstepAudioEmitter.Reset();
             _worldInteractableTracker.Reset();
+            _biomeAnnouncementEmitter.Reset();
             CursorNarrator.DisposeStaticResources();
             TreasureBagBeaconEmitter.DisposeStaticResources();
             FootstepToneProvider.DisposeStaticResources();
@@ -110,6 +112,7 @@ public sealed partial class InGameNarrationSystem : ModSystem
         _footstepAudioEmitter.Reset();
         _npcFootstepAudioEmitter.Reset();
         _worldInteractableTracker.Reset();
+        _biomeAnnouncementEmitter.Reset();
     }
 
     public override void PostUpdateWorld()
@@ -164,6 +167,7 @@ public sealed partial class InGameNarrationSystem : ModSystem
             _footstepAudioEmitter.Update(player);
             _npcFootstepAudioEmitter.Update(player);
             _worldInteractableTracker.Update(player, WaypointSystem.IsExplorationTrackingEnabled);
+            _biomeAnnouncementEmitter.Update(player);
         }
 
         _npcDialogueNarrator.Update(player);
