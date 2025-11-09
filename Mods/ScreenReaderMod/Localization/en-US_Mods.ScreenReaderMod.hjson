@@ -107,6 +107,8 @@ Mods: {
 				CavernLayer: Cavern Layer
 				Underground: Underground
 			}
+
+			InventorySpecial.LoadoutControls: Loadout controls
 		}
 
 		Keybinds: {

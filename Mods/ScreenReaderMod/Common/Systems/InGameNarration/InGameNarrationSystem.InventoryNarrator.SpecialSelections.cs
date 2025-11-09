@@ -1,9 +1,12 @@
 #nullable enable
 using System;
+using System.Collections.Generic;
 using System.Reflection;
 using ScreenReaderMod.Common.Services;
+using ScreenReaderMod.Common.Utilities;
 using Terraria;
 using Terraria.GameContent.UI.States;
+using Terraria.GameInput;
 using Terraria.Localization;
 using Terraria.UI.Gamepad;
 
@@ -11,11 +14,12 @@ namespace ScreenReaderMod.Common.Systems;
 
 public sealed partial class InGameNarrationSystem
 {
-    private sealed partial class InventoryNarrator
-    {
-        private bool TryAnnounceSpecialSelection(bool hoverIsAir, string? location)
+        private sealed partial class InventoryNarrator
         {
-            int currentPoint = UILinkPointNavigator.CurrentPoint;
+        private static readonly HashSet<int> LoggedUnknownInventoryPoints = new();
+            private bool TryAnnounceSpecialSelection(bool hoverIsAir, string? location)
+            {
+                int currentPoint = UILinkPointNavigator.CurrentPoint;
             string? label = GetSpecialSelectionLabel(currentPoint, hoverIsAir, location);
             if (string.IsNullOrWhiteSpace(label))
             {
@@ -55,6 +59,7 @@ public sealed partial class InGameNarrationSystem
                 308 => Button(Lang.inter[62].Value),
                 309 => Button(Language.GetTextValue("GameUI.Emote")),
                 310 => Button(Language.GetTextValue("GameUI.Bestiary")),
+                311 => Button(LocalizationHelper.GetTextOrFallback("Mods.ScreenReaderMod.InventorySpecial.LoadoutControls", "Loadout controls")),
                 int loadout when loadout >= 312 && loadout <= 320 => Button(GetLoadoutLabel(loadout)),
                 _ => null,
             };
@@ -80,6 +85,7 @@ public sealed partial class InGameNarrationSystem
                 return null;
             }
 
+            LogUnknownInventoryPoint(point, hoverIsAir, location);
             return null;
         }
 
@@ -127,6 +133,20 @@ public sealed partial class InGameNarrationSystem
             }
 
             return -1;
+        }
+
+        private static void LogUnknownInventoryPoint(int point, bool hoverIsAir, string? location)
+        {
+            if (!LoggedUnknownInventoryPoints.Add(point))
+            {
+                return;
+            }
+
+            string state = Main.InGameUI?.CurrentState?.GetType().FullName ?? "<null>";
+            bool usingGamepad = PlayerInput.UsingGamepadUI;
+            bool inventoryOpen = Main.playerInventory;
+            ScreenReaderMod.Instance?.Logger.Info(
+                $"[InventoryNarration] Unknown UI link point {point} (hoverIsAir={hoverIsAir}, location='{location ?? string.Empty}', usingGamepad={usingGamepad}, inventory={inventoryOpen}, state={state})");
         }
     }
 }

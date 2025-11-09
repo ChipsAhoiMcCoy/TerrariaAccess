@@ -34,6 +34,7 @@ public sealed partial class InGameNarrationSystem
 {
     private sealed partial class InventoryNarrator
     {
+        private readonly MenuUiSelectionTracker _inGameUiTracker = new();
         private ItemIdentity _lastHover;
         private string? _lastHoverLocation;
         private string? _lastHoverTooltip;
@@ -91,6 +92,7 @@ public sealed partial class InGameNarrationSystem
             if (!IsInventoryUiOpen(player))
             {
                 Reset();
+                _inGameUiTracker.Reset();
                 return;
             }
 
@@ -231,11 +233,6 @@ public sealed partial class InGameNarrationSystem
                 return;
             }
 
-            if (usingGamepadFocus)
-            {
-                return;
-            }
-
             string? mouseText = TryGetMouseText();
             if (!string.IsNullOrWhiteSpace(mouseText))
             {
@@ -250,6 +247,11 @@ public sealed partial class InGameNarrationSystem
                     ScreenReaderService.Announce(trimmedMouseText);
                 }
 
+                return;
+            }
+
+            if (TryAnnounceInGameUiHover())
+            {
                 return;
             }
 
@@ -425,6 +427,7 @@ public sealed partial class InGameNarrationSystem
             _currentFocus = null;
             _pendingFocus = null;
             LinkPointFocusCache.Clear();
+            _inGameUiTracker.Reset();
         }
 
         private static string DescribeLocation(Player player, ItemIdentity identity, SlotFocus? focus)
@@ -733,6 +736,34 @@ public sealed partial class InGameNarrationSystem
             }
 
             return null;
+        }
+
+        private bool TryAnnounceInGameUiHover()
+        {
+            if (!_inGameUiTracker.TryGetHoverLabel(Main.InGameUI, out MenuUiLabel hover))
+            {
+                return false;
+            }
+
+            string cleaned = TextSanitizer.Clean(hover.Text);
+            if (string.IsNullOrWhiteSpace(cleaned))
+            {
+                return false;
+            }
+
+            if (!hover.IsNew && string.Equals(cleaned, _lastHoverTooltip, StringComparison.Ordinal))
+            {
+                return true;
+            }
+
+            _lastHover = ItemIdentity.Empty;
+            _lastHoverLocation = null;
+            _lastHoverTooltip = cleaned;
+            _lastHoverDetails = null;
+            _lastEmptyMessage = null;
+            _lastAnnouncedMessage = cleaned;
+            ScreenReaderService.Announce(cleaned);
+            return true;
         }
 
     }
