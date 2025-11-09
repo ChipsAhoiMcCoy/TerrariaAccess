@@ -1,6 +1,7 @@
 #nullable enable
 using System;
 using ScreenReaderMod.Common.Services;
+using ScreenReaderMod.Common.Utilities;
 using Terraria;
 using Terraria.GameContent.UI;
 using Terraria.UI;
@@ -114,8 +115,14 @@ internal sealed class MenuNarrationController
             return true;
         }
 
-        ScreenReaderMod.Instance?.Logger.Info($"[MenuNarration] UI hover -> {hover.Text}");
-        ScreenReaderService.Announce(hover.Text);
+        string cleaned = TextSanitizer.Clean(hover.Text);
+        if (string.IsNullOrWhiteSpace(cleaned))
+        {
+            return false;
+        }
+
+        ScreenReaderMod.Instance?.Logger.Info($"[MenuNarration] UI hover -> {cleaned}");
+        ScreenReaderService.Announce(cleaned);
         return true;
     }
 

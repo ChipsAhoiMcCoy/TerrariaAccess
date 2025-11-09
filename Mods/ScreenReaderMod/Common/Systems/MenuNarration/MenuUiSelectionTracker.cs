@@ -41,11 +41,7 @@ internal sealed class MenuUiSelectionTracker
             return false;
         }
 
-        string text = ExtractLabel(hovered);
-        if (string.IsNullOrWhiteSpace(text))
-        {
-            return false;
-        }
+        string text = ExtractLabel(hovered) ?? string.Empty;
 
         bool isNew = !ReferenceEquals(hovered, _lastElement) || !string.Equals(text, _lastLabel, StringComparison.OrdinalIgnoreCase);
         _lastElement = hovered;
