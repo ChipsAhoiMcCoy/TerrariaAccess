@@ -98,11 +98,6 @@ public sealed partial class InGameNarrationSystem : ModSystem
     public override void OnWorldLoad()
     {
         _worldEventNarrator.InitializeFromWorld();
-        if (!Main.dedServ)
-        {
-            string message = LocalizationHelper.GetTextOrFallback("Mods.ScreenReaderMod.WorldAnnouncements.WorldLoaded", "World loaded.");
-            WorldAnnouncementService.Announce(message, force: true);
-        }
     }
 
     public override void OnWorldUnload()

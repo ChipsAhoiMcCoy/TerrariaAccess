@@ -75,7 +75,6 @@ Mods: {
 			PartyEnd: The party is over.
 			OldOnesArmyStart: The Old One's Army is advancing.
 			OldOnesArmyEnd: The Old One's Army has been defeated.
-			WorldLoaded: World loaded.
 			NpcArrived: "{0} has arrived."
 			BiomeEntered: Entered {0}.
 
