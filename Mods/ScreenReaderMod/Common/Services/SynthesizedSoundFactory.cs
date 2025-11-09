@@ -55,6 +55,33 @@ internal static class SynthesizedSoundFactory
             });
     }
 
+    public static SoundEffect CreateNoise(
+        float durationSeconds,
+        ToneEnvelope envelope,
+        float gain = 0.4f,
+        int sampleRate = DefaultSampleRate,
+        int? seed = null)
+    {
+        int sampleCount = Math.Max(1, (int)(sampleRate * Math.Max(durationSeconds, 0f)));
+        byte[] buffer = new byte[sampleCount * sizeof(short)];
+        float denominator = Math.Max(1, sampleCount - 1);
+        Random random = seed.HasValue ? new Random(seed.Value) : new Random(unchecked((int)DateTime.UtcNow.Ticks));
+
+        for (int i = 0; i < sampleCount; i++)
+        {
+            float normalizedIndex = i / denominator;
+            float envelopeValue = envelope.Evaluate(normalizedIndex);
+            float centered = (float)(random.NextDouble() * 2d - 1d);
+            float sample = centered * gain * envelopeValue;
+            short value = (short)Math.Clamp(sample * short.MaxValue, short.MinValue, short.MaxValue);
+            int index = i * 2;
+            buffer[index] = (byte)(value & 0xFF);
+            buffer[index + 1] = (byte)((value >> 8) & 0xFF);
+        }
+
+        return new SoundEffect(buffer, sampleRate, AudioChannels.Mono);
+    }
+
     private static SoundEffect CreateTone(
         int sampleRate,
         float durationSeconds,

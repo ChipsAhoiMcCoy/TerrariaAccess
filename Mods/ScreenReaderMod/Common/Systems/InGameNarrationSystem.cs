@@ -37,6 +37,7 @@ public sealed partial class InGameNarrationSystem : ModSystem
     private readonly CraftingNarrator _craftingNarrator = new();
     private readonly CursorNarrator _cursorNarrator = new();
     private readonly TreasureBagBeaconEmitter _treasureBagBeaconEmitter = new();
+    private readonly HostileStaticAudioEmitter _hostileStaticAudioEmitter = new();
     private readonly WorldInteractableTracker _worldInteractableTracker = new();
     private readonly InventoryNarrator _inventoryNarrator = new();
     private readonly NpcDialogueNarrator _npcDialogueNarrator = new();
@@ -79,6 +80,7 @@ public sealed partial class InGameNarrationSystem : ModSystem
         }
 
             _treasureBagBeaconEmitter.Reset();
+            _hostileStaticAudioEmitter.Reset();
             _footstepAudioEmitter.Reset();
             _npcFootstepAudioEmitter.Reset();
             _worldInteractableTracker.Reset();
@@ -87,6 +89,7 @@ public sealed partial class InGameNarrationSystem : ModSystem
             TreasureBagBeaconEmitter.DisposeStaticResources();
             FootstepToneProvider.DisposeStaticResources();
             WorldInteractableTracker.DisposeStaticResources();
+            HostileStaticAudioEmitter.DisposeStaticResources();
             On_ItemSlot.MouseHover_ItemArray_int_int -= HandleItemSlotHover;
             On_ItemSlot.MouseHover_refItem_int -= HandleItemSlotHoverRef;
             On_Main.DrawNPCChatButtons -= CaptureNpcChatButtons;
@@ -104,6 +107,7 @@ public sealed partial class InGameNarrationSystem : ModSystem
     {
         _worldEventNarrator.Reset();
         _treasureBagBeaconEmitter.Reset();
+        _hostileStaticAudioEmitter.Reset();
         _footstepAudioEmitter.Reset();
         _npcFootstepAudioEmitter.Reset();
         _worldInteractableTracker.Reset();
@@ -159,6 +163,7 @@ public sealed partial class InGameNarrationSystem : ModSystem
         if (!isPaused)
         {
             _treasureBagBeaconEmitter.Update(player);
+            _hostileStaticAudioEmitter.Update(player);
             _footstepAudioEmitter.Update(player);
             _npcFootstepAudioEmitter.Update(player);
             _worldInteractableTracker.Update(player, WaypointSystem.IsExplorationTrackingEnabled);
