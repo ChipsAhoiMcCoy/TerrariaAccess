@@ -3,6 +3,7 @@ using System;
 using Microsoft.Xna.Framework;
 using Terraria;
 using Terraria.Utilities;
+using ScreenReaderMod.Common.Services;
 
 namespace ScreenReaderMod.Common.Systems;
 
@@ -39,9 +40,10 @@ public sealed partial class InGameNarrationSystem
             int cadenceFrames = Math.Max(4, (int)MathF.Round(baseCadence * 0.9f));
 
             float pitch = MathHelper.Lerp(-0.22f, 0.18f, normalized);
-            float volume = MathHelper.Lerp(0.25f, 0.6f, normalized);
+            float baseVolume = MathHelper.Lerp(0.25f, 0.6f, normalized);
+            float loudness = SoundLoudnessUtility.ApplyDistanceFalloff(baseVolume, distanceTiles: 0f, referenceTiles: 1f);
             int variant = PickNextVariant();
-            FootstepToneProvider.Play(_nextFootSide, variant, volume, pitch, pan: 0f);
+            FootstepToneProvider.Play(_nextFootSide, variant, loudness, pitch, pan: 0f);
             _nextFootSide = _nextFootSide == FootstepSide.Left ? FootstepSide.Right : FootstepSide.Left;
 
             _nextStepFrame = currentFrame + cadenceFrames;

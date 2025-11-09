@@ -130,7 +130,13 @@ public sealed partial class InGameNarrationSystem
                 float distancePixels = offset.Length();
                 float distanceTiles = distancePixels / 16f;
                 float distanceFactor = 1f / (1f + (distanceTiles / Math.Max(1f, DistanceReferenceTiles)));
-                float volume = MathHelper.Clamp(MinVolume + distanceFactor * VolumeRange, 0f, 1f) * Main.soundVolume;
+                float baseVolume = MathHelper.Clamp(MinVolume + distanceFactor * VolumeRange, 0f, 1f);
+                float loudness = SoundLoudnessUtility.ApplyDistanceFalloff(
+                    baseVolume,
+                    distanceTiles,
+                    DistanceReferenceTiles,
+                    minFactor: 0.4f);
+                float volume = loudness * Main.soundVolume;
 
                 instance.Pitch = pitch;
                 instance.Pan = pan;

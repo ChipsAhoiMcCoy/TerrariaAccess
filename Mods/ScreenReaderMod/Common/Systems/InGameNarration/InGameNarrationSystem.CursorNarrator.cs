@@ -34,6 +34,8 @@ public sealed partial class InGameNarrationSystem
 {
     private sealed class CursorNarrator
     {
+        private const float CursorLoudnessReferenceTiles = 90f;
+
         private int _lastTileX = int.MinValue;
         private int _lastTileY = int.MinValue;
         private bool _lastSmartCursorActive;
@@ -323,11 +325,18 @@ public sealed partial class InGameNarrationSystem
 
             float pan = MathHelper.Clamp(offset.X / 480f, -1f, 1f);
             float pitch = MathHelper.Clamp(-offset.Y / 320f, -0.6f, 0.6f);
-            float volume = MathHelper.Clamp(0.35f + Math.Abs(pitch) * 0.2f, 0f, 0.7f);
+            float baseVolume = MathHelper.Clamp(0.35f + Math.Abs(pitch) * 0.2f, 0f, 0.7f);
+            float distanceTiles = offset.Length() / 16f;
+            float loudness = SoundLoudnessUtility.ApplyDistanceFalloff(
+                baseVolume,
+                distanceTiles,
+                CursorLoudnessReferenceTiles,
+                minFactor: 0.4f);
+            float volume = loudness * Main.soundVolume;
 
             SoundEffectInstance instance = tone.CreateInstance();
             instance.IsLooped = false;
-            instance.Volume = volume * Main.soundVolume;
+            instance.Volume = volume;
             instance.Pitch = pitch;
             instance.Pan = pan;
             instance.Play();

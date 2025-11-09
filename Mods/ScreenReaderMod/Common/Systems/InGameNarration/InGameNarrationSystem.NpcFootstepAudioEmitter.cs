@@ -4,6 +4,7 @@ using System.Collections.Generic;
 using Microsoft.Xna.Framework;
 using Terraria;
 using Terraria.Utilities;
+using ScreenReaderMod.Common.Services;
 
 namespace ScreenReaderMod.Common.Systems;
 
@@ -13,6 +14,7 @@ public sealed partial class InGameNarrationSystem
     {
         private const float MinSpeed = 0.35f;
         private const float MaxDistance = 960f;
+        private const float MaxDistanceTiles = MaxDistance / 16f;
 
         private readonly Dictionary<int, long> _nextStepFrame = new();
         private readonly Dictionary<int, FootstepSide> _nextFootSide = new();
@@ -54,15 +56,20 @@ public sealed partial class InGameNarrationSystem
                 int cadenceFrames = Math.Max(5, (int)MathF.Round(baseCadence * 0.9f));
 
                 float pan = MathHelper.Clamp((npc.Center.X - listener.Center.X) / 520f, -1f, 1f);
-                float distanceFactor = MathHelper.Clamp(1f - (distance / MaxDistance), 0f, 1f);
-                float volume = MathHelper.Lerp(0.18f, 0.48f, normalized) * distanceFactor;
+                float baseVolume = MathHelper.Lerp(0.18f, 0.48f, normalized);
+                float distanceTiles = distance / 16f;
+                float loudness = SoundLoudnessUtility.ApplyDistanceFalloff(
+                    baseVolume,
+                    distanceTiles,
+                    MaxDistanceTiles,
+                    minFactor: 0.35f);
                 float pitch = MathHelper.Lerp(-0.28f, 0.15f, normalized);
 
                 FootstepSide footSide = _nextFootSide.TryGetValue(npc.whoAmI, out FootstepSide storedSide)
                     ? storedSide
                     : FootstepSide.Left;
                 int variation = GetNextVariant(npc.whoAmI);
-                FootstepToneProvider.Play(footSide, variation, volume, pitch, pan);
+                FootstepToneProvider.Play(footSide, variation, loudness, pitch, pan);
                 _nextStepFrame[npc.whoAmI] = currentFrame + cadenceFrames;
                 _nextFootSide[npc.whoAmI] = footSide == FootstepSide.Left ? FootstepSide.Right : FootstepSide.Left;
             }

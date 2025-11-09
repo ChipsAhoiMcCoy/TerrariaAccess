@@ -284,7 +284,13 @@ public sealed partial class InGameNarrationSystem
 
             float pitch = MathHelper.Clamp(-offset.Y / profile.PitchScalePixels, -0.8f, 0.8f);
             float pan = MathHelper.Clamp(offset.X / profile.PanScalePixels, -1f, 1f);
-            float volume = profile.ComputeVolume(entry.DistanceTiles) * Main.soundVolume;
+            float baseVolume = profile.ComputeVolume(entry.DistanceTiles);
+            float loudness = SoundLoudnessUtility.ApplyDistanceFalloff(
+                baseVolume,
+                entry.DistanceTiles,
+                profile.MaxAudibleDistanceTiles,
+                minFactor: 0.45f);
+            float volume = loudness * Main.soundVolume;
             if (volume <= 0f)
             {
                 return;
@@ -638,6 +644,7 @@ public sealed partial class InGameNarrationSystem
     {
         private const float DefaultPanScale = 520f;
         private const float DefaultPitchScale = 320f;
+        private const float MinDelayResponseExponent = 0.05f;
 
         private InteractableCueProfile(
             string id,
@@ -652,7 +659,8 @@ public sealed partial class InGameNarrationSystem
             int minIntervalFrames,
             int maxIntervalFrames,
             float panScalePixels = DefaultPanScale,
-            float pitchScalePixels = DefaultPitchScale)
+            float pitchScalePixels = DefaultPitchScale,
+            float delayResponseExponent = 1f)
         {
             Id = id;
             FundamentalFrequency = fundamentalFrequency;
@@ -667,6 +675,7 @@ public sealed partial class InGameNarrationSystem
             MaxIntervalFrames = maxIntervalFrames;
             PanScalePixels = panScalePixels;
             PitchScalePixels = pitchScalePixels;
+            DelayResponseExponent = Math.Max(MinDelayResponseExponent, delayResponseExponent);
         }
 
         public string Id { get; }
@@ -682,6 +691,7 @@ public sealed partial class InGameNarrationSystem
         public int MaxIntervalFrames { get; }
         public float PanScalePixels { get; }
         public float PitchScalePixels { get; }
+        public float DelayResponseExponent { get; }
 
         public float ComputeVolume(float distanceTiles)
         {
@@ -703,6 +713,12 @@ public sealed partial class InGameNarrationSystem
             }
 
             float normalized = Math.Clamp(distanceTiles / MaxAudibleDistanceTiles, 0f, 1f);
+            if (DelayResponseExponent != 1f)
+            {
+                float closeness = 1f - normalized;
+                float shapedCloseness = MathF.Pow(Math.Clamp(closeness, 0f, 1f), DelayResponseExponent);
+                normalized = 1f - shapedCloseness;
+            }
             float frames = MathHelper.Lerp(MinIntervalFrames, MaxIntervalFrames, normalized);
             return Math.Max(1, (int)MathF.Round(frames));
         }
@@ -717,8 +733,9 @@ public sealed partial class InGameNarrationSystem
             minVolume: 0.2f,
             maxVolume: 0.8f,
             maxAudibleDistanceTiles: 85f,
-            minIntervalFrames: 14,
-            maxIntervalFrames: 40);
+            minIntervalFrames: 10,
+            maxIntervalFrames: 52,
+            delayResponseExponent: 0.7f);
 
         public static InteractableCueProfile HeartCrystal { get; } = new(
             id: "heart-crystal",
@@ -730,8 +747,9 @@ public sealed partial class InGameNarrationSystem
             minVolume: 0.22f,
             maxVolume: 0.94f,
             maxAudibleDistanceTiles: 90f,
-            minIntervalFrames: 12,
-            maxIntervalFrames: 40);
+            minIntervalFrames: 8,
+            maxIntervalFrames: 52,
+            delayResponseExponent: 0.7f);
 
         public static InteractableCueProfile DemonAltar { get; } = new(
             id: "demon-altar",
@@ -743,8 +761,9 @@ public sealed partial class InGameNarrationSystem
             minVolume: 0.2f,
             maxVolume: 0.7f,
             maxAudibleDistanceTiles: 85f,
-            minIntervalFrames: 18,
-            maxIntervalFrames: 46);
+            minIntervalFrames: 12,
+            maxIntervalFrames: 56,
+            delayResponseExponent: 0.7f);
 
         public static InteractableCueProfile CrimsonAltar { get; } = new(
             id: "crimson-altar",
@@ -756,8 +775,9 @@ public sealed partial class InGameNarrationSystem
             minVolume: 0.24f,
             maxVolume: 0.74f,
             maxAudibleDistanceTiles: 85f,
-            minIntervalFrames: 18,
-            maxIntervalFrames: 46);
+            minIntervalFrames: 12,
+            maxIntervalFrames: 56,
+            delayResponseExponent: 0.7f);
 
         public static InteractableCueProfile ShadowOrb { get; } = new(
             id: "shadow-orb",
@@ -769,8 +789,9 @@ public sealed partial class InGameNarrationSystem
             minVolume: 0.2f,
             maxVolume: 0.7f,
             maxAudibleDistanceTiles: 80f,
-            minIntervalFrames: 16,
-            maxIntervalFrames: 44);
+            minIntervalFrames: 10,
+            maxIntervalFrames: 54,
+            delayResponseExponent: 0.7f);
 
         public static InteractableCueProfile CrimsonHeart { get; } = new(
             id: "crimson-heart",
@@ -782,8 +803,9 @@ public sealed partial class InGameNarrationSystem
             minVolume: 0.22f,
             maxVolume: 0.72f,
             maxAudibleDistanceTiles: 80f,
-            minIntervalFrames: 16,
-            maxIntervalFrames: 44);
+            minIntervalFrames: 10,
+            maxIntervalFrames: 54,
+            delayResponseExponent: 0.7f);
 
         public static InteractableCueProfile BeeLarva { get; } = new(
             id: "bee-larva",
@@ -795,8 +817,9 @@ public sealed partial class InGameNarrationSystem
             minVolume: 0.25f,
             maxVolume: 0.82f,
             maxAudibleDistanceTiles: 70f,
-            minIntervalFrames: 12,
-            maxIntervalFrames: 42);
+            minIntervalFrames: 8,
+            maxIntervalFrames: 50,
+            delayResponseExponent: 0.7f);
 
         public static InteractableCueProfile FallenStar { get; } = new(
             id: "fallen-star",
@@ -808,7 +831,8 @@ public sealed partial class InGameNarrationSystem
             minVolume: 0.24f,
             maxVolume: 0.78f,
             maxAudibleDistanceTiles: 95f,
-            minIntervalFrames: 10,
-            maxIntervalFrames: 34);
+            minIntervalFrames: 8,
+            maxIntervalFrames: 46,
+            delayResponseExponent: 0.7f);
     }
 }
