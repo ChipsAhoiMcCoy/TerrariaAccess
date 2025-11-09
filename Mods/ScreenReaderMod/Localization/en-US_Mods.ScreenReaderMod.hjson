@@ -32,6 +32,11 @@ Mods: {
 		ControlsMenu: {
 			Opened: Controls menu.
 			RebindingPrompt: Press the key or button to assign.
+			KeyboardBindings: Keyboard and mouse bindings
+			GamepadBindings: Controller bindings
+			GameplayBindings: Gameplay controls
+			InterfaceBindings: Interface controls
+			SelectedSuffix: Selected
 		}
 
 		WorldAnnouncements: {
@@ -99,6 +104,8 @@ Mods: {
 				Hive: Bee Hive
 				Graveyard: Graveyard
 				Beach: Beach
+				CavernLayer: Cavern Layer
+				Underground: Underground
 			}
 		}
 

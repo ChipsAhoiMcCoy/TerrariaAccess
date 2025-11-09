@@ -34,9 +34,10 @@ public sealed partial class InGameNarrationSystem
             new("Hive", "Bee Hive", static player => player.ZoneHive),
             new("Graveyard", "Graveyard", static player => player.ZoneGraveyard),
             new("Beach", "Beach", static player => player.ZoneBeach),
+            new("Forest", "Forest", static player => player.ZonePurity && player.ZoneOverworldHeight),
+            new("CavernLayer", "Cavern Layer", static player => player.ZoneRockLayerHeight),
+            new("Underground", "Underground", static player => player.ZoneDirtLayerHeight),
         };
-
-        private readonly BiomeDefinition _fallbackBiome = new("Forest", "Forest", static _ => true);
 
         private string? _lastAnnouncedKey;
         private string? _candidateKey;
@@ -56,7 +57,13 @@ public sealed partial class InGameNarrationSystem
                 return;
             }
 
-            BiomeDefinition current = DetermineBiome(player);
+            BiomeDefinition? current = DetermineBiome(player);
+            if (current is null)
+            {
+                _candidateKey = null;
+                _candidateFrames = 0;
+                return;
+            }
 
             if (_candidateKey == current.Key)
             {
@@ -80,7 +87,7 @@ public sealed partial class InGameNarrationSystem
             AnnounceBiome(current);
         }
 
-        private BiomeDefinition DetermineBiome(Player player)
+        private BiomeDefinition? DetermineBiome(Player player)
         {
             foreach (BiomeDefinition biome in _orderedBiomes)
             {
@@ -90,7 +97,7 @@ public sealed partial class InGameNarrationSystem
                 }
             }
 
-            return _fallbackBiome;
+            return null;
         }
 
         private static void AnnounceBiome(BiomeDefinition biome)
