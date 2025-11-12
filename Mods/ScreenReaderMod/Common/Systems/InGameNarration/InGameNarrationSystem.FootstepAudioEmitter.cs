@@ -17,22 +17,35 @@ public sealed partial class InGameNarrationSystem
         private long _nextAllowedFrame;
         private int _lastTileColumn = -1;
         private bool _pendingLandingStep;
+        private int _landingTileColumn = -1;
 
         public void Update(Player player)
         {
             bool grounded = IsGrounded(player);
-            if (!ShouldEmit(player, grounded))
+            if (!CanProcess(player))
             {
-                _pendingLandingStep = !grounded;
+                _pendingLandingStep = false;
+                _landingTileColumn = -1;
                 ResetTracking();
                 return;
             }
 
-            bool landingStep = grounded && _pendingLandingStep;
-            if (landingStep)
+            if (!grounded)
             {
-                _pendingLandingStep = false;
+                if (!_pendingLandingStep)
+                {
+                    _pendingLandingStep = true;
+                    _landingTileColumn = _lastTileColumn;
+                }
+
+                _nextAllowedFrame = 0;
+                return;
             }
+
+            int tileColumn = GetPlayerTileColumn(player);
+            bool landingStep = _pendingLandingStep && tileColumn == _landingTileColumn;
+            _pendingLandingStep = false;
+            _landingTileColumn = -1;
 
             float speed = player.velocity.Length();
             if (speed < MinSpeed && !landingStep)
@@ -40,7 +53,6 @@ public sealed partial class InGameNarrationSystem
                 return;
             }
 
-            int tileColumn = GetPlayerTileColumn(player);
             if (!landingStep && tileColumn == _lastTileColumn)
             {
                 return;
@@ -68,10 +80,11 @@ public sealed partial class InGameNarrationSystem
         public void Reset()
         {
             _pendingLandingStep = false;
+            _landingTileColumn = -1;
             ResetTracking();
         }
 
-        private static bool ShouldEmit(Player player, bool grounded)
+        private static bool CanProcess(Player player)
         {
             if (!player.active || player.dead || player.ghost)
             {
@@ -79,11 +92,6 @@ public sealed partial class InGameNarrationSystem
             }
 
             if (player.mount.Active || player.pulley)
-            {
-                return false;
-            }
-
-            if (!grounded)
             {
                 return false;
             }
@@ -106,6 +114,7 @@ public sealed partial class InGameNarrationSystem
         {
             _lastTileColumn = -1;
             _nextAllowedFrame = 0;
+            _landingTileColumn = -1;
         }
 
         private static bool IsStandingOnPlatform(Player player)
