@@ -79,7 +79,6 @@ public sealed partial class InGameNarrationSystem
         {
             int sampleCount = Math.Max(1, (int)(SampleRate * DurationSeconds));
             byte[] buffer = new byte[sampleCount * sizeof(short)];
-            float wobble = 0.006f;
 
             for (int i = 0; i < sampleCount; i++)
             {
@@ -87,11 +86,8 @@ public sealed partial class InGameNarrationSystem
                 float envelope = GetEnvelope(t);
 
                 float basePhase = MathHelper.TwoPi * frequencyHz * t;
-                float body = MathF.Sin(basePhase);
-                float sub = MathF.Sin(MathHelper.TwoPi * (frequencyHz * 0.5f) * (t + wobble)) * 0.45f;
-                float harmonic = MathF.Sin(MathHelper.TwoPi * (frequencyHz * 1.5f) * (t - wobble)) * 0.18f;
-                float combined = (body * 0.9f + sub + harmonic) * envelope;
-                short quantized = (short)MathHelper.Clamp(combined * short.MaxValue, short.MinValue, short.MaxValue);
+                float sample = MathF.Sin(basePhase) * envelope;
+                short quantized = (short)MathHelper.Clamp(sample * short.MaxValue, short.MinValue, short.MaxValue);
 
                 int index = i * 2;
                 buffer[index] = (byte)(quantized & 0xFF);

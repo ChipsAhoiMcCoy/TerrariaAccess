@@ -2,6 +2,7 @@
 using System;
 using Microsoft.Xna.Framework;
 using Terraria;
+using Terraria.ID;
 using ScreenReaderMod.Common.Services;
 
 namespace ScreenReaderMod.Common.Systems;
@@ -47,8 +48,11 @@ public sealed partial class InGameNarrationSystem
             _nextAllowedFrame = currentFrame + MinFramesBetweenNotes;
 
             float normalized = MathHelper.Clamp(speed / 10f, 0f, 1f);
-            float frequency = MathHelper.Lerp(185f, 215f, normalized);
-            float baseVolume = MathHelper.Lerp(0.25f, 0.55f, normalized);
+            bool onPlatform = IsStandingOnPlatform(player);
+            float frequency = onPlatform
+                ? MathHelper.Lerp(360f, 420f, normalized)
+                : MathHelper.Lerp(190f, 210f, normalized);
+            float baseVolume = MathHelper.Lerp(0.12f, 0.32f, normalized);
             float loudness = SoundLoudnessUtility.ApplyDistanceFalloff(baseVolume, distanceTiles: 0f, referenceTiles: 1f);
             FootstepToneProvider.Play(frequency, loudness);
         }
@@ -95,6 +99,30 @@ public sealed partial class InGameNarrationSystem
         {
             _lastTile = new Point(-1, -1);
             _nextAllowedFrame = 0;
+        }
+
+        private static bool IsStandingOnPlatform(Player player)
+        {
+            Rectangle hitbox = player.Hitbox;
+            int tileY = Math.Clamp(hitbox.Bottom / 16, 0, Main.maxTilesY - 1);
+            int startX = Math.Clamp(hitbox.Left / 16 - 1, 0, Main.maxTilesX - 1);
+            int endX = Math.Clamp(hitbox.Right / 16 + 1, 0, Main.maxTilesX - 1);
+
+            for (int x = startX; x <= endX; x++)
+            {
+                Tile tile = Framing.GetTileSafely(x, tileY);
+                if (!tile.HasTile)
+                {
+                    continue;
+                }
+
+                if (TileID.Sets.Platforms[tile.TileType])
+                {
+                    return true;
+                }
+            }
+
+            return false;
         }
     }
 }
