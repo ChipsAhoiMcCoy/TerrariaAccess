@@ -15,37 +15,33 @@ public sealed partial class InGameNarrationSystem
         private const int MinFramesBetweenNotes = 3;
 
         private long _nextAllowedFrame;
-        private int _lastTileColumn = -1;
+        private int _lastFootTile = -1;
         private bool _pendingLandingStep;
-        private int _landingTileColumn = -1;
 
         public void Update(Player player)
         {
-            bool grounded = IsGrounded(player);
             if (!CanProcess(player))
             {
                 _pendingLandingStep = false;
-                _landingTileColumn = -1;
                 ResetTracking();
                 return;
             }
 
+            bool grounded = IsGrounded(player);
             if (!grounded)
             {
                 if (!_pendingLandingStep)
                 {
                     _pendingLandingStep = true;
-                    _landingTileColumn = _lastTileColumn;
                 }
 
                 _nextAllowedFrame = 0;
                 return;
             }
 
-            int tileColumn = GetPlayerTileColumn(player);
-            bool landingStep = _pendingLandingStep && tileColumn == _landingTileColumn;
+            int footTile = GetFootTileColumn(player);
+            bool landingStep = _pendingLandingStep;
             _pendingLandingStep = false;
-            _landingTileColumn = -1;
 
             float speed = player.velocity.Length();
             if (speed < MinSpeed && !landingStep)
@@ -53,7 +49,7 @@ public sealed partial class InGameNarrationSystem
                 return;
             }
 
-            if (!landingStep && tileColumn == _lastTileColumn)
+            if (!landingStep && footTile == _lastFootTile)
             {
                 return;
             }
@@ -64,7 +60,7 @@ public sealed partial class InGameNarrationSystem
                 return;
             }
 
-            _lastTileColumn = tileColumn;
+            _lastFootTile = footTile;
             _nextAllowedFrame = currentFrame + MinFramesBetweenNotes;
 
             float normalized = MathHelper.Clamp(speed / 10f, 0f, 1f);
@@ -80,7 +76,6 @@ public sealed partial class InGameNarrationSystem
         public void Reset()
         {
             _pendingLandingStep = false;
-            _landingTileColumn = -1;
             ResetTracking();
         }
 
@@ -104,17 +99,30 @@ public sealed partial class InGameNarrationSystem
             return Math.Abs(player.velocity.Y) < 0.02f;
         }
 
-        private static int GetPlayerTileColumn(Player player)
+        private static int GetFootTileColumn(Player player)
         {
-            Vector2 center = player.Center;
-            return Math.Clamp((int)(center.X / 16f), 0, Main.maxTilesX - 1);
+            float footX;
+            float horizontalSpeed = player.velocity.X;
+            if (Math.Abs(horizontalSpeed) < 0.05f)
+            {
+                footX = player.Bottom.X;
+            }
+            else if (horizontalSpeed > 0f)
+            {
+                footX = player.BottomRight.X - 1f;
+            }
+            else
+            {
+                footX = player.BottomLeft.X + 1f;
+            }
+
+            return Math.Clamp((int)(footX / 16f), 0, Main.maxTilesX - 1);
         }
 
         private void ResetTracking()
         {
-            _lastTileColumn = -1;
+            _lastFootTile = -1;
             _nextAllowedFrame = 0;
-            _landingTileColumn = -1;
         }
 
         private static bool IsStandingOnPlatform(Player player)
