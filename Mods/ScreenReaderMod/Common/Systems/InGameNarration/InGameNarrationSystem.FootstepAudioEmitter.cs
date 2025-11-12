@@ -9,74 +9,59 @@ namespace ScreenReaderMod.Common.Systems;
 
 public sealed partial class InGameNarrationSystem
 {
+    /// <summary>
+    /// Emits a single tone whenever the player’s footprint crosses into a new tile or finishes a landing.
+    /// Keeps light-weight state so narration stays in sync with movement without allocating per frame.
+    /// </summary>
     private sealed class FootstepAudioEmitter
     {
-        private const float MinSpeed = 0.35f;
-        private const int MinFramesBetweenNotes = 3;
+        private const float MinLandingDisplacement = 6f;
 
-        private long _nextAllowedFrame;
-        private int _lastFootTile = -1;
-        private bool _pendingLandingStep;
+        // Tracks the last tile column/row we acknowledged so each tile triggers at most one tone.
+        private Point _lastFootTile = new(-1, -1);
+        private bool _suppressNextStep = true;
+        private bool _wasAirborne;
+        private float _airborneStartY;
+        private float _maxAirborneDisplacement;
 
         public void Update(Player player)
         {
             if (!CanProcess(player))
             {
-                _pendingLandingStep = false;
-                ResetTracking();
+                ResetState();
                 return;
             }
 
             bool grounded = IsGrounded(player);
             if (!grounded)
             {
-                if (!_pendingLandingStep)
-                {
-                    _pendingLandingStep = true;
-                }
-
-                _nextAllowedFrame = 0;
+                TrackAirborneDisplacement(player);
                 return;
             }
 
-            int footTile = GetFootTileColumn(player);
-            bool landingStep = _pendingLandingStep;
-            _pendingLandingStep = false;
-
-            float speed = player.velocity.Length();
-            if (speed < MinSpeed && !landingStep)
+            bool landingStep = ConsumeLandingStep();
+            Point footTile = GetFootTile(player);
+            bool movedToNewTile = footTile != _lastFootTile;
+            if (!landingStep && !movedToNewTile)
             {
                 return;
             }
 
-            if (!landingStep && footTile == _lastFootTile)
+            if (_suppressNextStep)
             {
-                return;
-            }
-
-            long currentFrame = Main.GameUpdateCount;
-            if (!landingStep && currentFrame < _nextAllowedFrame)
-            {
+                _suppressNextStep = false;
+                _lastFootTile = footTile;
                 return;
             }
 
             _lastFootTile = footTile;
-            _nextAllowedFrame = currentFrame + MinFramesBetweenNotes;
-
-            float normalized = MathHelper.Clamp(speed / 10f, 0f, 1f);
-            bool onPlatform = IsStandingOnPlatform(player);
-            float frequency = onPlatform
-                ? MathHelper.Lerp(360f, 420f, normalized)
-                : MathHelper.Lerp(190f, 210f, normalized);
-            float baseVolume = MathHelper.Lerp(0.12f, 0.32f, normalized);
-            float loudness = SoundLoudnessUtility.ApplyDistanceFalloff(baseVolume, distanceTiles: 0f, referenceTiles: 1f);
-            FootstepToneProvider.Play(frequency, loudness);
+            bool onPlatform = IsPlatform(footTile.X, footTile.Y);
+            PlayStep(player, onPlatform);
         }
 
         public void Reset()
         {
-            _pendingLandingStep = false;
-            ResetTracking();
+            ResetState();
         }
 
         private static bool CanProcess(Player player)
@@ -99,54 +84,72 @@ public sealed partial class InGameNarrationSystem
             return Math.Abs(player.velocity.Y) < 0.02f;
         }
 
-        private static int GetFootTileColumn(Player player)
-        {
-            float footX;
-            float horizontalSpeed = player.velocity.X;
-            if (Math.Abs(horizontalSpeed) < 0.05f)
-            {
-                footX = player.Bottom.X;
-            }
-            else if (horizontalSpeed > 0f)
-            {
-                footX = player.BottomRight.X - 1f;
-            }
-            else
-            {
-                footX = player.BottomLeft.X + 1f;
-            }
-
-            return Math.Clamp((int)(footX / 16f), 0, Main.maxTilesX - 1);
-        }
-
-        private void ResetTracking()
-        {
-            _lastFootTile = -1;
-            _nextAllowedFrame = 0;
-        }
-
-        private static bool IsStandingOnPlatform(Player player)
+        private static Point GetFootTile(Player player)
         {
             Rectangle hitbox = player.Hitbox;
+            float footX = hitbox.Center.X;
+            int tileX = Math.Clamp((int)(footX / 16f), 0, Main.maxTilesX - 1);
             int tileY = Math.Clamp(hitbox.Bottom / 16, 0, Main.maxTilesY - 1);
-            int startX = Math.Clamp(hitbox.Left / 16 - 1, 0, Main.maxTilesX - 1);
-            int endX = Math.Clamp(hitbox.Right / 16 + 1, 0, Main.maxTilesX - 1);
+            return new Point(tileX, tileY);
+        }
 
-            for (int x = startX; x <= endX; x++)
+        private void PlayStep(Player player, bool onPlatform)
+        {
+            float horizontalSpeed = Math.Abs(player.velocity.X);
+            float normalized = MathHelper.Clamp(horizontalSpeed / 6f, 0f, 1f);
+            float frequency = onPlatform
+                ? MathHelper.Lerp(360f, 430f, normalized)
+                : MathHelper.Lerp(190f, 220f, normalized);
+            float baseVolume = MathHelper.Lerp(0.18f, 0.35f, normalized);
+            float loudness = SoundLoudnessUtility.ApplyDistanceFalloff(baseVolume, distanceTiles: 0f, referenceTiles: 1f);
+            FootstepToneProvider.Play(frequency, loudness);
+        }
+
+        private void ResetState()
+        {
+            _suppressNextStep = true;
+            _lastFootTile = new Point(-1, -1);
+            _wasAirborne = false;
+            _airborneStartY = 0f;
+            _maxAirborneDisplacement = 0f;
+        }
+
+        private void TrackAirborneDisplacement(Player player)
+        {
+            float currentBottom = player.Bottom.Y;
+            if (!_wasAirborne)
             {
-                Tile tile = Framing.GetTileSafely(x, tileY);
-                if (!tile.HasTile)
-                {
-                    continue;
-                }
-
-                if (TileID.Sets.Platforms[tile.TileType])
-                {
-                    return true;
-                }
+                _wasAirborne = true;
+                _airborneStartY = currentBottom;
+                _maxAirborneDisplacement = 0f;
+                _lastFootTile = new Point(-1, -1);
+                return;
             }
 
-            return false;
+            float displacement = Math.Abs(currentBottom - _airborneStartY);
+            if (displacement > _maxAirborneDisplacement)
+            {
+                _maxAirborneDisplacement = displacement;
+            }
+        }
+
+        private bool ConsumeLandingStep()
+        {
+            if (!_wasAirborne)
+            {
+                return false;
+            }
+
+            _wasAirborne = false;
+            bool shouldPlay = _maxAirborneDisplacement >= MinLandingDisplacement;
+            _maxAirborneDisplacement = 0f;
+            return shouldPlay;
+        }
+
+        private static bool IsPlatform(int tileX, int tileY)
+        {
+            Tile tile = Framing.GetTileSafely(tileX, tileY);
+            return tile.HasTile && TileID.Sets.Platforms[tile.TileType];
         }
     }
 }
