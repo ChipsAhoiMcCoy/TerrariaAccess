@@ -891,12 +891,7 @@ public sealed class WaypointSystem : ModSystem
             return false;
         }
 
-        if (npc.townNPC || NPCID.Sets.ActsLikeTownNPC[npc.type] || NPCID.Sets.IsTownPet[npc.type] || NPCID.Sets.TownCritter[npc.type])
-        {
-            return true;
-        }
-
-        if (npc.friendly && npc.damage <= 0 && !NPCID.Sets.CountsAsCritter[npc.type])
+        if (npc.townNPC || NPCID.Sets.ActsLikeTownNPC[npc.type] || NPCID.Sets.IsTownPet[npc.type])
         {
             return true;
         }
