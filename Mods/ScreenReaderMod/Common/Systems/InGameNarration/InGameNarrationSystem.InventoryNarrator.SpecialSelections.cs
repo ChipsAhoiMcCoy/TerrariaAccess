@@ -45,7 +45,8 @@ public sealed partial class InGameNarrationSystem
         {
             static string? Button(string? text)
             {
-                return string.IsNullOrWhiteSpace(text) ? null : $"{text} button";
+                string cleaned = TextSanitizer.Clean(text ?? string.Empty);
+                return string.IsNullOrWhiteSpace(cleaned) ? null : $"{cleaned} button";
             }
 
             string? result = point switch
@@ -61,6 +62,7 @@ public sealed partial class InGameNarrationSystem
                 310 => Button(Language.GetTextValue("GameUI.Bestiary")),
                 311 => Button(LocalizationHelper.GetTextOrFallback("Mods.ScreenReaderMod.InventorySpecial.LoadoutControls", "Loadout controls")),
                 int loadout when loadout >= 312 && loadout <= 320 => Button(GetLoadoutLabel(loadout)),
+                int chestButton when chestButton >= 500 && chestButton <= 505 => DescribeChestButton(chestButton),
                 _ => null,
             };
 
@@ -73,6 +75,39 @@ public sealed partial class InGameNarrationSystem
                 }
 
                 return Language.GetTextValue($"UI.Loadout{index}");
+            }
+
+            static string? DescribeChestButton(int point)
+            {
+                string? label = point switch
+                {
+                    500 => GetLegacyInterfaceText(29), // Loot All
+                    501 => GetLegacyInterfaceText(30), // Deposit All
+                    502 => GetLegacyInterfaceText(31), // Quick Stack
+                    503 => GetLegacyInterfaceText(82), // Restock
+                    504 => GetLegacyInterfaceText(61), // Rename
+                    505 => GetLegacyInterfaceText(122), // Sort Items
+                    _ => null,
+                };
+
+                if (string.IsNullOrWhiteSpace(label))
+                {
+                    return null;
+                }
+
+                ScreenReaderMod.Instance?.Logger.Debug($"[InventoryNarration] Chest button {point} -> {label}");
+                return Button(label);
+            }
+
+            static string? GetLegacyInterfaceText(int index)
+            {
+                if (index < 0 || index >= Lang.inter.Length)
+                {
+                    return null;
+                }
+
+                string value = Lang.inter[index]?.Value ?? string.Empty;
+                return string.IsNullOrWhiteSpace(value) ? null : TextSanitizer.Clean(value);
             }
 
             if (!string.IsNullOrEmpty(result))
