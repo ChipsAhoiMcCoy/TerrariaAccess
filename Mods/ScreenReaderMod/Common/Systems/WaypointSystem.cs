@@ -8,6 +8,7 @@ using ScreenReaderMod.Common.Systems.Waypoints;
 using Terraria;
 using Terraria.GameContent.UI.States;
 using Terraria.GameInput;
+using Terraria.ID;
 using Terraria.ModLoader;
 using Terraria.ModLoader.IO;
 using Terraria.UI;
@@ -34,11 +35,13 @@ public sealed class WaypointSystem : ModSystem
     {
         None,
         Exploration,
+        Npc,
         Waypoint
     }
 
     private static SelectionMode _selectionMode = SelectionMode.None;
     private static int _selectedIndex = -1;
+    private static int _selectedNpcIndex = -1;
 
     private static bool _namingActive;
 
@@ -76,7 +79,9 @@ public sealed class WaypointSystem : ModSystem
     public override void Unload()
     {
         Waypoints.Clear();
+        NearbyNpcs.Clear();
         _selectedIndex = -1;
+        _selectedNpcIndex = -1;
         _selectionMode = SelectionMode.None;
 
         _namingActive = false;
@@ -90,7 +95,9 @@ public sealed class WaypointSystem : ModSystem
     public override void OnWorldUnload()
     {
         Waypoints.Clear();
+        NearbyNpcs.Clear();
         _selectedIndex = -1;
+        _selectedNpcIndex = -1;
         _selectionMode = SelectionMode.None;
         _nextPingUpdateFrame = -1;
         _arrivalAnnounced = false;
@@ -121,7 +128,9 @@ public sealed class WaypointSystem : ModSystem
     public override void LoadWorldData(TagCompound tag)
     {
         Waypoints.Clear();
+        NearbyNpcs.Clear();
         _selectedIndex = -1;
+        _selectedNpcIndex = -1;
         _selectionMode = SelectionMode.None;
         _nextPingUpdateFrame = -1;
         _arrivalAnnounced = false;
@@ -187,6 +196,22 @@ public sealed class WaypointSystem : ModSystem
         }
     }
 
+    private readonly struct NpcGuidanceEntry
+    {
+        public readonly int NpcIndex;
+        public readonly string DisplayName;
+        public readonly float DistanceTiles;
+
+        public NpcGuidanceEntry(int npcIndex, string displayName, float distanceTiles)
+        {
+            NpcIndex = npcIndex;
+            DisplayName = displayName;
+            DistanceTiles = distanceTiles;
+        }
+    }
+
+    private static readonly List<NpcGuidanceEntry> NearbyNpcs = new();
+
     public override void PostUpdatePlayers()
     {
         if (Main.dedServ || Main.gameMenu || _namingActive)
@@ -197,52 +222,51 @@ public sealed class WaypointSystem : ModSystem
         else
         {
             Player player = Main.LocalPlayer;
-            if (player is null || !player.active || _selectedIndex < 0 || _selectedIndex >= Waypoints.Count)
+            if (player is null || !player.active)
             {
                 _nextPingUpdateFrame = -1;
                 _arrivalAnnounced = false;
+                return;
             }
-            else if (Main.gamePaused)
+
+            if (Main.gamePaused)
             {
-                // hold current schedule while paused
+                return;
             }
-            else if (TryGetSelectedWaypoint(out Waypoint waypoint))
-            {
-                Vector2 targetPosition = waypoint.WorldPosition;
-                float distanceTiles = Vector2.Distance(player.Center, targetPosition) / 16f;
 
-                if (distanceTiles <= ArrivalTileThreshold)
-                {
-                    if (!_arrivalAnnounced)
-                    {
-                        ScreenReaderService.Announce($"Arrived at {waypoint.Name}");
-                        _arrivalAnnounced = true;
-                    }
-
-                    _nextPingUpdateFrame = -1;
-                }
-                else
-                {
-                    if (_arrivalAnnounced)
-                    {
-                        _arrivalAnnounced = false;
-                    }
-
-                    if (_nextPingUpdateFrame < 0)
-                    {
-                        _nextPingUpdateFrame = ComputeNextPingFrame(player, targetPosition);
-                    }
-                    else if (Main.GameUpdateCount >= (uint)_nextPingUpdateFrame)
-                    {
-                        EmitPing(player, targetPosition);
-                        _nextPingUpdateFrame = ComputeNextPingFrame(player, targetPosition);
-                    }
-                }
-            }
-            else
+            if (!TryGetCurrentTrackingTarget(player, out Vector2 targetPosition, out string arrivalLabel))
             {
                 _nextPingUpdateFrame = -1;
                 _arrivalAnnounced = false;
+                return;
+            }
+
+            float distanceTiles = Vector2.Distance(player.Center, targetPosition) / 16f;
+            if (distanceTiles <= ArrivalTileThreshold)
+            {
+                if (!_arrivalAnnounced && !string.IsNullOrWhiteSpace(arrivalLabel))
+                {
+                    ScreenReaderService.Announce($"Arrived at {arrivalLabel}");
+                }
+
+                _arrivalAnnounced = true;
+                _nextPingUpdateFrame = -1;
+                return;
+            }
+
+            if (_arrivalAnnounced)
+            {
+                _arrivalAnnounced = false;
+            }
+
+            if (_nextPingUpdateFrame < 0)
+            {
+                _nextPingUpdateFrame = ComputeNextPingFrame(player, targetPosition);
+            }
+            else if (Main.GameUpdateCount >= (uint)_nextPingUpdateFrame)
+            {
+                EmitPing(player, targetPosition);
+                _nextPingUpdateFrame = ComputeNextPingFrame(player, targetPosition);
             }
         }
 
@@ -303,7 +327,7 @@ public sealed class WaypointSystem : ModSystem
             Player? owner = ResolvePlayer();
             if (owner is not null)
             {
-                RescheduleWaypointPing(owner);
+                RescheduleGuidancePing(owner);
                 string creationAnnouncement = ComposeCreationAnnouncement(resolvedName, owner, worldPosition);
                 ScreenReaderService.Announce(creationAnnouncement);
                 EmitPing(owner, worldPosition);
@@ -330,7 +354,7 @@ public sealed class WaypointSystem : ModSystem
 
             if (owner is not null && _selectionMode == SelectionMode.Waypoint && _selectedIndex >= 0 && _selectedIndex < Waypoints.Count)
             {
-                RescheduleWaypointPing(owner);
+                RescheduleGuidancePing(owner);
             }
 
             CloseNamingUi();
@@ -470,6 +494,7 @@ public sealed class WaypointSystem : ModSystem
     {
         SelectionMode.None,
         SelectionMode.Exploration,
+        SelectionMode.Npc,
         SelectionMode.Waypoint
     };
 
@@ -498,21 +523,42 @@ public sealed class WaypointSystem : ModSystem
             case SelectionMode.None:
                 _selectionMode = SelectionMode.None;
                 _selectedIndex = Math.Min(_selectedIndex, Waypoints.Count - 1);
-                RescheduleWaypointPing(player);
+                RescheduleGuidancePing(player);
                 AnnounceDisabledSelection();
                 return;
             case SelectionMode.Exploration:
                 _selectionMode = SelectionMode.Exploration;
                 _selectedIndex = Math.Min(_selectedIndex, Waypoints.Count - 1);
-                RescheduleWaypointPing(player);
+                RescheduleGuidancePing(player);
                 AnnounceExplorationSelection();
+                return;
+            case SelectionMode.Npc:
+                _selectionMode = SelectionMode.Npc;
+                RefreshNpcEntries(player);
+                if (NearbyNpcs.Count == 0)
+                {
+                    _selectedNpcIndex = -1;
+                    RescheduleGuidancePing(player);
+                    int rangeTiles = (int)MathF.Round(DistanceReferenceTiles);
+                    ScreenReaderService.Announce($"NPC guidance selected. No nearby NPCs within {rangeTiles} tiles. {FormatCategoryPositionSuffix(SelectionMode.Npc)}");
+                    return;
+                }
+
+                if (_selectedNpcIndex < 0 || _selectedNpcIndex >= NearbyNpcs.Count)
+                {
+                    _selectedNpcIndex = 0;
+                }
+
+                RescheduleGuidancePing(player);
+                AnnounceNpcSelection(player);
+                EmitCurrentGuidancePing(player);
                 return;
             case SelectionMode.Waypoint:
                 _selectionMode = SelectionMode.Waypoint;
                 if (Waypoints.Count == 0)
                 {
                     _selectedIndex = -1;
-                    RescheduleWaypointPing(player);
+                    RescheduleGuidancePing(player);
                     ScreenReaderService.Announce($"Waypoints category selected. No waypoints saved. {FormatCategoryPositionSuffix(SelectionMode.Waypoint)}");
                     return;
                 }
@@ -522,9 +568,9 @@ public sealed class WaypointSystem : ModSystem
                     _selectedIndex = 0;
                 }
 
-                RescheduleWaypointPing(player);
+                RescheduleGuidancePing(player);
                 AnnounceWaypointSelection(player);
-                EmitPing(player, Waypoints[_selectedIndex].WorldPosition);
+                EmitCurrentGuidancePing(player);
                 return;
         }
     }
@@ -536,30 +582,56 @@ public sealed class WaypointSystem : ModSystem
             direction = 1;
         }
 
-        if (_selectionMode != SelectionMode.Waypoint)
+        switch (_selectionMode)
         {
-            ScreenReaderService.Announce("Select the waypoint category to browse saved locations.");
-            return;
-        }
+            case SelectionMode.Waypoint:
+                if (Waypoints.Count == 0)
+                {
+                    ScreenReaderService.Announce("No waypoints saved.");
+                    return;
+                }
 
-        if (Waypoints.Count == 0)
-        {
-            ScreenReaderService.Announce("No waypoints saved.");
-            return;
-        }
+                if (_selectedIndex < 0 || _selectedIndex >= Waypoints.Count)
+                {
+                    _selectedIndex = direction > 0 ? 0 : Waypoints.Count - 1;
+                }
+                else
+                {
+                    _selectedIndex = Modulo(_selectedIndex + direction, Waypoints.Count);
+                }
 
-        if (_selectedIndex < 0 || _selectedIndex >= Waypoints.Count)
-        {
-            _selectedIndex = direction > 0 ? 0 : Waypoints.Count - 1;
-        }
-        else
-        {
-            _selectedIndex = Modulo(_selectedIndex + direction, Waypoints.Count);
-        }
+                RescheduleGuidancePing(player);
+                AnnounceWaypointSelection(player);
+                EmitCurrentGuidancePing(player);
+                return;
+            case SelectionMode.Npc:
+                RefreshNpcEntries(player);
+                if (NearbyNpcs.Count == 0)
+                {
+                    _selectedNpcIndex = -1;
+                    RescheduleGuidancePing(player);
+                    int rangeTiles = (int)MathF.Round(DistanceReferenceTiles);
+                    ScreenReaderService.Announce($"No NPCs within {rangeTiles} tiles.");
+                    return;
+                }
 
-        RescheduleWaypointPing(player);
-        AnnounceWaypointSelection(player);
-        EmitPing(player, Waypoints[_selectedIndex].WorldPosition);
+                if (_selectedNpcIndex < 0 || _selectedNpcIndex >= NearbyNpcs.Count)
+                {
+                    _selectedNpcIndex = direction > 0 ? 0 : NearbyNpcs.Count - 1;
+                }
+                else
+                {
+                    _selectedNpcIndex = Modulo(_selectedNpcIndex + direction, NearbyNpcs.Count);
+                }
+
+                RescheduleGuidancePing(player);
+                AnnounceNpcSelection(player);
+                EmitCurrentGuidancePing(player);
+                return;
+            default:
+                ScreenReaderService.Announce("Select a waypoint or NPC category to browse entries.");
+                return;
+        }
     }
 
     private static void AnnounceWaypointSelection(Player player)
@@ -572,6 +644,44 @@ public sealed class WaypointSystem : ModSystem
         Waypoint waypoint = Waypoints[_selectedIndex];
         string announcement = ComposeWaypointAnnouncement(waypoint, player);
         ScreenReaderService.Announce($"{announcement} {FormatCategoryPositionSuffix(SelectionMode.Waypoint)}");
+    }
+
+    private static void AnnounceNpcSelection(Player player)
+    {
+        if (_selectionMode != SelectionMode.Npc)
+        {
+            return;
+        }
+
+        if (!TryGetSelectedNpc(player, out NPC npc, out NpcGuidanceEntry entry))
+        {
+            int rangeTiles = (int)MathF.Round(DistanceReferenceTiles);
+            ScreenReaderService.Announce($"NPC guidance selected. No nearby NPCs within {rangeTiles} tiles. {FormatCategoryPositionSuffix(SelectionMode.Npc)}");
+            return;
+        }
+
+        string announcement = ComposeNpcAnnouncement(entry, player, npc.Center);
+        ScreenReaderService.Announce($"{announcement} {FormatCategoryPositionSuffix(SelectionMode.Npc)}");
+    }
+
+    private static string ComposeNpcAnnouncement(NpcGuidanceEntry entry, Player player, Vector2 npcPosition)
+    {
+        int total = NearbyNpcs.Count;
+        int position = _selectedNpcIndex + 1;
+
+        string announcement = entry.DisplayName;
+        if (total > 0 && position > 0 && position <= total)
+        {
+            announcement = $"{entry.DisplayName} {position} of {total}";
+        }
+
+        string relative = DescribeRelativeOffset(player.Center, npcPosition);
+        if (string.IsNullOrWhiteSpace(relative))
+        {
+            return announcement;
+        }
+
+        return $"{announcement}, {relative}";
     }
 
     private static int Modulo(int value, int modulus)
@@ -621,21 +731,8 @@ public sealed class WaypointSystem : ModSystem
         Waypoint nextWaypoint = Waypoints[_selectedIndex];
         string nextAnnouncement = ComposeWaypointAnnouncement(nextWaypoint, player);
         ScreenReaderService.Announce($"Deleted waypoint {removed.Name}. {nextAnnouncement} {FormatCategoryPositionSuffix(SelectionMode.Waypoint)}");
-        RescheduleWaypointPing(player);
-        EmitPing(player, nextWaypoint.WorldPosition);
-    }
-
-    private static void RescheduleWaypointPing(Player player)
-    {
-        if (!TryGetSelectedWaypoint(out Waypoint waypoint))
-        {
-            _nextPingUpdateFrame = -1;
-            _arrivalAnnounced = false;
-            return;
-        }
-
-        _arrivalAnnounced = false;
-        _nextPingUpdateFrame = ComputeNextPingFrame(player, waypoint.WorldPosition);
+        RescheduleGuidancePing(player);
+        EmitCurrentGuidancePing(player);
     }
 
     private static void AnnounceDisabledSelection()
@@ -677,6 +774,137 @@ public sealed class WaypointSystem : ModSystem
         }
 
         return $"Created waypoint {waypointName}, {relative}";
+    }
+
+    private static bool TryGetSelectedNpc(Player player, out NPC npc, out NpcGuidanceEntry entry)
+    {
+        entry = default;
+        npc = default!;
+        if (_selectionMode != SelectionMode.Npc)
+        {
+            return false;
+        }
+
+        RefreshNpcEntries(player);
+        if (_selectedNpcIndex < 0 || _selectedNpcIndex >= NearbyNpcs.Count)
+        {
+            _selectedNpcIndex = -1;
+            return false;
+        }
+
+        entry = NearbyNpcs[_selectedNpcIndex];
+        if (entry.NpcIndex < 0 || entry.NpcIndex >= Main.maxNPCs)
+        {
+            return false;
+        }
+
+        npc = Main.npc[entry.NpcIndex];
+        if (!IsTrackableNpc(npc))
+        {
+            RefreshNpcEntries(player);
+            if (_selectedNpcIndex < 0 || _selectedNpcIndex >= NearbyNpcs.Count)
+            {
+                _selectedNpcIndex = -1;
+                return false;
+            }
+
+            entry = NearbyNpcs[_selectedNpcIndex];
+            if (entry.NpcIndex < 0 || entry.NpcIndex >= Main.maxNPCs)
+            {
+                return false;
+            }
+
+            npc = Main.npc[entry.NpcIndex];
+            if (!IsTrackableNpc(npc))
+            {
+                return false;
+            }
+        }
+
+        return true;
+    }
+
+    private static void RefreshNpcEntries(Player player)
+    {
+        NearbyNpcs.Clear();
+        if (player is null || !player.active)
+        {
+            _selectedNpcIndex = -1;
+            return;
+        }
+
+        Vector2 origin = player.Center;
+        for (int i = 0; i < Main.maxNPCs; i++)
+        {
+            NPC npc = Main.npc[i];
+            if (!IsTrackableNpc(npc))
+            {
+                continue;
+            }
+
+            float distanceTiles = Vector2.Distance(origin, npc.Center) / 16f;
+            if (distanceTiles > DistanceReferenceTiles)
+            {
+                continue;
+            }
+
+            string displayName = ResolveNpcDisplayName(npc);
+            NearbyNpcs.Add(new NpcGuidanceEntry(i, displayName, distanceTiles));
+        }
+
+        NearbyNpcs.Sort((left, right) => left.DistanceTiles.CompareTo(right.DistanceTiles));
+
+        if (NearbyNpcs.Count == 0)
+        {
+            _selectedNpcIndex = -1;
+            return;
+        }
+
+        if (_selectedNpcIndex < 0 || _selectedNpcIndex >= NearbyNpcs.Count)
+        {
+            _selectedNpcIndex = 0;
+        }
+    }
+
+    private static string ResolveNpcDisplayName(NPC npc)
+    {
+        if (!string.IsNullOrWhiteSpace(npc.FullName))
+        {
+            return npc.FullName;
+        }
+
+        if (!string.IsNullOrWhiteSpace(npc.GivenName))
+        {
+            return npc.GivenName;
+        }
+
+        string localized = Lang.GetNPCNameValue(npc.type);
+        if (!string.IsNullOrWhiteSpace(localized))
+        {
+            return localized;
+        }
+
+        return "NPC";
+    }
+
+    private static bool IsTrackableNpc(NPC npc)
+    {
+        if (!npc.active || npc.lifeMax <= 0)
+        {
+            return false;
+        }
+
+        if (npc.townNPC || NPCID.Sets.ActsLikeTownNPC[npc.type] || NPCID.Sets.IsTownPet[npc.type] || NPCID.Sets.TownCritter[npc.type])
+        {
+            return true;
+        }
+
+        if (npc.friendly && npc.damage <= 0 && !NPCID.Sets.CountsAsCritter[npc.type])
+        {
+            return true;
+        }
+
+        return false;
     }
 
     private static string FormatCategoryPositionSuffix(SelectionMode mode)
@@ -727,6 +955,46 @@ public sealed class WaypointSystem : ModSystem
 
         waypoint = default;
         return false;
+    }
+
+    private static bool TryGetCurrentTrackingTarget(Player player, out Vector2 worldPosition, out string label)
+    {
+        switch (_selectionMode)
+        {
+            case SelectionMode.Waypoint when TryGetSelectedWaypoint(out Waypoint waypoint):
+                worldPosition = waypoint.WorldPosition;
+                label = waypoint.Name;
+                return true;
+            case SelectionMode.Npc when TryGetSelectedNpc(player, out NPC npc, out NpcGuidanceEntry entry):
+                worldPosition = npc.Center;
+                label = entry.DisplayName;
+                return true;
+            default:
+                worldPosition = default;
+                label = string.Empty;
+                return false;
+        }
+    }
+
+    private static void EmitCurrentGuidancePing(Player player)
+    {
+        if (TryGetCurrentTrackingTarget(player, out Vector2 targetPosition, out _))
+        {
+            EmitPing(player, targetPosition);
+        }
+    }
+
+    private static void RescheduleGuidancePing(Player player)
+    {
+        if (!TryGetCurrentTrackingTarget(player, out Vector2 targetPosition, out _))
+        {
+            _nextPingUpdateFrame = -1;
+            _arrivalAnnounced = false;
+            return;
+        }
+
+        _arrivalAnnounced = false;
+        _nextPingUpdateFrame = ComputeNextPingFrame(player, targetPosition);
     }
 
     private static void EmitPing(Player player, Vector2 worldPosition)
@@ -887,4 +1155,3 @@ public sealed class WaypointSystem : ModSystem
         return (int)target;
     }
 }
-
