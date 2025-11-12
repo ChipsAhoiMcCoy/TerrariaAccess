@@ -16,30 +16,38 @@ public sealed partial class InGameNarrationSystem
 
         private long _nextAllowedFrame;
         private Point _lastTile = new(-1, -1);
+        private bool _pendingLandingStep;
 
         public void Update(Player player)
         {
             bool grounded = IsGrounded(player);
             if (!ShouldEmit(player, grounded))
             {
+                _pendingLandingStep = !grounded;
                 ResetTracking();
                 return;
             }
 
+            bool landingStep = grounded && _pendingLandingStep;
+            if (landingStep)
+            {
+                _pendingLandingStep = false;
+            }
+
             float speed = player.velocity.Length();
-            if (speed < MinSpeed)
+            if (speed < MinSpeed && !landingStep)
             {
                 return;
             }
 
             Point tile = GetPlayerTile(player);
-            if (tile == _lastTile)
+            if (!landingStep && tile == _lastTile)
             {
                 return;
             }
 
             long currentFrame = Main.GameUpdateCount;
-            if (currentFrame < _nextAllowedFrame)
+            if (!landingStep && currentFrame < _nextAllowedFrame)
             {
                 return;
             }
@@ -59,6 +67,7 @@ public sealed partial class InGameNarrationSystem
 
         public void Reset()
         {
+            _pendingLandingStep = false;
             ResetTracking();
         }
 

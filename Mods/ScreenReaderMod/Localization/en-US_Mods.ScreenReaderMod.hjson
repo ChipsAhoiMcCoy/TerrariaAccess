@@ -127,4 +127,8 @@ Keybinds: {
 	WaypointPrevious.DisplayName: Waypoint Previous
 	WaypointCreate.DisplayName: Waypoint Create
 	WaypointDelete.DisplayName: Waypoint Delete
+	GuidanceCategoryNext.DisplayName: Next Guidance Category
+	GuidanceCategoryPrevious.DisplayName: Previous Guidance Category
+	GuidanceEntryNext.DisplayName: Next Guidance Entry
+	GuidanceEntryPrevious.DisplayName: Previous Guidance Entry
 }

@@ -430,15 +430,28 @@ public sealed class WaypointSystem : ModSystem
             return;
         }
 
-        if (WaypointKeybinds.Next?.JustPressed ?? false)
+        if (WaypointKeybinds.CategoryNext?.JustPressed ?? false)
         {
-            CycleSelection(1, player);
+            CycleCategory(1, player);
             return;
         }
 
-        if (WaypointKeybinds.Previous?.JustPressed ?? false)
+        if (WaypointKeybinds.CategoryPrevious?.JustPressed ?? false)
         {
-            CycleSelection(-1, player);
+            CycleCategory(-1, player);
+            return;
+        }
+
+        if (WaypointKeybinds.EntryNext?.JustPressed ?? false)
+        {
+            CycleCategoryEntry(1, player);
+            return;
+        }
+
+        if (WaypointKeybinds.EntryPrevious?.JustPressed ?? false)
+        {
+            CycleCategoryEntry(-1, player);
+            return;
         }
 
         if (WaypointKeybinds.Delete?.JustPressed ?? false)
@@ -453,77 +466,112 @@ public sealed class WaypointSystem : ModSystem
         return $"Waypoint {nextIndex}";
     }
 
-    private static void CycleSelection(int direction, Player player)
+    private static readonly SelectionMode[] CategoryOrder =
+    {
+        SelectionMode.None,
+        SelectionMode.Exploration,
+        SelectionMode.Waypoint
+    };
+
+    private static void CycleCategory(int direction, Player player)
     {
         if (direction == 0)
         {
             direction = 1;
         }
 
-        int slotCount = GetSlotCount();
-        if (slotCount <= 0)
+        int currentIndex = Array.IndexOf(CategoryOrder, _selectionMode);
+        if (currentIndex < 0)
         {
-            return;
+            currentIndex = 0;
         }
 
-        int currentSlot = GetCurrentSlotIndex();
-        int targetSlot = Modulo(currentSlot + direction, slotCount);
-        ApplySlotSelection(targetSlot, player);
+        int targetIndex = Modulo(currentIndex + direction, CategoryOrder.Length);
+        SelectionMode targetCategory = CategoryOrder[targetIndex];
+        ApplyCategorySelection(targetCategory, player);
     }
 
-    private static int GetSlotCount() => 2 + Waypoints.Count;
-
-    private static int GetCurrentSlotIndex()
+    private static void ApplyCategorySelection(SelectionMode category, Player player)
     {
-        return _selectionMode switch
+        switch (category)
         {
-            SelectionMode.None => 0,
-            SelectionMode.Exploration => 1,
-            SelectionMode.Waypoint when Waypoints.Count > 0 && _selectedIndex >= 0 && _selectedIndex < Waypoints.Count => 2 + _selectedIndex,
-            SelectionMode.Waypoint => 0,
-            _ => 0
-        };
+            case SelectionMode.None:
+                _selectionMode = SelectionMode.None;
+                _selectedIndex = Math.Min(_selectedIndex, Waypoints.Count - 1);
+                RescheduleWaypointPing(player);
+                AnnounceDisabledSelection();
+                return;
+            case SelectionMode.Exploration:
+                _selectionMode = SelectionMode.Exploration;
+                _selectedIndex = Math.Min(_selectedIndex, Waypoints.Count - 1);
+                RescheduleWaypointPing(player);
+                AnnounceExplorationSelection();
+                return;
+            case SelectionMode.Waypoint:
+                _selectionMode = SelectionMode.Waypoint;
+                if (Waypoints.Count == 0)
+                {
+                    _selectedIndex = -1;
+                    RescheduleWaypointPing(player);
+                    ScreenReaderService.Announce($"Waypoints category selected. No waypoints saved. {FormatCategoryPositionSuffix(SelectionMode.Waypoint)}");
+                    return;
+                }
+
+                if (_selectedIndex < 0 || _selectedIndex >= Waypoints.Count)
+                {
+                    _selectedIndex = 0;
+                }
+
+                RescheduleWaypointPing(player);
+                AnnounceWaypointSelection(player);
+                EmitPing(player, Waypoints[_selectedIndex].WorldPosition);
+                return;
+        }
     }
 
-    private static void ApplySlotSelection(int slotIndex, Player player)
+    private static void CycleCategoryEntry(int direction, Player player)
     {
-        if (slotIndex <= 0)
+        if (direction == 0)
         {
-            _selectionMode = SelectionMode.None;
-            _selectedIndex = Math.Min(_selectedIndex, Waypoints.Count - 1);
-            RescheduleWaypointPing(player);
-            AnnounceNoneSelection();
+            direction = 1;
+        }
+
+        if (_selectionMode != SelectionMode.Waypoint)
+        {
+            ScreenReaderService.Announce("Select the waypoint category to browse saved locations.");
             return;
         }
 
-        if (slotIndex == 1)
-        {
-            _selectionMode = SelectionMode.Exploration;
-            _selectedIndex = Math.Min(_selectedIndex, Waypoints.Count - 1);
-            RescheduleWaypointPing(player);
-            AnnounceExplorationSelection();
-            return;
-        }
-
-        int waypointIndex = slotIndex - 2;
         if (Waypoints.Count == 0)
         {
-            _selectionMode = SelectionMode.None;
-            _selectedIndex = -1;
-            RescheduleWaypointPing(player);
-            AnnounceNoneSelection();
+            ScreenReaderService.Announce("No waypoints saved.");
             return;
         }
 
-        waypointIndex = Math.Clamp(waypointIndex, 0, Waypoints.Count - 1);
-        _selectionMode = SelectionMode.Waypoint;
-        _selectedIndex = waypointIndex;
+        if (_selectedIndex < 0 || _selectedIndex >= Waypoints.Count)
+        {
+            _selectedIndex = direction > 0 ? 0 : Waypoints.Count - 1;
+        }
+        else
+        {
+            _selectedIndex = Modulo(_selectedIndex + direction, Waypoints.Count);
+        }
+
+        RescheduleWaypointPing(player);
+        AnnounceWaypointSelection(player);
+        EmitPing(player, Waypoints[_selectedIndex].WorldPosition);
+    }
+
+    private static void AnnounceWaypointSelection(Player player)
+    {
+        if (_selectionMode != SelectionMode.Waypoint || _selectedIndex < 0 || _selectedIndex >= Waypoints.Count)
+        {
+            return;
+        }
 
         Waypoint waypoint = Waypoints[_selectedIndex];
         string announcement = ComposeWaypointAnnouncement(waypoint, player);
-        ScreenReaderService.Announce(announcement);
-        RescheduleWaypointPing(player);
-        EmitPing(player, waypoint.WorldPosition);
+        ScreenReaderService.Announce($"{announcement} {FormatCategoryPositionSuffix(SelectionMode.Waypoint)}");
     }
 
     private static int Modulo(int value, int modulus)
@@ -561,7 +609,7 @@ public sealed class WaypointSystem : ModSystem
             _selectionMode = SelectionMode.None;
             _nextPingUpdateFrame = -1;
             _arrivalAnnounced = false;
-            ScreenReaderService.Announce($"Deleted waypoint {removed.Name}. None. No waypoints saved.");
+            ScreenReaderService.Announce($"Deleted waypoint {removed.Name}. Guidance disabled. {FormatCategoryPositionSuffix(SelectionMode.None)}");
             return;
         }
 
@@ -572,7 +620,7 @@ public sealed class WaypointSystem : ModSystem
 
         Waypoint nextWaypoint = Waypoints[_selectedIndex];
         string nextAnnouncement = ComposeWaypointAnnouncement(nextWaypoint, player);
-        ScreenReaderService.Announce($"Deleted waypoint {removed.Name}. {nextAnnouncement}");
+        ScreenReaderService.Announce($"Deleted waypoint {removed.Name}. {nextAnnouncement} {FormatCategoryPositionSuffix(SelectionMode.Waypoint)}");
         RescheduleWaypointPing(player);
         EmitPing(player, nextWaypoint.WorldPosition);
     }
@@ -590,17 +638,14 @@ public sealed class WaypointSystem : ModSystem
         _nextPingUpdateFrame = ComputeNextPingFrame(player, waypoint.WorldPosition);
     }
 
-    private static void AnnounceNoneSelection()
+    private static void AnnounceDisabledSelection()
     {
-        string message = Waypoints.Count == 0
-            ? "None. No waypoints saved."
-            : "None. Waypoint tracking disabled.";
-        ScreenReaderService.Announce(message);
+        ScreenReaderService.Announce($"Guidance disabled. {FormatCategoryPositionSuffix(SelectionMode.None)}");
     }
 
     private static void AnnounceExplorationSelection()
     {
-        ScreenReaderService.Announce("Exploration and gathering mode. Tracking nearby interactables.");
+        ScreenReaderService.Announce($"Exploration and gathering mode. Tracking nearby interactables. {FormatCategoryPositionSuffix(SelectionMode.Exploration)}");
     }
 
     private static string ComposeWaypointAnnouncement(Waypoint waypoint, Player player)
@@ -632,6 +677,17 @@ public sealed class WaypointSystem : ModSystem
         }
 
         return $"Created waypoint {waypointName}, {relative}";
+    }
+
+    private static string FormatCategoryPositionSuffix(SelectionMode mode)
+    {
+        int index = Array.IndexOf(CategoryOrder, mode);
+        if (index < 0)
+        {
+            index = 0;
+        }
+
+        return $"{index + 1} of {CategoryOrder.Length}";
     }
 
     private static string DescribeRelativeOffset(Vector2 origin, Vector2 target)
