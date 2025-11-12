@@ -57,7 +57,7 @@ public sealed partial class InGameNarrationSystem : ModSystem
         Right
     }
 
-    public override void Load()
+        public override void Load()
         {
             if (Main.dedServ)
             {
@@ -67,6 +67,7 @@ public sealed partial class InGameNarrationSystem : ModSystem
             On_ItemSlot.MouseHover_ItemArray_int_int += HandleItemSlotHover;
             On_ItemSlot.MouseHover_refItem_int += HandleItemSlotHoverRef;
             On_Main.DrawNPCChatButtons += CaptureNpcChatButtons;
+            On_Main.MouseText_string_string_int_byte_int_int_int_int_int_bool += CaptureMouseText;
             On_IngameOptions.Draw += HandleIngameOptionsDraw;
             On_IngameOptions.DrawLeftSide += CaptureIngameOptionsLeft;
             On_IngameOptions.DrawRightSide += CaptureIngameOptionsRight;
@@ -93,6 +94,7 @@ public sealed partial class InGameNarrationSystem : ModSystem
             On_ItemSlot.MouseHover_ItemArray_int_int -= HandleItemSlotHover;
             On_ItemSlot.MouseHover_refItem_int -= HandleItemSlotHoverRef;
             On_Main.DrawNPCChatButtons -= CaptureNpcChatButtons;
+            On_Main.MouseText_string_string_int_byte_int_int_int_int_int_bool -= CaptureMouseText;
             On_IngameOptions.Draw -= HandleIngameOptionsDraw;
             On_IngameOptions.DrawLeftSide -= CaptureIngameOptionsLeft;
             On_IngameOptions.DrawRightSide -= CaptureIngameOptionsRight;
@@ -542,5 +544,11 @@ public sealed partial class InGameNarrationSystem : ModSystem
             name = localizedName;
             return true;
         }
+    }
+
+    private static void CaptureMouseText(On_Main.orig_MouseText_string_string_int_byte_int_int_int_int_int_bool orig, Main self, string cursorText, string buffTooltip, int rare, byte diff, int hackedMouseX, int hackedMouseY, int hackedScreenWidth, int hackedScreenHeight, int pushWidthX, bool noOverride)
+    {
+        orig(self, cursorText, buffTooltip, rare, diff, hackedMouseX, hackedMouseY, hackedScreenWidth, hackedScreenHeight, pushWidthX, noOverride);
+        InventoryNarrator.RecordMouseTextSnapshot(string.IsNullOrWhiteSpace(cursorText) ? buffTooltip : cursorText);
     }
 }

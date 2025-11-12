@@ -53,6 +53,8 @@ public sealed partial class InGameNarrationSystem
 
         private static FieldInfo? _mouseTextCursorField;
         private static FieldInfo? _mouseTextIsValidField;
+        private static string? _capturedMouseText;
+        private static uint _capturedMouseTextFrame;
 
         public static void RecordFocus(Item[] inventory, int context, int slot)
         {
@@ -85,6 +87,19 @@ public sealed partial class InGameNarrationSystem
         private static void StorePendingFocus(SlotFocus focus)
         {
             _pendingFocus = focus;
+        }
+
+        internal static void RecordMouseTextSnapshot(string? text)
+        {
+            if (string.IsNullOrWhiteSpace(text))
+            {
+                _capturedMouseText = null;
+                _capturedMouseTextFrame = 0;
+                return;
+            }
+
+            _capturedMouseText = text.Trim();
+            _capturedMouseTextFrame = Main.GameUpdateCount;
         }
 
         public void Update(Player player)
@@ -703,6 +718,12 @@ public sealed partial class InGameNarrationSystem
 
         private static string? TryGetMouseText()
         {
+            string? captured = TryGetCapturedMouseText();
+            if (!string.IsNullOrWhiteSpace(captured))
+            {
+                return captured;
+            }
+
             Main? main = Main.instance;
             if (main is null)
             {
@@ -725,16 +746,31 @@ public sealed partial class InGameNarrationSystem
             _mouseTextCursorField ??= cacheType.GetField("cursorText", BindingFlags.Instance | BindingFlags.Public | BindingFlags.NonPublic);
             _mouseTextIsValidField ??= cacheType.GetField("isValid", BindingFlags.Instance | BindingFlags.Public | BindingFlags.NonPublic);
 
-            if (_mouseTextIsValidField is not null && _mouseTextIsValidField.GetValue(cache) is bool isValid && !isValid)
-            {
-                return null;
-            }
-
             if (_mouseTextCursorField?.GetValue(cache) is string text && !string.IsNullOrWhiteSpace(text))
             {
                 return text.Trim();
             }
 
+            return null;
+        }
+
+        private static string? TryGetCapturedMouseText()
+        {
+            if (string.IsNullOrWhiteSpace(_capturedMouseText) || _capturedMouseTextFrame == 0)
+            {
+                return null;
+            }
+
+            uint current = Main.GameUpdateCount;
+            uint frame = _capturedMouseTextFrame;
+            uint age = current >= frame ? current - frame : uint.MaxValue - frame + current + 1;
+            if (age <= 2)
+            {
+                return _capturedMouseText;
+            }
+
+            _capturedMouseText = null;
+            _capturedMouseTextFrame = 0;
             return null;
         }
 
