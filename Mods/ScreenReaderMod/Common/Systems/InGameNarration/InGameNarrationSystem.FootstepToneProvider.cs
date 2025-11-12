@@ -12,21 +12,25 @@ public sealed partial class InGameNarrationSystem
     private static class FootstepToneProvider
     {
         private const int SampleRate = 44100;
-        private const float DurationSeconds = 0.12f;
+        private const float DurationSeconds = 0.16f;
 
-        private static readonly SoundEffect?[,] ToneCache = new SoundEffect?[2, FootstepVariantCount];
+        private static readonly Dictionary<int, SoundEffect?> ToneCache = new();
         private static readonly List<SoundEffectInstance> ActiveInstances = new();
 
-        public static void Play(FootstepSide side, int variantIndex, float volume, float pitch, float pan)
+        public static void Play(float frequencyHz, float volume)
         {
+            if (frequencyHz <= 0f || volume <= 0f || Main.soundVolume <= 0f)
+            {
+                return;
+            }
+
             CleanupFinishedInstances();
 
-            SoundEffect tone = EnsureTone(side, variantIndex);
+            SoundEffect tone = EnsureTone(frequencyHz);
             SoundEffectInstance instance = tone.CreateInstance();
             instance.IsLooped = false;
             instance.Volume = MathHelper.Clamp(volume, 0f, 1f) * Main.soundVolume;
-            instance.Pitch = MathHelper.Clamp(pitch, -1f, 1f);
-            instance.Pan = MathHelper.Clamp(pan, -1f, 1f);
+            instance.Pan = 0f;
             instance.Play();
             ActiveInstances.Add(instance);
         }
@@ -49,53 +53,44 @@ public sealed partial class InGameNarrationSystem
 
             ActiveInstances.Clear();
 
-            for (int sideIndex = 0; sideIndex < 2; sideIndex++)
+            foreach (KeyValuePair<int, SoundEffect?> kvp in ToneCache)
             {
-                for (int variant = 0; variant < FootstepVariantCount; variant++)
-                {
-                    SoundEffect? tone = ToneCache[sideIndex, variant];
-                    if (tone is { IsDisposed: false })
-                    {
-                        tone.Dispose();
-                    }
-
-                    ToneCache[sideIndex, variant] = null;
-                }
+                kvp.Value?.Dispose();
             }
+
+            ToneCache.Clear();
         }
 
-        private static SoundEffect EnsureTone(FootstepSide side, int variantIndex)
+        private static SoundEffect EnsureTone(float frequencyHz)
         {
-            int sideIndex = side == FootstepSide.Left ? 0 : 1;
-            int clampedVariant = Math.Clamp(variantIndex, 0, FootstepVariantCount - 1);
-
-            SoundEffect? cached = ToneCache[sideIndex, clampedVariant];
-            if (cached is { IsDisposed: false })
+            int cacheKey = Math.Clamp((int)MathF.Round(frequencyHz), 50, 2000);
+            if (ToneCache.TryGetValue(cacheKey, out SoundEffect? cached) && cached is { IsDisposed: false })
             {
                 return cached;
             }
 
             cached?.Dispose();
-            SoundEffect created = CreateTone(side, clampedVariant);
-            ToneCache[sideIndex, clampedVariant] = created;
+            SoundEffect created = CreateTone(MathF.Max(40f, frequencyHz));
+            ToneCache[cacheKey] = created;
             return created;
         }
 
-        private static SoundEffect CreateTone(FootstepSide side, int variantIndex)
+        private static SoundEffect CreateTone(float frequencyHz)
         {
             int sampleCount = Math.Max(1, (int)(SampleRate * DurationSeconds));
             byte[] buffer = new byte[sampleCount * sizeof(short)];
-            float baseFrequency = (side == FootstepSide.Left ? 178f : 204f) + variantIndex * 4f;
-            float accent = side == FootstepSide.Left ? 0.92f : 1.04f;
-            float phaseJitter = variantIndex * 0.0009f * (side == FootstepSide.Left ? -1f : 1f);
+            float wobble = 0.006f;
 
             for (int i = 0; i < sampleCount; i++)
             {
                 float t = i / (float)SampleRate;
                 float envelope = GetEnvelope(t);
 
-                float low = MathF.Sin(MathHelper.TwoPi * baseFrequency * (t + phaseJitter));
-                float combined = low * envelope * accent;
+                float basePhase = MathHelper.TwoPi * frequencyHz * t;
+                float body = MathF.Sin(basePhase);
+                float sub = MathF.Sin(MathHelper.TwoPi * (frequencyHz * 0.5f) * (t + wobble)) * 0.45f;
+                float harmonic = MathF.Sin(MathHelper.TwoPi * (frequencyHz * 1.5f) * (t - wobble)) * 0.18f;
+                float combined = (body * 0.9f + sub + harmonic) * envelope;
                 short quantized = (short)MathHelper.Clamp(combined * short.MaxValue, short.MinValue, short.MaxValue);
 
                 int index = i * 2;
@@ -108,17 +103,16 @@ public sealed partial class InGameNarrationSystem
 
         private static float GetEnvelope(float time)
         {
-            float attack = MathF.Min(0.014f, DurationSeconds * 0.3f);
-            float decay = DurationSeconds - attack;
+            float attack = MathF.Min(0.02f, DurationSeconds * 0.35f);
+            float decay = Math.Max(DurationSeconds - attack, 0.01f);
             if (time <= attack)
             {
-                return MathHelper.Clamp(time / Math.Max(0.0001f, attack), 0f, 1f);
+                return MathHelper.Clamp(time / Math.Max(attack, 0.0001f), 0f, 1f);
             }
 
-            float normalized = MathHelper.Clamp((time - attack) / Math.Max(0.0001f, decay), 0f, 1f);
-            return MathF.Exp(-5.2f * normalized);
+            float normalized = MathHelper.Clamp((time - attack) / Math.Max(decay, 0.0001f), 0f, 1f);
+            return MathF.Exp(-4.5f * normalized);
         }
-
 
         private static void CleanupFinishedInstances()
         {

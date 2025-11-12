@@ -2,7 +2,6 @@
 using System;
 using Microsoft.Xna.Framework;
 using Terraria;
-using Terraria.Utilities;
 using ScreenReaderMod.Common.Services;
 
 namespace ScreenReaderMod.Common.Systems;
@@ -12,48 +11,51 @@ public sealed partial class InGameNarrationSystem
     private sealed class FootstepAudioEmitter
     {
         private const float MinSpeed = 0.35f;
-        private const int IdleResetFrames = 6;
+        private const int MinFramesBetweenNotes = 3;
 
-        private long _nextStepFrame;
-        private FootstepSide _nextFootSide = FootstepSide.Left;
-        private int _lastVariationIndex = -1;
-        private readonly UnifiedRandom _variationRandom = new((int)(DateTime.UtcNow.Ticks & 0x3FFFFFFF));
+        private long _nextAllowedFrame;
+        private Point _lastTile = new(-1, -1);
 
         public void Update(Player player)
         {
             bool grounded = IsGrounded(player);
             if (!ShouldEmit(player, grounded))
             {
-                _nextStepFrame = Main.GameUpdateCount + IdleResetFrames;
+                ResetTracking();
                 return;
             }
 
             float speed = player.velocity.Length();
-            long currentFrame = Main.GameUpdateCount;
-            if (currentFrame < _nextStepFrame)
+            if (speed < MinSpeed)
             {
                 return;
             }
 
-            float normalized = MathHelper.Clamp(speed / 9f, 0f, 1.2f);
-            int baseCadence = Math.Clamp((int)MathF.Round(18f - normalized * 9f), 4, 26);
-            int cadenceFrames = Math.Max(4, (int)MathF.Round(baseCadence * 0.9f));
+            Point tile = GetPlayerTile(player);
+            if (tile == _lastTile)
+            {
+                return;
+            }
 
-            float pitch = MathHelper.Lerp(-0.22f, 0.18f, normalized);
-            float baseVolume = MathHelper.Lerp(0.25f, 0.6f, normalized);
+            long currentFrame = Main.GameUpdateCount;
+            if (currentFrame < _nextAllowedFrame)
+            {
+                return;
+            }
+
+            _lastTile = tile;
+            _nextAllowedFrame = currentFrame + MinFramesBetweenNotes;
+
+            float normalized = MathHelper.Clamp(speed / 10f, 0f, 1f);
+            float frequency = MathHelper.Lerp(185f, 215f, normalized);
+            float baseVolume = MathHelper.Lerp(0.25f, 0.55f, normalized);
             float loudness = SoundLoudnessUtility.ApplyDistanceFalloff(baseVolume, distanceTiles: 0f, referenceTiles: 1f);
-            int variant = PickNextVariant();
-            FootstepToneProvider.Play(_nextFootSide, variant, loudness, pitch, pan: 0f);
-            _nextFootSide = _nextFootSide == FootstepSide.Left ? FootstepSide.Right : FootstepSide.Left;
-
-            _nextStepFrame = currentFrame + cadenceFrames;
+            FootstepToneProvider.Play(frequency, loudness);
         }
 
         public void Reset()
         {
-            _nextStepFrame = 0;
-            _nextFootSide = FootstepSide.Left;
-            _lastVariationIndex = -1;
+            ResetTracking();
         }
 
         private static bool ShouldEmit(Player player, bool grounded)
@@ -64,11 +66,6 @@ public sealed partial class InGameNarrationSystem
             }
 
             if (player.mount.Active || player.pulley)
-            {
-                return false;
-            }
-
-            if (player.velocity.LengthSquared() < MinSpeed * MinSpeed)
             {
                 return false;
             }
@@ -86,16 +83,18 @@ public sealed partial class InGameNarrationSystem
             return Math.Abs(player.velocity.Y) < 0.02f;
         }
 
-        private int PickNextVariant()
+        private static Point GetPlayerTile(Player player)
         {
-            int next = _variationRandom.Next(FootstepVariantCount);
-            if (next == _lastVariationIndex)
-            {
-                next = (next + 1) % FootstepVariantCount;
-            }
+            Vector2 center = player.Center;
+            int tileX = Math.Clamp((int)(center.X / 16f), 0, Main.maxTilesX - 1);
+            int tileY = Math.Clamp((int)(center.Y / 16f), 0, Main.maxTilesY - 1);
+            return new Point(tileX, tileY);
+        }
 
-            _lastVariationIndex = next;
-            return next;
+        private void ResetTracking()
+        {
+            _lastTile = new Point(-1, -1);
+            _nextAllowedFrame = 0;
         }
     }
 }
