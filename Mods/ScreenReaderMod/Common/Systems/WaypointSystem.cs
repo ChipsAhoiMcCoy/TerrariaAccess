@@ -540,7 +540,7 @@ public sealed class WaypointSystem : ModSystem
                     _selectedNpcIndex = -1;
                     RescheduleGuidancePing(player);
                     int rangeTiles = (int)MathF.Round(DistanceReferenceTiles);
-                    ScreenReaderService.Announce($"NPC guidance selected. No nearby NPCs within {rangeTiles} tiles. {FormatCategoryPositionSuffix(SelectionMode.Npc)}");
+                    AnnounceCategorySelection("NPC guidance", $"No nearby NPCs within {rangeTiles} tiles.");
                     return;
                 }
 
@@ -559,7 +559,7 @@ public sealed class WaypointSystem : ModSystem
                 {
                     _selectedIndex = -1;
                     RescheduleGuidancePing(player);
-                    ScreenReaderService.Announce($"Waypoints category selected. No waypoints saved. {FormatCategoryPositionSuffix(SelectionMode.Waypoint)}");
+                    AnnounceCategorySelection("Waypoints", "No waypoints saved.");
                     return;
                 }
 
@@ -587,7 +587,7 @@ public sealed class WaypointSystem : ModSystem
             case SelectionMode.Waypoint:
                 if (Waypoints.Count == 0)
                 {
-                    ScreenReaderService.Announce("No waypoints saved.");
+                    AnnounceCategorySelection("Waypoints", "No waypoints saved.");
                     return;
                 }
 
@@ -611,7 +611,7 @@ public sealed class WaypointSystem : ModSystem
                     _selectedNpcIndex = -1;
                     RescheduleGuidancePing(player);
                     int rangeTiles = (int)MathF.Round(DistanceReferenceTiles);
-                    ScreenReaderService.Announce($"No NPCs within {rangeTiles} tiles.");
+                    AnnounceCategorySelection("NPC guidance", $"No NPCs within {rangeTiles} tiles.");
                     return;
                 }
 
@@ -643,7 +643,7 @@ public sealed class WaypointSystem : ModSystem
 
         Waypoint waypoint = Waypoints[_selectedIndex];
         string announcement = ComposeWaypointAnnouncement(waypoint, player);
-        ScreenReaderService.Announce($"{announcement} {FormatCategoryPositionSuffix(SelectionMode.Waypoint)}");
+        AnnounceCategorySelection("Waypoints", announcement);
     }
 
     private static void AnnounceNpcSelection(Player player)
@@ -656,14 +656,14 @@ public sealed class WaypointSystem : ModSystem
         if (!TryGetSelectedNpc(player, out NPC npc, out NpcGuidanceEntry entry))
         {
             int rangeTiles = (int)MathF.Round(DistanceReferenceTiles);
-            ScreenReaderService.Announce($"NPC guidance selected. No nearby NPCs within {rangeTiles} tiles. {FormatCategoryPositionSuffix(SelectionMode.Npc)}");
+            AnnounceCategorySelection("NPC guidance", $"No nearby NPCs within {rangeTiles} tiles.");
             return;
         }
 
         int totalEntries = NearbyNpcs.Count;
         int position = _selectedNpcIndex + 1;
         string announcement = ComposeNpcAnnouncement(entry, player, npc.Center, position, totalEntries);
-        ScreenReaderService.Announce($"{announcement} {FormatCategoryPositionSuffix(SelectionMode.Npc)}");
+        AnnounceCategorySelection("NPC guidance", announcement);
     }
 
     private static string ComposeNpcAnnouncement(NpcGuidanceEntry entry, Player player, Vector2 npcPosition, int position, int total)
@@ -717,7 +717,8 @@ public sealed class WaypointSystem : ModSystem
             _selectionMode = SelectionMode.None;
             _nextPingUpdateFrame = -1;
             _arrivalAnnounced = false;
-            ScreenReaderService.Announce($"Deleted waypoint {removed.Name}. Guidance disabled. {FormatCategoryPositionSuffix(SelectionMode.None)}");
+            ScreenReaderService.Announce($"Deleted waypoint {removed.Name}.");
+            AnnounceDisabledSelection();
             return;
         }
 
@@ -728,19 +729,20 @@ public sealed class WaypointSystem : ModSystem
 
         Waypoint nextWaypoint = Waypoints[_selectedIndex];
         string nextAnnouncement = ComposeWaypointAnnouncement(nextWaypoint, player);
-        ScreenReaderService.Announce($"Deleted waypoint {removed.Name}. {nextAnnouncement} {FormatCategoryPositionSuffix(SelectionMode.Waypoint)}");
+        ScreenReaderService.Announce($"Deleted waypoint {removed.Name}.");
+        AnnounceCategorySelection("Waypoints", nextAnnouncement);
         RescheduleGuidancePing(player);
         EmitCurrentGuidancePing(player);
     }
 
     private static void AnnounceDisabledSelection()
     {
-        ScreenReaderService.Announce($"Guidance disabled. {FormatCategoryPositionSuffix(SelectionMode.None)}");
+        AnnounceCategorySelection("Guidance disabled", string.Empty);
     }
 
     private static void AnnounceExplorationSelection()
     {
-        ScreenReaderService.Announce($"Exploration and gathering mode. Tracking nearby interactables. {FormatCategoryPositionSuffix(SelectionMode.Exploration)}");
+        AnnounceCategorySelection("Exploration mode", "Tracking nearby interactables.");
     }
 
     private static string ComposeWaypointAnnouncement(Waypoint waypoint, Player player)
@@ -899,17 +901,6 @@ public sealed class WaypointSystem : ModSystem
         return false;
     }
 
-    private static string FormatCategoryPositionSuffix(SelectionMode mode)
-    {
-        int index = Array.IndexOf(CategoryOrder, mode);
-        if (index < 0)
-        {
-            index = 0;
-        }
-
-        return $"{index + 1} of {CategoryOrder.Length}";
-    }
-
     private static string FormatEntryOrdinal(int position, int total)
     {
         if (position <= 0 || total <= 0 || position > total)
@@ -918,6 +909,22 @@ public sealed class WaypointSystem : ModSystem
         }
 
         return $"{position} of {total}";
+    }
+
+    private static void AnnounceCategorySelection(string categoryLabel, string detail)
+    {
+        if (string.IsNullOrWhiteSpace(categoryLabel))
+        {
+            categoryLabel = "Guidance";
+        }
+
+        if (string.IsNullOrWhiteSpace(detail))
+        {
+            ScreenReaderService.Announce(categoryLabel);
+            return;
+        }
+
+        ScreenReaderService.Announce($"{categoryLabel}. {detail}");
     }
 
     private static string DescribeRelativeOffset(Vector2 origin, Vector2 target)

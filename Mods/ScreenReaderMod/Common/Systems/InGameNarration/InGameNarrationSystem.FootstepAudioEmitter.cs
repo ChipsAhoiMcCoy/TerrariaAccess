@@ -15,7 +15,7 @@ public sealed partial class InGameNarrationSystem
         private const int MinFramesBetweenNotes = 3;
 
         private long _nextAllowedFrame;
-        private Point _lastTile = new(-1, -1);
+        private int _lastTileColumn = -1;
         private bool _pendingLandingStep;
 
         public void Update(Player player)
@@ -40,8 +40,8 @@ public sealed partial class InGameNarrationSystem
                 return;
             }
 
-            Point tile = GetPlayerTile(player);
-            if (!landingStep && tile == _lastTile)
+            int tileColumn = GetPlayerTileColumn(player);
+            if (!landingStep && tileColumn == _lastTileColumn)
             {
                 return;
             }
@@ -52,7 +52,7 @@ public sealed partial class InGameNarrationSystem
                 return;
             }
 
-            _lastTile = tile;
+            _lastTileColumn = tileColumn;
             _nextAllowedFrame = currentFrame + MinFramesBetweenNotes;
 
             float normalized = MathHelper.Clamp(speed / 10f, 0f, 1f);
@@ -96,17 +96,15 @@ public sealed partial class InGameNarrationSystem
             return Math.Abs(player.velocity.Y) < 0.02f;
         }
 
-        private static Point GetPlayerTile(Player player)
+        private static int GetPlayerTileColumn(Player player)
         {
             Vector2 center = player.Center;
-            int tileX = Math.Clamp((int)(center.X / 16f), 0, Main.maxTilesX - 1);
-            int tileY = Math.Clamp((int)(center.Y / 16f), 0, Main.maxTilesY - 1);
-            return new Point(tileX, tileY);
+            return Math.Clamp((int)(center.X / 16f), 0, Main.maxTilesX - 1);
         }
 
         private void ResetTracking()
         {
-            _lastTile = new Point(-1, -1);
+            _lastTileColumn = -1;
             _nextAllowedFrame = 0;
         }
 
