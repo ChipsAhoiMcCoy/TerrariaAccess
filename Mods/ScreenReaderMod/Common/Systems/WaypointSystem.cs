@@ -660,20 +660,18 @@ public sealed class WaypointSystem : ModSystem
             return;
         }
 
-        string announcement = ComposeNpcAnnouncement(entry, player, npc.Center);
+        int totalEntries = NearbyNpcs.Count;
+        int position = _selectedNpcIndex + 1;
+        string announcement = ComposeNpcAnnouncement(entry, player, npc.Center, position, totalEntries);
         ScreenReaderService.Announce($"{announcement} {FormatCategoryPositionSuffix(SelectionMode.Npc)}");
     }
 
-    private static string ComposeNpcAnnouncement(NpcGuidanceEntry entry, Player player, Vector2 npcPosition)
+    private static string ComposeNpcAnnouncement(NpcGuidanceEntry entry, Player player, Vector2 npcPosition, int position, int total)
     {
-        int total = NearbyNpcs.Count;
-        int position = _selectedNpcIndex + 1;
-
-        string announcement = entry.DisplayName;
-        if (total > 0 && position > 0 && position <= total)
-        {
-            announcement = $"{entry.DisplayName} {position} of {total}";
-        }
+        string ordinal = FormatEntryOrdinal(position, total);
+        string announcement = string.IsNullOrWhiteSpace(ordinal)
+            ? entry.DisplayName
+            : $"{entry.DisplayName} {ordinal}";
 
         string relative = DescribeRelativeOffset(player.Center, npcPosition);
         if (string.IsNullOrWhiteSpace(relative))
@@ -750,11 +748,10 @@ public sealed class WaypointSystem : ModSystem
         int total = Waypoints.Count;
         int position = _selectedIndex + 1;
 
-        string announcement = waypoint.Name;
-        if (total > 0 && position > 0 && position <= total)
-        {
-            announcement = $"{waypoint.Name} {position} of {total}";
-        }
+        string ordinal = FormatEntryOrdinal(position, total);
+        string announcement = string.IsNullOrWhiteSpace(ordinal)
+            ? waypoint.Name
+            : $"{waypoint.Name} {ordinal}";
 
         string relative = DescribeRelativeOffset(player.Center, waypoint.WorldPosition);
         if (string.IsNullOrWhiteSpace(relative))
@@ -916,6 +913,16 @@ public sealed class WaypointSystem : ModSystem
         }
 
         return $"{index + 1} of {CategoryOrder.Length}";
+    }
+
+    private static string FormatEntryOrdinal(int position, int total)
+    {
+        if (position <= 0 || total <= 0 || position > total)
+        {
+            return string.Empty;
+        }
+
+        return $"{position} of {total}";
     }
 
     private static string DescribeRelativeOffset(Vector2 origin, Vector2 target)
