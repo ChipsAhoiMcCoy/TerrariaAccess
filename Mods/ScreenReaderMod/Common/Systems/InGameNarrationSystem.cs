@@ -24,6 +24,7 @@ using Terraria.Localization;
 using Terraria.Map;
 using Terraria.ModLoader;
 using Terraria.ModLoader.IO;
+using Terraria.ObjectData;
 using Terraria.UI;
 using Terraria.UI.Gamepad;
 using Terraria.UI.Chat;
@@ -443,6 +444,7 @@ public sealed partial class InGameNarrationSystem : ModSystem
     private static class TileDescriptor
     {
         private const int LiquidDescriptorBaseTileType = -1000;
+        private static readonly Dictionary<int, int> BannerStyleToItemType = BuildBannerStyleMap();
 
         public static bool TryDescribe(int tileX, int tileY, out int tileType, out string? name)
         {
@@ -467,6 +469,11 @@ public sealed partial class InGameNarrationSystem : ModSystem
 
             tileType = tile.TileType;
 
+            if (tileType == TileID.Banners && TryDescribeBanner(tile, out name))
+            {
+                return true;
+            }
+
             try
             {
                 int lookup = MapHelper.TileToLookup(tileType, 0);
@@ -488,6 +495,84 @@ public sealed partial class InGameNarrationSystem : ModSystem
             }
 
             return true;
+        }
+
+        private static bool TryDescribeBanner(Tile tile, out string? name)
+        {
+            name = null;
+
+            int style = TileObjectData.GetTileStyle(tile);
+            if (style < 0)
+            {
+                return false;
+            }
+
+            int itemType = ResolveBannerItemType(style);
+            if (itemType > ItemID.None)
+            {
+                string itemName = Lang.GetItemNameValue(itemType);
+                if (!string.IsNullOrWhiteSpace(itemName))
+                {
+                    name = itemName;
+                    return true;
+                }
+            }
+
+            int npcType = Item.BannerToNPC(style);
+            if (npcType > NPCID.None)
+            {
+                string npcName = Lang.GetNPCNameValue(npcType);
+                if (!string.IsNullOrWhiteSpace(npcName))
+                {
+                    name = $"{npcName} banner";
+                    return true;
+                }
+            }
+
+            return false;
+        }
+
+        private static int ResolveBannerItemType(int style)
+        {
+            if (BannerStyleToItemType.TryGetValue(style, out int itemType))
+            {
+                return itemType;
+            }
+
+            int fallback = Item.BannerToItem(style);
+            if (fallback > ItemID.None)
+            {
+                BannerStyleToItemType[style] = fallback;
+            }
+
+            return fallback;
+        }
+
+        private static Dictionary<int, int> BuildBannerStyleMap()
+        {
+            Dictionary<int, int> map = new();
+            Item scratch = new();
+            for (int type = 1; type < ItemLoader.ItemCount; type++)
+            {
+                try
+                {
+                    scratch.SetDefaults(type, true);
+                }
+                catch
+                {
+                    continue;
+                }
+
+                if (scratch.createTile != TileID.Banners)
+                {
+                    continue;
+                }
+
+                int style = Math.Max(0, scratch.placeStyle);
+                map[style] = type;
+            }
+
+            return map;
         }
 
         private static bool TryDescribeLiquid(Tile tile, out int tileType, out string? name)
