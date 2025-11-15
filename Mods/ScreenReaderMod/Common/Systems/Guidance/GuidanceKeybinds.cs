@@ -3,9 +3,9 @@ using Microsoft.Xna.Framework.Input;
 using Terraria;
 using Terraria.ModLoader;
 
-namespace ScreenReaderMod.Common.Systems.Waypoints;
+namespace ScreenReaderMod.Common.Systems.Guidance;
 
-internal static class WaypointKeybinds
+internal static class GuidanceKeybinds
 {
     internal static ModKeybind? CategoryNext { get; private set; }
     internal static ModKeybind? CategoryPrevious { get; private set; }

@@ -4,7 +4,7 @@ using System.Collections.Generic;
 using Microsoft.Xna.Framework;
 using Microsoft.Xna.Framework.Audio;
 using ScreenReaderMod.Common.Services;
-using ScreenReaderMod.Common.Systems.Waypoints;
+using ScreenReaderMod.Common.Systems.Guidance;
 using Terraria;
 using Terraria.GameContent.UI.States;
 using Terraria.GameInput;
@@ -15,7 +15,7 @@ using Terraria.UI;
 
 namespace ScreenReaderMod.Common.Systems;
 
-public sealed class WaypointSystem : ModSystem
+public sealed class GuidanceSystem : ModSystem
 {
     private const string WaypointListKey = "screenReaderWaypoints";
     private const string SelectedIndexKey = "screenReaderSelectedWaypoint";
@@ -79,7 +79,7 @@ public sealed class WaypointSystem : ModSystem
             return;
         }
 
-        WaypointKeybinds.EnsureInitialized(Mod);
+        GuidanceKeybinds.EnsureInitialized(Mod);
     }
 
     public override void Unload()
@@ -563,37 +563,37 @@ public sealed class WaypointSystem : ModSystem
             return;
         }
 
-        if (WaypointKeybinds.Create?.JustPressed ?? false)
+        if (GuidanceKeybinds.Create?.JustPressed ?? false)
         {
             BeginNaming(player);
             return;
         }
 
-        if (WaypointKeybinds.CategoryNext?.JustPressed ?? false)
+        if (GuidanceKeybinds.CategoryNext?.JustPressed ?? false)
         {
             CycleCategory(1, player);
             return;
         }
 
-        if (WaypointKeybinds.CategoryPrevious?.JustPressed ?? false)
+        if (GuidanceKeybinds.CategoryPrevious?.JustPressed ?? false)
         {
             CycleCategory(-1, player);
             return;
         }
 
-        if (WaypointKeybinds.EntryNext?.JustPressed ?? false)
+        if (GuidanceKeybinds.EntryNext?.JustPressed ?? false)
         {
             CycleCategoryEntry(1, player);
             return;
         }
 
-        if (WaypointKeybinds.EntryPrevious?.JustPressed ?? false)
+        if (GuidanceKeybinds.EntryPrevious?.JustPressed ?? false)
         {
             CycleCategoryEntry(-1, player);
             return;
         }
 
-        if (WaypointKeybinds.Delete?.JustPressed ?? false)
+        if (GuidanceKeybinds.Delete?.JustPressed ?? false)
         {
             DeleteSelectedWaypoint(player);
         }

@@ -1,6 +1,6 @@
 #nullable enable
 using ScreenReaderMod.Common.Services;
-using ScreenReaderMod.Common.Systems.Waypoints;
+using ScreenReaderMod.Common.Systems.Guidance;
 using Terraria.ModLoader;
 
 namespace ScreenReaderMod;
@@ -14,12 +14,12 @@ public class ScreenReaderMod : Mod
         Instance = this;
         ScreenReaderService.Initialize();
         WorldAnnouncementService.Initialize();
-        WaypointKeybinds.EnsureInitialized(this);
+        GuidanceKeybinds.EnsureInitialized(this);
     }
 
     public override void Unload()
     {
-        WaypointKeybinds.Unload();
+        GuidanceKeybinds.Unload();
         WorldAnnouncementService.Unload();
         ScreenReaderService.Unload();
         Instance = null;

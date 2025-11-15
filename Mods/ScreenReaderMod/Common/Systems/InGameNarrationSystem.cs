@@ -157,7 +157,7 @@ public sealed partial class InGameNarrationSystem : ModSystem
             _treasureBagBeaconEmitter.Update(player);
             _hostileStaticAudioEmitter.Update(player);
             _footstepAudioEmitter.Update(player);
-            _worldInteractableTracker.Update(player, WaypointSystem.IsExplorationTrackingEnabled);
+            _worldInteractableTracker.Update(player, GuidanceSystem.IsExplorationTrackingEnabled);
             _biomeAnnouncementEmitter.Update(player);
         }
 

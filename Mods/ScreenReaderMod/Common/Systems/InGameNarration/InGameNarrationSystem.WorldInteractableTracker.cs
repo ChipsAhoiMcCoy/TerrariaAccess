@@ -281,7 +281,7 @@ public sealed partial class InGameNarrationSystem
         private void UpdateArrivalState(CandidateDistance entry)
         {
             TrackedInteractableKey key = entry.Candidate.Key;
-            if (entry.DistanceTiles <= WaypointSystem.ArrivalTileThreshold)
+            if (entry.DistanceTiles <= GuidanceSystem.ArrivalTileThreshold)
             {
                 if (_arrivedKeys.Contains(key))
                 {
