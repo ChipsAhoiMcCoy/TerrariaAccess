@@ -25,6 +25,7 @@ public sealed partial class InGameNarrationSystem
         private readonly Dictionary<TrackedInteractableKey, int> _nextPingFrameByKey = new();
         private readonly HashSet<TrackedInteractableKey> _visibleThisFrame = new();
         private readonly List<TrackedInteractableKey> _staleKeys = new();
+        private readonly HashSet<TrackedInteractableKey> _arrivedKeys = new();
         private readonly List<SoundEffectInstance> _liveInstances = new();
 
         private int _ticksUntilNextScan;
@@ -108,6 +109,7 @@ public sealed partial class InGameNarrationSystem
                 _visibleThisFrame.Clear();
                 _distanceScratch.Clear();
                 _staleKeys.Clear();
+                _arrivedKeys.Clear();
                 _ticksUntilNextScan = 0;
                 _isEnabled = false;
                 return;
@@ -126,6 +128,7 @@ public sealed partial class InGameNarrationSystem
                     _distanceScratch.Clear();
                     _visibleThisFrame.Clear();
                     _staleKeys.Clear();
+                    _arrivedKeys.Clear();
                 }
 
                 _isEnabled = false;
@@ -182,6 +185,7 @@ public sealed partial class InGameNarrationSystem
             {
                 CandidateDistance entry = _distanceScratch[i];
                 _visibleThisFrame.Add(entry.Candidate.Key);
+                UpdateArrivalState(entry);
                 EmitIfDue(playerCenter, entry);
             }
 
@@ -198,6 +202,7 @@ public sealed partial class InGameNarrationSystem
             _nextPingFrameByKey.Clear();
             _visibleThisFrame.Clear();
             _staleKeys.Clear();
+            _arrivedKeys.Clear();
             StopAllInstances();
             _isEnabled = false;
 
@@ -266,10 +271,34 @@ public sealed partial class InGameNarrationSystem
             foreach (TrackedInteractableKey key in _staleKeys)
             {
                 _nextPingFrameByKey.Remove(key);
+                _arrivedKeys.Remove(key);
             }
 
             _visibleThisFrame.Clear();
             _staleKeys.Clear();
+        }
+
+        private void UpdateArrivalState(CandidateDistance entry)
+        {
+            TrackedInteractableKey key = entry.Candidate.Key;
+            if (entry.DistanceTiles <= WaypointSystem.ArrivalTileThreshold)
+            {
+                if (_arrivedKeys.Contains(key))
+                {
+                    return;
+                }
+
+                _arrivedKeys.Add(key);
+                string label = entry.Candidate.Profile.ArrivalLabel;
+                if (!string.IsNullOrWhiteSpace(label))
+                {
+                    ScreenReaderService.Announce($"Arrived at {label}");
+                }
+            }
+            else
+            {
+                _arrivedKeys.Remove(key);
+            }
         }
 
         private void PlayCue(Vector2 playerCenter, CandidateDistance entry)
@@ -660,7 +689,8 @@ public sealed partial class InGameNarrationSystem
             int maxIntervalFrames,
             float panScalePixels = DefaultPanScale,
             float pitchScalePixels = DefaultPitchScale,
-            float delayResponseExponent = 1f)
+            float delayResponseExponent = 1f,
+            string arrivalLabel = "")
         {
             Id = id;
             FundamentalFrequency = fundamentalFrequency;
@@ -676,6 +706,7 @@ public sealed partial class InGameNarrationSystem
             PanScalePixels = panScalePixels;
             PitchScalePixels = pitchScalePixels;
             DelayResponseExponent = Math.Max(MinDelayResponseExponent, delayResponseExponent);
+            ArrivalLabel = arrivalLabel ?? string.Empty;
         }
 
         public string Id { get; }
@@ -692,6 +723,7 @@ public sealed partial class InGameNarrationSystem
         public float PanScalePixels { get; }
         public float PitchScalePixels { get; }
         public float DelayResponseExponent { get; }
+        public string ArrivalLabel { get; }
 
         public float ComputeVolume(float distanceTiles)
         {
@@ -735,7 +767,8 @@ public sealed partial class InGameNarrationSystem
             maxAudibleDistanceTiles: 85f,
             minIntervalFrames: 10,
             maxIntervalFrames: 52,
-            delayResponseExponent: 0.7f);
+            delayResponseExponent: 0.7f,
+            arrivalLabel: "a chest");
 
         public static InteractableCueProfile HeartCrystal { get; } = new(
             id: "heart-crystal",
@@ -749,7 +782,8 @@ public sealed partial class InGameNarrationSystem
             maxAudibleDistanceTiles: 90f,
             minIntervalFrames: 8,
             maxIntervalFrames: 52,
-            delayResponseExponent: 0.7f);
+            delayResponseExponent: 0.7f,
+            arrivalLabel: "a heart crystal");
 
         public static InteractableCueProfile DemonAltar { get; } = new(
             id: "demon-altar",
@@ -763,7 +797,8 @@ public sealed partial class InGameNarrationSystem
             maxAudibleDistanceTiles: 85f,
             minIntervalFrames: 12,
             maxIntervalFrames: 56,
-            delayResponseExponent: 0.7f);
+            delayResponseExponent: 0.7f,
+            arrivalLabel: "a demon altar");
 
         public static InteractableCueProfile CrimsonAltar { get; } = new(
             id: "crimson-altar",
@@ -777,7 +812,8 @@ public sealed partial class InGameNarrationSystem
             maxAudibleDistanceTiles: 85f,
             minIntervalFrames: 12,
             maxIntervalFrames: 56,
-            delayResponseExponent: 0.7f);
+            delayResponseExponent: 0.7f,
+            arrivalLabel: "a crimson altar");
 
         public static InteractableCueProfile ShadowOrb { get; } = new(
             id: "shadow-orb",
@@ -791,7 +827,8 @@ public sealed partial class InGameNarrationSystem
             maxAudibleDistanceTiles: 80f,
             minIntervalFrames: 10,
             maxIntervalFrames: 54,
-            delayResponseExponent: 0.7f);
+            delayResponseExponent: 0.7f,
+            arrivalLabel: "a shadow orb");
 
         public static InteractableCueProfile CrimsonHeart { get; } = new(
             id: "crimson-heart",
@@ -805,7 +842,8 @@ public sealed partial class InGameNarrationSystem
             maxAudibleDistanceTiles: 80f,
             minIntervalFrames: 10,
             maxIntervalFrames: 54,
-            delayResponseExponent: 0.7f);
+            delayResponseExponent: 0.7f,
+            arrivalLabel: "a crimson heart");
 
         public static InteractableCueProfile BeeLarva { get; } = new(
             id: "bee-larva",
@@ -819,7 +857,8 @@ public sealed partial class InGameNarrationSystem
             maxAudibleDistanceTiles: 70f,
             minIntervalFrames: 8,
             maxIntervalFrames: 50,
-            delayResponseExponent: 0.7f);
+            delayResponseExponent: 0.7f,
+            arrivalLabel: "a bee larva");
 
         public static InteractableCueProfile FallenStar { get; } = new(
             id: "fallen-star",
@@ -833,6 +872,7 @@ public sealed partial class InGameNarrationSystem
             maxAudibleDistanceTiles: 95f,
             minIntervalFrames: 8,
             maxIntervalFrames: 46,
-            delayResponseExponent: 0.7f);
+            delayResponseExponent: 0.7f,
+            arrivalLabel: "a fallen star");
     }
 }
