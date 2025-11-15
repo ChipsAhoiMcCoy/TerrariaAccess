@@ -58,7 +58,7 @@ public sealed partial class InGameNarrationSystem
 
             bool smartCursorActive = Main.SmartCursorIsUsed || Main.SmartCursorWanted;
             bool hasSmartInteract = Main.HasSmartInteractTarget;
-            bool canProvideCursorFeedback = !hasSmartInteract;
+            bool canProvideCursorFeedback = !hasSmartInteract || PlayerInput.UsingGamepad;
 
             if (_lastSmartCursorActive && !smartCursorActive && canProvideCursorFeedback)
             {
