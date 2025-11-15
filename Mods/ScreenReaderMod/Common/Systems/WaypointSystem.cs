@@ -46,6 +46,8 @@ public sealed class WaypointSystem : ModSystem
     private static int _selectedNpcIndex = -1;
     private static int _selectedPlayerIndex = -1;
     private static int _selectedInteractableIndex = -1;
+    private static SelectionMode _categoryAnnouncementMode = SelectionMode.None;
+    private static bool _categoryAnnouncementPending;
 
     private static bool _namingActive;
 
@@ -91,6 +93,7 @@ public sealed class WaypointSystem : ModSystem
         _selectedPlayerIndex = -1;
         _selectedInteractableIndex = -1;
         _selectionMode = SelectionMode.None;
+        ClearCategoryAnnouncement();
 
         _namingActive = false;
         _nextPingUpdateFrame = -1;
@@ -111,6 +114,7 @@ public sealed class WaypointSystem : ModSystem
         _selectedPlayerIndex = -1;
         _selectedInteractableIndex = -1;
         _selectionMode = SelectionMode.None;
+        ClearCategoryAnnouncement();
         _nextPingUpdateFrame = -1;
         _arrivalAnnounced = false;
         CloseNamingUi();
@@ -148,6 +152,7 @@ public sealed class WaypointSystem : ModSystem
         _selectedPlayerIndex = -1;
         _selectedInteractableIndex = -1;
         _selectionMode = SelectionMode.None;
+        ClearCategoryAnnouncement();
         _nextPingUpdateFrame = -1;
         _arrivalAnnounced = false;
 
@@ -181,6 +186,8 @@ public sealed class WaypointSystem : ModSystem
             _selectionMode = SelectionMode.None;
             _selectedIndex = -1;
         }
+
+        ClearCategoryAnnouncement();
     }
 
     public override void SaveWorldData(TagCompound tag)
@@ -656,12 +663,14 @@ public sealed class WaypointSystem : ModSystem
             case SelectionMode.None:
                 _selectionMode = SelectionMode.None;
                 _selectedIndex = Math.Min(_selectedIndex, Waypoints.Count - 1);
+                ClearCategoryAnnouncement();
                 RescheduleGuidancePing(player);
                 AnnounceDisabledSelection();
                 return;
             case SelectionMode.Exploration:
                 _selectionMode = SelectionMode.Exploration;
                 _selectedIndex = Math.Min(_selectedIndex, Waypoints.Count - 1);
+                ClearCategoryAnnouncement();
                 RescheduleGuidancePing(player);
                 AnnounceExplorationSelection();
                 return;
@@ -671,6 +680,7 @@ public sealed class WaypointSystem : ModSystem
                 if (NearbyInteractables.Count == 0)
                 {
                     _selectedInteractableIndex = -1;
+                    ClearCategoryAnnouncement();
                     RescheduleGuidancePing(player);
                     AnnounceCategorySelection("Crafting guidance", "No crafting stations detected nearby.");
                     return;
@@ -681,6 +691,7 @@ public sealed class WaypointSystem : ModSystem
                     _selectedInteractableIndex = 0;
                 }
 
+                BeginCategoryAnnouncement(SelectionMode.Interactable);
                 RescheduleGuidancePing(player);
                 AnnounceInteractableSelection(player);
                 EmitCurrentGuidancePing(player);
@@ -691,6 +702,7 @@ public sealed class WaypointSystem : ModSystem
                 if (NearbyNpcs.Count == 0)
                 {
                     _selectedNpcIndex = -1;
+                    ClearCategoryAnnouncement();
                     RescheduleGuidancePing(player);
                     int rangeTiles = (int)MathF.Round(DistanceReferenceTiles);
                     AnnounceCategorySelection("NPC guidance", $"No nearby NPCs within {rangeTiles} tiles.");
@@ -702,6 +714,7 @@ public sealed class WaypointSystem : ModSystem
                     _selectedNpcIndex = 0;
                 }
 
+                BeginCategoryAnnouncement(SelectionMode.Npc);
                 RescheduleGuidancePing(player);
                 AnnounceNpcSelection(player);
                 EmitCurrentGuidancePing(player);
@@ -718,6 +731,7 @@ public sealed class WaypointSystem : ModSystem
                 if (NearbyPlayers.Count == 0)
                 {
                     _selectedPlayerIndex = -1;
+                    ClearCategoryAnnouncement();
                     RescheduleGuidancePing(player);
                     AnnounceCategorySelection("Player guidance", "No other active players detected.");
                     return;
@@ -728,6 +742,7 @@ public sealed class WaypointSystem : ModSystem
                     _selectedPlayerIndex = 0;
                 }
 
+                BeginCategoryAnnouncement(SelectionMode.Player);
                 RescheduleGuidancePing(player);
                 AnnouncePlayerSelection(player);
                 EmitCurrentGuidancePing(player);
@@ -737,6 +752,7 @@ public sealed class WaypointSystem : ModSystem
                 if (Waypoints.Count == 0)
                 {
                     _selectedIndex = -1;
+                    ClearCategoryAnnouncement();
                     RescheduleGuidancePing(player);
                     AnnounceCategorySelection("Waypoints", "No waypoints saved.");
                     return;
@@ -747,6 +763,7 @@ public sealed class WaypointSystem : ModSystem
                     _selectedIndex = 0;
                 }
 
+                BeginCategoryAnnouncement(SelectionMode.Waypoint);
                 RescheduleGuidancePing(player);
                 AnnounceWaypointSelection(player);
                 EmitCurrentGuidancePing(player);
@@ -766,6 +783,7 @@ public sealed class WaypointSystem : ModSystem
             case SelectionMode.Waypoint:
                 if (Waypoints.Count == 0)
                 {
+                    ClearCategoryAnnouncement();
                     AnnounceCategorySelection("Waypoints", "No waypoints saved.");
                     return;
                 }
@@ -788,6 +806,7 @@ public sealed class WaypointSystem : ModSystem
                 if (NearbyNpcs.Count == 0)
                 {
                     _selectedNpcIndex = -1;
+                    ClearCategoryAnnouncement();
                     RescheduleGuidancePing(player);
                     int rangeTiles = (int)MathF.Round(DistanceReferenceTiles);
                     AnnounceCategorySelection("NPC guidance", $"No NPCs within {rangeTiles} tiles.");
@@ -812,6 +831,7 @@ public sealed class WaypointSystem : ModSystem
                 if (NearbyInteractables.Count == 0)
                 {
                     _selectedInteractableIndex = -1;
+                    ClearCategoryAnnouncement();
                     RescheduleGuidancePing(player);
                     AnnounceCategorySelection("Crafting guidance", "No crafting stations detected nearby.");
                     return;
@@ -841,6 +861,7 @@ public sealed class WaypointSystem : ModSystem
                 if (NearbyPlayers.Count == 0)
                 {
                     _selectedPlayerIndex = -1;
+                    ClearCategoryAnnouncement();
                     RescheduleGuidancePing(player);
                     AnnounceCategorySelection("Player guidance", "No other active players detected.");
                     return;
@@ -874,7 +895,7 @@ public sealed class WaypointSystem : ModSystem
 
         Waypoint waypoint = Waypoints[_selectedIndex];
         string announcement = ComposeWaypointAnnouncement(waypoint, player);
-        AnnounceCategorySelection("Waypoints", announcement);
+        AnnounceCategoryEntry(SelectionMode.Waypoint, "Waypoints", announcement);
     }
 
     private static void AnnounceNpcSelection(Player player)
@@ -887,6 +908,7 @@ public sealed class WaypointSystem : ModSystem
         if (!TryGetSelectedNpc(player, out NPC npc, out NpcGuidanceEntry entry))
         {
             int rangeTiles = (int)MathF.Round(DistanceReferenceTiles);
+            ClearCategoryAnnouncement();
             AnnounceCategorySelection("NPC guidance", $"No nearby NPCs within {rangeTiles} tiles.");
             return;
         }
@@ -894,7 +916,7 @@ public sealed class WaypointSystem : ModSystem
         int totalEntries = NearbyNpcs.Count;
         int position = _selectedNpcIndex + 1;
         string announcement = ComposeNpcAnnouncement(entry, player, npc.Center, position, totalEntries);
-        AnnounceCategorySelection("NPC guidance", announcement);
+        AnnounceCategoryEntry(SelectionMode.Npc, "NPC guidance", announcement);
     }
 
     private static void AnnounceInteractableSelection(Player player)
@@ -906,6 +928,7 @@ public sealed class WaypointSystem : ModSystem
 
         if (!TryGetSelectedInteractable(player, out InteractableGuidanceEntry entry))
         {
+            ClearCategoryAnnouncement();
             AnnounceCategorySelection("Crafting guidance", "No crafting stations detected nearby.");
             return;
         }
@@ -913,7 +936,7 @@ public sealed class WaypointSystem : ModSystem
         int totalEntries = NearbyInteractables.Count;
         int position = _selectedInteractableIndex + 1;
         string announcement = ComposeEntityAnnouncement(entry.DisplayName, player, entry.WorldPosition, position, totalEntries);
-        AnnounceCategorySelection("Crafting guidance", announcement);
+        AnnounceCategoryEntry(SelectionMode.Interactable, "Crafting guidance", announcement);
     }
 
     private static void AnnouncePlayerSelection(Player player)
@@ -925,6 +948,7 @@ public sealed class WaypointSystem : ModSystem
 
         if (!TryGetSelectedPlayer(player, out Player targetPlayer, out PlayerGuidanceEntry entry))
         {
+            ClearCategoryAnnouncement();
             AnnounceCategorySelection("Player guidance", "No other active players detected.");
             return;
         }
@@ -932,7 +956,7 @@ public sealed class WaypointSystem : ModSystem
         int totalEntries = NearbyPlayers.Count;
         int position = _selectedPlayerIndex + 1;
         string announcement = ComposePlayerAnnouncement(entry, player, targetPlayer.Center, position, totalEntries);
-        AnnounceCategorySelection("Player guidance", announcement);
+        AnnounceCategoryEntry(SelectionMode.Player, "Player guidance", announcement);
     }
 
     private static string ComposeNpcAnnouncement(NpcGuidanceEntry entry, Player player, Vector2 npcPosition, int position, int total)
@@ -994,6 +1018,7 @@ public sealed class WaypointSystem : ModSystem
         {
             _selectedIndex = -1;
             _selectionMode = SelectionMode.None;
+            ClearCategoryAnnouncement();
             _nextPingUpdateFrame = -1;
             _arrivalAnnounced = false;
             ScreenReaderService.Announce($"Deleted waypoint {removed.Name}.");
@@ -1009,18 +1034,20 @@ public sealed class WaypointSystem : ModSystem
         Waypoint nextWaypoint = Waypoints[_selectedIndex];
         string nextAnnouncement = ComposeWaypointAnnouncement(nextWaypoint, player);
         ScreenReaderService.Announce($"Deleted waypoint {removed.Name}.");
-        AnnounceCategorySelection("Waypoints", nextAnnouncement);
+        AnnounceCategoryEntry(SelectionMode.Waypoint, "Waypoints", nextAnnouncement);
         RescheduleGuidancePing(player);
         EmitCurrentGuidancePing(player);
     }
 
     private static void AnnounceDisabledSelection()
     {
+        ClearCategoryAnnouncement();
         AnnounceCategorySelection("Guidance disabled", string.Empty);
     }
 
     private static void AnnounceExplorationSelection()
     {
+        ClearCategoryAnnouncement();
         AnnounceCategorySelection("Exploration mode", "Tracking nearby interactables.");
     }
 
@@ -1600,6 +1627,40 @@ public sealed class WaypointSystem : ModSystem
         }
 
         ScreenReaderService.Announce($"{categoryLabel}. {detail}");
+    }
+
+    private static void AnnounceCategoryEntry(SelectionMode category, string categoryLabel, string detail)
+    {
+        if (string.IsNullOrWhiteSpace(detail))
+        {
+            AnnounceCategorySelection(categoryLabel, detail);
+            return;
+        }
+
+        bool includeCategory = _categoryAnnouncementPending || _categoryAnnouncementMode != category;
+        _categoryAnnouncementMode = category;
+        _categoryAnnouncementPending = false;
+
+        if (includeCategory && !string.IsNullOrWhiteSpace(categoryLabel))
+        {
+            ScreenReaderService.Announce($"{categoryLabel}. {detail}");
+        }
+        else
+        {
+            ScreenReaderService.Announce(detail);
+        }
+    }
+
+    private static void BeginCategoryAnnouncement(SelectionMode category)
+    {
+        _categoryAnnouncementMode = category;
+        _categoryAnnouncementPending = true;
+    }
+
+    private static void ClearCategoryAnnouncement()
+    {
+        _categoryAnnouncementMode = SelectionMode.None;
+        _categoryAnnouncementPending = false;
     }
 
     private static string DescribeRelativeOffset(Vector2 origin, Vector2 target)
