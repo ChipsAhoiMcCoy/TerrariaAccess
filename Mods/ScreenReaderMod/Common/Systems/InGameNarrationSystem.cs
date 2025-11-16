@@ -423,7 +423,7 @@ public sealed partial class InGameNarrationSystem : ModSystem
 
 
 
-    private static string ComposeItemLabel(Item item)
+    internal static string ComposeItemLabel(Item item)
     {
         string name = TextSanitizer.Clean(item.AffixName());
         if (string.IsNullOrWhiteSpace(name))

@@ -173,6 +173,21 @@ public sealed partial class InGameNarrationSystem
             return candidate.Equals(target);
         }
 
+        internal static bool IsCraftingResultHover(Item item)
+        {
+            if (item is null || item.IsAir || !Main.playerInventory)
+            {
+                return false;
+            }
+
+            if (!TryGetFocusedRecipe(out Recipe recipe, out _, out _, out _))
+            {
+                return false;
+            }
+
+            return IsRecipeResultItem(recipe, item);
+        }
+
         internal static string? TryGetRequirementTooltipDetails(Item item, bool locationIsEmpty)
         {
             if (item is null || item.IsAir)

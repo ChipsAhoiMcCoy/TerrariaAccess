@@ -188,6 +188,15 @@ public sealed partial class InGameNarrationSystem
             Item hover = usingGamepadFocus ? focusedItem! : Main.HoverItem;
             ItemIdentity identity = ItemIdentity.From(hover);
 
+            if (!identity.IsAir && CraftingNarrator.IsCraftingResultHover(hover))
+            {
+                _lastHover = ItemIdentity.Empty;
+                _lastHoverLocation = null;
+                _lastHoverTooltip = null;
+                _lastHoverDetails = null;
+                return;
+            }
+
             string rawTooltip;
             if (usingGamepadFocus)
             {
