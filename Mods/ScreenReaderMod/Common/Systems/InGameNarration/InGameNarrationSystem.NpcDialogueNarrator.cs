@@ -86,7 +86,7 @@ public sealed partial class InGameNarrationSystem
                 string npcName = npc.GivenOrTypeName;
                 if (!string.IsNullOrWhiteSpace(npcName))
                 {
-                    ScreenReaderService.Announce($"Talking to {npcName}", force: true);
+                    ScreenReaderService.Announce($"Talking to {npcName}", force: true, interrupt: false);
                 }
 
                 _lastNpc = talkNpc;
@@ -101,11 +101,11 @@ public sealed partial class InGameNarrationSystem
                 string prefix = npc.GivenOrTypeName;
                 if (!string.IsNullOrWhiteSpace(prefix))
                 {
-                    ScreenReaderService.Announce($"{prefix} says: {normalizedText}");
+                    ScreenReaderService.Announce($"{prefix} says: {normalizedText}", interrupt: false);
                 }
                 else
                 {
-                    ScreenReaderService.Announce(normalizedText);
+                    ScreenReaderService.Announce(normalizedText, interrupt: false);
                 }
 
                 _lastChat = normalizedText;
@@ -117,10 +117,12 @@ public sealed partial class InGameNarrationSystem
                 _suppressNextButtonAnnouncement = false;
             }
 
-            HandleButtonFocus(Main.npcChatFocus2, ref _lastPrimaryFocus, _currentPrimaryButton);
-            HandleButtonFocus(Main.npcChatFocus1, ref _lastCloseFocus, _currentCloseButton);
-            HandleButtonFocus(Main.npcChatFocus3, ref _lastSecondaryFocus, _currentSecondaryButton);
-            HandleButtonFocus(Main.npcChatFocus4, ref _lastHappinessFocus, _currentHappinessButton);
+            bool allowInterrupt = NpcDialogueInputTracker.IsNavigationPressed;
+
+            HandleButtonFocus(Main.npcChatFocus2, ref _lastPrimaryFocus, _currentPrimaryButton, allowInterrupt);
+            HandleButtonFocus(Main.npcChatFocus1, ref _lastCloseFocus, _currentCloseButton, allowInterrupt);
+            HandleButtonFocus(Main.npcChatFocus3, ref _lastSecondaryFocus, _currentSecondaryButton, allowInterrupt);
+            HandleButtonFocus(Main.npcChatFocus4, ref _lastHappinessFocus, _currentHappinessButton, allowInterrupt);
         }
 
         private static string NormalizeChat(string rawText)
@@ -189,7 +191,7 @@ public sealed partial class InGameNarrationSystem
             return string.IsNullOrWhiteSpace(normalized) ? null : normalized;
         }
 
-        private void HandleButtonFocus(bool isFocused, ref bool lastState, string? label)
+        private void HandleButtonFocus(bool isFocused, ref bool lastState, string? label, bool allowInterrupt)
         {
             if (!isFocused)
             {
@@ -213,7 +215,7 @@ public sealed partial class InGameNarrationSystem
                     announcement = $"{trimmed} button";
                 }
 
-                ScreenReaderService.Announce(announcement);
+                ScreenReaderService.Announce(announcement, interrupt: allowInterrupt);
             }
 
             lastState = true;
