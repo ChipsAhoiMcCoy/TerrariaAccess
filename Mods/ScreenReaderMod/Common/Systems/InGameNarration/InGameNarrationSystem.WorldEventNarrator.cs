@@ -124,6 +124,9 @@ public sealed partial class InGameNarrationSystem
 
         private readonly HashSet<int> _previousTownNpcTypes = new();
         private readonly HashSet<int> _currentTownNpcTypes = new();
+        private readonly bool[] _playerActive = new bool[Main.maxPlayers];
+        private readonly bool[] _playerDead = new bool[Main.maxPlayers];
+        private readonly string?[] _playerNames = new string[Main.maxPlayers];
 
         private readonly InvasionMonitor[] _invasionMonitors =
         {
@@ -180,6 +183,7 @@ public sealed partial class InGameNarrationSystem
             _wasLanternNight = false;
             _wasParty = false;
             _wasDd2Event = false;
+            ResetPlayerTracking();
 
             foreach (InvasionMonitor monitor in _invasionMonitors)
             {
@@ -235,7 +239,15 @@ public sealed partial class InGameNarrationSystem
                 monitor.Update();
             }
 
+            UpdatePlayerAnnouncements();
             AnnounceTownNpcArrivals();
+        }
+
+        private void ResetPlayerTracking()
+        {
+            Array.Clear(_playerActive, 0, _playerActive.Length);
+            Array.Clear(_playerDead, 0, _playerDead.Length);
+            Array.Clear(_playerNames, 0, _playerNames.Length);
         }
 
         private void AnnounceTownNpcArrivals()
@@ -286,6 +298,83 @@ public sealed partial class InGameNarrationSystem
 
             _previousTownNpcTypes.Clear();
             _previousTownNpcTypes.UnionWith(_currentTownNpcTypes);
+        }
+
+        private void UpdatePlayerAnnouncements()
+        {
+            for (int i = 0; i < Main.maxPlayers; i++)
+            {
+                Player? player = Main.player[i];
+                bool isLocalPlayer = i == Main.myPlayer;
+                bool active = player is not null && player.active && !string.IsNullOrWhiteSpace(player.name);
+                string playerName = ResolvePlayerName(player, i);
+                bool wasActive = _playerActive[i];
+                bool isDead = active && player!.dead;
+                bool wasDead = _playerDead[i];
+
+                if (active && !string.IsNullOrWhiteSpace(playerName))
+                {
+                    _playerNames[i] = playerName;
+                }
+
+                if (!isLocalPlayer)
+                {
+                    if (active && !wasActive)
+                    {
+                        AnnouncePlayerEvent("Mods.ScreenReaderMod.WorldAnnouncements.PlayerJoined", "{0} joined the world.", playerName);
+                    }
+                    else if (!active && wasActive)
+                    {
+                        string fallback = _playerNames[i] ?? playerName;
+                        AnnouncePlayerEvent("Mods.ScreenReaderMod.WorldAnnouncements.PlayerLeft", "{0} left the world.", fallback);
+                    }
+
+                    if (active && isDead && !wasDead)
+                    {
+                        string fallback = _playerNames[i] ?? playerName;
+                        AnnouncePlayerEvent("Mods.ScreenReaderMod.WorldAnnouncements.PlayerDied", "{0} has died.", fallback);
+                    }
+                }
+
+                _playerActive[i] = active;
+                _playerDead[i] = active && isDead;
+
+                if (!active && string.IsNullOrWhiteSpace(_playerNames[i]) && !string.IsNullOrWhiteSpace(playerName))
+                {
+                    _playerNames[i] = playerName;
+                }
+            }
+        }
+
+        private static string ResolvePlayerName(Player? player, int slot)
+        {
+            if (player is not null)
+            {
+                string sanitized = TextSanitizer.Clean(player.name);
+                if (!string.IsNullOrWhiteSpace(sanitized))
+                {
+                    return sanitized;
+                }
+            }
+
+            return $"Player {slot + 1}";
+        }
+
+        private static void AnnouncePlayerEvent(string key, string fallbackFormat, string playerName)
+        {
+            if (string.IsNullOrWhiteSpace(playerName))
+            {
+                return;
+            }
+
+            string message = Language.GetTextValue(key, playerName);
+            if (string.IsNullOrWhiteSpace(message) || string.Equals(message, key, StringComparison.Ordinal))
+            {
+                message = string.Format(fallbackFormat, playerName);
+            }
+
+            message = TextSanitizer.Clean(message);
+            WorldAnnouncementService.Announce(message, force: true);
         }
 
         private void EnsureTownNpcSnapshot()

@@ -106,13 +106,7 @@ public sealed partial class InGameNarrationSystem
                 return false;
             }
 
-            if (InventoryNarrator.IsInventoryUiOpen(player))
-            {
-                return true;
-            }
-
-            int point = UILinkPointNavigator.CurrentPoint;
-            return CraftingNarrator.IsCraftingLinkPoint(point);
+            return InventoryNarrator.IsInventoryUiOpen(player);
         }
 
         private static string DescribeHeldItem(int slot, Item item)

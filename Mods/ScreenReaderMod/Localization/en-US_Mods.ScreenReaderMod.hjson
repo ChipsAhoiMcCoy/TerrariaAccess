@@ -82,6 +82,9 @@ Mods: {
 			OldOnesArmyEnd: The Old One's Army has been defeated.
 			NpcArrived: "{0} has arrived."
 			BiomeEntered: Entered {0}.
+			PlayerJoined: "{0} joined the world."
+			PlayerLeft: "{0} left the world."
+			PlayerDied: "{0} has died."
 
 			BiomeNames: {
 				Forest: Forest

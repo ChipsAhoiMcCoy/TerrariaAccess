@@ -39,25 +39,12 @@ public sealed partial class InGameNarrationSystem
         private string? _lastAnnouncement;
         private int _lastCount = -1;
         private string? _lastRequirementsMessage;
-        private int _lastIngredientPoint = -1;
-        private int _lastIngredientRecipeIndex = -1;
-        private IngredientIdentity _lastIngredientIdentity = IngredientIdentity.Empty;
-        private string? _lastIngredientMessage;
         private readonly HashSet<int> _missingRequirementRecipes = new();
-
-        private static readonly FieldInfo[] CraftingShortcutFields = typeof(UILinkPointNavigator.Shortcuts)
-            .GetFields(BindingFlags.Static | BindingFlags.Public | BindingFlags.NonPublic)
-            .Where(field => field.FieldType == typeof(int) &&
-                            field.Name.Contains("CRAFT", StringComparison.OrdinalIgnoreCase))
-            .ToArray();
-
-        private static readonly FieldInfo[] CraftingLinkIdFields = DiscoverCraftingLinkIdFields();
 
         private static readonly Lazy<int[]> CraftingContextValues = new(DiscoverCraftingContexts);
         private static readonly Lazy<Dictionary<int, int>> RecipeGroupLookup = new(DiscoverRecipeGroupLookup);
         private static readonly Func<Recipe, int, int>? AcceptedGroupResolver = CreateAcceptedGroupResolver();
 
-        private static bool _loggedShortcutReflectionWarning;
         private static bool _loggedRecipeGroupReflectionWarning;
         private static bool _loggedRecipeFlagReflectionWarning;
 
@@ -235,24 +222,15 @@ public sealed partial class InGameNarrationSystem
             bool usingGamepadUi = PlayerInput.UsingGamepadUI;
             int currentPoint = usingGamepadUi ? UILinkPointNavigator.CurrentPoint : -1;
 
-            if (!usingGamepadUi)
-            {
-                ResetIngredientFocus();
-            }
-
             if (usingGamepadUi)
             {
-                if (InventoryNarrator.TryGetContextForLinkPoint(currentPoint, out int context) &&
-                    !IsCraftingContext(context))
+                if (InventoryNarrator.TryGetContextForLinkPoint(currentPoint, out int context))
                 {
-                    ResetFocus();
-                    return;
-                }
-
-                if (!IsCraftingLinkPoint(currentPoint))
-                {
-                    ResetFocus();
-                    return;
+                    if (!IsCraftingContext(context))
+                    {
+                        ResetFocus();
+                        return;
+                    }
                 }
             }
 
@@ -276,7 +254,6 @@ public sealed partial class InGameNarrationSystem
                 allowMouseText: false,
                 suppressControllerPrompts: true);
 
-            int ingredientCount = CountIngredients(recipe);
             string? requirementMessage = BuildRequirementMessage(recipe, out bool hadRequirementData);
             if (!string.IsNullOrWhiteSpace(requirementMessage))
             {
@@ -299,8 +276,6 @@ public sealed partial class InGameNarrationSystem
             string itemMessage = $"{combined}. Recipe {focus + 1} of {available}";
             itemMessage = GlyphTagFormatter.Normalize(itemMessage);
 
-            bool ingredientFocused = usingGamepadUi && TryAnnounceIngredientFocus(recipe, recipeIndex, ingredientCount, currentPoint);
-
             bool itemChanged =
                 focus != _lastFocusIndex ||
                 recipeIndex != _lastRecipeIndex ||
@@ -319,32 +294,7 @@ public sealed partial class InGameNarrationSystem
             _lastAnnouncement = itemMessage;
             _lastCount = available;
 
-            if (ingredientFocused)
-            {
-                return;
-            }
-
             ScreenReaderService.Announce(itemMessage, force: true);
-        }
-
-        public static bool IsCraftingLinkPoint(int point)
-        {
-            if (point < 0)
-            {
-                return false;
-            }
-
-            if (MatchesCraftingField(point, CraftingShortcutFields))
-            {
-                return true;
-            }
-
-            if (MatchesCraftingField(point, CraftingLinkIdFields))
-            {
-                return true;
-            }
-
-            return false;
         }
 
         private static bool IsCraftingContext(int context)
@@ -375,15 +325,6 @@ public sealed partial class InGameNarrationSystem
             _lastRecipeIndex = -1;
             _lastCount = -1;
             _lastRequirementsMessage = null;
-            ResetIngredientFocus();
-        }
-
-        private void ResetIngredientFocus()
-        {
-            _lastIngredientPoint = -1;
-            _lastIngredientRecipeIndex = -1;
-            _lastIngredientIdentity = IngredientIdentity.Empty;
-            _lastIngredientMessage = null;
         }
 
         private static int[] DiscoverCraftingContexts()
@@ -420,44 +361,6 @@ public sealed partial class InGameNarrationSystem
             {
                 return new[] { Math.Abs(ItemSlot.Context.CraftingMaterial) };
             }
-        }
-
-        private static FieldInfo[] DiscoverCraftingLinkIdFields()
-        {
-            Type? linkIdType = typeof(UILinkPointNavigator).Assembly.GetType("Terraria.UI.Gamepad.UILinkPointID");
-            if (linkIdType is null)
-            {
-                return Array.Empty<FieldInfo>();
-            }
-
-            return linkIdType
-                .GetFields(BindingFlags.Static | BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.FlattenHierarchy)
-                .Where(field => field.FieldType == typeof(int) &&
-                                (field.Name.Contains("CRAFT", StringComparison.OrdinalIgnoreCase) ||
-                                 field.Name.Contains("RECIPE", StringComparison.OrdinalIgnoreCase)))
-                .ToArray();
-        }
-
-        private static bool MatchesCraftingField(int point, FieldInfo[] fields)
-        {
-            foreach (FieldInfo field in fields)
-            {
-                try
-                {
-                    object? value = field.GetValue(null);
-                    if (value is int intValue && intValue >= 0 && intValue == point)
-                    {
-                        return true;
-                    }
-                }
-                catch (Exception ex) when (!_loggedShortcutReflectionWarning)
-                {
-                    _loggedShortcutReflectionWarning = true;
-                    ScreenReaderMod.Instance?.Logger.Warn($"[CraftingNarrator] Failed to inspect crafting link field {field.Name}: {ex}");
-                }
-            }
-
-            return false;
         }
 
         private static string? BuildRequirementMessage(Recipe recipe, out bool hadRequirements)
@@ -700,141 +603,6 @@ public sealed partial class InGameNarrationSystem
             }
 
             return false;
-        }
-
-        private static int CountIngredients(Recipe recipe)
-        {
-            IList<Item>? requiredItems = recipe.requiredItem;
-            if (requiredItems is null || requiredItems.Count == 0)
-            {
-                return 0;
-            }
-
-            int count = 0;
-            for (int i = 0; i < requiredItems.Count; i++)
-            {
-                Item ingredient = requiredItems[i];
-                if (ingredient is null)
-                {
-                    continue;
-                }
-
-                if (ingredient.type == 0)
-                {
-                    break;
-                }
-
-                if (!ingredient.IsAir && ingredient.stack > 0)
-                {
-                    count++;
-                }
-            }
-
-            return count;
-        }
-
-        private static int FindIngredientIndex(Recipe recipe, Item candidate, IngredientIdentity identity)
-        {
-            IList<Item>? requiredItems = recipe.requiredItem;
-            if (requiredItems is null || requiredItems.Count == 0)
-            {
-                return -1;
-            }
-
-            for (int i = 0; i < requiredItems.Count; i++)
-            {
-                Item ingredient = requiredItems[i];
-                if (ingredient is null)
-                {
-                    continue;
-                }
-
-                if (ingredient.type == 0)
-                {
-                    break;
-                }
-
-                if (ReferenceEquals(ingredient, candidate))
-                {
-                    return i;
-                }
-
-                if (!ingredient.IsAir && IngredientIdentity.From(ingredient).Equals(identity))
-                {
-                    return i;
-                }
-            }
-
-            return -1;
-        }
-
-        private bool TryAnnounceIngredientFocus(Recipe recipe, int recipeIndex, int ingredientCount, int currentPoint)
-        {
-            if (currentPoint < 0)
-            {
-                ResetIngredientFocus();
-                return false;
-            }
-
-            if (!InventoryNarrator.TryGetItemForLinkPoint(currentPoint, out Item? focusedItem, out int context))
-            {
-                ResetIngredientFocus();
-                return false;
-            }
-
-            if (Math.Abs(context) != Math.Abs(ItemSlot.Context.CraftingMaterial))
-            {
-                ResetIngredientFocus();
-                return false;
-            }
-
-            if (focusedItem is null)
-            {
-                ResetIngredientFocus();
-                return false;
-            }
-
-            IngredientIdentity identity = IngredientIdentity.From(focusedItem);
-            if (identity.IsAir)
-            {
-                ResetIngredientFocus();
-                return false;
-            }
-
-            int ingredientIndex = FindIngredientIndex(recipe, focusedItem, identity);
-            if (ingredientIndex < 0)
-            {
-                ResetIngredientFocus();
-                return false;
-            }
-
-            string? label = DescribeRequirement(recipe, recipe.requiredItem[ingredientIndex], ingredientIndex);
-            if (string.IsNullOrWhiteSpace(label))
-            {
-                label = ComposeItemLabel(focusedItem);
-            }
-
-            string message = ingredientCount > 0
-                ? $"Ingredient {ingredientIndex + 1} of {ingredientCount}, {label}"
-                : $"Ingredient, {label}";
-
-            message = GlyphTagFormatter.Normalize(message);
-
-            if (_lastIngredientRecipeIndex == recipeIndex &&
-                _lastIngredientPoint == currentPoint &&
-                identity.Equals(_lastIngredientIdentity) &&
-                string.Equals(message, _lastIngredientMessage, StringComparison.Ordinal))
-            {
-                return true;
-            }
-
-            _lastIngredientRecipeIndex = recipeIndex;
-            _lastIngredientPoint = currentPoint;
-            _lastIngredientIdentity = identity;
-            _lastIngredientMessage = message;
-
-            ScreenReaderService.Announce(message, force: true);
-            return true;
         }
 
         private static string? DescribeRequirement(Recipe recipe, Item ingredient, int index)

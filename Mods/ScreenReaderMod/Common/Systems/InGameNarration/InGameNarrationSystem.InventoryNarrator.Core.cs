@@ -234,6 +234,13 @@ public sealed partial class InGameNarrationSystem
                         ? priceDetails
                         : $"{details}. {priceDetails}";
                 }
+                string? sellDetails = BuildSellPriceDetails(player, hover, identity);
+                if (!string.IsNullOrWhiteSpace(sellDetails))
+                {
+                    details = string.IsNullOrWhiteSpace(details)
+                        ? sellDetails
+                        : $"{details}. {sellDetails}";
+                }
                 string combined = CombineItemAnnouncement(message, details);
 
                 if (identity.Equals(_lastHover) &&
@@ -559,6 +566,11 @@ public sealed partial class InGameNarrationSystem
             return string.Empty;
         }
 
+        private static bool IsPlayerInventoryItem(Player player, ItemIdentity identity)
+        {
+            return TryMatch(player.inventory, identity, out _);
+        }
+
         private static string DescribeFocusedSlot(Player player, SlotFocus focus)
         {
             if (focus.Items is Item[] items)
@@ -712,6 +724,69 @@ public sealed partial class InGameNarrationSystem
 
             string coinText = CoinFormatter.ValueToCoinString(coinPrice);
             return string.IsNullOrWhiteSpace(coinText) ? null : $"Costs {coinText}";
+        }
+
+        private static string? BuildSellPriceDetails(Player player, Item item, ItemIdentity identity)
+        {
+            if (player is null || item is null || item.IsAir)
+            {
+                return null;
+            }
+
+            if (Main.npcShop <= 0)
+            {
+                return null;
+            }
+
+            if (!IsPlayerInventoryItem(player, identity))
+            {
+                return null;
+            }
+
+            long sellPrice = GetSellPrice(player, item);
+            if (sellPrice <= 0)
+            {
+                return null;
+            }
+
+            string coins = CoinFormatter.ValueToCoinString(sellPrice);
+            return string.IsNullOrWhiteSpace(coins) ? null : $"Sells for {coins}";
+        }
+
+        private static long GetSellPrice(Player player, Item item)
+        {
+            if (player is null || item is null)
+            {
+                return 0;
+            }
+
+            try
+            {
+                player.GetItemExpectedPrice(item, out long priceForSelling, out long _);
+                if (priceForSelling > 0)
+                {
+                    return priceForSelling;
+                }
+            }
+            catch
+            {
+                // Ignore failures and fall back below.
+            }
+
+            long unitValue = Math.Max(0, item.value);
+            if (unitValue <= 0)
+            {
+                return 0;
+            }
+
+            int stack = Math.Max(1, item.stack);
+            long totalValue = unitValue * (long)stack;
+            if (totalValue <= 0)
+            {
+                return 0;
+            }
+
+            return totalValue / 5;
         }
 
         private static Item? TryResolveShopItem(ItemIdentity identity, SlotFocus? focus, Chest[] shops)
