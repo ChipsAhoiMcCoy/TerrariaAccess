@@ -14,6 +14,7 @@ using ScreenReaderMod.Common.Utilities;
 using Terraria;
 using Terraria.Audio;
 using Terraria.GameContent;
+using Terraria.GameContent.UI;
 using Terraria.GameContent.UI.BigProgressBar;
 using Terraria.GameContent.Events;
 using Terraria.GameContent.UI.Elements;
@@ -216,6 +217,13 @@ public sealed partial class InGameNarrationSystem
                     details = string.IsNullOrWhiteSpace(details)
                         ? requirementDetails
                         : $"{details}. {requirementDetails}";
+                }
+                string? priceDetails = BuildShopPriceDetails(player, hover, identity, focus);
+                if (!string.IsNullOrWhiteSpace(priceDetails))
+                {
+                    details = string.IsNullOrWhiteSpace(details)
+                        ? priceDetails
+                        : $"{details}. {priceDetails}";
                 }
                 string combined = CombineItemAnnouncement(message, details);
 
@@ -654,6 +662,176 @@ public sealed partial class InGameNarrationSystem
             }
 
             return string.Empty;
+        }
+
+        private static string? BuildShopPriceDetails(Player player, Item item, ItemIdentity identity, SlotFocus? focus)
+        {
+            if (player is null || item is null || item.IsAir)
+            {
+                return null;
+            }
+
+            Chest[]? shops = Main.instance?.shop;
+            if (shops is null || shops.Length == 0)
+            {
+                return null;
+            }
+
+            if (!focus.HasValue && Main.npcShop <= 0)
+            {
+                return null;
+            }
+
+            Item? referencedItem = TryResolveShopItem(identity, focus, shops);
+            if (referencedItem is null || referencedItem.IsAir)
+            {
+                return null;
+            }
+
+            if (referencedItem.shopSpecialCurrency >= 0 &&
+                CustomCurrencyManager.TryGetCurrencySystem(referencedItem.shopSpecialCurrency, out CustomCurrencySystem? customSystem))
+            {
+                string? customCurrencyText = FormatCustomCurrencyPrice(customSystem, referencedItem);
+                return string.IsNullOrWhiteSpace(customCurrencyText) ? null : $"Costs {customCurrencyText}";
+            }
+
+            long coinPrice = GetDiscountedCoinPrice(player, referencedItem);
+            if (coinPrice <= 0)
+            {
+                return null;
+            }
+
+            string coinText = CoinFormatter.ValueToCoinString(coinPrice);
+            return string.IsNullOrWhiteSpace(coinText) ? null : $"Costs {coinText}";
+        }
+
+        private static Item? TryResolveShopItem(ItemIdentity identity, SlotFocus? focus, Chest[] shops)
+        {
+            if (focus.HasValue && focus.Value.Slot >= 0 && focus.Value.Items is Item[] focusItems)
+            {
+                for (int i = 0; i < shops.Length; i++)
+                {
+                    Item[]? shopItems = shops[i]?.item;
+                    if (ReferenceEquals(shopItems, focusItems))
+                    {
+                        int slot = focus.Value.Slot;
+                        if (slot >= 0 && shopItems is not null && slot < shopItems.Length)
+                        {
+                            return shopItems[slot];
+                        }
+                    }
+                }
+            }
+
+            int activeShopIndex = Main.npcShop;
+            if (activeShopIndex > 0 && activeShopIndex < shops.Length)
+            {
+                Item[]? items = shops[activeShopIndex]?.item;
+                if (items is not null && TryMatch(items, identity, out int shopSlot) && shopSlot >= 0 && shopSlot < items.Length)
+                {
+                    return items[shopSlot];
+                }
+            }
+
+            return null;
+        }
+
+        private static long GetDiscountedCoinPrice(Player player, Item item)
+        {
+            if (player is null || item is null)
+            {
+                return 0;
+            }
+
+            try
+            {
+                player.GetItemExpectedPrice(item, out long _, out long priceForBuying);
+                if (priceForBuying > 0)
+                {
+                    return priceForBuying;
+                }
+            }
+            catch
+            {
+                // Fallback to raw values below.
+            }
+
+            long? customPrice = item.shopCustomPrice;
+            if (customPrice is long explicitPrice && explicitPrice > 0)
+            {
+                return explicitPrice;
+            }
+
+            return item.value;
+        }
+
+        private static string? FormatCustomCurrencyPrice(CustomCurrencySystem system, Item item)
+        {
+            if (system is null || item is null)
+            {
+                return null;
+            }
+
+            long price = 0;
+
+            try
+            {
+                system.GetItemExpectedPrice(item, out long _, out long currencyPrice);
+                price = currencyPrice;
+            }
+            catch
+            {
+                price = 0;
+            }
+
+            if (price <= 0)
+            {
+                price = item.shopCustomPrice ?? 0;
+            }
+
+            if (price <= 0)
+            {
+                return null;
+            }
+
+            string[] lines = new string[4];
+            int lineCount = 0;
+            try
+            {
+                system.GetPriceText(lines, ref lineCount, price);
+            }
+            catch
+            {
+                // Swallow and fall back to numeric display.
+            }
+
+            if (lineCount <= 0)
+            {
+                return price.ToString();
+            }
+
+            var segments = new List<string>(lineCount);
+            for (int i = 0; i < lineCount && i < lines.Length; i++)
+            {
+                string? segment = lines[i];
+                if (string.IsNullOrWhiteSpace(segment))
+                {
+                    continue;
+                }
+
+                string cleaned = GlyphTagFormatter.Normalize(segment).Trim();
+                if (!string.IsNullOrWhiteSpace(cleaned))
+                {
+                    segments.Add(cleaned);
+                }
+            }
+
+            if (segments.Count == 0)
+            {
+                return price.ToString();
+            }
+
+            return string.Join(' ', segments);
         }
 
         private static Item[]? GetContainerItems(Player player, int chestIndex)

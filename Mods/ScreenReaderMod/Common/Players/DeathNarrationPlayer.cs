@@ -1,6 +1,6 @@
 #nullable enable
-using System.Text;
 using ScreenReaderMod.Common.Services;
+using ScreenReaderMod.Common.Utilities;
 using Terraria;
 using Terraria.DataStructures;
 using Terraria.Localization;
@@ -51,7 +51,7 @@ public sealed class DeathNarrationPlayer : ModPlayer
         string coinString = player.lostCoinString;
         if (string.IsNullOrWhiteSpace(coinString))
         {
-            coinString = ValueToCoinString(lostCoins);
+            coinString = CoinFormatter.ValueToCoinString(lostCoins);
         }
 
         if (string.IsNullOrWhiteSpace(coinString))
@@ -60,45 +60,5 @@ public sealed class DeathNarrationPlayer : ModPlayer
         }
 
         return Language.GetTextValue("Game.DroppedCoins", coinString);
-    }
-
-    private static string ValueToCoinString(long coins)
-    {
-        if (coins <= 0)
-        {
-            return string.Empty;
-        }
-
-        long platinum = coins / 1000000;
-        coins %= 1000000;
-
-        long gold = coins / 10000;
-        coins %= 10000;
-
-        long silver = coins / 100;
-        long copper = coins % 100;
-
-        var builder = new StringBuilder();
-        AppendCoin(builder, platinum, Lang.inter[15].Value);
-        AppendCoin(builder, gold, Lang.inter[16].Value);
-        AppendCoin(builder, silver, Lang.inter[17].Value);
-        AppendCoin(builder, copper, Lang.inter[18].Value);
-
-        return builder.ToString().Trim();
-    }
-
-    private static void AppendCoin(StringBuilder builder, long amount, string label)
-    {
-        if (amount <= 0 || string.IsNullOrWhiteSpace(label))
-        {
-            return;
-        }
-
-        if (builder.Length > 0)
-        {
-            builder.Append(' ');
-        }
-
-        builder.Append(amount).Append(' ').Append(label);
     }
 }
