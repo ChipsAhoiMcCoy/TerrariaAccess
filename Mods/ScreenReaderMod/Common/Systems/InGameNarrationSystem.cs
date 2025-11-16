@@ -459,7 +459,20 @@ public sealed partial class InGameNarrationSystem : ModSystem
     private static class TileDescriptor
     {
         private const int LiquidDescriptorBaseTileType = -1000;
-        private static readonly Dictionary<int, int> BannerStyleToItemType = BuildBannerStyleMap();
+        private static readonly int[] StyledTileTypes =
+        {
+            TileID.Banners,
+            TileID.Statues,
+            TileID.AlphabetStatues,
+            TileID.MushroomStatue,
+            TileID.BoulderStatue,
+            TileID.Painting2X3,
+            TileID.Painting3X2,
+            TileID.Painting3X3,
+            TileID.Painting4X3,
+            TileID.Painting6X4,
+        };
+        private static readonly Dictionary<int, Dictionary<int, int>> TileStyleToItemType = BuildTileStyleMap();
 
         public static bool TryDescribe(int tileX, int tileY, out int tileType, out string? name)
         {
@@ -485,6 +498,11 @@ public sealed partial class InGameNarrationSystem : ModSystem
             tileType = tile.TileType;
 
             if (tileType == TileID.Banners && TryDescribeBanner(tile, out name))
+            {
+                return true;
+            }
+
+            if (tileType != TileID.Banners && TryDescribeTileFromItemPlacement(tile, tileType, out name))
             {
                 return true;
             }
@@ -589,9 +607,45 @@ public sealed partial class InGameNarrationSystem : ModSystem
             return false;
         }
 
+        private static bool TryDescribeTileFromItemPlacement(Tile tile, int tileType, out string? name)
+        {
+            name = null;
+
+            int style = TileObjectData.GetTileStyle(tile);
+            if (style < 0)
+            {
+                return false;
+            }
+
+            if (!TryResolveStyleItemType(tileType, style, out int itemType) || itemType <= ItemID.None)
+            {
+                return false;
+            }
+
+            string itemName = Lang.GetItemNameValue(itemType);
+            if (string.IsNullOrWhiteSpace(itemName))
+            {
+                return false;
+            }
+
+            name = itemName;
+            return true;
+        }
+
+        private static bool TryResolveStyleItemType(int tileType, int style, out int itemType)
+        {
+            itemType = ItemID.None;
+            if (!TileStyleToItemType.TryGetValue(tileType, out Dictionary<int, int>? map))
+            {
+                return false;
+            }
+
+            return map.TryGetValue(Math.Max(0, style), out itemType);
+        }
+
         private static int ResolveBannerItemType(int style)
         {
-            if (BannerStyleToItemType.TryGetValue(style, out int itemType))
+            if (TryResolveStyleItemType(TileID.Banners, style, out int itemType))
             {
                 return itemType;
             }
@@ -599,15 +653,22 @@ public sealed partial class InGameNarrationSystem : ModSystem
             int fallback = Item.BannerToItem(style);
             if (fallback > ItemID.None)
             {
-                BannerStyleToItemType[style] = fallback;
+                if (!TileStyleToItemType.TryGetValue(TileID.Banners, out Dictionary<int, int>? map))
+                {
+                    map = new Dictionary<int, int>();
+                    TileStyleToItemType[TileID.Banners] = map;
+                }
+
+                map[Math.Max(0, style)] = fallback;
             }
 
             return fallback;
         }
 
-        private static Dictionary<int, int> BuildBannerStyleMap()
+        private static Dictionary<int, Dictionary<int, int>> BuildTileStyleMap()
         {
-            Dictionary<int, int> map = new();
+            Dictionary<int, Dictionary<int, int>> map = new();
+            HashSet<int> targets = new(StyledTileTypes);
             Item scratch = new();
             for (int type = 1; type < ItemLoader.ItemCount; type++)
             {
@@ -620,13 +681,20 @@ public sealed partial class InGameNarrationSystem : ModSystem
                     continue;
                 }
 
-                if (scratch.createTile != TileID.Banners)
+                int tileType = scratch.createTile;
+                if (!targets.Contains(tileType))
                 {
                     continue;
                 }
 
+                if (!map.TryGetValue(tileType, out Dictionary<int, int>? styleMap))
+                {
+                    styleMap = new Dictionary<int, int>();
+                    map[tileType] = styleMap;
+                }
+
                 int style = Math.Max(0, scratch.placeStyle);
-                map[style] = type;
+                styleMap[style] = type;
             }
 
             return map;
