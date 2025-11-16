@@ -719,7 +719,9 @@ public sealed partial class InGameNarrationSystem
                 1 => "Chestplate slot",
                 2 => "Leggings slot",
                 >= 3 and < 10 => $"Accessory slot {index - 2}",
-                >= 10 and < 13 => $"Vanity armor slot {index - 9}",
+                10 => "Vanity helmet slot",
+                11 => "Vanity chestplate slot",
+                12 => "Vanity leggings slot",
                 >= 13 and < 20 => $"Vanity accessory slot {index - 12}",
                 _ => $"Armor slot {index + 1}",
             };
