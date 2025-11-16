@@ -60,6 +60,7 @@ public sealed partial class InGameNarrationSystem : ModSystem
             On_ItemSlot.MouseHover_refItem_int += HandleItemSlotHoverRef;
             On_Main.DrawNPCChatButtons += CaptureNpcChatButtons;
             On_Main.MouseText_string_string_int_byte_int_int_int_int_int_bool += CaptureMouseText;
+            On_ChestUI.RenameChest += HandleChestRename;
             On_IngameOptions.Draw += HandleIngameOptionsDraw;
             On_IngameOptions.DrawLeftSide += CaptureIngameOptionsLeft;
             On_IngameOptions.DrawRightSide += CaptureIngameOptionsRight;
@@ -86,6 +87,7 @@ public sealed partial class InGameNarrationSystem : ModSystem
             On_ItemSlot.MouseHover_refItem_int -= HandleItemSlotHoverRef;
             On_Main.DrawNPCChatButtons -= CaptureNpcChatButtons;
             On_Main.MouseText_string_string_int_byte_int_int_int_int_int_bool -= CaptureMouseText;
+            On_ChestUI.RenameChest -= HandleChestRename;
             On_IngameOptions.Draw -= HandleIngameOptionsDraw;
             On_IngameOptions.DrawLeftSide -= CaptureIngameOptionsLeft;
             On_IngameOptions.DrawRightSide -= CaptureIngameOptionsRight;
@@ -194,6 +196,19 @@ public sealed partial class InGameNarrationSystem : ModSystem
 
         NpcDialogueNarrator.UpdateButtonLabels(primary, closeLabel, secondary, happiness);
         orig(superColor, chatColor, numLines, focusText, focusText3);
+    }
+
+    private static void HandleChestRename(On_ChestUI.orig_RenameChest orig)
+    {
+        bool wasEditing = Main.editChest;
+        orig();
+
+        if (wasEditing || !Main.editChest)
+        {
+            return;
+        }
+
+        ScreenReaderService.Announce("Type the new chest name, then press Enter to save or Escape to cancel.", force: true);
     }
 
         private void HandleIngameOptionsDraw(On_IngameOptions.orig_Draw orig, Main self, SpriteBatch spriteBatch)
@@ -494,7 +509,49 @@ public sealed partial class InGameNarrationSystem : ModSystem
                 name = $"tile {tileType}";
             }
 
+            OverrideChestName(tileX, tileY, tileType, ref name);
+
             return true;
+        }
+
+        private static void OverrideChestName(int tileX, int tileY, int tileType, ref string? name)
+        {
+            if (!IsChestTile(tileType))
+            {
+                return;
+            }
+
+            int chestIndex = Chest.FindChestByGuessing(tileX, tileY);
+            if (chestIndex < 0 || chestIndex >= Main.chest.Length)
+            {
+                return;
+            }
+
+            Chest? chest = Main.chest[chestIndex];
+            if (chest is null)
+            {
+                return;
+            }
+
+            string sanitized = TextSanitizer.Clean(chest.name);
+            if (string.IsNullOrWhiteSpace(sanitized))
+            {
+                return;
+            }
+
+            if (string.IsNullOrWhiteSpace(name))
+            {
+                name = "Chest";
+            }
+
+            name = $"\"{sanitized}\" {name}";
+        }
+
+        private static bool IsChestTile(int tileType)
+        {
+            return tileType == TileID.Containers ||
+                   tileType == TileID.Containers2 ||
+                   tileType == TileID.Dressers;
         }
 
         private static bool TryDescribeBanner(Tile tile, out string? name)

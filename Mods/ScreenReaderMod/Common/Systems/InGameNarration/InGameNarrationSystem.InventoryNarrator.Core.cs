@@ -171,6 +171,15 @@ public sealed partial class InGameNarrationSystem
 
         private void HandleHoverItem(Player player)
         {
+            if (Main.editChest)
+            {
+                _lastHover = ItemIdentity.Empty;
+                _lastHoverLocation = null;
+                _lastHoverTooltip = null;
+                _lastHoverDetails = null;
+                return;
+            }
+
             SlotFocus? focus = _currentFocus;
             Item? focusedItem = GetItemFromFocus(focus);
             bool usingGamepadFocus = PlayerInput.UsingGamepadUI && focusedItem is not null;
