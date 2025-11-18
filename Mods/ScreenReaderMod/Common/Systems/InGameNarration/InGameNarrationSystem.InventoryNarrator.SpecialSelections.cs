@@ -17,6 +17,7 @@ public sealed partial class InGameNarrationSystem
         private sealed partial class InventoryNarrator
         {
         private static readonly HashSet<int> LoggedUnknownInventoryPoints = new();
+        private static readonly SpecialSelectionRepeatGuard SpecialSelectionRepeat = new();
             private bool TryAnnounceSpecialSelection(bool hoverIsAir, string? location)
             {
                 int currentPoint = UILinkPointNavigator.CurrentPoint;
@@ -26,45 +27,55 @@ public sealed partial class InGameNarrationSystem
                 return false;
             }
 
-            if (string.Equals(_lastAnnouncedMessage, label, StringComparison.Ordinal))
+            if (!SpecialSelectionRepeat.ShouldAnnounce(currentPoint))
             {
                 return true;
             }
 
-            _lastHover = ItemIdentity.Empty;
-            _lastHoverTooltip = null;
-            _lastHoverDetails = null;
-            _lastHoverLocation = null;
-            _lastEmptyMessage = null;
-            _lastAnnouncedMessage = label;
-            ScreenReaderService.Announce(label, force: true);
+            _currentFocus = null;
+            _pendingFocus = null;
+            if (currentPoint >= 0)
+            {
+                LinkPointFocusCache.Remove(currentPoint);
+            }
+
+            ResetHoverSlotsAndTooltips();
+            _narrationHistory.Reset(NarrationKind.SpecialSelection);
+            UiAreaNarrationContext.RecordArea(UiNarrationArea.Inventory);
+            SpecialSelectionRepeat.Record(currentPoint);
+            TryAnnounceCue(NarrationCue.ForSpecial(label), force: true);
             return true;
         }
 
         private static string? GetSpecialSelectionLabel(int point, bool hoverIsAir, string? location)
         {
-            static string? Button(string? text)
+            string? result = point switch
+            {
+                301 => FormatButtonLabel(Language.GetTextValue("GameUI.QuickStackToNearby")),
+                302 => FormatButtonLabel(Language.GetTextValue("GameUI.SortInventory")),
+                304 => FormatButtonLabel(Lang.inter[19].Value),
+                305 => FormatButtonLabel(Lang.inter[79].Value),
+                306 => FormatButtonLabel(Lang.inter[80].Value),
+                307 => FormatButtonLabel(Main.CaptureModeDisabled ? Lang.inter[115].Value : Lang.inter[81].Value),
+                308 => FormatButtonLabel(Lang.inter[62].Value),
+                309 => FormatButtonLabel(Language.GetTextValue("GameUI.Emote")),
+                310 => FormatButtonLabel(Language.GetTextValue("GameUI.Bestiary")),
+                311 => FormatButtonLabel(LocalizationHelper.GetTextOrFallback("Mods.ScreenReaderMod.InventorySpecial.LoadoutControls", "Loadout controls")),
+                int loadout when loadout >= 312 && loadout <= 320 => Button(GetLoadoutLabel(loadout)),
+                int chestButton when chestButton >= 500 && chestButton <= 505 => DescribeChestButton(chestButton),
+                1550 => Button(GetPvpToggleText()),
+                int teamButton when teamButton >= 1551 && teamButton <= 1556 => Button(GetTeamButtonText(teamButton)),
+                1557 => DescribeDefenseCounter(),
+                _ => null,
+            };
+
+            static string? Button(string? text) => FormatButtonLabel(text);
+
+            static string? FormatButtonLabel(string? text)
             {
                 string cleaned = TextSanitizer.Clean(text ?? string.Empty);
                 return string.IsNullOrWhiteSpace(cleaned) ? null : $"{cleaned} button";
             }
-
-            string? result = point switch
-            {
-                301 => Button(Language.GetTextValue("GameUI.QuickStackToNearby")),
-                302 => Button(Language.GetTextValue("GameUI.SortInventory")),
-                304 => Button(Lang.inter[19].Value),
-                305 => Button(Lang.inter[79].Value),
-                306 => Button(Lang.inter[80].Value),
-                307 => Button(Main.CaptureModeDisabled ? Lang.inter[115].Value : Lang.inter[81].Value),
-                308 => Button(Lang.inter[62].Value),
-                309 => Button(Language.GetTextValue("GameUI.Emote")),
-                310 => Button(Language.GetTextValue("GameUI.Bestiary")),
-                311 => Button(LocalizationHelper.GetTextOrFallback("Mods.ScreenReaderMod.InventorySpecial.LoadoutControls", "Loadout controls")),
-                int loadout when loadout >= 312 && loadout <= 320 => Button(GetLoadoutLabel(loadout)),
-                int chestButton when chestButton >= 500 && chestButton <= 505 => DescribeChestButton(chestButton),
-                _ => null,
-            };
 
             static string? GetLoadoutLabel(int point)
             {
@@ -115,13 +126,104 @@ public sealed partial class InGameNarrationSystem
                 return result;
             }
 
-            if (Main.ingameOptionsWindow)
+            if (!Main.ingameOptionsWindow && ShouldLogUnknownInventoryPoint(hoverIsAir, location))
+            {
+                LogUnknownInventoryPoint(point, hoverIsAir, location);
+            }
+
+            return null;
+        }
+
+        private static bool IsSpecialInventoryPoint(int point)
+        {
+            return point switch
+            {
+                301 or 302 or 304 or 305 or 306 or 307 or 308 or 309 or 310 or 311 => true,
+                >= 312 and <= 320 => true,
+                >= 500 and <= 505 => true,
+                1550 => true,
+                >= 1551 and <= 1556 => true,
+                1557 => true,
+                _ => false,
+            };
+        }
+
+        private static string? GetPvpToggleText()
+        {
+            Player? player = Main.LocalPlayer;
+            bool hostile = player?.hostile ?? false;
+            string key = hostile
+                ? "Mods.ScreenReaderMod.InventorySpecial.DisablePvp"
+                : "Mods.ScreenReaderMod.InventorySpecial.EnablePvp";
+            string fallback = hostile ? "Disable PvP" : "Enable PvP";
+            return LocalizationHelper.GetTextOrFallback(key, fallback);
+        }
+
+        private static string? GetTeamButtonText(int point)
+        {
+            int teamIndex = point - 1551;
+            string[] fallbacks =
+            {
+                "No team",
+                "Red team",
+                "Green team",
+                "Blue team",
+                "Yellow team",
+                "Pink team",
+            };
+
+            if (teamIndex < 0 || teamIndex >= fallbacks.Length)
             {
                 return null;
             }
 
-            LogUnknownInventoryPoint(point, hoverIsAir, location);
-            return null;
+            string key = teamIndex switch
+            {
+                0 => "Mods.ScreenReaderMod.InventorySpecial.TeamNeutral",
+                1 => "Mods.ScreenReaderMod.InventorySpecial.TeamRed",
+                2 => "Mods.ScreenReaderMod.InventorySpecial.TeamGreen",
+                3 => "Mods.ScreenReaderMod.InventorySpecial.TeamBlue",
+                4 => "Mods.ScreenReaderMod.InventorySpecial.TeamYellow",
+                5 => "Mods.ScreenReaderMod.InventorySpecial.TeamPink",
+                _ => string.Empty,
+            };
+
+            return LocalizationHelper.GetTextOrFallback(key, fallbacks[teamIndex]);
+        }
+
+        private static string? DescribeDefenseCounter()
+        {
+            Player? player = Main.LocalPlayer;
+            int defense = player?.statDefense ?? 0;
+            string label = LocalizationHelper.GetTextOrFallback("Mods.ScreenReaderMod.InventorySpecial.Defense", "Defense");
+            string cleaned = TextSanitizer.Clean(label);
+            return $"{cleaned} {defense}";
+        }
+
+        private sealed class SpecialSelectionRepeatGuard
+        {
+            private int _lastPoint = -1;
+
+            public bool ShouldAnnounce(int point)
+            {
+                return point >= 0 && point != _lastPoint;
+            }
+
+            public void Record(int point)
+            {
+                if (point < 0)
+                {
+                    Clear();
+                    return;
+                }
+
+                _lastPoint = point;
+            }
+
+            public void Clear()
+            {
+                _lastPoint = -1;
+            }
         }
 
         private static int _lastOptionsStateHash = int.MinValue;
@@ -168,6 +270,21 @@ public sealed partial class InGameNarrationSystem
             }
 
             return -1;
+        }
+
+        private static bool ShouldLogUnknownInventoryPoint(bool hoverIsAir, string? location)
+        {
+            if (!hoverIsAir)
+            {
+                return false;
+            }
+
+            if (!string.IsNullOrWhiteSpace(location))
+            {
+                return false;
+            }
+
+            return true;
         }
 
         private static void LogUnknownInventoryPoint(int point, bool hoverIsAir, string? location)

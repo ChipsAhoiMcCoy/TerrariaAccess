@@ -71,5 +71,101 @@ public sealed partial class InGameNarrationSystem
                 return HashCode.Combine(Type, Prefix, Stack, Favorited);
             }
         }
+
+        private enum NarrationKind
+        {
+            MouseItem,
+            HoverItem,
+            EmptySlot,
+            Tooltip,
+            UiHover,
+            SpecialSelection,
+            Count,
+        }
+
+        private readonly record struct NarrationCue(
+            NarrationKind Kind,
+            string Message,
+            ItemIdentity Identity,
+            string? Location,
+            string? Tooltip,
+            string? Details,
+            int SlotSignature)
+        {
+            public static NarrationCue ForMouse(ItemIdentity identity, string message)
+            {
+                return new NarrationCue(NarrationKind.MouseItem, message, identity, null, null, null, -1);
+            }
+
+            public static NarrationCue ForItem(ItemIdentity identity, string message, string? location, string? tooltip, string? details, int slotSignature)
+            {
+                return new NarrationCue(NarrationKind.HoverItem, message, identity, location, tooltip, details, slotSignature);
+            }
+
+            public static NarrationCue ForEmpty(string message, string location, int slotSignature)
+            {
+                return new NarrationCue(NarrationKind.EmptySlot, message, ItemIdentity.Empty, location, null, null, slotSignature);
+            }
+
+            public static NarrationCue ForTooltip(string message)
+            {
+                return new NarrationCue(NarrationKind.Tooltip, message, ItemIdentity.Empty, null, message, null, -1);
+            }
+
+            public static NarrationCue ForUi(string message)
+            {
+                return new NarrationCue(NarrationKind.UiHover, message, ItemIdentity.Empty, null, message, null, -1);
+            }
+
+            public static NarrationCue ForSpecial(string label)
+            {
+                return new NarrationCue(NarrationKind.SpecialSelection, label, ItemIdentity.Empty, null, label, null, -1);
+            }
+        }
+
+        private sealed class NarrationHistory
+        {
+            private readonly NarrationCue?[] _lastCues = new NarrationCue?[(int)NarrationKind.Count];
+
+            public bool TryStore(in NarrationCue cue)
+            {
+                int index = (int)cue.Kind;
+                NarrationCue? previous = _lastCues[index];
+                if (previous.HasValue && previous.Value.Equals(cue))
+                {
+                    return false;
+                }
+
+                _lastCues[index] = cue;
+                return true;
+            }
+
+            public void Reset(NarrationKind kind)
+            {
+                _lastCues[(int)kind] = null;
+            }
+
+            public void ResetAll()
+            {
+                for (int i = 0; i < _lastCues.Length; i++)
+                {
+                    _lastCues[i] = null;
+                }
+            }
+        }
+
+        private readonly record struct HoverTarget(
+            Item Item,
+            ItemIdentity Identity,
+            string Location,
+            string RawTooltip,
+            string NormalizedTooltip,
+            SlotFocus? Focus,
+            bool AllowMouseText)
+        {
+            public bool HasItem => !Identity.IsAir;
+            public bool HasLocation => !string.IsNullOrWhiteSpace(Location);
+            public bool HasTooltip => !string.IsNullOrWhiteSpace(NormalizedTooltip);
+        }
     }
 }

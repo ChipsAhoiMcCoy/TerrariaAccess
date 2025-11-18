@@ -5,6 +5,7 @@ using System.Collections.Generic;
 using System.Linq;
 using System.Reflection;
 using System.Text;
+using System.Runtime.CompilerServices;
 using Microsoft.Xna.Framework;
 using Microsoft.Xna.Framework.Audio;
 using Microsoft.Xna.Framework.Graphics;
@@ -36,18 +37,19 @@ public sealed partial class InGameNarrationSystem
     private sealed partial class InventoryNarrator
     {
         private readonly MenuUiSelectionTracker _inGameUiTracker = new();
-        private ItemIdentity _lastHover;
-        private string? _lastHoverLocation;
-        private string? _lastHoverTooltip;
-        private string? _lastHoverDetails;
-        private ItemIdentity _lastMouse;
-        private string? _lastMouseMessage;
-        private string? _lastEmptyMessage;
-        private string? _lastAnnouncedMessage;
+        private readonly NarrationHistory _narrationHistory = new();
         private SlotFocus? _currentFocus;
+        private const UiNarrationArea InventoryNarrationAreas =
+            UiNarrationArea.Inventory |
+            UiNarrationArea.Storage |
+            UiNarrationArea.Creative |
+            UiNarrationArea.Reforge |
+            UiNarrationArea.Shop |
+            UiNarrationArea.Guide;
 
         private static SlotFocus? _pendingFocus;
         private static readonly Dictionary<int, SlotFocus> LinkPointFocusCache = new();
+        private static readonly bool NarrationDebugEnabled = !string.IsNullOrEmpty(Environment.GetEnvironmentVariable("SRM_DEBUG_NARRATION"));
 
         private static readonly Lazy<FieldInfo?> MouseTextCacheField = new(() =>
             typeof(Main).GetField("_mouseTextCache", BindingFlags.Instance | BindingFlags.NonPublic));
@@ -72,6 +74,7 @@ public sealed partial class InGameNarrationSystem
         {
             SlotFocus focus = new(null, item, context, -1);
             CacheLinkPointFocus(focus);
+            CraftingNarrator.TryCaptureRecipeHover(item, context);
 
             if (ShouldCaptureFocusForContext(context))
             {
@@ -81,12 +84,12 @@ public sealed partial class InGameNarrationSystem
 
         private static bool ShouldCaptureFocusForContext(int context)
         {
-            int normalized = Math.Abs(context);
-            return normalized != ItemSlot.Context.CraftingMaterial;
+            return true;
         }
 
         private static void StorePendingFocus(SlotFocus focus)
         {
+            UiAreaNarrationContext.RecordSlotContext(focus.Context);
             _pendingFocus = focus;
         }
 
@@ -103,36 +106,52 @@ public sealed partial class InGameNarrationSystem
             _capturedMouseTextFrame = Main.GameUpdateCount;
         }
 
+        private void ClearSpecialLinkPointFocus()
+        {
+            int point = UILinkPointNavigator.CurrentPoint;
+            if (point < 0 || !IsSpecialInventoryPoint(point))
+            {
+                return;
+            }
+
+            _pendingFocus = null;
+            _currentFocus = null;
+            LinkPointFocusCache.Remove(point);
+        }
+
+        private SlotFocus? ConsumePendingFocus()
+        {
+            if (!_pendingFocus.HasValue)
+            {
+                return null;
+            }
+
+            SlotFocus focus = _pendingFocus.Value;
+            _pendingFocus = null;
+            return focus;
+        }
+
         public void Update(Player player)
         {
             if (!IsInventoryUiOpen(player))
             {
                 Reset();
-                _inGameUiTracker.Reset();
                 return;
             }
 
             bool usingGamepad = PlayerInput.UsingGamepadUI;
-
-            SlotFocus? nextFocus = null;
-            if (_pendingFocus.HasValue)
+            if (usingGamepad)
             {
-                nextFocus = _pendingFocus;
-                _pendingFocus = null;
+                ClearSpecialLinkPointFocus();
             }
-            else if (usingGamepad)
+
+            SlotFocus? nextFocus = ConsumePendingFocus();
+            if (!nextFocus.HasValue && usingGamepad)
             {
                 nextFocus = ResolveFocusFromLinkPoint();
             }
 
-            if (nextFocus.HasValue && IsFocusValid(nextFocus.Value))
-            {
-                _currentFocus = nextFocus;
-            }
-            else
-            {
-                _currentFocus = null;
-            }
+            _currentFocus = nextFocus.HasValue && IsFocusValid(nextFocus.Value) ? nextFocus : null;
 
             HandleMouseItem();
             HandleHoverItem(player);
@@ -154,147 +173,88 @@ public sealed partial class InGameNarrationSystem
             ItemIdentity identity = ItemIdentity.From(mouse);
             if (identity.IsAir)
             {
-                _lastMouse = ItemIdentity.Empty;
-                _lastMouseMessage = null;
+                _narrationHistory.Reset(NarrationKind.MouseItem);
                 return;
             }
 
             string message = $"Holding {ComposeItemLabel(mouse)}";
-            if (identity.Equals(_lastMouse) && string.Equals(message, _lastMouseMessage, StringComparison.Ordinal))
-            {
-                return;
-            }
-
-            _lastMouse = identity;
-            _lastMouseMessage = message;
-            ScreenReaderService.Announce(message);
+            TryAnnounceCue(NarrationCue.ForMouse(identity, message));
         }
 
         private void HandleHoverItem(Player player)
         {
             if (Main.editChest)
             {
-                _lastHover = ItemIdentity.Empty;
-                _lastHoverLocation = null;
-                _lastHoverTooltip = null;
-                _lastHoverDetails = null;
+                ResetHoverSlotsAndTooltips();
                 return;
             }
 
-            SlotFocus? focus = _currentFocus;
-            Item? focusedItem = GetItemFromFocus(focus);
-            bool usingGamepadFocus = PlayerInput.UsingGamepadUI && focusedItem is not null;
+            bool usingGamepad = PlayerInput.UsingGamepadUI;
+            int currentPoint = usingGamepad ? UILinkPointNavigator.CurrentPoint : -1;
+            int craftingAvailableIndex = -1;
+            bool selectingSpecial = usingGamepad && currentPoint >= 0 && IsSpecialInventoryPoint(currentPoint);
+            bool inGamepadCraftingGrid = usingGamepad && TryGetGamepadCraftingAvailableIndex(currentPoint, out craftingAvailableIndex);
+            if (!selectingSpecial)
+            {
+                SpecialSelectionRepeat.Clear();
+            }
+            if (inGamepadCraftingGrid)
+            {
+                UiAreaNarrationContext.RecordArea(UiNarrationArea.Crafting);
+                if (craftingAvailableIndex >= 0 &&
+                    CraftingNarrator.TryFocusRecipeAtAvailableIndex(craftingAvailableIndex))
+                {
+                    ResetHoverSlotsAndTooltips();
+                    return;
+                }
+            }
 
-            Item hover = usingGamepadFocus ? focusedItem! : Main.HoverItem;
+            SlotFocus? focus = (selectingSpecial || inGamepadCraftingGrid) ? null : _currentFocus;
+            Item? focusedItem = (selectingSpecial || inGamepadCraftingGrid) ? null : GetItemFromFocus(focus);
+            if (focus.HasValue)
+            {
+                UiAreaNarrationContext.RecordSlotContext(focus.Value.Context);
+            }
+            else if (selectingSpecial)
+            {
+                UiAreaNarrationContext.RecordArea(UiNarrationArea.Inventory);
+            }
+            bool usingGamepadFocus = usingGamepad && !selectingSpecial && focusedItem is not null;
+
+            Item hover = ResolveHoverItem(usingGamepad, usingGamepadFocus, focusedItem);
             ItemIdentity identity = ItemIdentity.From(hover);
+            string location = DescribeLocation(player, identity, focus);
 
-            if (!identity.IsAir && CraftingNarrator.IsCraftingResultHover(hover))
+            bool allowRecipeHoverCapture = !focus.HasValue && string.IsNullOrWhiteSpace(location);
+            if (allowRecipeHoverCapture && !identity.IsAir && CraftingNarrator.TryCaptureHoveredRecipe(hover))
             {
-                _lastHover = ItemIdentity.Empty;
-                _lastHoverLocation = null;
-                _lastHoverTooltip = null;
-                _lastHoverDetails = null;
+                ResetHoverSlotsAndTooltips();
                 return;
             }
 
-            string rawTooltip;
-            if (usingGamepadFocus)
-            {
-                rawTooltip = GetHoverNameForItem(hover);
-            }
-            else
-            {
-                rawTooltip = Main.hoverItemName ?? string.Empty;
-            }
+            string rawTooltip = ResolveRawTooltip(usingGamepad, usingGamepadFocus, hover);
             string normalizedTooltip = GlyphTagFormatter.Normalize(rawTooltip);
-
-            string location = DescribeLocation(player, identity, focus);
 
             if (TryAnnounceSpecialSelection(identity.IsAir, location))
             {
                 return;
             }
 
-            if (!identity.IsAir)
+            HoverTarget target = new(hover, identity, location, rawTooltip, normalizedTooltip, focus, AllowMouseText: !usingGamepadFocus);
+
+            if (target.HasItem)
             {
-                string label = ComposeItemLabel(hover);
-                string message = string.IsNullOrEmpty(location) ? label : $"{label}, {location}";
-                string? details = BuildTooltipDetails(hover, rawTooltip, allowMouseText: !usingGamepadFocus);
-                string? requirementDetails = CraftingNarrator.TryGetRequirementTooltipDetails(hover, string.IsNullOrWhiteSpace(location));
-                if (!string.IsNullOrWhiteSpace(requirementDetails))
-                {
-                    details = string.IsNullOrWhiteSpace(details)
-                        ? requirementDetails
-                        : $"{details}. {requirementDetails}";
-                }
-                string? priceDetails = BuildShopPriceDetails(player, hover, identity, focus);
-                if (!string.IsNullOrWhiteSpace(priceDetails))
-                {
-                    details = string.IsNullOrWhiteSpace(details)
-                        ? priceDetails
-                        : $"{details}. {priceDetails}";
-                }
-                string? sellDetails = BuildSellPriceDetails(player, hover, identity);
-                if (!string.IsNullOrWhiteSpace(sellDetails))
-                {
-                    details = string.IsNullOrWhiteSpace(details)
-                        ? sellDetails
-                        : $"{details}. {sellDetails}";
-                }
-                string combined = CombineItemAnnouncement(message, details);
-
-                if (identity.Equals(_lastHover) &&
-                    string.Equals(combined, _lastAnnouncedMessage, StringComparison.Ordinal) &&
-                    string.Equals(normalizedTooltip, _lastHoverTooltip, StringComparison.Ordinal))
-                {
-                    return;
-                }
-
-                _lastHover = identity;
-                _lastHoverLocation = location;
-                _lastHoverTooltip = normalizedTooltip;
-                _lastHoverDetails = details;
-                _lastEmptyMessage = null;
-                _lastAnnouncedMessage = combined;
-
-                ScreenReaderService.Announce(combined);
+                AnnounceItemHover(player, target);
                 return;
             }
 
-            _lastHover = ItemIdentity.Empty;
-            _lastHoverDetails = null;
-
-            if (!string.IsNullOrEmpty(location))
+            if (TryAnnounceEmptySlot(target))
             {
-                string message = $"Empty, {location}";
-
-                if (!string.Equals(message, _lastEmptyMessage, StringComparison.Ordinal))
-                {
-                    _lastEmptyMessage = message;
-                    _lastHoverLocation = location;
-                    _lastHoverTooltip = null;
-                    _lastHoverDetails = null;
-                    _lastAnnouncedMessage = message;
-                    ScreenReaderService.Announce(message);
-                }
-
                 return;
             }
 
-            string? mouseText = TryGetMouseText();
-            if (!string.IsNullOrWhiteSpace(mouseText))
+            if (TryAnnounceMouseText())
             {
-                string trimmedMouseText = GlyphTagFormatter.Normalize(mouseText.Trim());
-                if (!string.Equals(trimmedMouseText, _lastHoverTooltip, StringComparison.Ordinal))
-                {
-                    _lastHoverTooltip = trimmedMouseText;
-                    _lastHoverLocation = null;
-                    _lastEmptyMessage = null;
-                    _lastHoverDetails = null;
-                    _lastAnnouncedMessage = trimmedMouseText;
-                    ScreenReaderService.Announce(trimmedMouseText);
-                }
-
                 return;
             }
 
@@ -303,17 +263,110 @@ public sealed partial class InGameNarrationSystem
                 return;
             }
 
-            if (!string.IsNullOrWhiteSpace(rawTooltip))
+            TryAnnounceTooltipFallback(target);
+        }
+
+        private static Item ResolveHoverItem(bool usingGamepad, bool usingGamepadFocus, Item? focusedItem)
+        {
+            if (usingGamepadFocus && focusedItem is not null)
             {
-                if (!string.Equals(normalizedTooltip, _lastHoverTooltip, StringComparison.Ordinal))
-                {
-                    _lastHoverTooltip = normalizedTooltip;
-                    _lastHoverLocation = null;
-                    _lastEmptyMessage = null;
-                    _lastHoverDetails = null;
-                    _lastAnnouncedMessage = normalizedTooltip;
-                    ScreenReaderService.Announce(normalizedTooltip);
-                }
+                return focusedItem;
+            }
+
+            return usingGamepad ? new Item() : Main.HoverItem;
+        }
+
+        private static string ResolveRawTooltip(bool usingGamepad, bool usingGamepadFocus, Item hover)
+        {
+            if (usingGamepadFocus)
+            {
+                return GetHoverNameForItem(hover);
+            }
+
+            if (usingGamepad)
+            {
+                return string.Empty;
+            }
+
+            return Main.hoverItemName ?? string.Empty;
+        }
+
+        private void AnnounceItemHover(Player player, HoverTarget target)
+        {
+            string label = ComposeItemLabel(target.Item);
+            string message = string.IsNullOrEmpty(target.Location) ? label : $"{label}, {target.Location}";
+            string? details = BuildTooltipDetails(target.Item, target.RawTooltip, allowMouseText: target.AllowMouseText);
+            string? requirementDetails = CraftingNarrator.TryGetRequirementTooltipDetails(target.Item, string.IsNullOrWhiteSpace(target.Location));
+            details = MergeDetails(details, requirementDetails);
+            string? priceDetails = BuildShopPriceDetails(player, target.Item, target.Identity, target.Focus);
+            details = MergeDetails(details, priceDetails);
+            string? sellDetails = BuildSellPriceDetails(player, target.Item, target.Identity);
+            details = MergeDetails(details, sellDetails);
+
+            string combined = CombineItemAnnouncement(message, details);
+            int slotSignature = ComputeSlotSignature(target.Focus);
+            if (TryAnnounceCue(NarrationCue.ForItem(target.Identity, combined, target.Location, target.NormalizedTooltip, details, slotSignature)))
+            {
+                _narrationHistory.Reset(NarrationKind.EmptySlot);
+                _narrationHistory.Reset(NarrationKind.Tooltip);
+            }
+        }
+
+        private static string? MergeDetails(string? existing, string? addition)
+        {
+            if (string.IsNullOrWhiteSpace(addition))
+            {
+                return existing;
+            }
+
+            return string.IsNullOrWhiteSpace(existing) ? addition : $"{existing}. {addition}";
+        }
+
+        private bool TryAnnounceEmptySlot(HoverTarget target)
+        {
+            if (!target.HasLocation)
+            {
+                return false;
+            }
+
+            string message = $"Empty, {target.Location}";
+            int slotSignature = ComputeSlotSignature(target.Focus);
+            if (TryAnnounceCue(NarrationCue.ForEmpty(message, target.Location, slotSignature)))
+            {
+                _narrationHistory.Reset(NarrationKind.HoverItem);
+                _narrationHistory.Reset(NarrationKind.Tooltip);
+            }
+
+            return true;
+        }
+
+        private bool TryAnnounceMouseText()
+        {
+            string? mouseText = TryGetMouseText();
+            if (string.IsNullOrWhiteSpace(mouseText))
+            {
+                return false;
+            }
+
+            string trimmedMouseText = GlyphTagFormatter.Normalize(mouseText.Trim());
+            if (TryAnnounceCue(NarrationCue.ForTooltip(trimmedMouseText)))
+            {
+                ResetHoverSlotCues();
+            }
+
+            return true;
+        }
+
+        private void TryAnnounceTooltipFallback(HoverTarget target)
+        {
+            if (!target.HasTooltip)
+            {
+                return;
+            }
+
+            if (TryAnnounceCue(NarrationCue.ForTooltip(target.NormalizedTooltip)))
+            {
+                ResetHoverSlotCues();
             }
         }
 
@@ -464,18 +517,12 @@ public sealed partial class InGameNarrationSystem
 
         private void Reset()
         {
-            _lastHover = ItemIdentity.Empty;
-            _lastHoverLocation = null;
-            _lastHoverTooltip = null;
-            _lastHoverDetails = null;
-            _lastMouse = ItemIdentity.Empty;
-            _lastMouseMessage = null;
-            _lastEmptyMessage = null;
-            _lastAnnouncedMessage = null;
+            _narrationHistory.ResetAll();
             _currentFocus = null;
             _pendingFocus = null;
             LinkPointFocusCache.Clear();
             _inGameUiTracker.Reset();
+            UiAreaNarrationContext.Clear();
         }
 
         private static string DescribeLocation(Player player, ItemIdentity identity, SlotFocus? focus)
@@ -652,7 +699,46 @@ public sealed partial class InGameNarrationSystem
                 return "Trash slot";
             }
 
+            if (context == ItemSlot.Context.CraftingMaterial)
+            {
+                return "Crafting slot";
+            }
+
             return string.Empty;
+        }
+
+        private const int GamepadCraftingGridStart = 700;
+        private const int GamepadCraftingListStart = 1500;
+
+        private static bool TryGetGamepadCraftingAvailableIndex(int point, out int availableIndex)
+        {
+            availableIndex = -1;
+            if (!Main.recBigList || Main.numAvailableRecipes <= 0)
+            {
+                return false;
+            }
+
+            if (point < GamepadCraftingGridStart || point >= GamepadCraftingListStart)
+            {
+                return false;
+            }
+
+            int localIndex = point - GamepadCraftingGridStart;
+            if (localIndex < 0)
+            {
+                return false;
+            }
+
+            int start = Math.Clamp(Main.recStart, 0, Main.availableRecipe.Length - 1);
+            int availableCount = Math.Clamp(Main.numAvailableRecipes, 0, Main.availableRecipe.Length);
+            int candidate = start + localIndex;
+            if (candidate < 0 || candidate >= availableCount)
+            {
+                return false;
+            }
+
+            availableIndex = candidate;
+            return true;
         }
 
         private static string DescribeInventorySlot(int slot)
@@ -683,6 +769,30 @@ public sealed partial class InGameNarrationSystem
             }
 
             return string.Empty;
+        }
+
+        private static int ComputeSlotSignature(SlotFocus? focus)
+        {
+            if (!focus.HasValue)
+            {
+                return -1;
+            }
+
+            SlotFocus value = focus.Value;
+            int slot = value.Slot;
+            int signature = HashCode.Combine(value.Context, slot);
+
+            if (value.Items is not null)
+            {
+                return HashCode.Combine(signature, RuntimeHelpers.GetHashCode(value.Items));
+            }
+
+            if (value.SingleItem is not null)
+            {
+                return HashCode.Combine(signature, RuntimeHelpers.GetHashCode(value.SingleItem));
+            }
+
+            return signature;
         }
 
         private static string? BuildShopPriceDetails(Player player, Item item, ItemIdentity identity, SlotFocus? focus)
@@ -1060,19 +1170,61 @@ public sealed partial class InGameNarrationSystem
                 return false;
             }
 
-            if (!hover.IsNew && string.Equals(cleaned, _lastHoverTooltip, StringComparison.Ordinal))
+            if (hover.IsNew)
             {
-                return true;
+                _narrationHistory.Reset(NarrationKind.UiHover);
             }
 
-            _lastHover = ItemIdentity.Empty;
-            _lastHoverLocation = null;
-            _lastHoverTooltip = cleaned;
-            _lastHoverDetails = null;
-            _lastEmptyMessage = null;
-            _lastAnnouncedMessage = cleaned;
-            ScreenReaderService.Announce(cleaned);
+            if (TryAnnounceCue(NarrationCue.ForUi(cleaned), allowedAreas: UiNarrationArea.Unknown))
+            {
+                ResetHoverSlotCues();
+            }
+
             return true;
+        }
+
+        private bool TryAnnounceCue(
+            in NarrationCue cue,
+            bool force = false,
+            UiNarrationArea allowedAreas = InventoryNarrationAreas)
+        {
+            if (!_narrationHistory.TryStore(cue))
+            {
+                LogNarrationDebug("history-suppressed", cue);
+                return false;
+            }
+
+            if (!UiAreaNarrationContext.IsActiveArea(allowedAreas))
+            {
+                LogNarrationDebug($"area-blocked (active={UiAreaNarrationContext.ActiveArea})", cue);
+                return false;
+            }
+
+            ScreenReaderService.Announce(cue.Message, force);
+            return true;
+        }
+
+        private void ResetHoverSlotCues()
+        {
+            _narrationHistory.Reset(NarrationKind.HoverItem);
+            _narrationHistory.Reset(NarrationKind.EmptySlot);
+        }
+
+        private static void LogNarrationDebug(string reason, in NarrationCue cue)
+        {
+            if (!NarrationDebugEnabled)
+            {
+                return;
+            }
+
+            ScreenReaderMod.Instance?.Logger.Info(
+                $"[InventoryNarration][Debug] {reason}: kind={cue.Kind} type={cue.Identity.Type} prefix={cue.Identity.Prefix} stack={cue.Identity.Stack} fav={(cue.Identity.Favorited ? 1 : 0)} location='{cue.Location ?? string.Empty}' message='{cue.Message}'");
+        }
+
+        private void ResetHoverSlotsAndTooltips()
+        {
+            ResetHoverSlotCues();
+            _narrationHistory.Reset(NarrationKind.Tooltip);
         }
 
     }

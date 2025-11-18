@@ -5,6 +5,7 @@ using System.Collections.Generic;
 using System.Linq;
 using System.Reflection;
 using System.Text;
+using System.Runtime.CompilerServices;
 using Microsoft.Xna.Framework;
 using Microsoft.Xna.Framework.Audio;
 using Microsoft.Xna.Framework.Graphics;
@@ -34,25 +35,39 @@ public sealed partial class InGameNarrationSystem
 {
     private sealed class CraftingNarrator
     {
-        private int _lastFocusIndex = -1;
-        private int _lastRecipeIndex = -1;
-        private string? _lastAnnouncement;
-        private int _lastCount = -1;
-        private string? _lastRequirementsMessage;
+        private RecipeAnnouncement? _lastAnnouncement;
+        private static RecipeFocus? _hoveredFocusOverride;
+        private static uint _hoveredFocusFrame;
+        private static int _recipeLookupVersion = -1;
+        private static Dictionary<Item, int>? _recipeResultLookup;
         private readonly HashSet<int> _missingRequirementRecipes = new();
 
-        private static readonly Lazy<int[]> CraftingContextValues = new(DiscoverCraftingContexts);
         private static readonly Lazy<Dictionary<int, int>> RecipeGroupLookup = new(DiscoverRecipeGroupLookup);
         private static readonly Func<Recipe, int, int>? AcceptedGroupResolver = CreateAcceptedGroupResolver();
 
         private static bool _loggedRecipeGroupReflectionWarning;
         private static bool _loggedRecipeFlagReflectionWarning;
 
-        private readonly struct IngredientIdentity : IEquatable<IngredientIdentity>
+        private readonly struct RecipeFocus
         {
-            public static IngredientIdentity Empty => default;
+            public RecipeFocus(Recipe recipe, int recipeIndex, int focusIndex, int availableCount)
+            {
+                Recipe = recipe;
+                RecipeIndex = recipeIndex;
+                FocusIndex = focusIndex;
+                AvailableCount = availableCount;
+            }
 
-            public IngredientIdentity(int type, int prefix, int stack)
+            public Recipe Recipe { get; }
+            public int RecipeIndex { get; }
+            public int FocusIndex { get; }
+            public int AvailableCount { get; }
+            public Item Result => Recipe.createItem;
+        }
+
+        private readonly struct RecipeIdentity : IEquatable<RecipeIdentity>
+        {
+            public RecipeIdentity(int type, int prefix, int stack)
             {
                 Type = type;
                 Prefix = prefix;
@@ -63,19 +78,17 @@ public sealed partial class InGameNarrationSystem
             public int Prefix { get; }
             public int Stack { get; }
 
-            public bool IsAir => Type <= 0 || Stack <= 0;
-
-            public static IngredientIdentity From(Item item)
+            public static RecipeIdentity From(Item item)
             {
                 if (item is null || item.IsAir)
                 {
-                    return Empty;
+                    return default;
                 }
 
-                return new IngredientIdentity(item.type, item.prefix, item.stack);
+                return new RecipeIdentity(item.type, item.prefix, item.stack);
             }
 
-            public bool Equals(IngredientIdentity other)
+            public bool Equals(RecipeIdentity other)
             {
                 return Type == other.Type &&
                        Prefix == other.Prefix &&
@@ -84,12 +97,34 @@ public sealed partial class InGameNarrationSystem
 
             public override bool Equals(object? obj)
             {
-                return obj is IngredientIdentity other && Equals(other);
+                return obj is RecipeIdentity other && Equals(other);
             }
 
             public override int GetHashCode()
             {
                 return HashCode.Combine(Type, Prefix, Stack);
+            }
+        }
+
+        private readonly record struct RecipeAnnouncement(
+            RecipeIdentity Identity,
+            int RecipeIndex,
+            int FocusIndex,
+            int AvailableCount,
+            string Message);
+
+        private sealed class ReferenceEqualityComparer<T> : IEqualityComparer<T> where T : class
+        {
+            public static ReferenceEqualityComparer<T> Instance { get; } = new();
+
+            public bool Equals(T? x, T? y)
+            {
+                return ReferenceEquals(x, y);
+            }
+
+            public int GetHashCode(T obj)
+            {
+                return RuntimeHelpers.GetHashCode(obj);
             }
         }
 
@@ -116,7 +151,15 @@ public sealed partial class InGameNarrationSystem
             }
 
             focusIndex = Utils.Clamp(Main.focusRecipe, 0, availableCount - 1);
-            if (focusIndex < 0 || focusIndex >= Main.availableRecipe.Length)
+            return TryGetRecipeEntry(focusIndex, availableCount, out recipe, out recipeIndex);
+        }
+
+        private static bool TryGetRecipeEntry(int focusIndex, int availableCount, out Recipe recipe, out int recipeIndex)
+        {
+            recipe = null!;
+            recipeIndex = -1;
+
+            if (focusIndex < 0 || focusIndex >= availableCount || focusIndex >= Main.availableRecipe.Length)
             {
                 return false;
             }
@@ -137,42 +180,91 @@ public sealed partial class InGameNarrationSystem
             return true;
         }
 
-        private static bool IsRecipeResultItem(Recipe recipe, Item item)
+        private static bool TryResolveRecipeFocus(Item item, out RecipeFocus focus)
         {
-            if (recipe is null || item is null || item.IsAir)
+            focus = default;
+            RecipeIdentity identity = RecipeIdentity.From(item);
+            if (identity.Type <= 0)
             {
                 return false;
             }
 
-            Item result = recipe.createItem;
-            if (result is null || result.IsAir)
-            {
-                return false;
-            }
-
-            if (item.type != result.type)
-            {
-                return false;
-            }
-
-            IngredientIdentity candidate = IngredientIdentity.From(item);
-            IngredientIdentity target = IngredientIdentity.From(result);
-            return candidate.Equals(target);
+            return TryFindRecipeFocus(identity, out focus);
         }
 
-        internal static bool IsCraftingResultHover(Item item)
+        private static bool TryFindRecipeFocus(RecipeIdentity identity, out RecipeFocus focus)
         {
-            if (item is null || item.IsAir || !Main.playerInventory)
+            focus = default;
+            if (identity.Type <= 0)
             {
                 return false;
             }
 
-            if (!TryGetFocusedRecipe(out Recipe recipe, out _, out _, out _))
+            int availableCount = Math.Clamp(Main.numAvailableRecipes, 0, Main.availableRecipe.Length);
+            if (availableCount <= 0)
             {
                 return false;
             }
 
-            return IsRecipeResultItem(recipe, item);
+            for (int i = 0; i < availableCount; i++)
+            {
+                if (!TryGetRecipeEntry(i, availableCount, out Recipe recipe, out int recipeIndex))
+                {
+                    continue;
+                }
+
+                RecipeIdentity candidateIdentity = RecipeIdentity.From(recipe.createItem);
+                if (!candidateIdentity.Equals(identity))
+                {
+                    continue;
+                }
+
+                focus = new RecipeFocus(recipe, recipeIndex, i, availableCount);
+                return true;
+            }
+
+            return false;
+        }
+
+        private static bool TryResolveRecipeFocusFromReference(Item item, out RecipeFocus focus)
+        {
+            focus = default;
+            if (!TryGetRecipeIndexForResultItem(item, out int recipeIndex))
+            {
+                return false;
+            }
+
+            return TryCreateFocusFromRecipeIndex(recipeIndex, out focus);
+        }
+
+        internal static bool TryCaptureHoveredRecipe(Item item)
+        {
+            if (!Main.playerInventory)
+            {
+                return false;
+            }
+
+            if (!TryResolveRecipeFocusFromReference(item, out RecipeFocus focus) &&
+                !TryResolveRecipeFocus(item, out focus))
+            {
+                return false;
+            }
+
+            RegisterHoveredFocus(focus);
+            UiAreaNarrationContext.RecordArea(UiNarrationArea.Crafting);
+            return true;
+        }
+
+        internal static bool TryFocusRecipeAtAvailableIndex(int availableIndex)
+        {
+            if (!TryCreateFocusFromAvailableIndex(availableIndex, out RecipeFocus focus))
+            {
+                return false;
+            }
+
+            RegisterHoveredFocus(focus);
+            UiAreaNarrationContext.RecordArea(UiNarrationArea.Crafting);
+            return true;
         }
 
         internal static string? TryGetRequirementTooltipDetails(Item item, bool locationIsEmpty)
@@ -197,18 +289,36 @@ public sealed partial class InGameNarrationSystem
                 return null;
             }
 
-            if (!TryGetFocusedRecipe(out Recipe recipe, out _, out _, out _))
+            if (!TryResolveRecipeFocus(item, out RecipeFocus focus))
             {
                 return null;
             }
 
-            if (!IsRecipeResultItem(recipe, item))
-            {
-                return null;
-            }
-
-            string? message = BuildRequirementMessage(recipe, out _);
+            string? message = BuildRequirementMessage(focus.Recipe, out _);
             return string.IsNullOrWhiteSpace(message) ? null : message;
+        }
+
+        internal static void TryCaptureRecipeHover(Item item, int context)
+        {
+            if (item is null)
+            {
+                return;
+            }
+
+            UiNarrationArea area = ItemSlotContextFacts.ResolveArea(context);
+            if ((area & (UiNarrationArea.Crafting | UiNarrationArea.Guide)) == 0)
+            {
+                return;
+            }
+
+            if (!TryResolveRecipeFocusFromReference(item, out RecipeFocus focus) &&
+                !TryResolveRecipeFocus(item, out focus))
+            {
+                return;
+            }
+
+            RegisterHoveredFocus(focus);
+            UiAreaNarrationContext.RecordArea(area);
         }
 
         public void Update(Player player)
@@ -219,28 +329,161 @@ public sealed partial class InGameNarrationSystem
                 return;
             }
 
-            bool usingGamepadUi = PlayerInput.UsingGamepadUI;
-            int currentPoint = usingGamepadUi ? UILinkPointNavigator.CurrentPoint : -1;
-
-            if (usingGamepadUi)
-            {
-                if (InventoryNarrator.TryGetContextForLinkPoint(currentPoint, out int context))
-                {
-                    if (!IsCraftingContext(context))
-                    {
-                        ResetFocus();
-                        return;
-                    }
-                }
-            }
-
-            if (!TryGetFocusedRecipe(out Recipe recipe, out int recipeIndex, out int focus, out int available))
+            if (!UiAreaNarrationContext.IsActiveArea(UiNarrationArea.Crafting | UiNarrationArea.Guide))
             {
                 ResetFocus();
                 return;
             }
 
-            Item result = recipe.createItem;
+            if (PlayerInput.UsingGamepadUI &&
+                InventoryNarrator.TryGetContextForLinkPoint(UILinkPointNavigator.CurrentPoint, out int context) &&
+                !ItemSlotContextFacts.IsCraftingContext(context))
+            {
+                ResetFocus();
+                return;
+            }
+
+            if (!TryCaptureFocus(out RecipeFocus focus))
+            {
+                ResetFocus();
+                return;
+            }
+
+            if (!TryBuildAnnouncement(focus, out RecipeAnnouncement announcement))
+            {
+                return;
+            }
+
+            if (_lastAnnouncement.HasValue && _lastAnnouncement.Value.Equals(announcement))
+            {
+                return;
+            }
+
+            _lastAnnouncement = announcement;
+            ScreenReaderService.Announce(announcement.Message, force: true);
+        }
+
+        private static bool TryCaptureFocus(out RecipeFocus focus)
+        {
+            if (TryGetActiveHoveredFocus(out focus))
+            {
+                return true;
+            }
+
+            if (!TryGetFocusedRecipe(out Recipe recipe, out int recipeIndex, out int focusIndex, out int available))
+            {
+                focus = default;
+                return false;
+            }
+
+            focus = new RecipeFocus(recipe, recipeIndex, focusIndex, available);
+            return true;
+        }
+
+        private static bool TryCreateFocusFromAvailableIndex(int availableIndex, out RecipeFocus focus)
+        {
+            focus = default;
+            int availableCount = Math.Clamp(Main.numAvailableRecipes, 0, Main.availableRecipe.Length);
+            if (!TryGetRecipeEntry(availableIndex, availableCount, out Recipe recipe, out int recipeIndex))
+            {
+                return false;
+            }
+
+            focus = new RecipeFocus(recipe, recipeIndex, availableIndex, availableCount);
+            return true;
+        }
+
+        private static bool TryCreateFocusFromRecipeIndex(int recipeIndex, out RecipeFocus focus)
+        {
+            focus = default;
+            if (recipeIndex < 0)
+            {
+                return false;
+            }
+
+            Recipe[]? recipes = Main.recipe;
+            if (recipes is null || recipeIndex >= recipes.Length)
+            {
+                return false;
+            }
+
+            Recipe recipe = recipes[recipeIndex];
+            if (recipe is null || recipe.createItem is null || recipe.createItem.IsAir)
+            {
+                return false;
+            }
+
+            int available = Math.Clamp(Main.numAvailableRecipes, 0, Main.availableRecipe.Length);
+            if (available <= 0)
+            {
+                return false;
+            }
+
+            for (int i = 0; i < available; i++)
+            {
+                if (Main.availableRecipe[i] != recipeIndex)
+                {
+                    continue;
+                }
+
+                focus = new RecipeFocus(recipe, recipeIndex, i, available);
+                return true;
+            }
+
+            return false;
+        }
+
+        private static bool TryGetActiveHoveredFocus(out RecipeFocus focus)
+        {
+            focus = default;
+            if (!_hoveredFocusOverride.HasValue)
+            {
+                return false;
+            }
+
+            uint current = Main.GameUpdateCount;
+            uint frame = _hoveredFocusFrame;
+            uint age = current >= frame ? current - frame : uint.MaxValue - frame + current + 1;
+            if (age > 10)
+            {
+                _hoveredFocusOverride = null;
+                _hoveredFocusFrame = 0;
+                return false;
+            }
+
+            focus = _hoveredFocusOverride.Value;
+            if (Main.focusRecipe == focus.FocusIndex)
+            {
+                _hoveredFocusOverride = null;
+                _hoveredFocusFrame = 0;
+            }
+
+            return true;
+        }
+
+        private static void RegisterHoveredFocus(in RecipeFocus focus)
+        {
+            if (_hoveredFocusOverride.HasValue &&
+                _hoveredFocusOverride.Value.RecipeIndex == focus.RecipeIndex &&
+                _hoveredFocusOverride.Value.FocusIndex == focus.FocusIndex)
+            {
+                _hoveredFocusFrame = Main.GameUpdateCount;
+                return;
+            }
+
+            _hoveredFocusOverride = focus;
+            _hoveredFocusFrame = Main.GameUpdateCount;
+        }
+
+        private bool TryBuildAnnouncement(in RecipeFocus focus, out RecipeAnnouncement announcement)
+        {
+            announcement = default;
+
+            Item result = focus.Result;
+            if (result is null || result.IsAir)
+            {
+                return false;
+            }
 
             string label = ComposeItemLabel(result);
             if (result.stack > 1)
@@ -254,17 +497,17 @@ public sealed partial class InGameNarrationSystem
                 allowMouseText: false,
                 suppressControllerPrompts: true);
 
-            string? requirementMessage = BuildRequirementMessage(recipe, out bool hadRequirementData);
+            string? requirementMessage = BuildRequirementMessage(focus.Recipe, out bool hadRequirementData);
             if (!string.IsNullOrWhiteSpace(requirementMessage))
             {
                 details = string.IsNullOrWhiteSpace(details)
                     ? requirementMessage
                     : $"{details}. {requirementMessage}";
-                _missingRequirementRecipes.Remove(recipeIndex);
+                _missingRequirementRecipes.Remove(focus.RecipeIndex);
             }
-            else if (hadRequirementData && _missingRequirementRecipes.Add(recipeIndex))
+            else if (hadRequirementData)
             {
-                ScreenReaderMod.Instance?.Logger.Debug($"[CraftingNarrator] Requirement narration missing for recipe {recipeIndex} ({label})");
+                LogMissingRequirementNarration(focus.RecipeIndex, label);
             }
 
             string combined = InventoryNarrator.CombineItemAnnouncement(label, details);
@@ -273,94 +516,89 @@ public sealed partial class InGameNarrationSystem
                 combined = label;
             }
 
-            string itemMessage = $"{combined}. Recipe {focus + 1} of {available}";
-            itemMessage = GlyphTagFormatter.Normalize(itemMessage);
+            string message = $"{combined}. Recipe {focus.FocusIndex + 1} of {focus.AvailableCount}";
+            message = GlyphTagFormatter.Normalize(message);
 
-            bool itemChanged =
-                focus != _lastFocusIndex ||
-                recipeIndex != _lastRecipeIndex ||
-                available != _lastCount ||
-                !string.Equals(itemMessage, _lastAnnouncement, StringComparison.Ordinal);
+            announcement = new RecipeAnnouncement(
+                RecipeIdentity.From(result),
+                focus.RecipeIndex,
+                focus.FocusIndex,
+                focus.AvailableCount,
+                message);
 
-            _lastRequirementsMessage = requirementMessage;
+            return true;
+        }
 
-            if (!itemChanged)
+        private void LogMissingRequirementNarration(int recipeIndex, string label)
+        {
+            if (_missingRequirementRecipes.Add(recipeIndex))
+            {
+                ScreenReaderMod.Instance?.Logger.Debug($"[CraftingNarrator] Requirement narration missing for recipe {recipeIndex} ({label})");
+            }
+        }
+
+        private static bool TryGetRecipeIndexForResultItem(Item item, out int recipeIndex)
+        {
+            recipeIndex = -1;
+            if (item is null)
+            {
+                return false;
+            }
+
+            EnsureRecipeLookups();
+            return _recipeResultLookup is not null && _recipeResultLookup.TryGetValue(item, out recipeIndex);
+        }
+
+        private static void EnsureRecipeLookups()
+        {
+            int version = Recipe.numRecipes;
+            Recipe[]? recipes = Main.recipe;
+            if (recipes is null)
+            {
+                _recipeLookupVersion = -1;
+                _recipeResultLookup = null;
+                return;
+            }
+
+            if (_recipeLookupVersion == version &&
+                _recipeResultLookup is not null)
             {
                 return;
             }
 
-            _lastFocusIndex = focus;
-            _lastRecipeIndex = recipeIndex;
-            _lastAnnouncement = itemMessage;
-            _lastCount = available;
+            Dictionary<Item, int> resultLookup = new(ReferenceEqualityComparer<Item>.Instance);
 
-            ScreenReaderService.Announce(itemMessage, force: true);
-        }
-
-        private static bool IsCraftingContext(int context)
-        {
-            int normalized = Math.Abs(context);
-            foreach (int value in CraftingContextValues.Value)
+            int totalRecipes = Math.Min(version, recipes.Length);
+            for (int i = 0; i < totalRecipes; i++)
             {
-                if (normalized == value)
+                Recipe recipe = recipes[i];
+                if (recipe is null)
                 {
-                    return true;
+                    continue;
+                }
+
+                Item result = recipe.createItem;
+                if (result is not null && !result.IsAir)
+                {
+                    resultLookup[result] = i;
                 }
             }
 
-            return normalized == Math.Abs(ItemSlot.Context.CraftingMaterial);
+            _recipeResultLookup = resultLookup;
+            _recipeLookupVersion = version;
         }
 
         private void Reset()
         {
             ResetFocus();
-            _lastAnnouncement = null;
-            _lastRequirementsMessage = null;
             _missingRequirementRecipes.Clear();
         }
 
         private void ResetFocus()
         {
-            _lastFocusIndex = -1;
-            _lastRecipeIndex = -1;
-            _lastCount = -1;
-            _lastRequirementsMessage = null;
-        }
-
-        private static int[] DiscoverCraftingContexts()
-        {
-            try
-            {
-                FieldInfo[] fields = typeof(ItemSlot.Context)
-                    .GetFields(BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Static);
-
-                if (fields.Length == 0)
-                {
-                    return new[] { Math.Abs(ItemSlot.Context.CraftingMaterial) };
-                }
-
-                return fields
-                    .Where(field => field.FieldType == typeof(int) &&
-                                    field.Name.Contains("CRAFT", StringComparison.OrdinalIgnoreCase))
-                    .Select(field =>
-                    {
-                        try
-                        {
-                            return Math.Abs((int)(field.GetValue(null) ?? -1));
-                        }
-                        catch
-                        {
-                            return -1;
-                        }
-                    })
-                    .Where(value => value >= 0)
-                    .Distinct()
-                    .ToArray();
-            }
-            catch
-            {
-                return new[] { Math.Abs(ItemSlot.Context.CraftingMaterial) };
-            }
+            _lastAnnouncement = null;
+            _hoveredFocusOverride = null;
+            _hoveredFocusFrame = 0;
         }
 
         private static string? BuildRequirementMessage(Recipe recipe, out bool hadRequirements)
