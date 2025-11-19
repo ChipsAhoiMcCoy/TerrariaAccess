@@ -47,6 +47,7 @@ public sealed partial class InGameNarrationSystem : ModSystem
     private readonly ControlsMenuNarrator _controlsMenuNarrator = new();
     private readonly ModConfigMenuNarrator _modConfigMenuNarrator = new();
     private readonly FootstepAudioEmitter _footstepAudioEmitter = new();
+    private readonly FallProximityAudioEmitter _fallProximityAudioEmitter = new();
     private readonly BiomeAnnouncementEmitter _biomeAnnouncementEmitter = new();
     private readonly LockOnNarrator _lockOnNarrator = new();
 
@@ -77,11 +78,13 @@ public sealed partial class InGameNarrationSystem : ModSystem
             _treasureBagBeaconEmitter.Reset();
             _hostileStaticAudioEmitter.Reset();
             _footstepAudioEmitter.Reset();
+            _fallProximityAudioEmitter.Reset();
             _worldInteractableTracker.Reset();
             _biomeAnnouncementEmitter.Reset();
             CursorNarrator.DisposeStaticResources();
             TreasureBagBeaconEmitter.DisposeStaticResources();
             FootstepToneProvider.DisposeStaticResources();
+            FallIndicatorToneProvider.DisposeStaticResources();
             WorldInteractableTracker.DisposeStaticResources();
             HostileStaticAudioEmitter.DisposeStaticResources();
             On_ItemSlot.MouseHover_ItemArray_int_int -= HandleItemSlotHover;
@@ -105,8 +108,10 @@ public sealed partial class InGameNarrationSystem : ModSystem
         _treasureBagBeaconEmitter.Reset();
         _hostileStaticAudioEmitter.Reset();
         _footstepAudioEmitter.Reset();
+        _fallProximityAudioEmitter.Reset();
         _worldInteractableTracker.Reset();
         _biomeAnnouncementEmitter.Reset();
+        FallIndicatorToneProvider.DisposeStaticResources();
     }
 
     public override void PostUpdateWorld()
@@ -161,6 +166,7 @@ public sealed partial class InGameNarrationSystem : ModSystem
             _treasureBagBeaconEmitter.Update(player);
             _hostileStaticAudioEmitter.Update(player);
             _footstepAudioEmitter.Update(player);
+            _fallProximityAudioEmitter.Update(player);
             _worldInteractableTracker.Update(player, GuidanceSystem.IsExplorationTrackingEnabled);
             _biomeAnnouncementEmitter.Update(player);
         }
