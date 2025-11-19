@@ -459,6 +459,7 @@ public sealed partial class InGameNarrationSystem : ModSystem
     private static class TileDescriptor
     {
         private const int LiquidDescriptorBaseTileType = -1000;
+        private const int WallDescriptorBaseTileType = -2000;
         private static readonly int[] StyledTileTypes =
         {
             TileID.Banners,
@@ -473,6 +474,7 @@ public sealed partial class InGameNarrationSystem : ModSystem
             TileID.Painting6X4,
         };
         private static readonly Dictionary<int, Dictionary<int, int>> TileStyleToItemType = BuildTileStyleMap();
+        private static readonly Dictionary<int, int> WallTypeToItemType = BuildWallItemMap();
 
         public static bool TryDescribe(int tileX, int tileY, out int tileType, out string? name)
         {
@@ -488,6 +490,11 @@ public sealed partial class InGameNarrationSystem : ModSystem
             if (!tile.HasTile)
             {
                 if (tile.LiquidAmount > 0 && TryDescribeLiquid(tile, out tileType, out name))
+                {
+                    return true;
+                }
+
+                if (TryDescribeWall(tile, out tileType, out name))
                 {
                     return true;
                 }
@@ -700,6 +707,36 @@ public sealed partial class InGameNarrationSystem : ModSystem
             return map;
         }
 
+        private static Dictionary<int, int> BuildWallItemMap()
+        {
+            Dictionary<int, int> map = new();
+            Item scratch = new();
+            for (int type = 1; type < ItemLoader.ItemCount; type++)
+            {
+                try
+                {
+                    scratch.SetDefaults(type, true);
+                }
+                catch
+                {
+                    continue;
+                }
+
+                int wallType = scratch.createWall;
+                if (wallType <= WallID.None)
+                {
+                    continue;
+                }
+
+                if (!map.ContainsKey(wallType))
+                {
+                    map[wallType] = type;
+                }
+            }
+
+            return map;
+        }
+
         private static bool TryDescribeLiquid(Tile tile, out int tileType, out string? name)
         {
             tileType = -1;
@@ -740,6 +777,41 @@ public sealed partial class InGameNarrationSystem : ModSystem
 
             tileType = LiquidDescriptorBaseTileType - liquidType;
             name = localizedName;
+            return true;
+        }
+
+        private static bool TryDescribeWall(Tile tile, out int tileType, out string? name)
+        {
+            tileType = -1;
+            name = null;
+
+            int wallType = tile.WallType;
+            if (wallType <= WallID.None)
+            {
+                return false;
+            }
+
+            if (WallTypeToItemType.TryGetValue(wallType, out int itemType) && itemType > ItemID.None)
+            {
+                string itemName = Lang.GetItemNameValue(itemType);
+                if (!string.IsNullOrWhiteSpace(itemName))
+                {
+                    name = itemName;
+                }
+            }
+
+            if (string.IsNullOrWhiteSpace(name))
+            {
+                name = WallID.Search.GetName(wallType);
+                name = TextSanitizer.Clean(name);
+            }
+
+            if (string.IsNullOrWhiteSpace(name))
+            {
+                name = $"Wall {wallType}";
+            }
+
+            tileType = WallDescriptorBaseTileType - wallType;
             return true;
         }
     }
