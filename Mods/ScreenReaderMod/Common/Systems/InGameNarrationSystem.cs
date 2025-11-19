@@ -675,7 +675,7 @@ public sealed partial class InGameNarrationSystem : ModSystem
         private static Dictionary<int, Dictionary<int, int>> BuildTileStyleMap()
         {
             Dictionary<int, Dictionary<int, int>> map = new();
-            HashSet<int> targets = new(StyledTileTypes);
+            HashSet<int> explicitTargets = new(StyledTileTypes);
             Item scratch = new();
             for (int type = 1; type < ItemLoader.ItemCount; type++)
             {
@@ -689,7 +689,18 @@ public sealed partial class InGameNarrationSystem : ModSystem
                 }
 
                 int tileType = scratch.createTile;
-                if (!targets.Contains(tileType))
+                if (tileType < 0)
+                {
+                    continue;
+                }
+
+                bool shouldTrack = explicitTargets.Contains(tileType);
+                if (!shouldTrack && tileType < TileID.Sets.Platforms.Length && TileID.Sets.Platforms[tileType])
+                {
+                    shouldTrack = true;
+                }
+
+                if (!shouldTrack)
                 {
                     continue;
                 }
