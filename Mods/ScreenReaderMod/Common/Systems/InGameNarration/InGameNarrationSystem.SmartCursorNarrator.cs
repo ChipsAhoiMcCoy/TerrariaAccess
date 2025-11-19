@@ -54,7 +54,7 @@ public sealed partial class InGameNarrationSystem
                 return;
             }
 
-            if (InventoryNarrator.IsInventoryUiOpen(player))
+            if (ShouldSuppressForMenus(player))
             {
                 Reset();
                 return;
@@ -129,6 +129,42 @@ public sealed partial class InGameNarrationSystem
             ResetStateTracking();
             _pendingStatePrefix = null;
             _suppressCursorAnnouncement = false;
+        }
+
+        private static bool ShouldSuppressForMenus(Player player)
+        {
+            if (InventoryNarrator.IsInventoryUiOpen(player))
+            {
+                return true;
+            }
+
+            if (IsNpcDialogueActive(player))
+            {
+                return true;
+            }
+
+            if (IsOtherIngameUiActive())
+            {
+                return true;
+            }
+
+            return false;
+        }
+
+        private static bool IsNpcDialogueActive(Player player)
+        {
+            return player.talkNPC >= 0 || !string.IsNullOrWhiteSpace(Main.npcChatText);
+        }
+
+        private static bool IsOtherIngameUiActive()
+        {
+            if (Main.editSign || Main.editChest || Main.drawingPlayerChat || Main.inFancyUI)
+            {
+                return true;
+            }
+
+            UIState? state = Main.InGameUI?.CurrentState;
+            return state is not null;
         }
 
         private string? DescribeSmartInteract()

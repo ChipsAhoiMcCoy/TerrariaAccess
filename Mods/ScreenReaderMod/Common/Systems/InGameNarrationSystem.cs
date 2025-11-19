@@ -48,6 +48,7 @@ public sealed partial class InGameNarrationSystem : ModSystem
     private readonly ModConfigMenuNarrator _modConfigMenuNarrator = new();
     private readonly FootstepAudioEmitter _footstepAudioEmitter = new();
     private readonly BiomeAnnouncementEmitter _biomeAnnouncementEmitter = new();
+    private readonly LockOnNarrator _lockOnNarrator = new();
 
         public override void Load()
         {
@@ -154,6 +155,7 @@ public sealed partial class InGameNarrationSystem : ModSystem
         _craftingNarrator.Update(player);
         _smartCursorNarrator.Update();
         _cursorNarrator.Update();
+        _lockOnNarrator.Update();
         if (!isPaused)
         {
             _treasureBagBeaconEmitter.Update(player);

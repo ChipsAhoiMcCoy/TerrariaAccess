@@ -15,6 +15,7 @@ public sealed partial class InGameNarrationSystem
     {
         private const int ScanIntervalTicks = 18;
         private const int MaxConcurrentCues = 6;
+        private const float SecondaryCueVolumeScale = 0.25f;
 
         private static readonly Dictionary<string, SoundEffect> ToneCache = new();
 
@@ -181,12 +182,21 @@ public sealed partial class InGameNarrationSystem
             _visibleThisFrame.Clear();
 
             int limit = Math.Min(MaxConcurrentCues, _distanceScratch.Count);
+            TrackedInteractableKey primaryKey = default;
+            bool hasPrimary = false;
+            if (limit > 0)
+            {
+                primaryKey = _distanceScratch[0].Candidate.Key;
+                hasPrimary = true;
+            }
+
             for (int i = 0; i < limit; i++)
             {
                 CandidateDistance entry = _distanceScratch[i];
                 _visibleThisFrame.Add(entry.Candidate.Key);
                 UpdateArrivalState(entry);
-                EmitIfDue(playerCenter, entry);
+                bool isPrimaryCue = hasPrimary && entry.Candidate.Key.Equals(primaryKey);
+                EmitIfDue(playerCenter, entry, isPrimaryCue);
             }
 
             TrimInactiveKeys();
@@ -242,14 +252,14 @@ public sealed partial class InGameNarrationSystem
             }
         }
 
-        private void EmitIfDue(Vector2 playerCenter, CandidateDistance entry)
+        private void EmitIfDue(Vector2 playerCenter, CandidateDistance entry, bool isPrimaryCue)
         {
             TrackedInteractableKey key = entry.Candidate.Key;
 
             if (!_nextPingFrameByKey.TryGetValue(key, out int scheduledFrame) ||
                 Main.GameUpdateCount >= (uint)Math.Max(0, scheduledFrame))
             {
-                PlayCue(playerCenter, entry);
+                PlayCue(playerCenter, entry, isPrimaryCue);
 
                 int delay = entry.Candidate.Profile.ComputeDelayFrames(entry.DistanceTiles);
                 int nextFrame = delay <= 0 ? 0 : ScheduleNextFrame(delay);
@@ -301,7 +311,7 @@ public sealed partial class InGameNarrationSystem
             }
         }
 
-        private void PlayCue(Vector2 playerCenter, CandidateDistance entry)
+        private void PlayCue(Vector2 playerCenter, CandidateDistance entry, bool isPrimaryCue)
         {
             if (Main.soundVolume <= 0f)
             {
@@ -325,12 +335,21 @@ public sealed partial class InGameNarrationSystem
                 return;
             }
 
+            float scaledVolume = MathHelper.Clamp(
+                volume * (isPrimaryCue ? 1f : SecondaryCueVolumeScale),
+                0f,
+                1f);
+            if (scaledVolume <= 0f)
+            {
+                return;
+            }
+
             SoundEffect tone = EnsureTone(profile);
             SoundEffectInstance instance = tone.CreateInstance();
             instance.IsLooped = false;
             instance.Pitch = pitch;
             instance.Pan = pan;
-            instance.Volume = MathHelper.Clamp(volume, 0f, 1f);
+            instance.Volume = scaledVolume;
 
             try
             {
