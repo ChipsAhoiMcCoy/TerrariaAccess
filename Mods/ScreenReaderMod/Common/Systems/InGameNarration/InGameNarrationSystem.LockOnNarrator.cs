@@ -1,4 +1,5 @@
 #nullable enable
+using System;
 using Microsoft.Xna.Framework;
 using ScreenReaderMod.Common.Services;
 using Terraria;
@@ -12,6 +13,7 @@ public sealed partial class InGameNarrationSystem
     private sealed class LockOnNarrator
     {
         private int _lastNpcId = -1;
+        private int _lastNpcLife = -1;
 
         public void Update()
         {
@@ -29,13 +31,49 @@ public sealed partial class InGameNarrationSystem
             }
 
             int npcId = target.whoAmI;
-            if (npcId == _lastNpcId)
+            int hp = Math.Max(0, target.life);
+
+            if (npcId != _lastNpcId)
+            {
+                _lastNpcId = npcId;
+                _lastNpcLife = hp;
+                AnnounceLockOn(target, hp);
+                return;
+            }
+
+            if (hp != _lastNpcLife)
+            {
+                _lastNpcLife = hp;
+                AnnounceHealthChange(target, hp);
+            }
+        }
+
+        private void ClearTarget()
+        {
+            if (_lastNpcId == -1)
             {
                 return;
             }
 
-            _lastNpcId = npcId;
+            _lastNpcId = -1;
+            _lastNpcLife = -1;
+            ScreenReaderService.Announce("No longer targeting", force: true);
+        }
 
+        private static void AnnounceLockOn(NPC target, int hp)
+        {
+            string name = GetNpcName(target);
+            ScreenReaderService.Announce($"Locked on to {name}, {hp} health", force: true);
+        }
+
+        private static void AnnounceHealthChange(NPC target, int hp)
+        {
+            string name = GetNpcName(target);
+            ScreenReaderService.Announce($"{name} at {hp} health", force: true);
+        }
+
+        private static string GetNpcName(NPC target)
+        {
             string name = target.GivenOrTypeName;
             if (string.IsNullOrWhiteSpace(name))
             {
@@ -47,18 +85,7 @@ public sealed partial class InGameNarrationSystem
                 name = $"Enemy {target.type}";
             }
 
-            ScreenReaderService.Announce($"Locked on to {name}", force: true);
-        }
-
-        private void ClearTarget()
-        {
-            if (_lastNpcId == -1)
-            {
-                return;
-            }
-
-            _lastNpcId = -1;
-            ScreenReaderService.Announce("No longer targeting", force: true);
+            return name;
         }
     }
 }
