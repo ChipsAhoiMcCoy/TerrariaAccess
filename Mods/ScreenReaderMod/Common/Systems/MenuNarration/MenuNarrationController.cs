@@ -121,6 +121,11 @@ internal sealed class MenuNarrationController
             return false;
         }
 
+        if (IsIgnoredHoverLabel(cleaned))
+        {
+            return false;
+        }
+
         ScreenReaderMod.Instance?.Logger.Info($"[MenuNarration] UI hover -> {cleaned}");
         ScreenReaderService.Announce(cleaned);
         return true;
@@ -188,6 +193,16 @@ internal sealed class MenuNarrationController
         ScreenReaderMod.Instance?.Logger.Info($"[MenuNarration] Volume slider {sliderId} -> {label}");
         ScreenReaderService.Announce(label, force: true);
         return true;
+    }
+
+    private static bool IsIgnoredHoverLabel(string cleanedLabel)
+    {
+        if (string.IsNullOrWhiteSpace(cleanedLabel))
+        {
+            return true;
+        }
+
+        return cleanedLabel.IndexOf("tmodloader", StringComparison.OrdinalIgnoreCase) >= 0;
     }
 
     private bool TryHandleFocus(Main main, int currentMode, bool force)
