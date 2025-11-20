@@ -90,6 +90,11 @@ public sealed partial class InGameNarrationSystem
                 PositionCursorAtListCenter(state);
             }
 
+            if (HandleDpadNavigation())
+            {
+                return;
+            }
+
             if (!_announcedEntry)
             {
                 string intro = LocalizationHelper.GetTextOrFallback("Mods.ScreenReaderMod.ControlsMenu.Opened", "Controls menu.");
@@ -220,6 +225,12 @@ public sealed partial class InGameNarrationSystem
                 }
             }
 
+            int tabIndex = GetTabIndex(kind);
+            if (tabIndex > 0)
+            {
+                label = $"{label} (Tab {tabIndex})";
+            }
+
             description = label;
             return true;
         }
@@ -297,6 +308,18 @@ public sealed partial class InGameNarrationSystem
             Menu,
         }
 
+        private static int GetTabIndex(ControlsButtonKind kind)
+        {
+            return kind switch
+            {
+                ControlsButtonKind.Keyboard => 1,
+                ControlsButtonKind.Gamepad => 2,
+                ControlsButtonKind.Gameplay => 3,
+                ControlsButtonKind.Menu => 4,
+                _ => -1,
+            };
+        }
+
         private static bool TryGetControlsState(out UIManageControls? state)
         {
             state = Main.InGameUI?.CurrentState as UIManageControls;
@@ -336,6 +359,66 @@ public sealed partial class InGameNarrationSystem
             Main.mouseY = clampedY;
             PlayerInput.MouseX = clampedX;
             PlayerInput.MouseY = clampedY;
+        }
+
+        private static bool HandleDpadNavigation()
+        {
+            if (!TryGetControlsState(out UIManageControls? state))
+            {
+                return false;
+            }
+
+            TriggersSet justPressed = PlayerInput.Triggers.JustPressed;
+            int requested = -1;
+            int current = UILinkPointNavigator.CurrentPoint;
+
+            if (justPressed.MenuUp)
+            {
+                requested = GetLinkedTarget(current, link => link.Up);
+            }
+            else if (justPressed.MenuDown)
+            {
+                requested = GetLinkedTarget(current, link => link.Down);
+            }
+            else if (justPressed.MenuLeft)
+            {
+                requested = GetLinkedTarget(current, link => link.Left);
+            }
+            else if (justPressed.MenuRight)
+            {
+                requested = GetLinkedTarget(current, link => link.Right);
+            }
+
+            // If nothing is focused, seed focus on the first controls element.
+            if (requested < 0 && current < 3000)
+            {
+                requested = 3000;
+            }
+
+            if (requested > 0 && UILinkPointNavigator.Points.TryGetValue(requested, out UILinkPoint? _))
+            {
+                UILinkPointNavigator.ChangePoint(requested);
+                SoundEngine.PlaySound(SoundID.MenuTick);
+                return true;
+            }
+
+            return false;
+        }
+
+        private static int GetLinkedTarget(int currentPoint, Func<UILinkPoint, int> selector)
+        {
+            if (!UILinkPointNavigator.Points.TryGetValue(currentPoint, out UILinkPoint? link))
+            {
+                return -1;
+            }
+
+            int target = selector(link);
+            if (target >= 0 && UILinkPointNavigator.Points.ContainsKey(target))
+            {
+                return target;
+            }
+
+            return -1;
         }
 
     }
