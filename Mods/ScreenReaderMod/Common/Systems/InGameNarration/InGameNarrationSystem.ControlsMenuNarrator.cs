@@ -405,6 +405,7 @@ public sealed partial class InGameNarrationSystem
             if (requested > 0 && UILinkPointNavigator.Points.TryGetValue(requested, out UILinkPoint? _))
             {
                 UILinkPointNavigator.ChangePoint(requested);
+                MoveCursorToLink(requested);
                 SoundEngine.PlaySound(SoundID.MenuTick);
                 return true;
             }
@@ -426,6 +427,22 @@ public sealed partial class InGameNarrationSystem
             }
 
             return -1;
+        }
+
+        private static void MoveCursorToLink(int linkId)
+        {
+            if (!UILinkPointNavigator.Points.TryGetValue(linkId, out UILinkPoint? link))
+            {
+                return;
+            }
+
+            int clampedX = (int)MathHelper.Clamp(link.Position.X, 0f, Main.screenWidth - 1);
+            int clampedY = (int)MathHelper.Clamp(link.Position.Y, 0f, Main.screenHeight - 1);
+
+            Main.mouseX = clampedX;
+            Main.mouseY = clampedY;
+            PlayerInput.MouseX = clampedX;
+            PlayerInput.MouseY = clampedY;
         }
 
     }
