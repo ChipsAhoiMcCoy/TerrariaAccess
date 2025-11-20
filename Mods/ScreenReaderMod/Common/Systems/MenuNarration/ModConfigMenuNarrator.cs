@@ -2,13 +2,11 @@
 using System;
 using System.Globalization;
 using System.Reflection;
-using System.Linq;
 using Terraria;
 using Terraria.GameInput;
 using Terraria.ID;
 using Terraria.Localization;
 using Terraria.UI;
-using Terraria.UI.Gamepad;
 using ScreenReaderMod.Common.Services;
 using ScreenReaderMod.Common.Utilities;
 
@@ -63,9 +61,14 @@ internal sealed class ModConfigMenuNarrator
         return TryHandleState(menuUi?.CurrentState, menuUi, alignCursor: false, enableHover: false);
     }
 
-    public bool TryHandleIngameUi(UserInterface? inGameUi, bool isPaused)
+    public bool TryHandleIngameUi(UserInterface? inGameUi, bool requiresPause)
     {
-        // Handle even when the game is not paused; the mod config overlay does not always pause gameplay.
+        if (!requiresPause)
+        {
+            Reset();
+            return false;
+        }
+
         return TryHandleState(inGameUi?.CurrentState, inGameUi, alignCursor: true, enableHover: true);
     }
 
@@ -82,7 +85,6 @@ internal sealed class ModConfigMenuNarrator
         if (ModConfigListType is not null && ModConfigListType.IsAssignableFrom(stateType))
         {
             PrepareForState(state, alignCursor);
-            AnchorCursorToCurrentLink();
             HandleListState(state);
             _lastState = state;
             return true;
@@ -91,7 +93,6 @@ internal sealed class ModConfigMenuNarrator
         if (ModConfigStateType is not null && ModConfigStateType.IsAssignableFrom(stateType))
         {
             PrepareForState(state, alignCursor);
-            AnchorCursorToCurrentLink();
             HandleConfigState(state);
 
             if (enableHover)
@@ -119,47 +120,6 @@ internal sealed class ModConfigMenuNarrator
                 PositionCursorAtStateCenter(state);
             }
         }
-    }
-
-    private static void AnchorCursorToCurrentLink()
-    {
-        if (!PlayerInput.UsingGamepadUI)
-        {
-            return;
-        }
-
-        EnsureLinkPointSelected();
-
-        int pointId = UILinkPointNavigator.CurrentPoint;
-        if (pointId < 0 || !UILinkPointNavigator.Points.TryGetValue(pointId, out UILinkPoint? link))
-        {
-            return;
-        }
-
-        int clampedX = (int)Math.Clamp(link.Position.X, 0f, Main.screenWidth - 1);
-        int clampedY = (int)Math.Clamp(link.Position.Y, 0f, Main.screenHeight - 1);
-
-        Main.mouseX = clampedX;
-        Main.mouseY = clampedY;
-        PlayerInput.MouseX = clampedX;
-        PlayerInput.MouseY = clampedY;
-    }
-
-    private static void EnsureLinkPointSelected()
-    {
-        if (!PlayerInput.UsingGamepadUI || UILinkPointNavigator.Points.Count == 0)
-        {
-            return;
-        }
-
-        int current = UILinkPointNavigator.CurrentPoint;
-        if (current >= 0 && UILinkPointNavigator.Points.ContainsKey(current))
-        {
-            return;
-        }
-
-        int fallback = UILinkPointNavigator.Points.Keys.Min();
-        UILinkPointNavigator.ChangePoint(fallback);
     }
 
     private void HandleListState(UIState state)
