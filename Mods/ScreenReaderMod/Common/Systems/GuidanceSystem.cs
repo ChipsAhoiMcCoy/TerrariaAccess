@@ -504,7 +504,8 @@ public sealed partial class GuidanceSystem : ModSystem
                 ExplorationTargetRegistry.SetSelectedTarget(null);
                 _selectedIndex = Math.Min(_selectedIndex, Waypoints.Count - 1);
                 ClearCategoryAnnouncement();
-                RescheduleGuidancePing(player);
+                _nextPingUpdateFrame = -1;
+                _arrivalAnnounced = false;
                 AnnounceExplorationSelection();
                 return;
             case SelectionMode.Interactable:
@@ -732,7 +733,8 @@ public sealed partial class GuidanceSystem : ModSystem
                 int nextSlot = Modulo(currentSlot + direction, totalSlots);
                 _selectedExplorationIndex = nextSlot - 1;
 
-                RescheduleGuidancePing(player);
+                _nextPingUpdateFrame = -1;
+                _arrivalAnnounced = false;
                 AnnounceExplorationEntry(player, totalExploration);
                 if (_selectedExplorationIndex < 0)
                 {
@@ -1199,18 +1201,19 @@ public sealed partial class GuidanceSystem : ModSystem
             return true;
         }
 
-        if (_selectionMode == SelectionMode.Exploration && TryGetSelectedExploration(out ExplorationTargetRegistry.ExplorationTarget exploration))
-        {
-            waypoint = new Waypoint(exploration.Label, exploration.WorldPosition);
-            return true;
-        }
-
         waypoint = default;
         return false;
     }
 
     private static bool TryGetCurrentTrackingTarget(Player player, out Vector2 worldPosition, out string label)
     {
+        if (_selectionMode == SelectionMode.Exploration)
+        {
+            worldPosition = default;
+            label = string.Empty;
+            return false;
+        }
+
         switch (_selectionMode)
         {
             case SelectionMode.Waypoint when TryGetSelectedWaypoint(out Waypoint waypoint):
