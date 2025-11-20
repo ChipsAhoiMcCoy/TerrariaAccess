@@ -372,78 +372,37 @@ public sealed partial class InGameNarrationSystem
             int requested = -1;
             int current = UILinkPointNavigator.CurrentPoint;
 
-            if (IsHeaderLink(current) && (justPressed.MenuLeft || justPressed.MenuRight))
-            {
-                int neighbor = justPressed.MenuLeft
-                    ? GetLinkedTarget(current, link => link.Left)
-                    : GetLinkedTarget(current, link => link.Right);
-
-                if (neighbor > 0)
-                {
-                    requested = neighbor;
-                }
-            }
-
-            List<int> orderedLinks = GetOrderedControlsLinks();
-
-            if (orderedLinks.Count == 0)
-            {
-                return false;
-            }
-
-            int index = orderedLinks.IndexOf(current);
-
             if (justPressed.MenuUp)
             {
-                if (index > 0)
-                {
-                    requested = orderedLinks[index - 1];
-                }
+                requested = GetLinkedTarget(current, link => link.Up);
             }
             else if (justPressed.MenuDown)
             {
-                if (index >= 0 && index < orderedLinks.Count - 1)
-                {
-                    requested = orderedLinks[index + 1];
-                }
-                else if (index < 0)
-                {
-                    requested = orderedLinks[0];
-                }
+                requested = GetLinkedTarget(current, link => link.Down);
+            }
+            else if (justPressed.MenuLeft)
+            {
+                requested = GetLinkedTarget(current, link => link.Left);
+            }
+            else if (justPressed.MenuRight)
+            {
+                requested = GetLinkedTarget(current, link => link.Right);
             }
 
             // If nothing is focused, seed focus on the first controls element.
-            if (requested < 0 && current < orderedLinks[0])
+            if (requested < 0 && current < 3000)
             {
-                requested = orderedLinks[0];
+                requested = 3000;
             }
 
             if (requested > 0 && UILinkPointNavigator.Points.TryGetValue(requested, out UILinkPoint? _))
             {
                 UILinkPointNavigator.ChangePoint(requested);
-                TryScrollToLink(state!, requested);
                 SoundEngine.PlaySound(SoundID.MenuTick);
                 return true;
             }
 
             return false;
-        }
-
-        private static bool IsHeaderLink(int linkId)
-        {
-            // Header links are allocated in UIManageControls.SetupGamepadPoints starting at 3000 for back and the next five for tabs/profile.
-            return linkId >= 3000 && linkId <= 3005;
-        }
-
-        private static List<int> GetOrderedControlsLinks()
-        {
-            int min = 3000;
-            int max = UILinkPointNavigator.Shortcuts.FANCYUI_HIGHEST_INDEX;
-
-            return UILinkPointNavigator.Points.Keys
-                .Where(id => id >= min && id <= max)
-                .OrderBy(id => id)
-                .ToList();
         }
 
         private static int GetLinkedTarget(int currentPoint, Func<UILinkPoint, int> selector)
@@ -460,41 +419,6 @@ public sealed partial class InGameNarrationSystem
             }
 
             return -1;
-        }
-
-        private static void TryScrollToLink(UIManageControls state, int linkId)
-        {
-            UIList? list = GetControlsList(state);
-            if (list is null || !UILinkPointNavigator.Points.TryGetValue(linkId, out UILinkPoint? link))
-            {
-                return;
-            }
-
-            Rectangle clip = list.GetClippingRectangle(Main.spriteBatch);
-            Vector2 pos = link.Position;
-
-            const float padding = 24f;
-            float topLimit = clip.Top + padding;
-            float bottomLimit = clip.Bottom - padding;
-            float delta = 0f;
-
-            if (pos.Y < topLimit)
-            {
-                delta = pos.Y - topLimit;
-            }
-            else if (pos.Y > bottomLimit)
-            {
-                delta = pos.Y - bottomLimit;
-            }
-
-            if (Math.Abs(delta) <= 0.5f)
-            {
-                return;
-            }
-
-            float view = list.ViewPosition;
-            view = Math.Max(0f, view + delta);
-            list.ViewPosition = view;
         }
 
     }
