@@ -1,4 +1,5 @@
 #nullable enable
+using System;
 using ScreenReaderMod.Common.Services;
 using ScreenReaderMod.Common.Systems;
 using Terraria;
@@ -13,7 +14,7 @@ public sealed class PickupAnnouncementItem : GlobalItem
         if (player.whoAmI == Main.myPlayer && item is not null && !item.IsAir)
         {
             string message = $"Picked up {InGameNarrationSystem.ComposeItemLabel(item)}";
-            ScreenReaderService.Announce(message);
+            ScreenReaderService.Announce(message, category: ScreenReaderService.AnnouncementCategory.Pickup);
         }
 
         return base.OnPickup(item, player);

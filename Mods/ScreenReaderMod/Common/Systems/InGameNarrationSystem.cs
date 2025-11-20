@@ -52,6 +52,7 @@ public sealed partial class InGameNarrationSystem : ModSystem
     private readonly LockOnNarrator _lockOnNarrator = new();
     private static readonly bool LogNarratorTimings = false;
     private static readonly double TicksToMilliseconds = 1000d / Stopwatch.Frequency;
+    private const float ScreenEdgePaddingPixels = 48f;
 
     public override void Load()
     {
@@ -194,8 +195,8 @@ public sealed partial class InGameNarrationSystem : ModSystem
             LogDuration("FootstepAudio", ref _timingScratch);
             _worldInteractableTracker.Update(player, GuidanceSystem.IsExplorationTrackingEnabled);
             LogDuration("WorldInteractables", ref _timingScratch);
-            _biomeAnnouncementEmitter.Update(player);
-            LogDuration("BiomeAnnouncement", ref _timingScratch);
+        _biomeAnnouncementEmitter.Update(player);
+        LogDuration("BiomeAnnouncement", ref _timingScratch);
         }
 
         _npcDialogueNarrator.Update(player);
@@ -204,6 +205,25 @@ public sealed partial class InGameNarrationSystem : ModSystem
         LogDuration("ControlsMenu", ref _timingScratch);
         _modConfigMenuNarrator.TryHandleIngameUi(Main.InGameUI, isPaused);
         LogDuration("ModConfigMenu", ref _timingScratch);
+    }
+
+    private static bool IsWorldPositionApproximatelyOnScreen(Vector2 worldPosition, float paddingPixels = ScreenEdgePaddingPixels)
+    {
+        float zoomX = Math.Abs(Main.GameViewMatrix.Zoom.X) < 0.001f ? 1f : Main.GameViewMatrix.Zoom.X;
+        float zoomY = Math.Abs(Main.GameViewMatrix.Zoom.Y) < 0.001f ? zoomX : Main.GameViewMatrix.Zoom.Y;
+        float zoom = Math.Max(0.001f, Math.Min(zoomX, zoomY));
+
+        float viewWidth = Main.screenWidth / zoom;
+        float viewHeight = Main.screenHeight / zoom;
+        Vector2 topLeft = Main.screenPosition;
+
+        float left = topLeft.X - paddingPixels;
+        float top = topLeft.Y - paddingPixels;
+        float right = left + viewWidth + paddingPixels * 2f;
+        float bottom = top + viewHeight + paddingPixels * 2f;
+
+        return worldPosition.X >= left && worldPosition.X <= right &&
+               worldPosition.Y >= top && worldPosition.Y <= bottom;
     }
 
     private static void HandleItemSlotHover(On_ItemSlot.orig_MouseHover_ItemArray_int_int orig, Item[] inv, int context, int slot)
@@ -536,6 +556,16 @@ public sealed partial class InGameNarrationSystem : ModSystem
         };
         private static readonly Dictionary<int, Dictionary<int, int>> TileStyleToItemType = BuildTileStyleMap();
         private static readonly Dictionary<int, int> WallTypeToItemType = BuildWallItemMap();
+
+        public static ScreenReaderService.AnnouncementCategory GetAnnouncementCategory(int tileType)
+        {
+            if (tileType <= WallDescriptorBaseTileType)
+            {
+                return ScreenReaderService.AnnouncementCategory.Wall;
+            }
+
+            return ScreenReaderService.AnnouncementCategory.Tile;
+        }
 
         public static bool TryDescribe(int tileX, int tileY, out int tileType, out string? name)
         {
@@ -878,6 +908,11 @@ public sealed partial class InGameNarrationSystem : ModSystem
                 name = TextSanitizer.Clean(name);
             }
 
+            if (!string.IsNullOrWhiteSpace(name))
+            {
+                name = StripUnsafeDescriptor(name);
+            }
+
             if (string.IsNullOrWhiteSpace(name))
             {
                 name = $"Wall {wallType}";
@@ -885,6 +920,25 @@ public sealed partial class InGameNarrationSystem : ModSystem
 
             tileType = WallDescriptorBaseTileType - wallType;
             return true;
+        }
+
+        private static string StripUnsafeDescriptor(string name)
+        {
+            string cleaned = name.Trim();
+
+            const string prefix = "Unsafe ";
+            if (cleaned.StartsWith(prefix, StringComparison.OrdinalIgnoreCase))
+            {
+                cleaned = cleaned[prefix.Length..].TrimStart();
+            }
+
+            const string suffix = " unsafe";
+            if (cleaned.EndsWith(suffix, StringComparison.OrdinalIgnoreCase))
+            {
+                cleaned = cleaned[..^suffix.Length].TrimEnd();
+            }
+
+            return string.IsNullOrWhiteSpace(cleaned) ? name : cleaned;
         }
     }
 

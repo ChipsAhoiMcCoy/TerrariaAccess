@@ -77,6 +77,11 @@ public sealed partial class InGameNarrationSystem
                     continue;
                 }
 
+                if (!IsWorldPositionApproximatelyOnScreen(item.Center))
+                {
+                    continue;
+                }
+
                 _currentFrameIndices.Add(i);
                 EmitOrUpdateInstance(i, item.Center, playerCenter);
             }

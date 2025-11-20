@@ -141,6 +141,11 @@ public sealed partial class InGameNarrationSystem
                     continue;
                 }
 
+                if (!IsWorldPositionApproximatelyOnScreen(npc.Center))
+                {
+                    continue;
+                }
+
                 _candidates.Add(new HostileCandidate(
                     npc.whoAmI,
                     npc.Center,

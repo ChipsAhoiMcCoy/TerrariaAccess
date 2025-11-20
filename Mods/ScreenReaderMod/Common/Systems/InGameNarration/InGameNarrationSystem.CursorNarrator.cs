@@ -11,6 +11,7 @@ using Microsoft.Xna.Framework.Graphics;
 using ScreenReaderMod.Common.Services;
 using ScreenReaderMod.Common.Systems.MenuNarration;
 using ScreenReaderMod.Common.Utilities;
+using AnnouncementCategory = ScreenReaderMod.Common.Services.ScreenReaderService.AnnouncementCategory;
 using Terraria;
 using Terraria.Audio;
 using Terraria.GameContent;
@@ -156,7 +157,7 @@ public sealed partial class InGameNarrationSystem
 
             string coordinates = smartCursorActive ? string.Empty : BuildCoordinateMessage(tileX, tileY);
 
-            if (!TileDescriptor.TryDescribe(tileX, tileY, out _, out string? name))
+            if (!TileDescriptor.TryDescribe(tileX, tileY, out int tileType, out string? name))
             {
                 _lastSmartCursorTileAnnouncement = null;
                 if (!smartCursorActive && !string.IsNullOrWhiteSpace(coordinates))
@@ -191,7 +192,8 @@ public sealed partial class InGameNarrationSystem
             }
 
             string message = string.IsNullOrWhiteSpace(coordinates) ? name : $"{name}, {coordinates}";
-            AnnounceCursorMessage(message, force: true);
+            AnnouncementCategory category = TileDescriptor.GetAnnouncementCategory(tileType);
+            AnnounceCursorMessage(message, force: true, category: category);
         }
 
         private void ResetAll()
@@ -262,7 +264,7 @@ public sealed partial class InGameNarrationSystem
             _originTileY = (int)(chestWorld.Y / 16f);
         }
 
-        private static void AnnounceCursorMessage(string message, bool force)
+        private static void AnnounceCursorMessage(string message, bool force, AnnouncementCategory category = AnnouncementCategory.Default)
         {
             if (HotbarNarrator.TryDequeuePendingAnnouncement(out string hotbarAnnouncement))
             {
@@ -270,11 +272,11 @@ public sealed partial class InGameNarrationSystem
                     ? message
                     : $"{hotbarAnnouncement}. {message}";
 
-                ScreenReaderService.Announce(combined, force: force);
+                ScreenReaderService.Announce(combined, force: force, category: category);
                 return;
             }
 
-            ScreenReaderService.Announce(message, force: force);
+            ScreenReaderService.Announce(message, force: force, category: category);
         }
 
         private static Vector2 GetPlayerChestWorld(Player player)

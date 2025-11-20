@@ -1,10 +1,12 @@
 #nullable enable
 using System;
 using System.Collections.Generic;
+using System.Linq;
 using Microsoft.Xna.Framework;
 using Microsoft.Xna.Framework.Audio;
 using ScreenReaderMod.Common.Services;
 using Terraria;
+using Terraria.Audio;
 using Terraria.ID;
 
 namespace ScreenReaderMod.Common.Systems;
@@ -93,6 +95,9 @@ public sealed partial class InGameNarrationSystem
                     heightTiles: 2,
                     profile: InteractableCueProfile.BeeLarva)));
 
+            RegisterSource(new OreInteractableSource(
+                scanRadiusTiles: 90f));
+
             RegisterSource(new ItemInteractableSource(
                 scanRadiusTiles: 75f,
                 InteractableCueProfile.FallenStar,
@@ -161,6 +166,11 @@ public sealed partial class InGameNarrationSystem
             _distanceScratch.Clear();
             foreach (Candidate candidate in _trackedCandidates)
             {
+                if (!IsWorldPositionApproximatelyOnScreen(candidate.WorldPosition))
+                {
+                    continue;
+                }
+
                 float distanceTiles = Vector2.Distance(candidate.WorldPosition, playerCenter) / 16f;
                 if (distanceTiles > candidate.Profile.MaxAudibleDistanceTiles)
                 {
@@ -299,7 +309,7 @@ public sealed partial class InGameNarrationSystem
                 }
 
                 _arrivedKeys.Add(key);
-                string label = entry.Candidate.Profile.ArrivalLabel;
+                string label = entry.Candidate.ArrivalLabelOverride ?? entry.Candidate.Profile.ArrivalLabel;
                 if (!string.IsNullOrWhiteSpace(label))
                 {
                     ScreenReaderService.Announce($"Arrived at {label}");
@@ -320,6 +330,31 @@ public sealed partial class InGameNarrationSystem
 
             Vector2 offset = entry.Candidate.WorldPosition - playerCenter;
             InteractableCueProfile profile = entry.Candidate.Profile;
+
+            if (profile.SoundStyle.HasValue)
+            {
+                float pitchOffset = MathHelper.Clamp(-offset.Y / profile.PitchScalePixels, -0.8f, 0.8f);
+                float soundStyleBaseVolume = profile.ComputeVolume(entry.DistanceTiles);
+                float soundStyleLoudness = SoundLoudnessUtility.ApplyDistanceFalloff(
+                    soundStyleBaseVolume,
+                    entry.DistanceTiles,
+                    profile.MaxAudibleDistanceTiles,
+                    minFactor: 0.45f);
+                float soundStyleScaledVolume = MathHelper.Clamp(
+                    soundStyleLoudness * (isPrimaryCue ? 1f : SecondaryCueVolumeScale),
+                    0f,
+                    1f);
+                if (soundStyleScaledVolume <= 0f)
+                {
+                    return;
+                }
+
+                SoundStyle style = profile.SoundStyle.Value
+                    .WithVolumeScale(soundStyleScaledVolume)
+                    .WithPitchOffset(pitchOffset);
+                SoundEngine.PlaySound(style, entry.Candidate.WorldPosition);
+                return;
+            }
 
             float pitch = MathHelper.Clamp(-offset.Y / profile.PitchScalePixels, -0.8f, 0.8f);
             float pan = MathHelper.Clamp(offset.X / profile.PanScalePixels, -1f, 1f);
@@ -520,7 +555,7 @@ public sealed partial class InGameNarrationSystem
 
                         Vector2 worldPosition = definition.GetWorldCenter(anchor);
                         int localId = HashCode.Combine(definition.DefinitionId, anchor.X, anchor.Y);
-                        buffer.Add(new Candidate(new TrackedInteractableKey(SourceId, localId), worldPosition, definition.Profile));
+                        buffer.Add(new Candidate(new TrackedInteractableKey(SourceId, localId), worldPosition, definition.Profile, null));
                     }
                 }
             }
@@ -561,6 +596,128 @@ public sealed partial class InGameNarrationSystem
         public StaticTileInteractableSource(float scanRadiusTiles, params TileInteractableDefinition[] definitions)
             : base(scanRadiusTiles, definitions)
         {
+        }
+    }
+
+    private sealed class OreInteractableSource : TileInteractableSource
+    {
+        private const int OreFrameSizePixels = 18;
+
+        public OreInteractableSource(float scanRadiusTiles)
+            : base(scanRadiusTiles, CreateDefinition())
+        {
+        }
+
+        public override void Collect(Player player, List<Candidate> buffer)
+        {
+            Vector2 playerCenter = player.Center;
+            int playerTileX = (int)(playerCenter.X / 16f);
+            int playerTileY = (int)(playerCenter.Y / 16f);
+            int scanRadius = (int)Math.Clamp(ScanRadiusTiles, 1f, 200f);
+
+            int minX = Math.Max(0, playerTileX - scanRadius);
+            int maxX = Math.Min(Main.maxTilesX - 1, playerTileX + scanRadius);
+            int minY = Math.Max(0, playerTileY - scanRadius);
+            int maxY = Math.Min(Main.maxTilesY - 1, playerTileY + scanRadius);
+
+            HashSet<Point> visited = new();
+            Stack<Point> stack = new();
+
+            for (int x = minX; x <= maxX; x++)
+            {
+                for (int y = minY; y <= maxY; y++)
+                {
+                    Point start = new(x, y);
+                    if (visited.Contains(start))
+                    {
+                        continue;
+                    }
+
+                    Tile tile = Main.tile[x, y];
+                    if (!tile.HasTile || !IsOre(tile.TileType))
+                    {
+                        continue;
+                    }
+
+                    int oreType = tile.TileType;
+                    float bestDistanceSq = float.MaxValue;
+                    Point bestAnchor = start;
+
+                    visited.Add(start);
+                    stack.Push(start);
+
+                    while (stack.Count > 0)
+                    {
+                        Point current = stack.Pop();
+                        Vector2 center = new((current.X + 0.5f) * 16f, (current.Y + 0.5f) * 16f);
+                        float distanceSq = Vector2.DistanceSquared(center, playerCenter);
+                        if (distanceSq < bestDistanceSq)
+                        {
+                            bestDistanceSq = distanceSq;
+                            bestAnchor = current;
+                        }
+
+                        foreach (Point neighbor in GetNeighbors(current, minX, maxX, minY, maxY))
+                        {
+                            if (visited.Contains(neighbor))
+                            {
+                                continue;
+                            }
+
+                            Tile neighborTile = Main.tile[neighbor.X, neighbor.Y];
+                            if (!neighborTile.HasTile || neighborTile.TileType != oreType)
+                            {
+                                continue;
+                            }
+
+                            visited.Add(neighbor);
+                            stack.Push(neighbor);
+                        }
+                    }
+
+                    Vector2 worldPosition = new((bestAnchor.X + 0.5f) * 16f, (bestAnchor.Y + 0.5f) * 16f);
+                    int localId = HashCode.Combine(oreType, bestAnchor.X, bestAnchor.Y);
+                    buffer.Add(new Candidate(new TrackedInteractableKey(SourceId, localId), worldPosition, InteractableCueProfile.Ore, null));
+                }
+            }
+        }
+
+        private static TileInteractableDefinition CreateDefinition()
+        {
+            int[] oreTiles = Enumerable
+                .Range(0, TileID.Sets.Ore.Length)
+                .Where(id => TileID.Sets.Ore[id])
+                .ToArray();
+
+            return new TileInteractableDefinition(
+                tileTypes: oreTiles,
+                frameWidth: OreFrameSizePixels,
+                frameHeight: OreFrameSizePixels,
+                widthTiles: 1,
+                heightTiles: 1,
+                profile: InteractableCueProfile.Ore);
+        }
+
+        private static bool IsOre(int tileType) => tileType >= 0 && tileType < TileID.Sets.Ore.Length && TileID.Sets.Ore[tileType];
+
+        private static IEnumerable<Point> GetNeighbors(Point point, int minX, int maxX, int minY, int maxY)
+        {
+            if (point.X > minX)
+            {
+                yield return new Point(point.X - 1, point.Y);
+            }
+            if (point.X < maxX)
+            {
+                yield return new Point(point.X + 1, point.Y);
+            }
+            if (point.Y > minY)
+            {
+                yield return new Point(point.X, point.Y - 1);
+            }
+            if (point.Y < maxY)
+            {
+                yield return new Point(point.X, point.Y + 1);
+            }
         }
     }
 
@@ -606,12 +763,12 @@ public sealed partial class InGameNarrationSystem
                     continue;
                 }
 
-                buffer.Add(new Candidate(new TrackedInteractableKey(SourceId, i), center, _profile));
+                buffer.Add(new Candidate(new TrackedInteractableKey(SourceId, i), center, _profile, null));
             }
         }
     }
 
-    private readonly record struct Candidate(TrackedInteractableKey Key, Vector2 WorldPosition, InteractableCueProfile Profile);
+    private readonly record struct Candidate(TrackedInteractableKey Key, Vector2 WorldPosition, InteractableCueProfile Profile, string? ArrivalLabelOverride);
 
     private readonly record struct CandidateDistance(Candidate Candidate, float DistanceTiles);
 
@@ -709,7 +866,8 @@ public sealed partial class InGameNarrationSystem
             float panScalePixels = DefaultPanScale,
             float pitchScalePixels = DefaultPitchScale,
             float delayResponseExponent = 1f,
-            string arrivalLabel = "")
+            string arrivalLabel = "",
+            SoundStyle? soundStyle = null)
         {
             Id = id;
             FundamentalFrequency = fundamentalFrequency;
@@ -726,6 +884,7 @@ public sealed partial class InGameNarrationSystem
             PitchScalePixels = pitchScalePixels;
             DelayResponseExponent = Math.Max(MinDelayResponseExponent, delayResponseExponent);
             ArrivalLabel = arrivalLabel ?? string.Empty;
+            SoundStyle = soundStyle;
         }
 
         public string Id { get; }
@@ -743,6 +902,7 @@ public sealed partial class InGameNarrationSystem
         public float PitchScalePixels { get; }
         public float DelayResponseExponent { get; }
         public string ArrivalLabel { get; }
+        public SoundStyle? SoundStyle { get; }
 
         public float ComputeVolume(float distanceTiles)
         {
@@ -893,5 +1053,21 @@ public sealed partial class InGameNarrationSystem
             maxIntervalFrames: 46,
             delayResponseExponent: 0.7f,
             arrivalLabel: "a fallen star");
+
+        public static InteractableCueProfile Ore { get; } = new(
+            id: "ore",
+            fundamentalFrequency: 460f,
+            partialMultipliers: new[] { 1.5f },
+            envelope: SynthesizedSoundFactory.ToneEnvelopes.WorldCue,
+            durationSeconds: 0.2f,
+            baseGain: 0.36f,
+            minVolume: 0.24f,
+            maxVolume: 0.82f,
+            maxAudibleDistanceTiles: 92f,
+            minIntervalFrames: 10,
+            maxIntervalFrames: 48,
+            delayResponseExponent: 0.68f,
+            arrivalLabel: string.Empty,
+            soundStyle: SoundID.Tink);
     }
 }

@@ -11,6 +11,7 @@ using Microsoft.Xna.Framework.Graphics;
 using ScreenReaderMod.Common.Services;
 using ScreenReaderMod.Common.Systems.MenuNarration;
 using ScreenReaderMod.Common.Utilities;
+using AnnouncementCategory = ScreenReaderMod.Common.Services.ScreenReaderService.AnnouncementCategory;
 using Terraria;
 using Terraria.Audio;
 using Terraria.GameContent;
@@ -91,7 +92,8 @@ public sealed partial class InGameNarrationSystem
                 return;
             }
 
-            string? message = hasInteract ? DescribeSmartInteract() : DescribeSmartCursor();
+            AnnouncementCategory category = AnnouncementCategory.Default;
+            string? message = hasInteract ? DescribeSmartInteract(out category) : DescribeSmartCursor(out category);
             if (string.IsNullOrWhiteSpace(message))
             {
                 AnnouncePendingStateIfAny();
@@ -110,7 +112,7 @@ public sealed partial class InGameNarrationSystem
             }
 
             _lastAnnouncement = message;
-            ScreenReaderService.Announce(message);
+            ScreenReaderService.Announce(message, category: category);
         }
 
         private void ResetStateTracking()
@@ -167,8 +169,10 @@ public sealed partial class InGameNarrationSystem
             return state is not null;
         }
 
-        private string? DescribeSmartInteract()
+        private string? DescribeSmartInteract(out AnnouncementCategory category)
         {
+            category = AnnouncementCategory.Default;
+
             int npcIndex = Main.SmartInteractNPC;
             if (npcIndex >= 0 && npcIndex < Main.npc.Length)
             {
@@ -237,6 +241,7 @@ public sealed partial class InGameNarrationSystem
 
                 if (!string.IsNullOrWhiteSpace(tileName))
                 {
+                    category = TileDescriptor.GetAnnouncementCategory(tileType);
                     return tileName;
                 }
             }
@@ -244,8 +249,10 @@ public sealed partial class InGameNarrationSystem
             return null;
         }
 
-        private string? DescribeSmartCursor()
+        private string? DescribeSmartCursor(out AnnouncementCategory category)
         {
+            category = AnnouncementCategory.Default;
+
             int tileX = Main.SmartCursorX;
             int tileY = Main.SmartCursorY;
             if (!TileDescriptor.TryDescribe(tileX, tileY, out int tileType, out string? tileName))
@@ -274,6 +281,7 @@ public sealed partial class InGameNarrationSystem
                 return null;
             }
 
+            category = TileDescriptor.GetAnnouncementCategory(tileType);
             return tileName;
         }
 
