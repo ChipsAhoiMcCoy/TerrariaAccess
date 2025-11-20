@@ -16,9 +16,11 @@ namespace ScreenReaderMod.Common.Systems.MenuNarration;
 internal sealed class MenuUiSelectionTracker
 {
     private static readonly FieldInfo? LastHoverField = typeof(UserInterface).GetField("_lastElementHover", BindingFlags.NonPublic | BindingFlags.Instance);
+    private static readonly Dictionary<Type, LabelAccessors> LabelAccessorCache = new();
 
     private UIElement? _lastElement;
     private string? _lastLabel;
+    private readonly Stack<UIElement> _traversalStack = new();
 
     public void Reset()
     {
@@ -52,33 +54,39 @@ internal sealed class MenuUiSelectionTracker
 
     private static readonly Dictionary<Type, bool> LoggedMissingLabels = new();
 
-    private static string ExtractLabel(UIElement element)
+    private string ExtractLabel(UIElement element)
     {
-        string label = ExtractDirectLabel(element);
-        if (!string.IsNullOrWhiteSpace(label))
-        {
-            return label;
-        }
+        _traversalStack.Clear();
+        _traversalStack.Push(element);
 
-        foreach (UIElement child in element.Children ?? Enumerable.Empty<UIElement>())
+        while (_traversalStack.Count > 0)
         {
-            label = ExtractLabel(child);
-            if (!string.IsNullOrWhiteSpace(label))
-            {
-                return label;
-            }
-        }
-
-        UIElement? current = element.Parent;
-        while (current is not null)
-        {
-            label = ExtractDirectLabel(current);
+            UIElement current = _traversalStack.Pop();
+            string label = ExtractDirectLabel(current);
             if (!string.IsNullOrWhiteSpace(label))
             {
                 return label;
             }
 
-            current = current.Parent;
+            if (current.Children is { } children)
+            {
+                foreach (UIElement child in children)
+                {
+                    _traversalStack.Push(child);
+                }
+            }
+        }
+
+        UIElement? ancestor = element.Parent;
+        while (ancestor is not null)
+        {
+            string label = ExtractDirectLabel(ancestor);
+            if (!string.IsNullOrWhiteSpace(label))
+            {
+                return label;
+            }
+
+            ancestor = ancestor.Parent;
         }
 
         return string.Empty;
@@ -87,6 +95,7 @@ internal sealed class MenuUiSelectionTracker
     private static string ExtractDirectLabel(UIElement element)
     {
         Type type = element.GetType();
+        LabelAccessors accessors = GetAccessors(type);
 
         string custom = ExtractSpecializedLabel(type, element);
         if (!string.IsNullOrWhiteSpace(custom))
@@ -94,10 +103,9 @@ internal sealed class MenuUiSelectionTracker
             return custom;
         }
 
-        PropertyInfo? textProperty = type.GetProperty("Text", BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Instance);
-        if (textProperty is not null)
+        if (accessors.TextProperty is not null)
         {
-            object? value = textProperty.GetValue(element);
+            object? value = accessors.TextProperty.GetValue(element);
             if (value is string text)
             {
                 return text.Trim();
@@ -109,20 +117,18 @@ internal sealed class MenuUiSelectionTracker
             }
         }
 
-        FieldInfo? textField = type.GetField("_text", BindingFlags.NonPublic | BindingFlags.Instance);
-        if (textField is not null)
+        if (accessors.TextField is not null)
         {
-            object? value = textField.GetValue(element);
+            object? value = accessors.TextField.GetValue(element);
             if (value is string text)
             {
                 return text.Trim();
             }
         }
 
-        FieldInfo? valueField = type.GetField("_value", BindingFlags.NonPublic | BindingFlags.Instance);
-        if (valueField is not null)
+        if (accessors.ValueField is not null)
         {
-            object? value = valueField.GetValue(element);
+            object? value = accessors.ValueField.GetValue(element);
             if (value is string text)
             {
                 return text.Trim();
@@ -137,6 +143,18 @@ internal sealed class MenuUiSelectionTracker
         }
 
         return string.Empty;
+    }
+
+    private static LabelAccessors GetAccessors(Type type)
+    {
+        if (LabelAccessorCache.TryGetValue(type, out LabelAccessors? cached) && cached is not null)
+        {
+            return cached;
+        }
+
+        LabelAccessors resolved = LabelAccessorFactory.Create(type);
+        LabelAccessorCache[type] = resolved;
+        return resolved;
     }
 
     private static string ExtractSpecializedLabel(Type type, UIElement element)
@@ -833,4 +851,26 @@ internal sealed class MenuUiSelectionTracker
     }
 }
 
+internal sealed record LabelAccessors
+{
+    public PropertyInfo? TextProperty { get; init; }
+    public FieldInfo? TextField { get; init; }
+    public FieldInfo? ValueField { get; init; }
+}
+
 internal readonly record struct MenuUiLabel(UIElement Element, string Text, bool IsNew);
+
+internal static class LabelAccessorFactory
+{
+    private const BindingFlags LabelFlags = BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Instance;
+
+    internal static LabelAccessors Create(Type type)
+    {
+        return new LabelAccessors
+        {
+            TextProperty = type.GetProperty("Text", LabelFlags),
+            TextField = type.GetField("_text", LabelFlags),
+            ValueField = type.GetField("_value", LabelFlags),
+        };
+    }
+}

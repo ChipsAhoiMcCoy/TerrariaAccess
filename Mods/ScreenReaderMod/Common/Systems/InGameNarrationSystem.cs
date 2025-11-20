@@ -2,6 +2,7 @@
 using System;
 using System.Collections;
 using System.Collections.Generic;
+using System.Diagnostics;
 using System.Linq;
 using System.Reflection;
 using System.Text;
@@ -47,55 +48,31 @@ public sealed partial class InGameNarrationSystem : ModSystem
     private readonly ControlsMenuNarrator _controlsMenuNarrator = new();
     private readonly ModConfigMenuNarrator _modConfigMenuNarrator = new();
     private readonly FootstepAudioEmitter _footstepAudioEmitter = new();
-    private readonly FallProximityAudioEmitter _fallProximityAudioEmitter = new();
     private readonly BiomeAnnouncementEmitter _biomeAnnouncementEmitter = new();
     private readonly LockOnNarrator _lockOnNarrator = new();
+    private static readonly bool LogNarratorTimings = false;
+    private static readonly double TicksToMilliseconds = 1000d / Stopwatch.Frequency;
 
-        public override void Load()
-        {
-            if (Main.dedServ)
-            {
-                return;
-            }
-
-            On_ItemSlot.MouseHover_ItemArray_int_int += HandleItemSlotHover;
-            On_ItemSlot.MouseHover_refItem_int += HandleItemSlotHoverRef;
-            On_Main.DrawNPCChatButtons += CaptureNpcChatButtons;
-            On_Main.MouseText_string_string_int_byte_int_int_int_int_int_bool += CaptureMouseText;
-            On_ChestUI.RenameChest += HandleChestRename;
-            On_IngameOptions.Draw += HandleIngameOptionsDraw;
-            On_IngameOptions.DrawLeftSide += CaptureIngameOptionsLeft;
-            On_IngameOptions.DrawRightSide += CaptureIngameOptionsRight;
-        }
-
-        public override void Unload()
-        {
-            if (Main.dedServ)
+    public override void Load()
+    {
+        if (Main.dedServ)
         {
             return;
         }
 
-            _treasureBagBeaconEmitter.Reset();
-            _hostileStaticAudioEmitter.Reset();
-            _footstepAudioEmitter.Reset();
-            _fallProximityAudioEmitter.Reset();
-            _worldInteractableTracker.Reset();
-            _biomeAnnouncementEmitter.Reset();
-            CursorNarrator.DisposeStaticResources();
-            TreasureBagBeaconEmitter.DisposeStaticResources();
-            FootstepToneProvider.DisposeStaticResources();
-            FallIndicatorToneProvider.DisposeStaticResources();
-            WorldInteractableTracker.DisposeStaticResources();
-            HostileStaticAudioEmitter.DisposeStaticResources();
-            On_ItemSlot.MouseHover_ItemArray_int_int -= HandleItemSlotHover;
-            On_ItemSlot.MouseHover_refItem_int -= HandleItemSlotHoverRef;
-            On_Main.DrawNPCChatButtons -= CaptureNpcChatButtons;
-            On_Main.MouseText_string_string_int_byte_int_int_int_int_int_bool -= CaptureMouseText;
-            On_ChestUI.RenameChest -= HandleChestRename;
-            On_IngameOptions.Draw -= HandleIngameOptionsDraw;
-            On_IngameOptions.DrawLeftSide -= CaptureIngameOptionsLeft;
-            On_IngameOptions.DrawRightSide -= CaptureIngameOptionsRight;
+        RegisterHooks();
+    }
+
+    public override void Unload()
+    {
+        if (Main.dedServ)
+        {
+            return;
         }
+
+        ResetSharedResources();
+        UnregisterHooks();
+    }
 
     public override void OnWorldLoad()
     {
@@ -104,14 +81,7 @@ public sealed partial class InGameNarrationSystem : ModSystem
 
     public override void OnWorldUnload()
     {
-        _worldEventNarrator.Reset();
-        _treasureBagBeaconEmitter.Reset();
-        _hostileStaticAudioEmitter.Reset();
-        _footstepAudioEmitter.Reset();
-        _fallProximityAudioEmitter.Reset();
-        _worldInteractableTracker.Reset();
-        _biomeAnnouncementEmitter.Reset();
-        FallIndicatorToneProvider.DisposeStaticResources();
+        ResetPerWorldResources();
     }
 
     public override void PostUpdateWorld()
@@ -124,10 +94,56 @@ public sealed partial class InGameNarrationSystem : ModSystem
         TryUpdateNarrators(requirePaused: false);
     }
 
+    private void RegisterHooks()
+    {
+        On_ItemSlot.MouseHover_ItemArray_int_int += HandleItemSlotHover;
+        On_ItemSlot.MouseHover_refItem_int += HandleItemSlotHoverRef;
+        On_Main.DrawNPCChatButtons += CaptureNpcChatButtons;
+        On_Main.MouseText_string_string_int_byte_int_int_int_int_int_bool += CaptureMouseText;
+        On_ChestUI.RenameChest += HandleChestRename;
+        On_IngameOptions.Draw += HandleIngameOptionsDraw;
+        On_IngameOptions.DrawLeftSide += CaptureIngameOptionsLeft;
+        On_IngameOptions.DrawRightSide += CaptureIngameOptionsRight;
+    }
+
+    private void UnregisterHooks()
+    {
+        On_ItemSlot.MouseHover_ItemArray_int_int -= HandleItemSlotHover;
+        On_ItemSlot.MouseHover_refItem_int -= HandleItemSlotHoverRef;
+        On_Main.DrawNPCChatButtons -= CaptureNpcChatButtons;
+        On_Main.MouseText_string_string_int_byte_int_int_int_int_int_bool -= CaptureMouseText;
+        On_ChestUI.RenameChest -= HandleChestRename;
+        On_IngameOptions.Draw -= HandleIngameOptionsDraw;
+        On_IngameOptions.DrawLeftSide -= CaptureIngameOptionsLeft;
+        On_IngameOptions.DrawRightSide -= CaptureIngameOptionsRight;
+    }
+
+    private void ResetSharedResources()
+    {
+        ResetPerWorldResources();
+        CursorNarrator.DisposeStaticResources();
+        TreasureBagBeaconEmitter.DisposeStaticResources();
+        FootstepToneProvider.DisposeStaticResources();
+        WorldInteractableTracker.DisposeStaticResources();
+        HostileStaticAudioEmitter.DisposeStaticResources();
+    }
+
+    private void ResetPerWorldResources()
+    {
+        _worldEventNarrator.Reset();
+        _treasureBagBeaconEmitter.Reset();
+        _hostileStaticAudioEmitter.Reset();
+        _footstepAudioEmitter.Reset();
+        _worldInteractableTracker.Reset();
+        _biomeAnnouncementEmitter.Reset();
+    }
+
     public override void UpdateUI(GameTime gameTime)
     {
         TryUpdateNarrators(requirePaused: true);
     }
+
+    private long _timingScratch;
 
     private void TryUpdateNarrators(bool requirePaused)
     {
@@ -155,31 +171,68 @@ public sealed partial class InGameNarrationSystem : ModSystem
             return;
         }
 
+        _timingScratch = StartTiming();
         _hotbarNarrator.Update(player);
+        LogDuration("Hotbar", ref _timingScratch);
         _inventoryNarrator.Update(player);
+        LogDuration("Inventory", ref _timingScratch);
         _craftingNarrator.Update(player);
+        LogDuration("Crafting", ref _timingScratch);
         _smartCursorNarrator.Update();
+        LogDuration("SmartCursor", ref _timingScratch);
         _cursorNarrator.Update();
+        LogDuration("Cursor", ref _timingScratch);
         _lockOnNarrator.Update();
+        LogDuration("LockOn", ref _timingScratch);
         if (!isPaused)
         {
             _treasureBagBeaconEmitter.Update(player);
+            LogDuration("TreasureBagBeacon", ref _timingScratch);
             _hostileStaticAudioEmitter.Update(player);
+            LogDuration("HostileStaticAudio", ref _timingScratch);
             _footstepAudioEmitter.Update(player);
-            _fallProximityAudioEmitter.Update(player);
+            LogDuration("FootstepAudio", ref _timingScratch);
             _worldInteractableTracker.Update(player, GuidanceSystem.IsExplorationTrackingEnabled);
+            LogDuration("WorldInteractables", ref _timingScratch);
             _biomeAnnouncementEmitter.Update(player);
+            LogDuration("BiomeAnnouncement", ref _timingScratch);
         }
 
         _npcDialogueNarrator.Update(player);
+        LogDuration("NpcDialogue", ref _timingScratch);
         _controlsMenuNarrator.Update(isPaused);
+        LogDuration("ControlsMenu", ref _timingScratch);
         _modConfigMenuNarrator.TryHandleIngameUi(Main.InGameUI, isPaused);
+        LogDuration("ModConfigMenu", ref _timingScratch);
     }
 
     private static void HandleItemSlotHover(On_ItemSlot.orig_MouseHover_ItemArray_int_int orig, Item[] inv, int context, int slot)
     {
         orig(inv, context, slot);
         InventoryNarrator.RecordFocus(inv, context, slot);
+    }
+
+    private static long StartTiming()
+    {
+        if (!LogNarratorTimings)
+        {
+            return 0;
+        }
+
+        return Stopwatch.GetTimestamp();
+    }
+
+    private static void LogDuration(string name, ref long startTicks)
+    {
+        if (!LogNarratorTimings)
+        {
+            return;
+        }
+
+        long now = Stopwatch.GetTimestamp();
+        double elapsedMs = (now - startTicks) * TicksToMilliseconds;
+        global::ScreenReaderMod.ScreenReaderMod.Instance?.Logger.Info($"[NarratorTiming] {name}: {elapsedMs:0.###} ms");
+        startTicks = now;
     }
 
     private static void CaptureNpcChatButtons(On_Main.orig_DrawNPCChatButtons orig, int superColor, Color chatColor, int numLines, string focusText, string focusText3)

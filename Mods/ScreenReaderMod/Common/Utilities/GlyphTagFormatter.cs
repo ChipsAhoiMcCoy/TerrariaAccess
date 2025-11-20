@@ -72,11 +72,22 @@ internal static class GlyphTagFormatter
 
     private static readonly HashSet<string> ReportedGlyphSnippetTypes = new(StringComparer.Ordinal);
     private static readonly TextInfo InvariantTextInfo = CultureInfo.InvariantCulture.TextInfo;
+    private static readonly Dictionary<Type, MemberInfo[]> GlyphMemberCache = new();
 
     private static Type? _glyphSnippetType;
 
     internal static string SanitizeTooltip(string raw)
     {
+        if (string.IsNullOrWhiteSpace(raw))
+        {
+            return string.Empty;
+        }
+
+        if (raw.IndexOf("[g:", StringComparison.OrdinalIgnoreCase) < 0)
+        {
+            return Normalize(raw);
+        }
+
         try
         {
             List<TextSnippet>? snippets = ChatManager.ParseMessage(raw, Color.White);
@@ -314,15 +325,15 @@ internal static class GlyphTagFormatter
                 string typeName = type.FullName ?? type.Name;
                 logger.Info($"[GlyphDebug] snippet: {typeName} -> \"{snippet.Text}\"");
 
-                foreach (string memberName in GlyphSnippetMemberCandidates)
+                foreach (MemberInfo member in GetGlyphMembers(type))
                 {
-                    object? value = TryGetMemberValue(type, snippet, memberName);
+                    object? value = TryGetMemberValue(member, snippet);
                     if (value is null)
                     {
                         continue;
                     }
 
-                    logger.Info($"[GlyphDebug]   {memberName}: {value}");
+                    logger.Info($"[GlyphDebug]   {member.Name}: {value}");
                 }
             }
         }
@@ -556,9 +567,9 @@ internal static class GlyphTagFormatter
 
     private static string? ExtractGlyphToken(Type snippetType, TextSnippet snippet)
     {
-        foreach (string memberName in GlyphSnippetMemberCandidates)
+        foreach (MemberInfo member in GetGlyphMembers(snippetType))
         {
-            object? value = TryGetMemberValue(snippetType, snippet, memberName);
+            object? value = TryGetMemberValue(member, snippet);
             if (value is null)
             {
                 continue;
@@ -574,40 +585,50 @@ internal static class GlyphTagFormatter
         return null;
     }
 
-    private static object? TryGetMemberValue(Type type, object instance, string memberName)
+    private static MemberInfo[] GetGlyphMembers(Type snippetType)
     {
-        if (type is null || string.IsNullOrWhiteSpace(memberName))
+        if (GlyphMemberCache.TryGetValue(snippetType, out MemberInfo[]? cached))
+        {
+            return cached;
+        }
+
+        const BindingFlags flags = BindingFlags.Instance | BindingFlags.Public | BindingFlags.NonPublic;
+        var matches = new List<MemberInfo>(GlyphSnippetMemberCandidates.Length);
+        foreach (string candidate in GlyphSnippetMemberCandidates)
+        {
+            PropertyInfo? property = snippetType.GetProperty(candidate, flags);
+            if (property is not null && property.GetIndexParameters().Length == 0)
+            {
+                matches.Add(property);
+            }
+
+            FieldInfo? field = snippetType.GetField(candidate, flags);
+            if (field is not null)
+            {
+                matches.Add(field);
+            }
+        }
+
+        MemberInfo[] resolved = matches.ToArray();
+        GlyphMemberCache[snippetType] = resolved;
+        return resolved;
+    }
+
+    private static object? TryGetMemberValue(MemberInfo member, object instance)
+    {
+        try
+        {
+            return member switch
+            {
+                PropertyInfo property => property.GetValue(instance),
+                FieldInfo field => field.GetValue(instance),
+                _ => null,
+            };
+        }
+        catch
         {
             return null;
         }
-
-        PropertyInfo? property = type.GetProperty(memberName, BindingFlags.Instance | BindingFlags.Public | BindingFlags.NonPublic);
-        if (property is not null && property.GetIndexParameters().Length == 0)
-        {
-            try
-            {
-                return property.GetValue(instance);
-            }
-            catch
-            {
-                // Ignore accessor failures.
-            }
-        }
-
-        FieldInfo? field = type.GetField(memberName, BindingFlags.Instance | BindingFlags.Public | BindingFlags.NonPublic);
-        if (field is not null)
-        {
-            try
-            {
-                return field.GetValue(instance);
-            }
-            catch
-            {
-                // Ignore accessor failures.
-            }
-        }
-
-        return null;
     }
 
     private static string? ConvertGlyphMemberToString(object value)

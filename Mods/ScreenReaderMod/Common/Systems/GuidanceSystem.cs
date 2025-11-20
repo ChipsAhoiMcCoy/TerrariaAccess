@@ -15,7 +15,7 @@ using Terraria.UI;
 
 namespace ScreenReaderMod.Common.Systems;
 
-public sealed class GuidanceSystem : ModSystem
+public sealed partial class GuidanceSystem : ModSystem
 {
     private const string WaypointListKey = "screenReaderWaypoints";
     private const string SelectedIndexKey = "screenReaderSelectedWaypoint";
@@ -30,48 +30,6 @@ public sealed class GuidanceSystem : ModSystem
     private const float DistanceReferenceTiles = 90f;
     private const float MinVolume = 0.18f;
 
-    private static readonly List<Waypoint> Waypoints = new();
-    private enum SelectionMode
-    {
-        None,
-        Exploration,
-        Interactable,
-        Npc,
-        Player,
-        Waypoint
-    }
-
-    private static SelectionMode _selectionMode = SelectionMode.None;
-    private static int _selectedIndex = -1;
-    private static int _selectedNpcIndex = -1;
-    private static int _selectedPlayerIndex = -1;
-    private static int _selectedInteractableIndex = -1;
-    private static SelectionMode _categoryAnnouncementMode = SelectionMode.None;
-    private static bool _categoryAnnouncementPending;
-
-    private static bool _namingActive;
-
-    private static int _nextPingUpdateFrame = -1;
-    private static bool _arrivalAnnounced;
-    private static SoundEffect? _waypointTone;
-    private static readonly List<SoundEffectInstance> ActiveWaypointInstances = new();
-    private static UIVirtualKeyboard? _activeKeyboard;
-    private static InputSnapshot? _inputSnapshot;
-
-    private struct Waypoint
-    {
-        public string Name;
-        public Vector2 WorldPosition;
-
-        public Waypoint(string name, Vector2 worldPosition)
-        {
-            Name = name;
-            WorldPosition = worldPosition;
-        }
-    }
-
-    internal static bool IsExplorationTrackingEnabled => _selectionMode == SelectionMode.Exploration;
-
     public override void Load()
     {
         if (Main.dedServ)
@@ -84,20 +42,8 @@ public sealed class GuidanceSystem : ModSystem
 
     public override void Unload()
     {
-        Waypoints.Clear();
-        NearbyNpcs.Clear();
-        NearbyPlayers.Clear();
-        NearbyInteractables.Clear();
-        _selectedIndex = -1;
-        _selectedNpcIndex = -1;
-        _selectedPlayerIndex = -1;
-        _selectedInteractableIndex = -1;
-        _selectionMode = SelectionMode.None;
-        ClearCategoryAnnouncement();
-
+        ResetTrackingState();
         _namingActive = false;
-        _nextPingUpdateFrame = -1;
-        _arrivalAnnounced = false;
         DisposeToneResources();
         _activeKeyboard = null;
         _inputSnapshot = null;
@@ -105,18 +51,7 @@ public sealed class GuidanceSystem : ModSystem
 
     public override void OnWorldUnload()
     {
-        Waypoints.Clear();
-        NearbyNpcs.Clear();
-        NearbyPlayers.Clear();
-        NearbyInteractables.Clear();
-        _selectedIndex = -1;
-        _selectedNpcIndex = -1;
-        _selectedPlayerIndex = -1;
-        _selectedInteractableIndex = -1;
-        _selectionMode = SelectionMode.None;
-        ClearCategoryAnnouncement();
-        _nextPingUpdateFrame = -1;
-        _arrivalAnnounced = false;
+        ResetTrackingState();
         CloseNamingUi();
         DisposeToneResources();
         _inputSnapshot = null;
@@ -143,18 +78,7 @@ public sealed class GuidanceSystem : ModSystem
 
     public override void LoadWorldData(TagCompound tag)
     {
-        Waypoints.Clear();
-        NearbyNpcs.Clear();
-        NearbyPlayers.Clear();
-        NearbyInteractables.Clear();
-        _selectedIndex = -1;
-        _selectedNpcIndex = -1;
-        _selectedPlayerIndex = -1;
-        _selectedInteractableIndex = -1;
-        _selectionMode = SelectionMode.None;
-        ClearCategoryAnnouncement();
-        _nextPingUpdateFrame = -1;
-        _arrivalAnnounced = false;
+        ResetTrackingState();
 
         if (tag.ContainsKey(WaypointListKey))
         {
@@ -219,114 +143,6 @@ public sealed class GuidanceSystem : ModSystem
         }
     }
 
-    private readonly struct NpcGuidanceEntry
-    {
-        public readonly int NpcIndex;
-        public readonly string DisplayName;
-        public readonly float DistanceTiles;
-
-        public NpcGuidanceEntry(int npcIndex, string displayName, float distanceTiles)
-        {
-            NpcIndex = npcIndex;
-            DisplayName = displayName;
-            DistanceTiles = distanceTiles;
-        }
-    }
-
-    private static readonly List<NpcGuidanceEntry> NearbyNpcs = new();
-    private readonly struct InteractableGuidanceEntry
-    {
-        public readonly Point Anchor;
-        public readonly string DisplayName;
-        public readonly Vector2 WorldPosition;
-        public readonly float DistanceTiles;
-
-        public InteractableGuidanceEntry(Point anchor, string displayName, Vector2 worldPosition, float distanceTiles)
-        {
-            Anchor = anchor;
-            DisplayName = displayName;
-            WorldPosition = worldPosition;
-            DistanceTiles = distanceTiles;
-        }
-    }
-
-    private readonly struct InteractableDefinition
-    {
-        public readonly int TileType;
-        public readonly int WidthTiles;
-        public readonly int HeightTiles;
-        public readonly int FrameWidth;
-        public readonly int FrameHeight;
-        public readonly string DisplayName;
-
-        public InteractableDefinition(int tileType, int widthTiles, int heightTiles, string displayName)
-        {
-            TileType = tileType;
-            WidthTiles = Math.Max(1, widthTiles);
-            HeightTiles = Math.Max(1, heightTiles);
-            FrameWidth = WidthTiles * 18;
-            FrameHeight = HeightTiles * 18;
-            DisplayName = displayName;
-        }
-    }
-
-    private static readonly List<InteractableGuidanceEntry> NearbyInteractables = new();
-    private static readonly HashSet<Point> InteractableAnchorScratch = new();
-    private static readonly InteractableDefinition[] InteractableDefinitions =
-    {
-        new(TileID.WorkBenches, 2, 1, "Work bench"),
-        new(TileID.HeavyWorkBench, 3, 2, "Heavy work bench"),
-        new(TileID.Anvils, 2, 1, "Anvil"),
-        new(TileID.MythrilAnvil, 3, 2, "Mythril or Orichalcum anvil"),
-        new(TileID.Furnaces, 3, 2, "Furnace"),
-        new(TileID.Hellforge, 3, 2, "Hellforge"),
-        new(TileID.AdamantiteForge, 3, 2, "Adamantite or Titanium forge"),
-        new(TileID.TinkerersWorkbench, 3, 2, "Tinkerer's workbench"),
-        new(TileID.ImbuingStation, 3, 3, "Imbuing station"),
-        new(TileID.AlchemyTable, 3, 2, "Alchemy table"),
-        new(TileID.Loom, 2, 3, "Loom"),
-        new(TileID.Sawmill, 3, 3, "Sawmill"),
-        new(TileID.Bottles, 1, 1, "Placed bottle"),
-        new(TileID.Tables, 3, 2, "Table"),
-        new(TileID.BewitchingTable, 3, 3, "Bewitching table"),
-        new(TileID.CrystalBall, 2, 3, "Crystal ball"),
-        new(TileID.DemonAltar, 3, 2, "Demon or crimson altar")
-    };
-
-    private static readonly Dictionary<int, List<InteractableDefinition>> InteractableDefinitionsByTileType = BuildInteractableDefinitionMap();
-
-    private static Dictionary<int, List<InteractableDefinition>> BuildInteractableDefinitionMap()
-    {
-        Dictionary<int, List<InteractableDefinition>> map = new();
-        foreach (InteractableDefinition definition in InteractableDefinitions)
-        {
-            if (!map.TryGetValue(definition.TileType, out List<InteractableDefinition>? list))
-            {
-                list = new List<InteractableDefinition>();
-                map[definition.TileType] = list;
-            }
-
-            list.Add(definition);
-        }
-
-        return map;
-    }
-    private readonly struct PlayerGuidanceEntry
-    {
-        public readonly int PlayerIndex;
-        public readonly string DisplayName;
-        public readonly float DistanceTiles;
-
-        public PlayerGuidanceEntry(int playerIndex, string displayName, float distanceTiles)
-        {
-            PlayerIndex = playerIndex;
-            DisplayName = displayName;
-            DistanceTiles = distanceTiles;
-        }
-    }
-
-    private static readonly List<PlayerGuidanceEntry> NearbyPlayers = new();
-
     public override void PostUpdatePlayers()
     {
         if (Main.dedServ || Main.gameMenu || _namingActive)
@@ -353,6 +169,7 @@ public sealed class GuidanceSystem : ModSystem
             {
                 _nextPingUpdateFrame = -1;
                 _arrivalAnnounced = false;
+                LogPing("No tracking target; reset ping state");
                 return;
             }
 
@@ -377,11 +194,13 @@ public sealed class GuidanceSystem : ModSystem
             if (_nextPingUpdateFrame < 0)
             {
                 _nextPingUpdateFrame = ComputeNextPingFrame(player, targetPosition);
+                LogPing($"Scheduled initial ping at frame {_nextPingUpdateFrame}");
             }
             else if (Main.GameUpdateCount >= (uint)_nextPingUpdateFrame)
             {
                 EmitPing(player, targetPosition);
                 _nextPingUpdateFrame = ComputeNextPingFrame(player, targetPosition);
+                LogPing($"Rescheduled next ping at frame {_nextPingUpdateFrame} after emit");
             }
         }
 
@@ -544,6 +363,16 @@ public sealed class GuidanceSystem : ModSystem
 
         _inputSnapshot = null;
         _activeKeyboard = null;
+    }
+
+    private static void LogPing(string message)
+    {
+        if (!LogGuidancePings)
+        {
+            return;
+        }
+
+        global::ScreenReaderMod.ScreenReaderMod.Instance?.Logger.Info($"[GuidancePing] {message}");
     }
 
     internal static void HandleKeybinds(Player player)
@@ -1202,407 +1031,6 @@ public sealed class GuidanceSystem : ModSystem
         return true;
     }
 
-    private static void RefreshNpcEntries(Player player)
-    {
-        int preservedNpcIndex = -1;
-        if (_selectedNpcIndex >= 0 && _selectedNpcIndex < NearbyNpcs.Count)
-        {
-            preservedNpcIndex = NearbyNpcs[_selectedNpcIndex].NpcIndex;
-        }
-
-        NearbyNpcs.Clear();
-        if (player is null || !player.active)
-        {
-            _selectedNpcIndex = -1;
-            return;
-        }
-
-        Vector2 origin = player.Center;
-        for (int i = 0; i < Main.maxNPCs; i++)
-        {
-            if (TryCreateNpcEntry(i, origin, includeOutOfRange: false, out NpcGuidanceEntry entry))
-            {
-                NearbyNpcs.Add(entry);
-            }
-        }
-
-        if (preservedNpcIndex >= 0 && !NearbyNpcs.Exists(entry => entry.NpcIndex == preservedNpcIndex))
-        {
-            if (TryCreateNpcEntry(preservedNpcIndex, origin, includeOutOfRange: true, out NpcGuidanceEntry preservedEntry))
-            {
-                NearbyNpcs.Add(preservedEntry);
-            }
-            else
-            {
-                preservedNpcIndex = -1;
-            }
-        }
-
-        NearbyNpcs.Sort((left, right) => left.DistanceTiles.CompareTo(right.DistanceTiles));
-
-        if (NearbyNpcs.Count == 0)
-        {
-            _selectedNpcIndex = -1;
-            return;
-        }
-
-        if (preservedNpcIndex >= 0)
-        {
-            int restoredIndex = NearbyNpcs.FindIndex(entry => entry.NpcIndex == preservedNpcIndex);
-            if (restoredIndex >= 0)
-            {
-                _selectedNpcIndex = restoredIndex;
-                return;
-            }
-        }
-
-        if (_selectedNpcIndex < 0 || _selectedNpcIndex >= NearbyNpcs.Count)
-        {
-            _selectedNpcIndex = 0;
-        }
-    }
-
-    private static void RefreshPlayerEntries(Player player)
-    {
-        int preservedPlayerIndex = -1;
-        if (_selectedPlayerIndex >= 0 && _selectedPlayerIndex < NearbyPlayers.Count)
-        {
-            preservedPlayerIndex = NearbyPlayers[_selectedPlayerIndex].PlayerIndex;
-        }
-
-        NearbyPlayers.Clear();
-        if (player is null || !player.active || Main.netMode == NetmodeID.SinglePlayer)
-        {
-            _selectedPlayerIndex = -1;
-            return;
-        }
-
-        for (int i = 0; i < Main.maxPlayers; i++)
-        {
-            if (TryCreatePlayerEntry(i, player, out PlayerGuidanceEntry entry))
-            {
-                NearbyPlayers.Add(entry);
-            }
-        }
-
-        if (NearbyPlayers.Count == 0)
-        {
-            _selectedPlayerIndex = -1;
-            return;
-        }
-
-        NearbyPlayers.Sort((left, right) => left.DistanceTiles.CompareTo(right.DistanceTiles));
-
-        if (preservedPlayerIndex >= 0)
-        {
-            int restoredIndex = NearbyPlayers.FindIndex(entry => entry.PlayerIndex == preservedPlayerIndex);
-            if (restoredIndex >= 0)
-            {
-                _selectedPlayerIndex = restoredIndex;
-                return;
-            }
-        }
-
-        if (_selectedPlayerIndex < 0 || _selectedPlayerIndex >= NearbyPlayers.Count)
-        {
-            _selectedPlayerIndex = 0;
-        }
-    }
-
-    private static void RefreshInteractableEntries(Player player)
-    {
-        bool hasPreservedAnchor = false;
-        Point preservedAnchor = Point.Zero;
-        if (_selectedInteractableIndex >= 0 && _selectedInteractableIndex < NearbyInteractables.Count)
-        {
-            preservedAnchor = NearbyInteractables[_selectedInteractableIndex].Anchor;
-            hasPreservedAnchor = true;
-        }
-
-        NearbyInteractables.Clear();
-        if (player is null || !player.active)
-        {
-            _selectedInteractableIndex = -1;
-            return;
-        }
-
-        Vector2 origin = player.Center;
-        int scanRadius = (int)Math.Clamp(DistanceReferenceTiles + 8f, 4f, 240f);
-        int playerTileX = (int)(origin.X / 16f);
-        int playerTileY = (int)(origin.Y / 16f);
-        int minX = Math.Max(0, playerTileX - scanRadius);
-        int maxX = Math.Min(Main.maxTilesX - 1, playerTileX + scanRadius);
-        int minY = Math.Max(0, playerTileY - scanRadius);
-        int maxY = Math.Min(Main.maxTilesY - 1, playerTileY + scanRadius);
-
-        InteractableAnchorScratch.Clear();
-        bool preservedIncluded = false;
-
-        for (int x = minX; x <= maxX; x++)
-        {
-            for (int y = minY; y <= maxY; y++)
-            {
-                Tile tile = Main.tile[x, y];
-                if (!tile.HasTile)
-                {
-                    continue;
-                }
-
-                if (!InteractableDefinitionsByTileType.TryGetValue(tile.TileType, out List<InteractableDefinition>? definitions))
-                {
-                    continue;
-                }
-
-                foreach (InteractableDefinition definition in definitions)
-                {
-                    if (!IsInteractableAnchor(tile, definition))
-                    {
-                        continue;
-                    }
-
-                    Point anchor = new(x, y);
-                    bool isPreservedAnchor = hasPreservedAnchor && anchor == preservedAnchor;
-                    if (!InteractableAnchorScratch.Add(anchor) && !isPreservedAnchor)
-                    {
-                        continue;
-                    }
-
-                    if (TryCreateInteractableEntry(definition, anchor, origin, isPreservedAnchor, out InteractableGuidanceEntry entry))
-                    {
-                        NearbyInteractables.Add(entry);
-                        if (isPreservedAnchor)
-                        {
-                            preservedIncluded = true;
-                        }
-                    }
-                }
-            }
-        }
-
-        if (hasPreservedAnchor && !preservedIncluded && TryCreateInteractableEntryForAnchor(preservedAnchor, origin, includeOutOfRange: true, out InteractableGuidanceEntry preservedEntry))
-        {
-            NearbyInteractables.Add(preservedEntry);
-        }
-
-        NearbyInteractables.Sort((left, right) => left.DistanceTiles.CompareTo(right.DistanceTiles));
-
-        if (NearbyInteractables.Count == 0)
-        {
-            _selectedInteractableIndex = -1;
-            return;
-        }
-
-        if (hasPreservedAnchor)
-        {
-            int restoredIndex = NearbyInteractables.FindIndex(entry => entry.Anchor == preservedAnchor);
-            if (restoredIndex >= 0)
-            {
-                _selectedInteractableIndex = restoredIndex;
-                return;
-            }
-        }
-
-        if (_selectedInteractableIndex < 0 || _selectedInteractableIndex >= NearbyInteractables.Count)
-        {
-            _selectedInteractableIndex = 0;
-        }
-    }
-
-    private static bool TryCreateNpcEntry(int npcIndex, Vector2 origin, bool includeOutOfRange, out NpcGuidanceEntry entry)
-    {
-        entry = default;
-        if (npcIndex < 0 || npcIndex >= Main.maxNPCs)
-        {
-            return false;
-        }
-
-        NPC npc = Main.npc[npcIndex];
-        if (!IsTrackableNpc(npc))
-        {
-            return false;
-        }
-
-        float distanceTiles = Vector2.Distance(origin, npc.Center) / 16f;
-        if (!includeOutOfRange && distanceTiles > DistanceReferenceTiles)
-        {
-            return false;
-        }
-
-        string displayName = ResolveNpcDisplayName(npc);
-        entry = new NpcGuidanceEntry(npcIndex, displayName, distanceTiles);
-        return true;
-    }
-
-    private static bool TryCreatePlayerEntry(int playerIndex, Player owner, out PlayerGuidanceEntry entry)
-    {
-        entry = default;
-        if (playerIndex < 0 || playerIndex >= Main.maxPlayers)
-        {
-            return false;
-        }
-
-        Player candidate = Main.player[playerIndex];
-        if (!IsTrackablePlayer(candidate, owner))
-        {
-            return false;
-        }
-
-        float distanceTiles = Vector2.Distance(owner.Center, candidate.Center) / 16f;
-        string displayName = ResolvePlayerDisplayName(candidate, playerIndex);
-        entry = new PlayerGuidanceEntry(playerIndex, displayName, distanceTiles);
-        return true;
-    }
-
-    private static bool TryCreateInteractableEntry(InteractableDefinition definition, Point anchor, Vector2 origin, bool includeOutOfRange, out InteractableGuidanceEntry entry)
-    {
-        entry = default;
-        if (!IsWithinWorld(anchor))
-        {
-            return false;
-        }
-
-        Tile tile = Main.tile[anchor.X, anchor.Y];
-        if (!tile.HasTile || tile.TileType != definition.TileType)
-        {
-            return false;
-        }
-
-        Vector2 worldPosition = ResolveInteractableWorldPosition(anchor, definition);
-        float distanceTiles = Vector2.Distance(worldPosition, origin) / 16f;
-        if (!includeOutOfRange && distanceTiles > DistanceReferenceTiles)
-        {
-            return false;
-        }
-
-        entry = new InteractableGuidanceEntry(anchor, definition.DisplayName, worldPosition, distanceTiles);
-        return true;
-    }
-
-    private static bool TryCreateInteractableEntryForAnchor(Point anchor, Vector2 origin, bool includeOutOfRange, out InteractableGuidanceEntry entry)
-    {
-        entry = default;
-        if (!IsWithinWorld(anchor))
-        {
-            return false;
-        }
-
-        Tile tile = Main.tile[anchor.X, anchor.Y];
-        if (!tile.HasTile)
-        {
-            return false;
-        }
-
-        if (!InteractableDefinitionsByTileType.TryGetValue(tile.TileType, out List<InteractableDefinition>? definitions))
-        {
-            return false;
-        }
-
-        foreach (InteractableDefinition definition in definitions)
-        {
-            if (!IsInteractableAnchor(tile, definition))
-            {
-                continue;
-            }
-
-            if (TryCreateInteractableEntry(definition, anchor, origin, includeOutOfRange, out entry))
-            {
-                return true;
-            }
-        }
-
-        return false;
-    }
-
-    private static string ResolveNpcDisplayName(NPC npc)
-    {
-        if (!string.IsNullOrWhiteSpace(npc.FullName))
-        {
-            return npc.FullName;
-        }
-
-        if (!string.IsNullOrWhiteSpace(npc.GivenName))
-        {
-            return npc.GivenName;
-        }
-
-        string localized = Lang.GetNPCNameValue(npc.type);
-        if (!string.IsNullOrWhiteSpace(localized))
-        {
-            return localized;
-        }
-
-        return "NPC";
-    }
-
-    private static string ResolvePlayerDisplayName(Player player, int fallbackIndex)
-    {
-        if (!string.IsNullOrWhiteSpace(player.name))
-        {
-            return player.name;
-        }
-
-        return $"Player {fallbackIndex + 1}";
-    }
-
-    private static bool IsWithinWorld(Point point)
-    {
-        return point.X >= 0 && point.X < Main.maxTilesX && point.Y >= 0 && point.Y < Main.maxTilesY;
-    }
-
-    private static bool IsInteractableAnchor(Tile tile, InteractableDefinition definition)
-    {
-        if (definition.FrameWidth <= 0 || definition.FrameHeight <= 0)
-        {
-            return true;
-        }
-
-        int frameX = tile.TileFrameX;
-        int frameY = tile.TileFrameY;
-        if (frameX < 0 || frameY < 0)
-        {
-            return false;
-        }
-
-        return frameX % definition.FrameWidth == 0 && frameY % definition.FrameHeight == 0;
-    }
-
-    private static Vector2 ResolveInteractableWorldPosition(Point anchor, InteractableDefinition definition)
-    {
-        float centerX = anchor.X + (definition.WidthTiles * 0.5f);
-        float centerY = anchor.Y + (definition.HeightTiles * 0.5f);
-        return new Vector2(centerX * 16f, centerY * 16f);
-    }
-
-    private static bool IsTrackableNpc(NPC npc)
-    {
-        if (!npc.active || npc.lifeMax <= 0)
-        {
-            return false;
-        }
-
-        if (npc.townNPC || NPCID.Sets.ActsLikeTownNPC[npc.type] || NPCID.Sets.IsTownPet[npc.type])
-        {
-            return true;
-        }
-
-        return false;
-    }
-
-    private static bool IsTrackablePlayer(Player candidate, Player owner)
-    {
-        if (candidate is null || !candidate.active || owner is null || !owner.active)
-        {
-            return false;
-        }
-
-        if (candidate.whoAmI == owner.whoAmI || candidate.dead || candidate.ghost)
-        {
-            return false;
-        }
-
-        return true;
-    }
-
     private static string FormatEntryOrdinal(int position, int total)
     {
         if (position <= 0 || total <= 0 || position > total)
@@ -1729,182 +1157,5 @@ public sealed class GuidanceSystem : ModSystem
         }
     }
 
-    private static void EmitCurrentGuidancePing(Player player)
-    {
-        if (TryGetCurrentTrackingTarget(player, out Vector2 targetPosition, out _))
-        {
-            EmitPing(player, targetPosition);
-        }
-    }
-
-    private static void RescheduleGuidancePing(Player player)
-    {
-        if (!TryGetCurrentTrackingTarget(player, out Vector2 targetPosition, out _))
-        {
-            _nextPingUpdateFrame = -1;
-            _arrivalAnnounced = false;
-            return;
-        }
-
-        _arrivalAnnounced = false;
-        _nextPingUpdateFrame = ComputeNextPingFrame(player, targetPosition);
-    }
-
-    private static void EmitPing(Player player, Vector2 worldPosition)
-    {
-        if (Main.dedServ || Main.soundVolume <= 0f)
-        {
-            return;
-        }
-
-        try
-        {
-            CleanupFinishedWaypointInstances();
-
-            Vector2 offset = worldPosition - player.Center;
-            float pitch = MathHelper.Clamp(-offset.Y / PitchScale, -0.7f, 0.7f);
-            float pan = MathHelper.Clamp(offset.X / PanScalePixels, -1f, 1f);
-
-            float distanceTiles = offset.Length() / 16f;
-            float distanceFactor = 1f / (1f + (distanceTiles / Math.Max(1f, DistanceReferenceTiles)));
-            float volume = MathHelper.Clamp(MinVolume + distanceFactor * 0.85f, 0f, 1f) * Main.soundVolume;
-
-            SoundEffect tone = EnsureWaypointTone();
-            SoundEffectInstance instance = tone.CreateInstance();
-            instance.IsLooped = false;
-            instance.Pan = pan;
-            instance.Pitch = pitch;
-            instance.Volume = MathHelper.Clamp(volume, 0f, 1f);
-
-            try
-            {
-                instance.Play();
-                ActiveWaypointInstances.Add(instance);
-            }
-            catch (Exception inner)
-            {
-                instance.Dispose();
-                global::ScreenReaderMod.ScreenReaderMod.Instance?.Logger.Debug($"[WaypointPing] Play failed: {inner.Message}");
-            }
-        }
-        catch (Exception ex)
-        {
-            global::ScreenReaderMod.ScreenReaderMod.Instance?.Logger.Warn($"[WaypointPing] Tone setup failed: {ex.Message}");
-        }
-    }
-
-    private static SoundEffect EnsureWaypointTone()
-    {
-        if (_waypointTone is { IsDisposed: false })
-        {
-            return _waypointTone;
-        }
-
-        _waypointTone?.Dispose();
-        _waypointTone = CreateWaypointTone();
-        return _waypointTone;
-    }
-
-    private static SoundEffect CreateWaypointTone()
-    {
-        return SynthesizedSoundFactory.CreateSineTone(
-            frequency: 720f,
-            durationSeconds: 0.13f,
-            envelope: SynthesizedSoundFactory.ToneEnvelopes.WaypointPulse,
-            gain: 0.75f);
-    }
-
-    private sealed class InputSnapshot
-    {
-        public bool BlockInput;
-        public bool WritingText;
-        public bool PlayerInventory;
-        public bool EditSign;
-        public bool EditChest;
-        public bool DrawingPlayerChat;
-        public bool InFancyUI;
-        public bool GameMenu;
-        public string ChatText = string.Empty;
-        public UIState? PreviousUiState;
-    }
-
-    private static void CleanupFinishedWaypointInstances()
-    {
-        for (int i = ActiveWaypointInstances.Count - 1; i >= 0; i--)
-        {
-            SoundEffectInstance instance = ActiveWaypointInstances[i];
-            if (instance.IsDisposed || instance.State == SoundState.Stopped)
-            {
-                instance.Dispose();
-                ActiveWaypointInstances.RemoveAt(i);
-            }
-        }
-    }
-
-    private static void DisposeToneResources()
-    {
-        foreach (SoundEffectInstance instance in ActiveWaypointInstances)
-        {
-            try
-            {
-                if (!instance.IsDisposed)
-                {
-                    instance.Stop();
-                }
-            }
-            catch
-            {
-            }
-
-            instance.Dispose();
-        }
-
-        ActiveWaypointInstances.Clear();
-
-        if (_waypointTone is not null)
-        {
-            if (!_waypointTone.IsDisposed)
-            {
-                _waypointTone.Dispose();
-            }
-
-            _waypointTone = null;
-        }
-    }
-
-    private static int ComputeNextPingFrame(Player player, Vector2 waypointPosition)
-    {
-        int delay = DeterminePingDelayFrames(player, waypointPosition);
-        if (delay <= 0)
-        {
-            return -1;
-        }
-
-        return ComputeNextPingFrameFromDelay(delay);
-    }
-
-    private static int DeterminePingDelayFrames(Player player, Vector2 waypointPosition)
-    {
-        float distanceTiles = Vector2.Distance(player.Center, waypointPosition) / 16f;
-        if (distanceTiles <= ArrivalTileThreshold)
-        {
-            return -1;
-        }
-
-        float frames = MathHelper.Clamp(distanceTiles * PingDelayScale, MinPingDelayFrames, MaxPingDelayFrames);
-        return (int)MathF.Round(frames);
-    }
-
-    private static int ComputeNextPingFrameFromDelay(int delayFrames)
-    {
-        int safeDelay = Math.Max(1, delayFrames);
-        ulong current = Main.GameUpdateCount;
-        ulong target = current + (ulong)safeDelay;
-        if (target > int.MaxValue)
-        {
-            target = (ulong)int.MaxValue;
-        }
-
-        return (int)target;
-    }
 }
+
