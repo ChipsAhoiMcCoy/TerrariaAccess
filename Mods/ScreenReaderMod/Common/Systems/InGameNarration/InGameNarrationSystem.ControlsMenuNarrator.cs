@@ -421,7 +421,7 @@ public sealed partial class InGameNarrationSystem
             if (requested > 0 && UILinkPointNavigator.Points.TryGetValue(requested, out UILinkPoint? _))
             {
                 UILinkPointNavigator.ChangePoint(requested);
-                TryScrollToLink(state, requested);
+                TryScrollToLink(state!, requested);
                 SoundEngine.PlaySound(SoundID.MenuTick);
                 return true;
             }
