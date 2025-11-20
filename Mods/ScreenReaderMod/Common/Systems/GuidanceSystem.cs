@@ -840,7 +840,7 @@ public sealed partial class GuidanceSystem : ModSystem
         int position = _selectedExplorationIndex + 1;
         ExplorationTargetRegistry.ExplorationTarget entry = NearbyExplorationTargets[_selectedExplorationIndex];
         string announcement = ComposeEntityAnnouncement(entry.Label, player, entry.WorldPosition, position, totalEntries);
-        AnnounceCategoryEntry(SelectionMode.Exploration, "Exploration mode", announcement);
+        AnnounceCategoryEntry(SelectionMode.Exploration, string.Empty, announcement);
     }
 
     private static string ComposeNpcAnnouncement(NpcGuidanceEntry entry, Player player, Vector2 npcPosition, int position, int total)
