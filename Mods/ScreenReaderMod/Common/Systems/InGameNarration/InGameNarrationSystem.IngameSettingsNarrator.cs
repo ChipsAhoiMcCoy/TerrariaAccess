@@ -790,15 +790,35 @@ public sealed partial class InGameNarrationSystem
 
         private static string DescribeCursor(int option)
         {
+            string lockOn = LockOnHelper.UseMode switch
+            {
+                LockOnHelper.LockOnMode.FocusTarget => Lang.menu[232].Value,
+                LockOnHelper.LockOnMode.TargetClosest => Lang.menu[233].Value,
+                LockOnHelper.LockOnMode.ThreeDS => Lang.menu[234].Value,
+                _ => string.Empty,
+            };
+
+            // Match the actual in-game draw order from Terraria.IngameOptions.Draw for the Cursor category.
+            // Each color slider block ends with a back entry.
             string result = option switch
             {
-                0 => Lang.menu[214].Value,
-                1 => Lang.menu[215].Value,
-                2 => Lang.menu[216].Value,
-                3 => Lang.menu[217].Value,
-                4 => Lang.menu[218].Value,
-                5 => Lang.menu[219].Value,
-                6 => Lang.menu[5].Value,
+                0 => Lang.menu[64].Value, // Cursor color header
+                1 => Language.GetTextValue("UI.Red"),
+                2 => Language.GetTextValue("UI.Green"),
+                3 => Language.GetTextValue("UI.Blue"),
+                4 => Language.GetTextValue("UI.Brightness"),
+                5 => Lang.menu[5].Value, // back after cursor color sliders
+                6 => Lang.menu[217].Value, // Cursor border header (outline)
+                7 => Language.GetTextValue("UI.Red"),
+                8 => Language.GetTextValue("UI.Green"),
+                9 => Language.GetTextValue("UI.Blue"),
+                10 => Language.GetTextValue("UI.Brightness"),
+                11 => Lang.menu[5].Value, // back after border sliders
+                12 => lockOn,
+                13 => Player.SmartCursorSettings.SmartBlocksEnabled ? Lang.menu[215].Value : Lang.menu[216].Value,
+                14 => Main.cSmartCursorModeIsToggleAndNotHold ? Lang.menu[121].Value : Lang.menu[122].Value,
+                15 => Player.SmartCursorSettings.SmartAxeAfterPickaxe ? Lang.menu[214].Value : Lang.menu[213].Value,
+                16 => Lang.menu[5].Value, // final back for cursor page
                 _ => $"Cursor option {option + 1}",
             };
 
@@ -841,7 +861,7 @@ public sealed partial class InGameNarrationSystem
             void AddMapping(int id, string? label)
             {
                 string sanitized = TextSanitizer.Clean(label ?? string.Empty);
-                if (string.IsNullOrWhiteSpace(sanitized))
+                if (string.IsNullOrWhiteSpace(sanitized) || lookup.ContainsKey(sanitized))
                 {
                     return;
                 }
