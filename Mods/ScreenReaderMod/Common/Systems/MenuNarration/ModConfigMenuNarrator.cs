@@ -2,6 +2,7 @@
 using System;
 using System.Globalization;
 using System.Reflection;
+using System.Linq;
 using Terraria;
 using Terraria.GameInput;
 using Terraria.ID;
@@ -127,6 +128,8 @@ internal sealed class ModConfigMenuNarrator
             return;
         }
 
+        EnsureLinkPointSelected();
+
         int pointId = UILinkPointNavigator.CurrentPoint;
         if (pointId < 0 || !UILinkPointNavigator.Points.TryGetValue(pointId, out UILinkPoint? link))
         {
@@ -140,6 +143,23 @@ internal sealed class ModConfigMenuNarrator
         Main.mouseY = clampedY;
         PlayerInput.MouseX = clampedX;
         PlayerInput.MouseY = clampedY;
+    }
+
+    private static void EnsureLinkPointSelected()
+    {
+        if (!PlayerInput.UsingGamepadUI || UILinkPointNavigator.Points.Count == 0)
+        {
+            return;
+        }
+
+        int current = UILinkPointNavigator.CurrentPoint;
+        if (current >= 0 && UILinkPointNavigator.Points.ContainsKey(current))
+        {
+            return;
+        }
+
+        int fallback = UILinkPointNavigator.Points.Keys.Min();
+        UILinkPointNavigator.ChangePoint(fallback);
     }
 
     private void HandleListState(UIState state)
