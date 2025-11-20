@@ -194,8 +194,10 @@ public sealed partial class InGameNarrationSystem
             }
 
             _distanceScratch.Sort(static (left, right) => left.DistanceTiles.CompareTo(right.DistanceTiles));
-            ApplySelectedTargetFilter();
-            ExplorationTargetRegistry.UpdateTargets(_distanceScratch.Select(d =>
+
+            // Keep an unfiltered snapshot for the exploration registry so UI cycling still has entries
+            // even when we temporarily focus a single target or lose the focused target.
+            List<ExplorationTargetRegistry.ExplorationTarget> snapshot = _distanceScratch.Select(d =>
             {
                 string label = d.Candidate.ArrivalLabelOverride ?? string.Empty;
                 if (string.IsNullOrWhiteSpace(label))
@@ -209,7 +211,17 @@ public sealed partial class InGameNarrationSystem
                 }
 
                 return new ExplorationTargetRegistry.ExplorationTarget(label, d.Candidate.WorldPosition, d.DistanceTiles);
-            }));
+            }).ToList();
+            ExplorationTargetRegistry.UpdateTargets(snapshot);
+
+            List<CandidateDistance> unfiltered = new(_distanceScratch);
+            bool focused = ApplySelectedTargetFilter();
+            if (!focused)
+            {
+                _distanceScratch.Clear();
+                _distanceScratch.AddRange(unfiltered);
+                ExplorationTargetRegistry.SetSelectedTarget(null);
+            }
 
             _visibleThisFrame.Clear();
 
@@ -343,11 +355,11 @@ public sealed partial class InGameNarrationSystem
             }
         }
 
-        private void ApplySelectedTargetFilter()
+        private bool ApplySelectedTargetFilter()
         {
             if (!ExplorationTargetRegistry.TryGetSelectedTarget(out ExplorationTargetRegistry.ExplorationTarget target))
             {
-                return;
+                return false;
             }
 
             float bestDistance = float.MaxValue;
@@ -365,13 +377,13 @@ public sealed partial class InGameNarrationSystem
 
             if (bestIndex < 0 || bestDistance > SelectedTargetMatchToleranceTiles)
             {
-                _distanceScratch.Clear();
-                return;
+                return false;
             }
 
             CandidateDistance match = _distanceScratch[bestIndex];
             _distanceScratch.Clear();
             _distanceScratch.Add(match);
+            return true;
         }
 
         private void PlayCue(Vector2 playerCenter, CandidateDistance entry, bool isPrimaryCue)
