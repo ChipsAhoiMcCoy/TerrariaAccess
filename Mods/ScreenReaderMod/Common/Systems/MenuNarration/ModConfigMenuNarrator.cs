@@ -51,28 +51,6 @@ internal sealed class ModConfigMenuNarrator
         _uiTracker.Reset();
     }
 
-    private static void AnchorCursorToCurrentLink()
-    {
-        if (!PlayerInput.UsingGamepadUI)
-        {
-            return;
-        }
-
-        int pointId = UILinkPointNavigator.CurrentPoint;
-        if (pointId < 0 || !UILinkPointNavigator.Points.TryGetValue(pointId, out UILinkPoint? link))
-        {
-            return;
-        }
-
-        int clampedX = (int)Math.Clamp(link.Position.X, 0f, Main.screenWidth - 1);
-        int clampedY = (int)Math.Clamp(link.Position.Y, 0f, Main.screenHeight - 1);
-
-        Main.mouseX = clampedX;
-        Main.mouseY = clampedY;
-        PlayerInput.MouseX = clampedX;
-        PlayerInput.MouseY = clampedY;
-    }
-
     public bool TryHandleFancyUi(int menuMode, UserInterface? menuUi)
     {
         if (menuMode != MenuID.FancyUI)
@@ -84,14 +62,9 @@ internal sealed class ModConfigMenuNarrator
         return TryHandleState(menuUi?.CurrentState, menuUi, alignCursor: false, enableHover: false);
     }
 
-    public bool TryHandleIngameUi(UserInterface? inGameUi, bool requiresPause)
+    public bool TryHandleIngameUi(UserInterface? inGameUi, bool isPaused)
     {
-        if (!requiresPause)
-        {
-            Reset();
-            return false;
-        }
-
+        // Handle even when the game is not paused; the mod config overlay does not always pause gameplay.
         return TryHandleState(inGameUi?.CurrentState, inGameUi, alignCursor: true, enableHover: true);
     }
 
@@ -145,6 +118,28 @@ internal sealed class ModConfigMenuNarrator
                 PositionCursorAtStateCenter(state);
             }
         }
+    }
+
+    private static void AnchorCursorToCurrentLink()
+    {
+        if (!PlayerInput.UsingGamepadUI)
+        {
+            return;
+        }
+
+        int pointId = UILinkPointNavigator.CurrentPoint;
+        if (pointId < 0 || !UILinkPointNavigator.Points.TryGetValue(pointId, out UILinkPoint? link))
+        {
+            return;
+        }
+
+        int clampedX = (int)Math.Clamp(link.Position.X, 0f, Main.screenWidth - 1);
+        int clampedY = (int)Math.Clamp(link.Position.Y, 0f, Main.screenHeight - 1);
+
+        Main.mouseX = clampedX;
+        Main.mouseY = clampedY;
+        PlayerInput.MouseX = clampedX;
+        PlayerInput.MouseY = clampedY;
     }
 
     private void HandleListState(UIState state)
