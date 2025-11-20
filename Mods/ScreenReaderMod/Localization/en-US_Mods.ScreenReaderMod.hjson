@@ -134,4 +134,5 @@ Keybinds: {
 	GuidanceCategoryPrevious.DisplayName: Previous Guidance Category
 	GuidanceEntryNext.DisplayName: Next Guidance Entry
 	GuidanceEntryPrevious.DisplayName: Previous Guidance Entry
+	GuidanceAutoPathToggle.DisplayName: Toggle Auto Pathing
 }

@@ -12,5 +12,9 @@ public sealed class GuidancePlayer : ModPlayer
     {
         GuidanceSystem.HandleKeybinds(Player);
     }
-}
 
+    public override void PreUpdateMovement()
+    {
+        GuidanceSystem.ApplyAutoPath(Player);
+    }
+}

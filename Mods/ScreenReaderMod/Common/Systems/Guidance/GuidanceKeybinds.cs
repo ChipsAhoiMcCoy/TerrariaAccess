@@ -13,6 +13,7 @@ internal static class GuidanceKeybinds
     internal static ModKeybind? EntryPrevious { get; private set; }
     internal static ModKeybind? Create { get; private set; }
     internal static ModKeybind? Delete { get; private set; }
+    internal static ModKeybind? AutoPathToggle { get; private set; }
 
     private static bool _initialized;
 
@@ -29,6 +30,7 @@ internal static class GuidanceKeybinds
         EntryPrevious = KeybindLoader.RegisterKeybind(mod, "GuidanceEntryPrevious", Keys.PageUp);
         Create = KeybindLoader.RegisterKeybind(mod, "WaypointCreate", Keys.OemPipe);
         Delete = KeybindLoader.RegisterKeybind(mod, "WaypointDelete", Keys.Delete);
+        AutoPathToggle = KeybindLoader.RegisterKeybind(mod, "GuidanceAutoPathToggle", Keys.P);
 
         _initialized = true;
     }
@@ -42,5 +44,6 @@ internal static class GuidanceKeybinds
         EntryPrevious = null;
         Create = null;
         Delete = null;
+        AutoPathToggle = null;
     }
 }

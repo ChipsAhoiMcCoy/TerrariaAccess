@@ -31,6 +31,16 @@ public sealed partial class GuidanceSystem
 
     private static bool _namingActive;
 
+    private static bool _autoPathActive;
+    private static bool _autoPathArrivedAnnounced;
+    private static string _autoPathLabel = string.Empty;
+    private static float _autoPathLastDistanceTiles;
+    private static ulong _autoPathLastProgressFrame;
+    private static readonly List<Vector2> _autoPathNodes = new();
+    private static int _autoPathNodeIndex;
+    private static ulong _autoPathNextSearchFrame;
+    private static int _autoPathPlatformDropHold;
+
     private static int _nextPingUpdateFrame = -1;
     private static bool _arrivalAnnounced;
     private static SoundEffect? _waypointTone;
@@ -79,6 +89,15 @@ public sealed partial class GuidanceSystem
         _selectedInteractableIndex = -1;
         _selectionMode = SelectionMode.None;
         ClearCategoryAnnouncement();
+        _autoPathActive = false;
+        _autoPathLabel = string.Empty;
+        _autoPathArrivedAnnounced = false;
+        _autoPathLastDistanceTiles = 0f;
+        _autoPathLastProgressFrame = 0;
+        _autoPathNodes.Clear();
+        _autoPathNodeIndex = 0;
+        _autoPathNextSearchFrame = 0;
+        _autoPathPlatformDropHold = 0;
         _nextPingUpdateFrame = -1;
         _arrivalAnnounced = false;
     }

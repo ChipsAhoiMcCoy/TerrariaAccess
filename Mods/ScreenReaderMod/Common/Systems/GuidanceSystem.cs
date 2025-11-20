@@ -398,6 +398,12 @@ public sealed partial class GuidanceSystem : ModSystem
             return;
         }
 
+        if (GuidanceKeybinds.AutoPathToggle?.JustPressed ?? false)
+        {
+            ToggleAutoPath(player);
+            return;
+        }
+
         if (GuidanceKeybinds.CategoryNext?.JustPressed ?? false)
         {
             CycleCategory(1, player);
