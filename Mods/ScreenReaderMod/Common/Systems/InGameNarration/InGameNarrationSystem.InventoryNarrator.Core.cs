@@ -178,7 +178,9 @@ public sealed partial class InGameNarrationSystem
             }
 
             string message = $"Holding {ComposeItemLabel(mouse)}";
-            TryAnnounceCue(NarrationCue.ForMouse(identity, message));
+            TryAnnounceCue(
+                NarrationCue.ForMouse(identity, message),
+                allowedAreas: InventoryNarrationAreas | UiNarrationArea.Crafting | UiNarrationArea.Guide);
         }
 
         private void HandleHoverItem(Player player)
