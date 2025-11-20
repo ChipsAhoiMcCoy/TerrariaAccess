@@ -133,6 +133,13 @@ public sealed partial class InGameNarrationSystem
                 ScreenReaderService.Announce(prompt, force: true);
             }
 
+            if (!isListening && _wasListening)
+            {
+                // Binding finished; force the next hover to re-announce the updated entry.
+                _uiTracker.Reset();
+                _lastAnnouncement = null;
+            }
+
             _wasListening = isListening;
             return isListening;
         }
