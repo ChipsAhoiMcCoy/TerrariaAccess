@@ -26,6 +26,7 @@ public sealed partial class GuidanceSystem
     private static int _selectedNpcIndex = -1;
     private static int _selectedPlayerIndex = -1;
     private static int _selectedInteractableIndex = -1;
+    private static int _selectedExplorationIndex = -1;
     private static SelectionMode _categoryAnnouncementMode = SelectionMode.None;
     private static bool _categoryAnnouncementPending;
 
@@ -73,10 +74,12 @@ public sealed partial class GuidanceSystem
         NearbyNpcs.Clear();
         NearbyPlayers.Clear();
         NearbyInteractables.Clear();
+        NearbyExplorationTargets.Clear();
         _selectedIndex = -1;
         _selectedNpcIndex = -1;
         _selectedPlayerIndex = -1;
         _selectedInteractableIndex = -1;
+        _selectedExplorationIndex = -1;
         _selectionMode = SelectionMode.None;
         ClearCategoryAnnouncement();
         _nextPingUpdateFrame = -1;

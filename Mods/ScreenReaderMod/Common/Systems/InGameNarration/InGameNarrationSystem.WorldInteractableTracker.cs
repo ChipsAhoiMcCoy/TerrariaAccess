@@ -5,6 +5,7 @@ using System.Linq;
 using Microsoft.Xna.Framework;
 using Microsoft.Xna.Framework.Audio;
 using ScreenReaderMod.Common.Services;
+using ScreenReaderMod.Common.Systems;
 using Terraria;
 using Terraria.Audio;
 using Terraria.ID;
@@ -116,6 +117,7 @@ public sealed partial class InGameNarrationSystem
                 _distanceScratch.Clear();
                 _staleKeys.Clear();
                 _arrivedKeys.Clear();
+                ExplorationTargetRegistry.UpdateTargets(Array.Empty<ExplorationTargetRegistry.ExplorationTarget>());
                 _ticksUntilNextScan = 0;
                 _isEnabled = false;
                 return;
@@ -135,6 +137,7 @@ public sealed partial class InGameNarrationSystem
                     _visibleThisFrame.Clear();
                     _staleKeys.Clear();
                     _arrivedKeys.Clear();
+                    ExplorationTargetRegistry.UpdateTargets(Array.Empty<ExplorationTargetRegistry.ExplorationTarget>());
                 }
 
                 _isEnabled = false;
@@ -156,6 +159,7 @@ public sealed partial class InGameNarrationSystem
 
             if (_trackedCandidates.Count == 0)
             {
+                ExplorationTargetRegistry.UpdateTargets(Array.Empty<ExplorationTargetRegistry.ExplorationTarget>());
                 TrimInactiveKeys();
                 CleanupFinishedInstances();
                 return;
@@ -184,10 +188,26 @@ public sealed partial class InGameNarrationSystem
             {
                 TrimInactiveKeys();
                 CleanupFinishedInstances();
+                ExplorationTargetRegistry.UpdateTargets(Array.Empty<ExplorationTargetRegistry.ExplorationTarget>());
                 return;
             }
 
             _distanceScratch.Sort(static (left, right) => left.DistanceTiles.CompareTo(right.DistanceTiles));
+            ExplorationTargetRegistry.UpdateTargets(_distanceScratch.Select(d =>
+            {
+                string label = d.Candidate.ArrivalLabelOverride ?? string.Empty;
+                if (string.IsNullOrWhiteSpace(label))
+                {
+                    label = d.Candidate.Profile.ArrivalLabel;
+                }
+
+                if (string.IsNullOrWhiteSpace(label))
+                {
+                    label = d.Candidate.Profile.Id;
+                }
+
+                return new ExplorationTargetRegistry.ExplorationTarget(label, d.Candidate.WorldPosition, d.DistanceTiles);
+            }));
 
             _visibleThisFrame.Clear();
 

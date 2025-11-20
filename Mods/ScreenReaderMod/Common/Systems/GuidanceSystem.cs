@@ -498,6 +498,8 @@ public sealed partial class GuidanceSystem : ModSystem
                 return;
             case SelectionMode.Exploration:
                 _selectionMode = SelectionMode.Exploration;
+                _selectedExplorationIndex = -1;
+                RefreshExplorationEntries();
                 _selectedIndex = Math.Min(_selectedIndex, Waypoints.Count - 1);
                 ClearCategoryAnnouncement();
                 RescheduleGuidancePing(player);
@@ -709,6 +711,24 @@ public sealed partial class GuidanceSystem : ModSystem
                 AnnouncePlayerSelection(player);
                 EmitCurrentGuidancePing(player);
                 return;
+            case SelectionMode.Exploration:
+                RefreshExplorationEntries();
+                int totalExploration = NearbyExplorationTargets.Count;
+                if (totalExploration == 0)
+                {
+                    ClearCategoryAnnouncement();
+                    AnnounceCategorySelection("Exploration mode", "No exploration targets detected nearby.");
+                    return;
+                }
+
+                int totalSlots = totalExploration + 1; // include the "All" slot at -1
+                int currentSlot = _selectedExplorationIndex + 1;
+                int nextSlot = Modulo(currentSlot + direction, totalSlots);
+                _selectedExplorationIndex = nextSlot - 1;
+
+                RescheduleGuidancePing(player);
+                AnnounceExplorationEntry(player, totalExploration);
+                return;
             default:
                 ScreenReaderService.Announce("Select a waypoint, player, NPC, or crafting category to browse entries.");
                 return;
@@ -786,6 +806,25 @@ public sealed partial class GuidanceSystem : ModSystem
         int position = _selectedPlayerIndex + 1;
         string announcement = ComposePlayerAnnouncement(entry, player, targetPlayer.Center, position, totalEntries);
         AnnounceCategoryEntry(SelectionMode.Player, "Player guidance", announcement);
+    }
+
+    private static void AnnounceExplorationEntry(Player player, int totalEntries)
+    {
+        if (_selectionMode != SelectionMode.Exploration)
+        {
+            return;
+        }
+
+        if (_selectedExplorationIndex < 0 || _selectedExplorationIndex >= NearbyExplorationTargets.Count)
+        {
+            AnnounceExplorationSelection();
+            return;
+        }
+
+        int position = _selectedExplorationIndex + 1;
+        ExplorationTargetRegistry.ExplorationTarget entry = NearbyExplorationTargets[_selectedExplorationIndex];
+        string announcement = ComposeEntityAnnouncement(entry.Label, player, entry.WorldPosition, position, totalEntries);
+        AnnounceCategoryEntry(SelectionMode.Exploration, "Exploration mode", announcement);
     }
 
     private static string ComposeNpcAnnouncement(NpcGuidanceEntry entry, Player player, Vector2 npcPosition, int position, int total)
@@ -877,7 +916,7 @@ public sealed partial class GuidanceSystem : ModSystem
     private static void AnnounceExplorationSelection()
     {
         ClearCategoryAnnouncement();
-        AnnounceCategorySelection("Exploration mode", "Tracking nearby interactables.");
+        AnnounceCategorySelection("Exploration mode", "Tracking all nearby interactables. Use Page Up and Page Down to cycle specific targets.");
     }
 
     private static string ComposeWaypointAnnouncement(Waypoint waypoint, Player player)
@@ -1012,6 +1051,25 @@ public sealed partial class GuidanceSystem : ModSystem
         return true;
     }
 
+    private static bool TryGetSelectedExploration(out ExplorationTargetRegistry.ExplorationTarget entry)
+    {
+        entry = default;
+        if (_selectionMode != SelectionMode.Exploration)
+        {
+            return false;
+        }
+
+        RefreshExplorationEntries();
+        if (_selectedExplorationIndex < 0 || _selectedExplorationIndex >= NearbyExplorationTargets.Count)
+        {
+            _selectedExplorationIndex = -1;
+            return false;
+        }
+
+        entry = NearbyExplorationTargets[_selectedExplorationIndex];
+        return true;
+    }
+
     private static bool TryGetSelectedInteractable(Player player, out InteractableGuidanceEntry entry)
     {
         entry = default;
@@ -1137,6 +1195,10 @@ public sealed partial class GuidanceSystem : ModSystem
             case SelectionMode.Waypoint when TryGetSelectedWaypoint(out Waypoint waypoint):
                 worldPosition = waypoint.WorldPosition;
                 label = waypoint.Name;
+                return true;
+            case SelectionMode.Exploration when TryGetSelectedExploration(out ExplorationTargetRegistry.ExplorationTarget exploration):
+                worldPosition = exploration.WorldPosition;
+                label = exploration.Label;
                 return true;
             case SelectionMode.Npc when TryGetSelectedNpc(player, out NPC npc, out NpcGuidanceEntry entry):
                 worldPosition = npc.Center;

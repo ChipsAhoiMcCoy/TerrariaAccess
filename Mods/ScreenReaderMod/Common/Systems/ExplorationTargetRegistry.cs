@@ -1,0 +1,26 @@
+#nullable enable
+using System.Collections.Generic;
+using Microsoft.Xna.Framework;
+
+namespace ScreenReaderMod.Common.Systems;
+
+/// <summary>
+/// Shares exploration targets detected by the world interactable tracker so the guidance system can surface them.
+/// </summary>
+internal static class ExplorationTargetRegistry
+{
+    internal readonly record struct ExplorationTarget(string Label, Vector2 WorldPosition, float DistanceTiles);
+
+    private static readonly List<ExplorationTarget> Targets = new();
+
+    public static void UpdateTargets(IEnumerable<ExplorationTarget> entries)
+    {
+        Targets.Clear();
+        Targets.AddRange(entries);
+    }
+
+    public static IReadOnlyList<ExplorationTarget> GetSnapshot()
+    {
+        return Targets.Count == 0 ? (IReadOnlyList<ExplorationTarget>)System.Array.Empty<ExplorationTarget>() : new List<ExplorationTarget>(Targets);
+    }
+}

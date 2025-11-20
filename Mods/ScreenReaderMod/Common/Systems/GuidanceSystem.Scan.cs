@@ -101,6 +101,7 @@ public sealed partial class GuidanceSystem
     }
 
     private static readonly List<PlayerGuidanceEntry> NearbyPlayers = new();
+    private static readonly List<ExplorationTargetRegistry.ExplorationTarget> NearbyExplorationTargets = new();
 
     private static Dictionary<int, List<InteractableDefinition>> BuildInteractableDefinitionMap()
     {
@@ -224,6 +225,33 @@ public sealed partial class GuidanceSystem
         {
             _selectedPlayerIndex = 0;
         }
+    }
+
+    private static void RefreshExplorationEntries()
+    {
+        IReadOnlyList<ExplorationTargetRegistry.ExplorationTarget> snapshot = ExplorationTargetRegistry.GetSnapshot();
+        int preservedIndex = _selectedExplorationIndex;
+
+        NearbyExplorationTargets.Clear();
+        if (snapshot.Count > 0)
+        {
+            NearbyExplorationTargets.AddRange(snapshot);
+            NearbyExplorationTargets.Sort(static (left, right) => left.DistanceTiles.CompareTo(right.DistanceTiles));
+        }
+
+        if (NearbyExplorationTargets.Count == 0)
+        {
+            _selectedExplorationIndex = -1;
+            return;
+        }
+
+        if (preservedIndex >= 0 && preservedIndex < NearbyExplorationTargets.Count)
+        {
+            _selectedExplorationIndex = preservedIndex;
+            return;
+        }
+
+        _selectedExplorationIndex = Math.Clamp(_selectedExplorationIndex, -1, NearbyExplorationTargets.Count - 1);
     }
 
     private static void RefreshInteractableEntries(Player player)
