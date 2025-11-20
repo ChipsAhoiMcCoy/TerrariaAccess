@@ -12,6 +12,7 @@ internal static class ExplorationTargetRegistry
     internal readonly record struct ExplorationTarget(string Label, Vector2 WorldPosition, float DistanceTiles);
 
     private static readonly List<ExplorationTarget> Targets = new();
+    private static ExplorationTarget? _selectedTarget;
 
     public static void UpdateTargets(IEnumerable<ExplorationTarget> entries)
     {
@@ -22,5 +23,22 @@ internal static class ExplorationTargetRegistry
     public static IReadOnlyList<ExplorationTarget> GetSnapshot()
     {
         return Targets.Count == 0 ? (IReadOnlyList<ExplorationTarget>)System.Array.Empty<ExplorationTarget>() : new List<ExplorationTarget>(Targets);
+    }
+
+    public static void SetSelectedTarget(ExplorationTarget? target)
+    {
+        _selectedTarget = target;
+    }
+
+    public static bool TryGetSelectedTarget(out ExplorationTarget target)
+    {
+        if (_selectedTarget.HasValue)
+        {
+            target = _selectedTarget.Value;
+            return true;
+        }
+
+        target = default;
+        return false;
     }
 }

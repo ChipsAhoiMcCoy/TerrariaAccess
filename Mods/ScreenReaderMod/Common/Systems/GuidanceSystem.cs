@@ -492,6 +492,7 @@ public sealed partial class GuidanceSystem : ModSystem
             case SelectionMode.None:
                 _selectionMode = SelectionMode.None;
                 _selectedIndex = Math.Min(_selectedIndex, Waypoints.Count - 1);
+                ExplorationTargetRegistry.SetSelectedTarget(null);
                 ClearCategoryAnnouncement();
                 RescheduleGuidancePing(player);
                 AnnounceDisabledSelection();
@@ -500,6 +501,7 @@ public sealed partial class GuidanceSystem : ModSystem
                 _selectionMode = SelectionMode.Exploration;
                 _selectedExplorationIndex = -1;
                 RefreshExplorationEntries();
+                ExplorationTargetRegistry.SetSelectedTarget(null);
                 _selectedIndex = Math.Min(_selectedIndex, Waypoints.Count - 1);
                 ClearCategoryAnnouncement();
                 RescheduleGuidancePing(player);
@@ -507,6 +509,7 @@ public sealed partial class GuidanceSystem : ModSystem
                 return;
             case SelectionMode.Interactable:
                 _selectionMode = SelectionMode.Interactable;
+                ExplorationTargetRegistry.SetSelectedTarget(null);
                 RefreshInteractableEntries(player);
                 if (NearbyInteractables.Count == 0)
                 {
@@ -529,6 +532,7 @@ public sealed partial class GuidanceSystem : ModSystem
                 return;
             case SelectionMode.Npc:
                 _selectionMode = SelectionMode.Npc;
+                ExplorationTargetRegistry.SetSelectedTarget(null);
                 RefreshNpcEntries(player);
                 if (NearbyNpcs.Count == 0)
                 {
@@ -558,6 +562,7 @@ public sealed partial class GuidanceSystem : ModSystem
                 }
 
                 _selectionMode = SelectionMode.Player;
+                ExplorationTargetRegistry.SetSelectedTarget(null);
                 RefreshPlayerEntries(player);
                 if (NearbyPlayers.Count == 0)
                 {
@@ -580,6 +585,7 @@ public sealed partial class GuidanceSystem : ModSystem
                 return;
             case SelectionMode.Waypoint:
                 _selectionMode = SelectionMode.Waypoint;
+                ExplorationTargetRegistry.SetSelectedTarget(null);
                 if (Waypoints.Count == 0)
                 {
                     _selectedIndex = -1;
@@ -728,6 +734,14 @@ public sealed partial class GuidanceSystem : ModSystem
 
                 RescheduleGuidancePing(player);
                 AnnounceExplorationEntry(player, totalExploration);
+                if (_selectedExplorationIndex < 0)
+                {
+                    ExplorationTargetRegistry.SetSelectedTarget(null);
+                }
+                else if (_selectedExplorationIndex < NearbyExplorationTargets.Count)
+                {
+                    ExplorationTargetRegistry.SetSelectedTarget(NearbyExplorationTargets[_selectedExplorationIndex]);
+                }
                 return;
             default:
                 ScreenReaderService.Announce("Select a waypoint, player, NPC, or crafting category to browse entries.");
@@ -917,6 +931,7 @@ public sealed partial class GuidanceSystem : ModSystem
     {
         ClearCategoryAnnouncement();
         AnnounceCategorySelection("Exploration mode", "Tracking all nearby interactables. Use Page Up and Page Down to cycle specific targets.");
+        ExplorationTargetRegistry.SetSelectedTarget(null);
     }
 
     private static string ComposeWaypointAnnouncement(Waypoint waypoint, Player player)
@@ -1181,6 +1196,12 @@ public sealed partial class GuidanceSystem : ModSystem
         if (_selectionMode == SelectionMode.Waypoint && _selectedIndex >= 0 && _selectedIndex < Waypoints.Count)
         {
             waypoint = Waypoints[_selectedIndex];
+            return true;
+        }
+
+        if (_selectionMode == SelectionMode.Exploration && TryGetSelectedExploration(out ExplorationTargetRegistry.ExplorationTarget exploration))
+        {
+            waypoint = new Waypoint(exploration.Label, exploration.WorldPosition);
             return true;
         }
 

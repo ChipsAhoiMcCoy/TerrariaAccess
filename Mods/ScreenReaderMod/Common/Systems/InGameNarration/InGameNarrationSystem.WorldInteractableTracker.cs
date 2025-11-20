@@ -19,6 +19,7 @@ public sealed partial class InGameNarrationSystem
         private const int ScanIntervalTicks = 18;
         private const int MaxConcurrentCues = 6;
         private const float SecondaryCueVolumeScale = 0.25f;
+        private const float SelectedTargetMatchToleranceTiles = 6f;
 
         private static readonly Dictionary<string, SoundEffect> ToneCache = new();
 
@@ -193,6 +194,7 @@ public sealed partial class InGameNarrationSystem
             }
 
             _distanceScratch.Sort(static (left, right) => left.DistanceTiles.CompareTo(right.DistanceTiles));
+            ApplySelectedTargetFilter();
             ExplorationTargetRegistry.UpdateTargets(_distanceScratch.Select(d =>
             {
                 string label = d.Candidate.ArrivalLabelOverride ?? string.Empty;
@@ -339,6 +341,37 @@ public sealed partial class InGameNarrationSystem
             {
                 _arrivedKeys.Remove(key);
             }
+        }
+
+        private void ApplySelectedTargetFilter()
+        {
+            if (!ExplorationTargetRegistry.TryGetSelectedTarget(out ExplorationTargetRegistry.ExplorationTarget target))
+            {
+                return;
+            }
+
+            float bestDistance = float.MaxValue;
+            int bestIndex = -1;
+            for (int i = 0; i < _distanceScratch.Count; i++)
+            {
+                CandidateDistance entry = _distanceScratch[i];
+                float delta = Vector2.Distance(entry.Candidate.WorldPosition, target.WorldPosition) / 16f;
+                if (delta < bestDistance)
+                {
+                    bestDistance = delta;
+                    bestIndex = i;
+                }
+            }
+
+            if (bestIndex < 0 || bestDistance > SelectedTargetMatchToleranceTiles)
+            {
+                _distanceScratch.Clear();
+                return;
+            }
+
+            CandidateDistance match = _distanceScratch[bestIndex];
+            _distanceScratch.Clear();
+            _distanceScratch.Add(match);
         }
 
         private void PlayCue(Vector2 playerCenter, CandidateDistance entry, bool isPrimaryCue)
