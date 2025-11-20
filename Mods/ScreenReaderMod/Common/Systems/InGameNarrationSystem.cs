@@ -20,7 +20,6 @@ using Terraria.GameContent.Events;
 using Terraria.GameContent.UI.Elements;
 using Terraria.GameContent.UI.States;
 using Terraria.GameInput;
-using Microsoft.Xna.Framework.Input;
 using Terraria.ID;
 using Terraria.Localization;
 using Terraria.Map;
@@ -54,7 +53,6 @@ public sealed partial class InGameNarrationSystem : ModSystem
     private static readonly bool LogNarratorTimings = false;
     private static readonly double TicksToMilliseconds = 1000d / Stopwatch.Frequency;
     private const float ScreenEdgePaddingPixels = 48f;
-    private static bool _lastF1Down;
 
     public override void Load()
     {
@@ -143,7 +141,6 @@ public sealed partial class InGameNarrationSystem : ModSystem
 
     public override void UpdateUI(GameTime gameTime)
     {
-        HandleDeveloperHotkeys();
         TryUpdateNarrators(requirePaused: true);
     }
 
@@ -208,27 +205,6 @@ public sealed partial class InGameNarrationSystem : ModSystem
         LogDuration("ControlsMenu", ref _timingScratch);
         _modConfigMenuNarrator.TryHandleIngameUi(Main.InGameUI, isPaused);
         LogDuration("ModConfigMenu", ref _timingScratch);
-    }
-
-    private static void HandleDeveloperHotkeys()
-    {
-        if (Main.dedServ)
-        {
-            return;
-        }
-
-        bool f1Down = Main.keyState.IsKeyDown(Keys.F1);
-        bool justPressed = f1Down && !_lastF1Down;
-        _lastF1Down = f1Down;
-
-        if (!justPressed)
-        {
-            return;
-        }
-
-        bool enabled = ScreenReaderService.ToggleInterrupt();
-        string message = enabled ? "Speech interrupt enabled" : "Speech interrupt disabled";
-        ScreenReaderService.Announce(message, force: true, interrupt: true);
     }
 
     private static bool IsWorldPositionApproximatelyOnScreen(Vector2 worldPosition, float paddingPixels = ScreenEdgePaddingPixels)

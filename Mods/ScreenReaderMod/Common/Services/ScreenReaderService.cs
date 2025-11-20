@@ -20,11 +20,8 @@ public static class ScreenReaderService
     private static DateTime _lastAnnouncedAt = DateTime.MinValue;
     private static string? _lastMessage;
     private static readonly Dictionary<AnnouncementCategory, string?> LastCategoryAnnouncements = new();
-    private static bool _interruptEnabled = true;
 
     public static IReadOnlyCollection<string> Snapshot => RecentMessages.ToArray();
-
-    public static bool InterruptEnabled => _interruptEnabled;
 
     public static void Initialize()
     {
@@ -32,7 +29,6 @@ public static class ScreenReaderService
         _lastAnnouncedAt = DateTime.MinValue;
         _lastMessage = null;
         LastCategoryAnnouncements.Clear();
-        _interruptEnabled = true;
         ScreenReaderDiagnostics.DumpStartupSnapshot();
         NvdaSpeechProvider.Initialize();
     }
@@ -88,7 +84,7 @@ public static class ScreenReaderService
             RecentMessages.Dequeue();
         }
 
-        if (interrupt && _interruptEnabled)
+        if (interrupt)
         {
             NvdaSpeechProvider.Interrupt();
         }
@@ -100,12 +96,6 @@ public static class ScreenReaderService
         {
             Main.NewText($"[Narration] {trimmed}", 255, 255, 160);
         }
-    }
-
-    public static bool ToggleInterrupt()
-    {
-        _interruptEnabled = !_interruptEnabled;
-        return _interruptEnabled;
     }
 
     private static bool ShouldSuppressByCategory(AnnouncementCategory category, string trimmed)
