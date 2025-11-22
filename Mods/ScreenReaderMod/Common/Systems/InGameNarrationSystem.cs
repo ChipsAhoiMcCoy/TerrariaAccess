@@ -9,6 +9,7 @@ using System.Text;
 using Microsoft.Xna.Framework;
 using Microsoft.Xna.Framework.Audio;
 using Microsoft.Xna.Framework.Graphics;
+using Terraria.Chat;
 using ScreenReaderMod.Common.Services;
 using ScreenReaderMod.Common.Systems.MenuNarration;
 using ScreenReaderMod.Common.Utilities;
@@ -108,6 +109,7 @@ public sealed partial class InGameNarrationSystem : ModSystem
         On_IngameOptions.Draw += HandleIngameOptionsDraw;
         On_IngameOptions.DrawLeftSide += CaptureIngameOptionsLeft;
         On_IngameOptions.DrawRightSide += CaptureIngameOptionsRight;
+        On_ChatHelper.BroadcastChatMessage += HandleBroadcastChatMessage;
     }
 
     private void UnregisterHooks()
@@ -120,6 +122,7 @@ public sealed partial class InGameNarrationSystem : ModSystem
         On_IngameOptions.Draw -= HandleIngameOptionsDraw;
         On_IngameOptions.DrawLeftSide -= CaptureIngameOptionsLeft;
         On_IngameOptions.DrawRightSide -= CaptureIngameOptionsRight;
+        On_ChatHelper.BroadcastChatMessage -= HandleBroadcastChatMessage;
     }
 
     private void ResetSharedResources()
@@ -492,6 +495,33 @@ public sealed partial class InGameNarrationSystem : ModSystem
     {
         orig(ref item, context);
         InventoryNarrator.RecordFocus(item, context);
+    }
+
+    private static void HandleBroadcastChatMessage(On_ChatHelper.orig_BroadcastChatMessage orig, NetworkText text, Color color, int excludedPlayer)
+    {
+        orig(text, color, excludedPlayer);
+        TryAnnounceWorldText(text.ToString());
+    }
+
+    private static void TryAnnounceWorldText(string? text)
+    {
+        if (string.IsNullOrWhiteSpace(text))
+        {
+            return;
+        }
+
+        string sanitized = TextSanitizer.Clean(text);
+        if (string.IsNullOrWhiteSpace(sanitized) || IsLikelyPlayerChat(sanitized))
+        {
+            return;
+        }
+
+        WorldAnnouncementService.Announce(sanitized, force: true);
+    }
+
+    private static bool IsLikelyPlayerChat(string text)
+    {
+        return text.Contains(": ", StringComparison.Ordinal);
     }
 
 
