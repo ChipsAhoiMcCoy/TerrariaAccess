@@ -9,6 +9,7 @@ using System.Text;
 using Microsoft.Xna.Framework;
 using Microsoft.Xna.Framework.Audio;
 using Microsoft.Xna.Framework.Graphics;
+using Terraria.Chat;
 using ScreenReaderMod.Common.Services;
 using ScreenReaderMod.Common.Systems.MenuNarration;
 using ScreenReaderMod.Common.Utilities;
@@ -24,6 +25,7 @@ using Terraria.ID;
 using Terraria.Localization;
 using Terraria.Map;
 using Terraria.ModLoader;
+using Terraria.DataStructures;
 using Terraria.ModLoader.IO;
 using Terraria.ObjectData;
 using Terraria.UI;
@@ -53,6 +55,8 @@ public sealed partial class InGameNarrationSystem : ModSystem
     private static readonly bool LogNarratorTimings = false;
     private static readonly double TicksToMilliseconds = 1000d / Stopwatch.Frequency;
     private const float ScreenEdgePaddingPixels = 48f;
+    private static readonly Dictionary<int, int> _inventoryStacksByType = new();
+    private static bool _inventoryInitialized;
 
     public override void Load()
     {
@@ -105,6 +109,7 @@ public sealed partial class InGameNarrationSystem : ModSystem
         On_IngameOptions.Draw += HandleIngameOptionsDraw;
         On_IngameOptions.DrawLeftSide += CaptureIngameOptionsLeft;
         On_IngameOptions.DrawRightSide += CaptureIngameOptionsRight;
+        On_ChatHelper.BroadcastChatMessage += HandleBroadcastChatMessage;
     }
 
     private void UnregisterHooks()
@@ -117,6 +122,7 @@ public sealed partial class InGameNarrationSystem : ModSystem
         On_IngameOptions.Draw -= HandleIngameOptionsDraw;
         On_IngameOptions.DrawLeftSide -= CaptureIngameOptionsLeft;
         On_IngameOptions.DrawRightSide -= CaptureIngameOptionsRight;
+        On_ChatHelper.BroadcastChatMessage -= HandleBroadcastChatMessage;
     }
 
     private void ResetSharedResources()
@@ -137,6 +143,8 @@ public sealed partial class InGameNarrationSystem : ModSystem
         _footstepAudioEmitter.Reset();
         _worldInteractableTracker.Reset();
         _biomeAnnouncementEmitter.Reset();
+        _inventoryStacksByType.Clear();
+        _inventoryInitialized = false;
     }
 
     public override void UpdateUI(GameTime gameTime)
@@ -171,6 +179,8 @@ public sealed partial class InGameNarrationSystem : ModSystem
         {
             return;
         }
+
+        DetectInventoryGains(player);
 
         _timingScratch = StartTiming();
         _hotbarNarrator.Update(player);
@@ -487,6 +497,32 @@ public sealed partial class InGameNarrationSystem : ModSystem
         InventoryNarrator.RecordFocus(item, context);
     }
 
+    private static void HandleBroadcastChatMessage(On_ChatHelper.orig_BroadcastChatMessage orig, NetworkText text, Color color, int excludedPlayer)
+    {
+        orig(text, color, excludedPlayer);
+        TryAnnounceWorldText(text.ToString());
+    }
+
+    private static void TryAnnounceWorldText(string? text)
+    {
+        if (string.IsNullOrWhiteSpace(text))
+        {
+            return;
+        }
+
+        string sanitized = TextSanitizer.Clean(text);
+        if (string.IsNullOrWhiteSpace(sanitized) || IsLikelyPlayerChat(sanitized))
+        {
+            return;
+        }
+
+        WorldAnnouncementService.Announce(sanitized, force: true);
+    }
+
+    private static bool IsLikelyPlayerChat(string text)
+    {
+        return text.Contains(": ", StringComparison.Ordinal);
+    }
 
 
 
@@ -499,10 +535,85 @@ public sealed partial class InGameNarrationSystem : ModSystem
 
 
 
-    // Emits a continuous tone for boss treasure bags until collected.
 
+    private static void DetectInventoryGains(Player player)
+    {
+        if (player.inventory is null)
+        {
+            return;
+        }
 
+        var currentTotals = new Dictionary<int, int>(_inventoryStacksByType.Count);
+        foreach (Item item in player.inventory)
+        {
+            if (item is null || item.IsAir || item.type <= 0 || item.stack <= 0)
+            {
+                continue;
+            }
 
+            if (currentTotals.TryGetValue(item.type, out int existing))
+            {
+                currentTotals[item.type] = existing + item.stack;
+            }
+            else
+            {
+                currentTotals[item.type] = item.stack;
+            }
+        }
+
+        if (!_inventoryInitialized)
+        {
+            foreach ((int itemType, int stack) in currentTotals)
+            {
+                _inventoryStacksByType[itemType] = stack;
+            }
+
+            _inventoryInitialized = true;
+            return;
+        }
+
+        foreach ((int itemType, int currentStack) in currentTotals)
+        {
+            _inventoryStacksByType.TryGetValue(itemType, out int previousStack);
+            if (currentStack <= previousStack)
+            {
+                continue;
+            }
+
+            Item? template = FindInventoryItem(player, itemType);
+            if (template is null)
+            {
+                continue;
+            }
+
+            Item announcementItem = template.Clone();
+            announcementItem.stack = currentStack;
+
+            string label = ComposeItemLabel(announcementItem);
+            ScreenReaderService.Announce($"Picked up {label}", category: ScreenReaderService.AnnouncementCategory.Pickup);
+        }
+
+        _inventoryStacksByType.Clear();
+        foreach ((int itemType, int stack) in currentTotals)
+        {
+            _inventoryStacksByType[itemType] = stack;
+        }
+
+        _inventoryInitialized = true;
+    }
+
+    private static Item? FindInventoryItem(Player player, int type)
+    {
+        foreach (Item item in player.inventory)
+        {
+            if (item is not null && !item.IsAir && item.type == type)
+            {
+                return item;
+            }
+        }
+
+        return null;
+    }
 
     internal static string ComposeItemLabel(Item item)
     {
@@ -522,12 +633,8 @@ public sealed partial class InGameNarrationSystem : ModSystem
             name = $"Item {item.type}";
         }
 
-        var parts = new List<string> { name };
-
-        if (item.stack > 1)
-        {
-            parts.Add($"stack {item.stack}");
-        }
+        string mainLabel = item.stack > 1 ? $"{item.stack} {name}" : name;
+        var parts = new List<string> { mainLabel };
 
         if (item.favorited)
         {

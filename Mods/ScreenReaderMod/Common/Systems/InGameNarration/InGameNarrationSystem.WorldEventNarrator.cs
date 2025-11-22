@@ -257,7 +257,8 @@ public sealed partial class InGameNarrationSystem
             for (int i = 0; i < Main.maxNPCs; i++)
             {
                 NPC npc = Main.npc[i];
-                if (!npc.active || !npc.townNPC)
+                bool countsAsTownNpc = npc.townNPC || npc.type == NPCID.TravellingMerchant;
+                if (!npc.active || !countsAsTownNpc)
                 {
                     continue;
                 }
@@ -394,7 +395,8 @@ public sealed partial class InGameNarrationSystem
             for (int i = 0; i < Main.maxNPCs; i++)
             {
                 NPC npc = Main.npc[i];
-                if (!npc.active || !npc.townNPC)
+                bool countsAsTownNpc = npc.townNPC || npc.type == NPCID.TravellingMerchant;
+                if (!npc.active || !countsAsTownNpc)
                 {
                     continue;
                 }

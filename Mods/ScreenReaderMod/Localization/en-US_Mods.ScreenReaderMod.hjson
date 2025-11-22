@@ -126,6 +126,12 @@ Mods: {
 }
 
 Keybinds: {
+			GuidanceTeleport.DisplayName: Teleport to Guidance Target
+		}
+	}
+}
+
+Keybinds: {
 	"Next Waypoint.DisplayName": Next  Waypoint
 	"Previous Waypoint.DisplayName": Previous  Waypoint
 	"Create Waypoint.DisplayName": Create  Waypoint
@@ -140,4 +146,5 @@ Keybinds: {
 	ControllerInventorySmartSelect.DisplayName: Inventory Smart Select
 	ControllerInventorySectionNext.DisplayName: Inventory Section Next
 	ControllerInventorySectionPrevious.DisplayName: Inventory Section Previous
+	GuidanceTeleport.DisplayName: Teleport to Guidance Target
 }

@@ -29,6 +29,8 @@ public sealed partial class GuidanceSystem : ModSystem
     private const float PanScalePixels = 480f;
     private const float DistanceReferenceTiles = 90f;
     private const float MinVolume = 0.18f;
+    private const int TeleportSearchRadiusTiles = 18;
+    private const int TeleportVerticalSearchTiles = 8;
 
     public override void Load()
     {
@@ -422,10 +424,128 @@ public sealed partial class GuidanceSystem : ModSystem
             return;
         }
 
+        if (GuidanceKeybinds.Teleport?.JustPressed ?? false)
+        {
+            TeleportToTrackingTarget(player);
+            return;
+        }
+
         if (GuidanceKeybinds.Delete?.JustPressed ?? false)
         {
             DeleteSelectedWaypoint(player);
         }
+    }
+
+    private static void TeleportToTrackingTarget(Player player)
+    {
+        if (!TryResolveTeleportTarget(player, out Vector2 targetPosition, out string label))
+        {
+            ScreenReaderService.Announce("No active guidance target to teleport to.");
+            return;
+        }
+
+        if (!TryFindTeleportDestination(player, targetPosition, out Vector2 destination))
+        {
+            string displayLabel = string.IsNullOrWhiteSpace(label) ? "the target" : label;
+            ScreenReaderService.Announce($"Unable to find a safe teleport location near {displayLabel}.");
+            return;
+        }
+
+        player.Teleport(destination, TeleportationStyleID.RodOfDiscord);
+        player.velocity = Vector2.Zero;
+        player.fallStart = (int)(player.position.Y / 16f);
+
+        if (Main.netMode == NetmodeID.MultiplayerClient)
+        {
+            NetMessage.SendData(MessageID.TeleportEntity, -1, -1, null, player.whoAmI, destination.X, destination.Y, TeleportationStyleID.RodOfDiscord);
+        }
+
+        _arrivalAnnounced = false;
+        RescheduleGuidancePing(player);
+        EmitCurrentGuidancePing(player);
+
+        string announcement = string.IsNullOrWhiteSpace(label)
+            ? "Teleported to guidance target."
+            : $"Teleported to {label}.";
+        ScreenReaderService.Announce(announcement);
+    }
+
+    private static bool TryResolveTeleportTarget(Player player, out Vector2 worldPosition, out string label)
+    {
+        if (TryGetCurrentTrackingTarget(player, out worldPosition, out label))
+        {
+            return true;
+        }
+
+        if (_selectionMode == SelectionMode.Exploration && TryGetSelectedExploration(out ExplorationTargetRegistry.ExplorationTarget exploration))
+        {
+            worldPosition = exploration.WorldPosition;
+            label = exploration.Label;
+            return true;
+        }
+
+        worldPosition = default;
+        label = string.Empty;
+        return false;
+    }
+
+    private static bool TryFindTeleportDestination(Player player, Vector2 targetCenter, out Vector2 destination)
+    {
+        int width = player.width;
+        int height = player.height;
+        Vector2 baseTopLeft = targetCenter - new Vector2(width * 0.5f, height);
+
+        for (int radius = 0; radius <= TeleportSearchRadiusTiles; radius++)
+        {
+            for (int dx = -radius; dx <= radius; dx++)
+            {
+                for (int dy = -radius; dy <= radius; dy++)
+                {
+                    if (Math.Abs(dx) + Math.Abs(dy) != radius)
+                    {
+                        continue;
+                    }
+
+                    Vector2 ringOffset = new(dx * 16f, dy * 16f);
+                    Vector2 candidateBase = baseTopLeft + ringOffset;
+                    if (!IsTeleportPositionWithinWorld(candidateBase, width, height))
+                    {
+                        continue;
+                    }
+
+                    for (int vertical = -TeleportVerticalSearchTiles; vertical <= TeleportVerticalSearchTiles; vertical++)
+                    {
+                        Vector2 candidate = candidateBase + new Vector2(0f, vertical * 16f);
+                        if (!IsTeleportPositionWithinWorld(candidate, width, height))
+                        {
+                            continue;
+                        }
+
+                        if (!Collision.SolidCollision(candidate, width, height))
+                        {
+                            destination = candidate;
+                            return true;
+                        }
+                    }
+                }
+            }
+        }
+
+        destination = default;
+        return false;
+    }
+
+    private static bool IsTeleportPositionWithinWorld(Vector2 topLeft, int width, int height)
+    {
+        float minX = 16f;
+        float minY = 16f;
+        float maxX = (Main.maxTilesX - 2) * 16f - width;
+        float maxY = (Main.maxTilesY - 2) * 16f - height;
+
+        return topLeft.X >= minX &&
+               topLeft.X <= maxX &&
+               topLeft.Y >= minY &&
+               topLeft.Y <= maxY;
     }
 
     private static string BuildDefaultName()

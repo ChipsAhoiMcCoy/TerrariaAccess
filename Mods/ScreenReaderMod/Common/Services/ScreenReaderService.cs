@@ -91,11 +91,6 @@ public static class ScreenReaderService
 
         NvdaSpeechProvider.Speak(trimmed);
         ScreenReaderMod.Instance?.Logger.Info($"[Narration] {trimmed}");
-
-        if (!Main.dedServ)
-        {
-            Main.NewText($"[Narration] {trimmed}", 255, 255, 160);
-        }
     }
 
     private static bool ShouldSuppressByCategory(AnnouncementCategory category, string trimmed)
