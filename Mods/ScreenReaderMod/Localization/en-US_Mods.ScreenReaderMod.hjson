@@ -118,6 +118,9 @@ Mods: {
 			WaypointNext.DisplayName: Next Waypoint
 			WaypointPrevious.DisplayName: Previous Waypoint
 			WaypointCreate.DisplayName: Create Waypoint
+			ControllerInventorySmartSelect.DisplayName: Inventory Smart Select
+			ControllerInventorySectionNext.DisplayName: Inventory Section Next
+			ControllerInventorySectionPrevious.DisplayName: Inventory Section Previous
 		}
 	}
 }
@@ -134,4 +137,7 @@ Keybinds: {
 	GuidanceCategoryPrevious.DisplayName: Previous Guidance Category
 	GuidanceEntryNext.DisplayName: Next Guidance Entry
 	GuidanceEntryPrevious.DisplayName: Previous Guidance Entry
+	ControllerInventorySmartSelect.DisplayName: Inventory Smart Select
+	ControllerInventorySectionNext.DisplayName: Inventory Section Next
+	ControllerInventorySectionPrevious.DisplayName: Inventory Section Previous
 }
