@@ -68,8 +68,7 @@ public sealed partial class InGameNarrationSystem
 
         private static void AnnounceHealthChange(NPC target, int hp)
         {
-            string name = GetNpcName(target);
-            ScreenReaderService.Announce($"{name} at {hp} health", force: true);
+            ScreenReaderService.Announce($"{hp} health", force: true);
         }
 
         private static string GetNpcName(NPC target)
