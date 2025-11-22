@@ -118,6 +118,7 @@ Mods: {
 			WaypointNext.DisplayName: Next Waypoint
 			WaypointPrevious.DisplayName: Previous Waypoint
 			WaypointCreate.DisplayName: Create Waypoint
+			GuidanceTeleport.DisplayName: Teleport to Guidance Target
 		}
 	}
 }
@@ -134,4 +135,5 @@ Keybinds: {
 	GuidanceCategoryPrevious.DisplayName: Previous Guidance Category
 	GuidanceEntryNext.DisplayName: Next Guidance Entry
 	GuidanceEntryPrevious.DisplayName: Previous Guidance Entry
+	GuidanceTeleport.DisplayName: Teleport to Guidance Target
 }

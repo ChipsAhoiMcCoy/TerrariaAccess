@@ -22,6 +22,10 @@ public sealed class ModBrowserGamepadSystem : ModSystem
     private const string RowDropdown = "Dropdown";
     private const string RowCategories = "Categories";
     private const string RowMods = "Mods";
+    private const string ModItemActionName = "ModItemAction";
+    private const float ActionHitboxThreshold = 48f;
+    private const int MaxModItemLogCount = 5;
+    private static int _loggedModItems;
     private static readonly string[] RowOrder = [RowTop, RowFilters, RowDropdown, RowCategories, RowMods];
 
     private static Type? _modBrowserType;
@@ -95,17 +99,17 @@ public sealed class ModBrowserGamepadSystem : ModSystem
 
     private static void SetModItemSnapPoints(UIState browser)
     {
-        if (FieldAccessor.ModList?.GetValue(browser) is not UIList list)
+        if (FieldAccessor.ModList?.GetValue(browser) is not UIElement listElement)
         {
             return;
         }
 
-        if (FieldAccessor.ItemsField?.GetValue(list) is not IEnumerable items)
+        if (!FieldAccessor.TryGetItems(listElement, out IEnumerable? items) || items is null)
         {
             return;
         }
 
-        CalculatedStyle view = list.GetInnerDimensions();
+        CalculatedStyle view = listElement.GetInnerDimensions();
         float top = view.Y;
         float bottom = view.Y + view.Height;
 
@@ -125,6 +129,7 @@ public sealed class ModBrowserGamepadSystem : ModSystem
             }
 
             element.SetSnapPoint("ModItem", index++);
+            TrySetModItemButtons(element, ref index);
         }
     }
 
@@ -178,15 +183,39 @@ public sealed class ModBrowserGamepadSystem : ModSystem
             linkPoint.Unlink();
         }
 
-        foreach (List<PointBinding> row in rows.Values)
+        List<PointBinding>? modRow = rows.GetValueOrDefault(RowMods);
+        List<PointBinding>? modMainRow = null;
+
+        foreach (KeyValuePair<string, List<PointBinding>> entry in rows)
         {
-            row.Sort(ComparePoints);
-            LinkHorizontal(row);
+            if (entry.Key == RowMods)
+            {
+                continue;
+            }
+
+            entry.Value.Sort(ComparePoints);
+            LinkHorizontal(entry.Value);
         }
+
+        if (modRow is not null && modRow.Count > 0)
+        {
+            modMainRow = ApplyModRowNavigation(modRow);
+        }
+
+        LogRowSummary(rows, modMainRow);
 
         var orderedRows = new List<List<PointBinding>>(RowOrder.Length);
         foreach (string rowKey in RowOrder)
         {
+            if (rowKey == RowMods)
+            {
+                if (modMainRow is { Count: > 0 })
+                {
+                    orderedRows.Add(modMainRow);
+                }
+                continue;
+            }
+
             if (rows.TryGetValue(rowKey, out List<PointBinding>? row) && row.Count > 0)
             {
                 orderedRows.Add(row);
@@ -207,6 +236,29 @@ public sealed class ModBrowserGamepadSystem : ModSystem
         }
     }
 
+    private static void LogRowSummary(Dictionary<string, List<PointBinding>> rows, List<PointBinding>? modMainRow)
+    {
+        var logger = ScreenReaderMod.Instance?.Logger;
+        if (logger is null)
+        {
+            return;
+        }
+
+        try
+        {
+            logger.Info($"[ModBrowserGamepad] Rows: {string.Join(", ", rows.Select(r => $"{r.Key}={r.Value.Count}"))}");
+
+            if (modMainRow is not null)
+            {
+                logger.Info($"[ModBrowserGamepad] Mod mains: {modMainRow.Count}, actions total: {rows.GetValueOrDefault(RowMods)?.Count - modMainRow.Count ?? 0}");
+            }
+        }
+        catch
+        {
+            // ignore logging failures
+        }
+    }
+
     private static string? GetRowKey(SnapPoint point)
     {
         return point.Name switch
@@ -215,7 +267,7 @@ public sealed class ModBrowserGamepadSystem : ModSystem
             "FilterToggle" => RowFilters,
             "FilterDropdown" => RowDropdown,
             "CategoryButton" => RowCategories,
-            "ModItem" => RowMods,
+            "ModItem" or ModItemActionName => RowMods,
             _ => null,
         };
     }
@@ -316,6 +368,182 @@ public sealed class ModBrowserGamepadSystem : ModSystem
         return best;
     }
 
+    private static List<PointBinding> ApplyModRowNavigation(List<PointBinding> modRow)
+    {
+        if (modRow.Count == 0)
+        {
+            return modRow;
+        }
+
+        var mains = new List<PointBinding>();
+        var actions = new List<PointBinding>();
+
+        foreach (PointBinding binding in modRow)
+        {
+            if (string.Equals(binding.Point.Name, "ModItem", StringComparison.OrdinalIgnoreCase))
+            {
+                mains.Add(binding);
+            }
+            else if (string.Equals(binding.Point.Name, ModItemActionName, StringComparison.OrdinalIgnoreCase))
+            {
+                actions.Add(binding);
+            }
+        }
+
+        if (mains.Count == 0)
+        {
+            return modRow;
+        }
+
+        ScreenReaderMod.Instance?.Logger.Debug($"[ModBrowserGamepad] Mod items: {mains.Count}, actions: {actions.Count}");
+
+        mains.Sort((a, b) => a.Point.Position.Y.CompareTo(b.Point.Position.Y));
+        for (int i = 0; i < mains.Count; i++)
+        {
+            UILinkPoint linkPoint = EnsureLinkPoint(mains[i].Id);
+            linkPoint.Up = i > 0 ? mains[i - 1].Id : linkPoint.Up;
+            linkPoint.Down = i < mains.Count - 1 ? mains[i + 1].Id : linkPoint.Down;
+        }
+
+        var groupedActions = GroupActionsByMain(actions, mains);
+
+        var resultRow = new List<PointBinding>(mains.Count);
+
+        foreach (PointBinding main in mains)
+        {
+            resultRow.Add(main);
+
+            if (!groupedActions.TryGetValue(main.Id, out List<PointBinding>? children) || children.Count == 0)
+            {
+                continue;
+            }
+
+            children.Sort((a, b) => a.Point.Position.X.CompareTo(b.Point.Position.X));
+
+            UILinkPoint mainLink = EnsureLinkPoint(main.Id);
+            int left = main.Id;
+
+            foreach (PointBinding child in children)
+            {
+                resultRow.Add(child);
+
+                UILinkPoint childLink = EnsureLinkPoint(child.Id);
+                childLink.Left = left;
+                EnsureLinkPoint(left).Right = child.Id;
+                left = child.Id;
+
+                childLink.Up = mainLink.Up;
+                childLink.Down = mainLink.Down;
+            }
+        }
+
+        return resultRow;
+    }
+
+    private static Dictionary<int, List<PointBinding>> GroupActionsByMain(IEnumerable<PointBinding> actions, IReadOnlyList<PointBinding> mains)
+    {
+        var grouped = new Dictionary<int, List<PointBinding>>(mains.Count);
+
+        foreach (PointBinding action in actions)
+        {
+            PointBinding main = FindClosestByDistance(action, mains);
+            if (!grouped.TryGetValue(main.Id, out List<PointBinding>? list))
+            {
+                list = new List<PointBinding>();
+                grouped[main.Id] = list;
+            }
+
+            list.Add(action);
+        }
+
+        return grouped;
+    }
+
+    private static PointBinding FindClosestByDistance(PointBinding target, IReadOnlyList<PointBinding> mains)
+    {
+        PointBinding best = mains[0];
+        float bestScore = float.MaxValue;
+
+        foreach (PointBinding main in mains)
+        {
+            float deltaX = Math.Abs(main.Point.Position.X - target.Point.Position.X);
+            float deltaY = Math.Abs(main.Point.Position.Y - target.Point.Position.Y);
+            float score = deltaY * 2f + deltaX * 0.05f;
+            if (score < bestScore)
+            {
+                bestScore = score;
+                best = main;
+            }
+        }
+
+        return best;
+    }
+
+    private static void TrySetModItemButtons(UIElement modItem, ref int index)
+    {
+        // Stable order: main text, tML update banner, restart/update button, download/update-with-deps,
+        // dependency hover icon, more info.
+        int startIndex = index;
+
+        if (FieldAccessor.TryGetModItemChild(modItem, ref FieldAccessor.ModItemTmlUpdateRequiredField, "tMLUpdateRequired", out UIElement? tmlUpdate) && tmlUpdate?.Parent is not null)
+        {
+            tmlUpdate.SetSnapPoint(ModItemActionName, index++);
+        }
+
+        if (FieldAccessor.TryGetModItemChild(modItem, ref FieldAccessor.ModItemUpdateButtonField, "_updateButton", out UIElement? update) && update?.Parent is not null)
+        {
+            update.SetSnapPoint(ModItemActionName, index++);
+        }
+
+        if (FieldAccessor.TryGetModItemChild(modItem, ref FieldAccessor.ModItemUpdateWithDepsField, "_updateWithDepsButton", out UIElement? download) && download?.Parent is not null)
+        {
+            download.SetSnapPoint(ModItemActionName, index++);
+        }
+
+        if (FieldAccessor.TryGetModItemChild(modItem, ref FieldAccessor.ModItemMoreInfoField, "_moreInfoButton", out UIElement? info) && info?.Parent is not null)
+        {
+            info.SetSnapPoint(ModItemActionName, index++);
+        }
+
+        if (modItem.Children is { } children)
+        {
+            foreach (UIElement child in children)
+            {
+                if (child is null)
+                {
+                    continue;
+                }
+
+                string? typeName = child.GetType().FullName;
+                if (typeName is null)
+                {
+                    continue;
+                }
+
+                CalculatedStyle bounds = child.GetDimensions();
+                if (bounds.Width > ActionHitboxThreshold || bounds.Height > ActionHitboxThreshold)
+                {
+                    continue;
+                }
+
+                if (typeName.Contains("UIHoverImage", StringComparison.OrdinalIgnoreCase))
+                {
+                    child.SetSnapPoint(ModItemActionName, index++);
+                }
+            }
+        }
+
+        if (_loggedModItems < MaxModItemLogCount && index > startIndex)
+        {
+            _loggedModItems++;
+            var logger = ScreenReaderMod.Instance?.Logger;
+            if (logger is not null)
+            {
+                logger.Info($"[ModBrowserGamepad] Mod item actions added: {index - startIndex} at Y={modItem.GetDimensions().Y:0.##}");
+            }
+        }
+    }
+
     private static UILinkPoint EnsureLinkPoint(int id)
     {
         if (!UILinkPointNavigator.Points.TryGetValue(id, out UILinkPoint? linkPoint))
@@ -347,8 +575,12 @@ public sealed class ModBrowserGamepadSystem : ModSystem
         private static FieldInfo? _modSideFilterToggle;
         private static FieldInfo? _categoryButtons;
         private static FieldInfo? _modList;
-        private static FieldInfo? _itemsField;
         private static FieldInfo? _modTagFilterDropdown;
+        private static readonly Dictionary<Type, FieldInfo?> ItemsFieldCache = new();
+        private static FieldInfo? _modItemMoreInfoField;
+        private static FieldInfo? _modItemUpdateWithDepsField;
+        private static FieldInfo? _modItemUpdateButtonField;
+        private static FieldInfo? _modItemTmlUpdateRequiredField;
 
         public static FieldInfo? FilterTextBox => _filterTextBox ??= GetField("FilterTextBox");
         public static FieldInfo? ClearButton => _clearButton ??= GetField("_clearButton");
@@ -364,13 +596,64 @@ public sealed class ModBrowserGamepadSystem : ModSystem
         public static FieldInfo? ModSideFilterToggle => _modSideFilterToggle ??= GetField("ModSideFilterToggle");
         public static FieldInfo? CategoryButtons => _categoryButtons ??= GetField("CategoryButtons");
         public static FieldInfo? ModList => _modList ??= GetField("ModList");
-        public static FieldInfo? ItemsField => _itemsField ??= typeof(UIList).GetField("_items", InstanceFlags);
         public static FieldInfo? ModTagFilterDropdown => _modTagFilterDropdown ??= GetField("modTagFilterDropdown");
+
+        public static bool TryGetItems(UIElement listElement, out IEnumerable? items)
+        {
+            items = null;
+
+            FieldInfo? itemsField = ResolveItemsField(listElement.GetType());
+            if (itemsField is null)
+            {
+                return false;
+            }
+
+            items = itemsField.GetValue(listElement) as IEnumerable;
+            return items is not null;
+        }
 
         private static FieldInfo? GetField(string name)
         {
             Type? type = ModBrowserType;
             return type?.GetField(name, InstanceFlags);
         }
+
+        private static FieldInfo? ResolveItemsField(Type type)
+        {
+            if (ItemsFieldCache.TryGetValue(type, out FieldInfo? cached))
+            {
+                return cached;
+            }
+
+            FieldInfo? resolved = null;
+            Type? current = type;
+            while (current is not null && resolved is null)
+            {
+                resolved = current.GetField("_items", InstanceFlags);
+                current = current.BaseType;
+            }
+
+            ItemsFieldCache[type] = resolved;
+            return resolved;
+        }
+
+        public static bool TryGetModItemChild(UIElement modItem, ref FieldInfo? cache, string fieldName, out UIElement? child)
+        {
+            child = null;
+            Type type = modItem.GetType();
+            cache ??= type.GetField(fieldName, InstanceFlags);
+            if (cache?.GetValue(modItem) is UIElement element)
+            {
+                child = element;
+                return true;
+            }
+
+            return false;
+        }
+
+        public static ref FieldInfo? ModItemMoreInfoField => ref _modItemMoreInfoField;
+        public static ref FieldInfo? ModItemUpdateWithDepsField => ref _modItemUpdateWithDepsField;
+        public static ref FieldInfo? ModItemUpdateButtonField => ref _modItemUpdateButtonField;
+        public static ref FieldInfo? ModItemTmlUpdateRequiredField => ref _modItemTmlUpdateRequiredField;
     }
 }
