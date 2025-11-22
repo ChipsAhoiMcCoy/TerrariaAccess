@@ -1,9 +1,12 @@
 #nullable enable
+using System;
 using Microsoft.Xna.Framework;
 using Microsoft.Xna.Framework.Input;
 using Terraria;
+using Terraria.DataStructures;
 using Terraria.GameInput;
 using Terraria.ModLoader;
+using Terraria.UI;
 
 namespace ScreenReaderMod.Common.Systems.KeyboardParity;
 
@@ -12,47 +15,35 @@ namespace ScreenReaderMod.Common.Systems.KeyboardParity;
 /// </summary>
 public sealed class KeyboardCursorNudgeSystem : ModSystem
 {
-    private const float BasePixelsPerFrame = 12f;
-    private const float AccelerationPerFrame = 0.8f;
-    private const float MaxSpeed = 28f;
+    private const int DefaultRepeatDelayFrames = 6;
+    private const float TileSizePixels = 16f;
 
-    private int _heldFrames;
+    private readonly int[] _directionCooldowns = new int[4];
 
     public override void PostUpdateInput()
     {
         if (!ShouldProcess())
         {
-            _heldFrames = 0;
+            ResetCooldowns();
             return;
         }
 
-        Vector2 direction = ReadArrowDirection(Main.keyState);
-        if (direction == Vector2.Zero)
+        Vector2 nudges = CollectArrowNudges(Main.keyState);
+        if (nudges == Vector2.Zero)
         {
-            _heldFrames = 0;
             return;
         }
 
-        _heldFrames++;
-        float speed = BasePixelsPerFrame + MathHelper.Min(_heldFrames * AccelerationPerFrame, MaxSpeed - BasePixelsPerFrame);
-        direction = Vector2.Normalize(direction);
-        if (float.IsNaN(direction.X) || float.IsNaN(direction.Y))
-        {
-            direction = Vector2.Zero;
-        }
-
-        if (direction == Vector2.Zero)
-        {
-            _heldFrames = 0;
-            return;
-        }
-
-        Vector2 delta = direction * speed;
-        ApplyCursorDelta(delta);
+        ApplyDpadStyleSnap(nudges);
     }
 
     private static bool ShouldProcess()
     {
+        if (!KeyboardParityFeatureState.Enabled)
+        {
+            return false;
+        }
+
         if (Main.dedServ || Main.gameMenu || Main.drawingPlayerChat || Main.editSign || Main.editChest)
         {
             return false;
@@ -86,47 +77,119 @@ public sealed class KeyboardCursorNudgeSystem : ModSystem
         return true;
     }
 
-    private static Vector2 ReadArrowDirection(KeyboardState state)
+    private Vector2 CollectArrowNudges(KeyboardState state)
     {
-        Vector2 direction = Vector2.Zero;
+        Vector2 nudges = Vector2.Zero;
 
-        if (state.IsKeyDown(Keys.Up))
-        {
-            direction.Y -= 1f;
-        }
+        nudges += EvaluateDirection(state.IsKeyDown(Keys.Up), -Vector2.UnitY, 0);
+        nudges += EvaluateDirection(state.IsKeyDown(Keys.Right), Vector2.UnitX, 1);
+        nudges += EvaluateDirection(state.IsKeyDown(Keys.Down), Vector2.UnitY, 2);
+        nudges += EvaluateDirection(state.IsKeyDown(Keys.Left), -Vector2.UnitX, 3);
 
-        if (state.IsKeyDown(Keys.Down))
-        {
-            direction.Y += 1f;
-        }
-
-        if (state.IsKeyDown(Keys.Left))
-        {
-            direction.X -= 1f;
-        }
-
-        if (state.IsKeyDown(Keys.Right))
-        {
-            direction.X += 1f;
-        }
-
-        return direction;
+        return nudges;
     }
 
-    private static void ApplyCursorDelta(Vector2 delta)
+    private Vector2 EvaluateDirection(bool pressed, Vector2 unit, int index)
     {
-        if (delta == Vector2.Zero)
+        if (_directionCooldowns[index] > 0)
+        {
+            _directionCooldowns[index]--;
+        }
+
+        if (!pressed)
+        {
+            _directionCooldowns[index] = 0;
+            return Vector2.Zero;
+        }
+
+        if (_directionCooldowns[index] == 0)
+        {
+            _directionCooldowns[index] = ResolveRepeatDelay();
+            return unit;
+        }
+
+        return Vector2.Zero;
+    }
+
+    private static int ResolveRepeatDelay()
+    {
+        Player player = Main.LocalPlayer;
+        if (player is null || !player.active)
+        {
+            return DefaultRepeatDelayFrames;
+        }
+
+        Item heldItem = player.inventory[player.selectedItem];
+        if (!ItemSlot.IsABuildingItem(heldItem))
+        {
+            return DefaultRepeatDelayFrames;
+        }
+
+        int useTime = CombinedHooks.TotalUseTime(heldItem.useTime, player, heldItem);
+        return Math.Max(1, useTime);
+    }
+
+    private static void ApplyDpadStyleSnap(Vector2 nudges)
+    {
+        if (nudges == Vector2.Zero)
         {
             return;
         }
 
-        int newX = (int)MathHelper.Clamp(PlayerInput.MouseX + delta.X, 0f, Main.screenWidth - 1f);
-        int newY = (int)MathHelper.Clamp(PlayerInput.MouseY + delta.Y, 0f, Main.screenHeight - 1f);
+        Main.SmartCursorWanted_GamePad = false;
+        Matrix zoomMatrix = Main.GameViewMatrix.ZoomMatrix;
+        Matrix inverseZoom = Matrix.Invert(zoomMatrix);
+        Vector2 tileTarget = Vector2.Transform(Main.MouseScreen, inverseZoom) + nudges * new Vector2(TileSizePixels) + Main.screenPosition;
+        Point targetTile = ClampToPlacementReach(tileTarget.ToTileCoordinates());
+        Vector2 snappedPixels = Vector2.Transform(targetTile.ToWorldCoordinates() - Main.screenPosition, zoomMatrix);
 
-        PlayerInput.MouseX = newX;
-        PlayerInput.MouseY = newY;
-        Main.mouseX = newX;
-        Main.mouseY = newY;
+        ApplyCursorPosition((int)snappedPixels.X, (int)snappedPixels.Y);
+    }
+
+    private static void ApplyCursorPosition(int x, int y)
+    {
+        int clampedX = (int)MathHelper.Clamp(x, 0f, Main.screenWidth - 1f);
+        int clampedY = (int)MathHelper.Clamp(y, 0f, Main.screenHeight - 1f);
+
+        PlayerInput.MouseX = clampedX;
+        PlayerInput.MouseY = clampedY;
+        Main.mouseX = clampedX;
+        Main.mouseY = clampedY;
         PlayerInput.SettingsForUI.SetCursorMode(CursorMode.Gamepad);
+    }
+
+    private static Point ClampToPlacementReach(Point tileTarget)
+    {
+        Player player = Main.LocalPlayer;
+        if (player is null || !player.active)
+        {
+            return tileTarget;
+        }
+
+        Item heldItem = player.inventory[player.selectedItem];
+        if (!ItemSlot.IsABuildingItem(heldItem))
+        {
+            return tileTarget;
+        }
+
+        int tileBoost = heldItem.tileBoost;
+        int blockRange = player.blockRange;
+
+        float left = player.position.X / 16f - Player.tileRangeX - tileBoost - blockRange;
+        float right = (player.position.X + player.width) / 16f + Player.tileRangeX + tileBoost - 1f + blockRange;
+        float top = player.position.Y / 16f - Player.tileRangeY - tileBoost - blockRange;
+        float bottom = (player.position.Y + player.height) / 16f + Player.tileRangeY + tileBoost - 2f + blockRange;
+
+        int clampedX = (int)MathHelper.Clamp(tileTarget.X, left, right);
+        int clampedY = (int)MathHelper.Clamp(tileTarget.Y, top, bottom);
+        return new Point(clampedX, clampedY);
+    }
+
+    private void ResetCooldowns()
+    {
+        for (int i = 0; i < _directionCooldowns.Length; i++)
+        {
+            _directionCooldowns[i] = 0;
+        }
     }
 }

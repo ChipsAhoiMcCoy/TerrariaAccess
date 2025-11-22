@@ -2,9 +2,12 @@
 using System;
 using System.Collections.Generic;
 using System.Reflection;
+using Microsoft.Xna.Framework;
+using Microsoft.Xna.Framework.Input;
 using Mono.Cecil.Cil;
 using MonoMod.Cil;
 using MonoMod.RuntimeDetour;
+using ScreenReaderMod.Common.Services;
 using ScreenReaderMod.Common.Systems.KeyboardParity;
 using Terraria;
 using Terraria.GameContent.UI.States;
@@ -44,6 +47,8 @@ public sealed class KeyboardInputParitySystem : ModSystem
     private static MethodInfo? _drawRadialQuicksMethod;
     private static MethodInfo? _usingGamepadGetter;
     private static MethodInfo? _usingGamepadUiGetter;
+    private static MethodInfo? _gamepadInputMethod;
+    private static ILHook? _gamepadInputIlHook;
 
     public override void Load()
     {
@@ -59,6 +64,10 @@ public sealed class KeyboardInputParitySystem : ModSystem
         _radialQuickbarHook = TryCreateIlHook(_drawRadialQuicksMethod, AllowKeyboardRadialQuickbar, "radial quickbar fade");
         _usingGamepadHook = TryCreateHook(_usingGamepadGetter, OverrideUsingGamepad, "PlayerInput.UsingGamepad");
         _usingGamepadUiHook = TryCreateHook(_usingGamepadUiGetter, OverrideUsingGamepadUi, "PlayerInput.UsingGamepadUI");
+        _gamepadInputIlHook = TryCreateIlHook(_gamepadInputMethod, InjectVirtualSticksIntoGamepadInput, "PlayerInput.GamePadInput");
+
+        KeyboardParityFeatureState.StateChanged += OnFeatureToggleStateChanged;
+        KeyboardParityFeatureState.SetEnabled(false);
     }
 
     public override void Unload()
@@ -68,12 +77,17 @@ public sealed class KeyboardInputParitySystem : ModSystem
             return;
         }
 
+        KeyboardParityFeatureState.StateChanged -= OnFeatureToggleStateChanged;
+        KeyboardParityFeatureState.SetEnabled(false);
+
         _assembleBindPanelsHook?.Dispose();
         _assembleBindPanelsHook = null;
         _radialHotbarHook?.Dispose();
         _radialHotbarHook = null;
         _radialQuickbarHook?.Dispose();
         _radialQuickbarHook = null;
+        _gamepadInputIlHook?.Dispose();
+        _gamepadInputIlHook = null;
         _usingGamepadHook?.Dispose();
         _usingGamepadHook = null;
         _usingGamepadUiHook?.Dispose();
@@ -104,6 +118,7 @@ public sealed class KeyboardInputParitySystem : ModSystem
         Type playerInputType = typeof(PlayerInput);
         _usingGamepadGetter = playerInputType.GetMethod("get_UsingGamepad", BindingFlags.Public | BindingFlags.Static);
         _usingGamepadUiGetter = playerInputType.GetMethod("get_UsingGamepadUI", BindingFlags.Public | BindingFlags.Static);
+        _gamepadInputMethod = playerInputType.GetMethod("GamePadInput", BindingFlags.NonPublic | BindingFlags.Static);
 
         if (_bindsKeyboardField is null || _bindsKeyboardUiField is null || _createBindingGroupMethod is null)
         {
@@ -243,12 +258,32 @@ public sealed class KeyboardInputParitySystem : ModSystem
             return;
         }
 
+        HandleFeatureToggleHotkey();
+
+        if (!KeyboardParityFeatureState.Enabled)
+        {
+            return;
+        }
+
         bool needsUiMode = NeedsGamepadUiMode();
         ForceGamepadUiModeIfNeeded(needsUiMode);
         ApplyVirtualTriggers(needsUiMode);
     }
 
-    private static bool ShouldEmulateGamepad() => IsKeyboardInputMode();
+    private static bool ShouldEmulateGamepad()
+    {
+        if (!KeyboardParityFeatureState.Enabled)
+        {
+            return false;
+        }
+
+        if (IsTextInputActive())
+        {
+            return false;
+        }
+
+        return true;
+    }
 
     private delegate bool UsingGamepadGetter();
 
@@ -264,17 +299,21 @@ public sealed class KeyboardInputParitySystem : ModSystem
 
     private static void ForceGamepadUiModeIfNeeded(bool needsUiMode)
     {
-        if (!needsUiMode)
+        if (needsUiMode)
         {
+            PlayerInput.CurrentInputMode = InputMode.XBoxGamepadUI;
             return;
         }
 
-        PlayerInput.CurrentInputMode = InputMode.XBoxGamepadUI;
+        if (KeyboardParityFeatureState.Enabled && !IsTextInputActive())
+        {
+            PlayerInput.CurrentInputMode = InputMode.XBoxGamepad;
+        }
     }
 
     private static void ApplyVirtualTriggers(bool inventoryUiActive)
     {
-        if (!inventoryUiActive)
+        if (!inventoryUiActive || !KeyboardParityFeatureState.Enabled)
         {
             return;
         }
@@ -313,9 +352,138 @@ public sealed class KeyboardInputParitySystem : ModSystem
         pack.JustReleased.KeyStatus[triggerName] = false;
     }
 
+
+    private static void HandleFeatureToggleHotkey()
+    {
+        if (Main.keyState.IsKeyDown(Keys.F8) && !Main.oldKeyState.IsKeyDown(Keys.F8))
+        {
+            KeyboardParityFeatureState.Toggle();
+        }
+    }
+
+    private static void InjectVirtualSticksIntoGamepadInput(ILContext il)
+    {
+        try
+        {
+            var cursor = new ILCursor(il);
+            if (cursor.TryGotoNext(MoveType.After, instr => instr.MatchStsfld(typeof(PlayerInput), nameof(PlayerInput.GamepadThumbstickRight))))
+            {
+                cursor.EmitDelegate(InjectVirtualSticksFromKeyboard);
+            }
+            else
+            {
+                global::ScreenReaderMod.ScreenReaderMod.Instance?.Logger.Warn("[KeyboardInputParity] Unable to locate GamepadThumbstickRight assignment for virtual stick injection.");
+            }
+        }
+        catch (Exception ex)
+        {
+            global::ScreenReaderMod.ScreenReaderMod.Instance?.Logger.Error($"[KeyboardInputParity] Failed to patch GamePadInput for virtual sticks: {ex}");
+        }
+    }
+
+    private static void InjectVirtualSticksFromKeyboard()
+    {
+        if (!KeyboardParityFeatureState.Enabled || IsTextInputActive())
+        {
+            return;
+        }
+
+        KeyboardState state = Main.keyState;
+        bool movementOverride = TryReadStick(state, Keys.W, Keys.S, Keys.A, Keys.D, out Vector2 movement);
+        bool aimOverride = TryReadStick(state, Keys.O, Keys.L, Keys.K, Keys.OemSemicolon, out Vector2 aim);
+
+        if (movementOverride)
+        {
+            ApplyStickInversion(ref movement, PlayerInput.CurrentProfile?.LeftThumbstickInvertX == true, PlayerInput.CurrentProfile?.LeftThumbstickInvertY == true);
+            PlayerInput.GamepadThumbstickLeft = movement;
+        }
+
+        if (aimOverride)
+        {
+            ApplyStickInversion(ref aim, PlayerInput.CurrentProfile?.RightThumbstickInvertX == true, PlayerInput.CurrentProfile?.RightThumbstickInvertY == true);
+            PlayerInput.GamepadThumbstickRight = aim;
+        }
+
+        if (movementOverride || aimOverride || state.IsKeyDown(Keys.Space) || Main.mouseLeft || Main.mouseRight)
+        {
+            PlayerInput.SettingsForUI.SetCursorMode(CursorMode.Gamepad);
+        }
+    }
+
+    private static bool TryReadStick(KeyboardState state, Keys up, Keys down, Keys left, Keys right, out Vector2 result)
+    {
+        float x = 0f;
+        float y = 0f;
+
+        if (state.IsKeyDown(up))
+        {
+            y -= 1f;
+        }
+
+        if (state.IsKeyDown(down))
+        {
+            y += 1f;
+        }
+
+        if (state.IsKeyDown(left))
+        {
+            x -= 1f;
+        }
+
+        if (state.IsKeyDown(right))
+        {
+            x += 1f;
+        }
+
+        result = new Vector2(x, y);
+        if (result == Vector2.Zero)
+        {
+            return false;
+        }
+
+        result.Normalize();
+        return true;
+    }
+
+    private static void ApplyStickInversion(ref Vector2 stick, bool invertX, bool invertY)
+    {
+        if (invertX)
+        {
+            stick.X *= -1f;
+        }
+
+        if (invertY)
+        {
+            stick.Y *= -1f;
+        }
+    }
+
+    private static void OnFeatureToggleStateChanged(bool enabled)
+    {
+        if (!enabled)
+        {
+            PlayerInput.SettingsForUI.TryRevertingToMouseMode();
+            PlayerInput.GamepadThumbstickLeft = Vector2.Zero;
+            PlayerInput.GamepadThumbstickRight = Vector2.Zero;
+        }
+
+        string announcement = enabled ? "Controller parity enabled." : "Controller parity disabled.";
+        ScreenReaderService.Announce(announcement, force: true);
+    }
+
+    private static bool IsTextInputActive()
+    {
+        if (Main.drawingPlayerChat || Main.editSign || Main.editChest)
+        {
+            return true;
+        }
+
+        return Main.CurrentInputTextTakerOverride is not null;
+    }
+
     private static bool NeedsGamepadUiMode()
     {
-        if (!IsKeyboardInputMode())
+        if (!KeyboardParityFeatureState.Enabled && !IsKeyboardInputMode())
         {
             return false;
         }
