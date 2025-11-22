@@ -43,6 +43,8 @@ public sealed partial class InGameNarrationSystem
         private bool _wasHoveringPlayer;
         private int _originTileX = int.MinValue;
         private int _originTileY = int.MinValue;
+        private int _lastEmptyAnnouncementTileX = int.MinValue;
+        private int _lastEmptyAnnouncementTileY = int.MinValue;
         private static SoundEffect? _cursorTone;
         private static readonly List<SoundEffectInstance> ActiveInstances = new();
         private static bool _suppressNextAnnouncement;
@@ -161,9 +163,11 @@ public sealed partial class InGameNarrationSystem
             if (!TileDescriptor.TryDescribe(tileX, tileY, out int tileType, out string? name))
             {
                 _lastTileAnnouncementName = null;
-                if (!smartCursorActive && !string.IsNullOrWhiteSpace(coordinates))
+                if (!smartCursorActive && !string.IsNullOrWhiteSpace(coordinates) && ShouldAnnounceEmptySpace(tileX, tileY))
                 {
                     AnnounceCursorMessage(coordinates, force: true);
+                    _lastEmptyAnnouncementTileX = tileX;
+                    _lastEmptyAnnouncementTileY = tileY;
                 }
                 return;
             }
@@ -171,9 +175,11 @@ public sealed partial class InGameNarrationSystem
             if (string.IsNullOrWhiteSpace(name))
             {
                 _lastTileAnnouncementName = null;
-                if (!smartCursorActive && !string.IsNullOrWhiteSpace(coordinates))
+                if (!smartCursorActive && !string.IsNullOrWhiteSpace(coordinates) && ShouldAnnounceEmptySpace(tileX, tileY))
                 {
                     AnnounceCursorMessage(coordinates, force: true);
+                    _lastEmptyAnnouncementTileX = tileX;
+                    _lastEmptyAnnouncementTileY = tileY;
                 }
                 return;
             }
@@ -184,6 +190,8 @@ public sealed partial class InGameNarrationSystem
             }
 
             _lastTileAnnouncementName = name;
+            _lastEmptyAnnouncementTileX = int.MinValue;
+            _lastEmptyAnnouncementTileY = int.MinValue;
 
             string message = string.IsNullOrWhiteSpace(coordinates) ? name : $"{name}, {coordinates}";
             AnnouncementCategory category = TileDescriptor.GetAnnouncementCategory(tileType);
@@ -208,6 +216,8 @@ public sealed partial class InGameNarrationSystem
             _wasHoveringPlayer = false;
             _originTileX = int.MinValue;
             _originTileY = int.MinValue;
+            _lastEmptyAnnouncementTileX = int.MinValue;
+            _lastEmptyAnnouncementTileY = int.MinValue;
             _lastTileAnnouncementName = null;
         }
 
@@ -321,6 +331,17 @@ public sealed partial class InGameNarrationSystem
 
             Tile tile = Main.tile[tileX, tileY];
             return tile.HasTile;
+        }
+
+        private bool ShouldAnnounceEmptySpace(int tileX, int tileY)
+        {
+            if (_lastEmptyAnnouncementTileX == int.MinValue || _lastEmptyAnnouncementTileY == int.MinValue)
+            {
+                return true;
+            }
+
+            int manhattan = Math.Abs(tileX - _lastEmptyAnnouncementTileX) + Math.Abs(tileY - _lastEmptyAnnouncementTileY);
+            return manhattan >= 2;
         }
 
         private static void PlayCursorCue(Player player, Vector2 tileCenterWorld, bool hasTile)
