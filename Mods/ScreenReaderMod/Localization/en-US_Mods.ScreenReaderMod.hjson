@@ -118,6 +118,12 @@ Mods: {
 			WaypointNext.DisplayName: Next Waypoint
 			WaypointPrevious.DisplayName: Previous Waypoint
 			WaypointCreate.DisplayName: Create Waypoint
+			WaypointDelete.DisplayName: Waypoint Delete
+			GuidanceCategoryNext.DisplayName: Next Guidance Category
+			GuidanceCategoryPrevious.DisplayName: Previous Guidance Category
+			GuidanceEntryNext.DisplayName: Next Guidance Entry
+			GuidanceEntryPrevious.DisplayName: Previous Guidance Entry
+			GuidanceTeleport.DisplayName: Teleport to Guidance Target
 			ControllerInventorySmartSelect.DisplayName: Inventory Smart Select
 			ControllerInventorySectionNext.DisplayName: Inventory Section Next
 			ControllerInventorySectionPrevious.DisplayName: Inventory Section Previous
@@ -126,25 +132,14 @@ Mods: {
 }
 
 Keybinds: {
-			GuidanceTeleport.DisplayName: Teleport to Guidance Target
-		}
-	}
-}
-
-Keybinds: {
-	"Next Waypoint.DisplayName": Next  Waypoint
-	"Previous Waypoint.DisplayName": Previous  Waypoint
-	"Create Waypoint.DisplayName": Create  Waypoint
-	WaypointNext.DisplayName: Waypoint Next
-	WaypointPrevious.DisplayName: Waypoint Previous
+	GuidanceCategoryNext.DisplayName: Guidance Category Next
+	GuidanceCategoryPrevious.DisplayName: Guidance Category Previous
+	GuidanceEntryNext.DisplayName: Guidance Entry Next
+	GuidanceEntryPrevious.DisplayName: Guidance Entry Previous
 	WaypointCreate.DisplayName: Waypoint Create
 	WaypointDelete.DisplayName: Waypoint Delete
-	GuidanceCategoryNext.DisplayName: Next Guidance Category
-	GuidanceCategoryPrevious.DisplayName: Previous Guidance Category
-	GuidanceEntryNext.DisplayName: Next Guidance Entry
-	GuidanceEntryPrevious.DisplayName: Previous Guidance Entry
-	ControllerInventorySmartSelect.DisplayName: Inventory Smart Select
-	ControllerInventorySectionNext.DisplayName: Inventory Section Next
-	ControllerInventorySectionPrevious.DisplayName: Inventory Section Previous
-	GuidanceTeleport.DisplayName: Teleport to Guidance Target
+	GuidanceTeleport.DisplayName: Guidance Teleport
+	ControllerInventorySmartSelect.DisplayName: Controller Inventory Smart Select
+	ControllerInventorySectionNext.DisplayName: Controller Inventory Section Next
+	ControllerInventorySectionPrevious.DisplayName: Controller Inventory Section Previous
 }
