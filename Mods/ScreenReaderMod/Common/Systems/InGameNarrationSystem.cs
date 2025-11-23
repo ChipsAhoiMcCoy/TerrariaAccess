@@ -9,13 +9,14 @@ using System.Text;
 using Microsoft.Xna.Framework;
 using Microsoft.Xna.Framework.Audio;
 using Microsoft.Xna.Framework.Graphics;
-using Terraria.Chat;
 using ScreenReaderMod.Common.Services;
 using ScreenReaderMod.Common.Systems.MenuNarration;
 using ScreenReaderMod.Common.Utilities;
 using Terraria;
 using Terraria.Audio;
+using Terraria.Chat;
 using Terraria.GameContent;
+using Terraria.GameContent.UI.Chat;
 using Terraria.GameContent.UI.BigProgressBar;
 using Terraria.GameContent.Events;
 using Terraria.GameContent.UI.Elements;
@@ -30,7 +31,6 @@ using Terraria.ModLoader.IO;
 using Terraria.ObjectData;
 using Terraria.UI;
 using Terraria.UI.Gamepad;
-using Terraria.UI.Chat;
 
 namespace ScreenReaderMod.Common.Systems;
 
@@ -110,6 +110,7 @@ public sealed partial class InGameNarrationSystem : ModSystem
         On_IngameOptions.DrawLeftSide += CaptureIngameOptionsLeft;
         On_IngameOptions.DrawRightSide += CaptureIngameOptionsRight;
         On_ChatHelper.BroadcastChatMessage += HandleBroadcastChatMessage;
+        On_RemadeChatMonitor.AddNewMessage += HandleChatMonitorMessage;
     }
 
     private void UnregisterHooks()
@@ -123,6 +124,7 @@ public sealed partial class InGameNarrationSystem : ModSystem
         On_IngameOptions.DrawLeftSide -= CaptureIngameOptionsLeft;
         On_IngameOptions.DrawRightSide -= CaptureIngameOptionsRight;
         On_ChatHelper.BroadcastChatMessage -= HandleBroadcastChatMessage;
+        On_RemadeChatMonitor.AddNewMessage -= HandleChatMonitorMessage;
     }
 
     private void ResetSharedResources()
@@ -503,6 +505,12 @@ public sealed partial class InGameNarrationSystem : ModSystem
         TryAnnounceWorldText(text.ToString());
     }
 
+    private static void HandleChatMonitorMessage(On_RemadeChatMonitor.orig_AddNewMessage orig, RemadeChatMonitor self, string text, Color color, int widthLimitInPixels)
+    {
+        orig(self, text, color, widthLimitInPixels);
+        TryAnnounceChatLine(text);
+    }
+
     private static void TryAnnounceWorldText(string? text)
     {
         if (string.IsNullOrWhiteSpace(text))
@@ -522,6 +530,17 @@ public sealed partial class InGameNarrationSystem : ModSystem
     private static bool IsLikelyPlayerChat(string text)
     {
         return text.Contains(": ", StringComparison.Ordinal);
+    }
+
+    private static void TryAnnounceChatLine(string? rawText)
+    {
+        string sanitized = TextSanitizer.Clean(rawText);
+        if (string.IsNullOrWhiteSpace(sanitized))
+        {
+            return;
+        }
+
+        ScreenReaderService.Announce(sanitized, interrupt: false);
     }
 
 
