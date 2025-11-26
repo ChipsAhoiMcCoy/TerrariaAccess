@@ -104,6 +104,7 @@ public sealed partial class InGameNarrationSystem : ModSystem
         On_ItemSlot.MouseHover_ItemArray_int_int += HandleItemSlotHover;
         On_ItemSlot.MouseHover_refItem_int += HandleItemSlotHoverRef;
         On_Main.DrawNPCChatButtons += CaptureNpcChatButtons;
+        On_Main.NewText_string_byte_byte_byte += HandleNewText;
         On_Main.MouseText_string_string_int_byte_int_int_int_int_int_bool += CaptureMouseText;
         On_ChestUI.RenameChest += HandleChestRename;
         On_IngameOptions.Draw += HandleIngameOptionsDraw;
@@ -117,6 +118,7 @@ public sealed partial class InGameNarrationSystem : ModSystem
         On_ItemSlot.MouseHover_ItemArray_int_int -= HandleItemSlotHover;
         On_ItemSlot.MouseHover_refItem_int -= HandleItemSlotHoverRef;
         On_Main.DrawNPCChatButtons -= CaptureNpcChatButtons;
+        On_Main.NewText_string_byte_byte_byte -= HandleNewText;
         On_Main.MouseText_string_string_int_byte_int_int_int_int_int_bool -= CaptureMouseText;
         On_ChestUI.RenameChest -= HandleChestRename;
         On_IngameOptions.Draw -= HandleIngameOptionsDraw;
@@ -497,10 +499,18 @@ public sealed partial class InGameNarrationSystem : ModSystem
         InventoryNarrator.RecordFocus(item, context);
     }
 
+    private static void HandleNewText(On_Main.orig_NewText_string_byte_byte_byte orig, string newText, byte r, byte g, byte b)
+    {
+        orig(newText, r, g, b);
+        TryAnnounceHousingQuery(newText);
+    }
+
     private static void HandleBroadcastChatMessage(On_ChatHelper.orig_BroadcastChatMessage orig, NetworkText text, Color color, int excludedPlayer)
     {
         orig(text, color, excludedPlayer);
-        TryAnnounceWorldText(text.ToString());
+        string message = text.ToString();
+        TryAnnounceWorldText(message);
+        TryAnnounceHousingQuery(message);
     }
 
     private static void TryAnnounceWorldText(string? text)
@@ -522,6 +532,77 @@ public sealed partial class InGameNarrationSystem : ModSystem
     private static bool IsLikelyPlayerChat(string text)
     {
         return text.Contains(": ", StringComparison.Ordinal);
+    }
+
+    private static readonly Lazy<HashSet<string>> HousingQueryPhrases = new(BuildHousingQueryPhraseSet);
+
+    private static HashSet<string> BuildHousingQueryPhraseSet()
+    {
+        var phrases = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+
+        AddSanitizedIfPresent(phrases, GetLangInterValue(39));
+        AddSanitizedIfPresent(phrases, GetLangInterValue(41));
+        AddSanitizedIfPresent(phrases, GetLangInterValue(42));
+
+        for (int i = 0; i <= 120; i++)
+        {
+            string key = $"TownNPCHousingFailureReasons.{i}";
+            string value = Language.GetTextValue(key);
+            if (!string.Equals(value, key, StringComparison.Ordinal))
+            {
+                AddSanitizedIfPresent(phrases, value);
+            }
+        }
+
+        return phrases;
+    }
+
+    private static string? GetLangInterValue(int index)
+    {
+        if (index < 0 || index >= Lang.inter.Length)
+        {
+            return null;
+        }
+
+        return Lang.inter[index].Value;
+    }
+
+    private static void AddSanitizedIfPresent(ISet<string> target, string? text)
+    {
+        if (string.IsNullOrWhiteSpace(text))
+        {
+            return;
+        }
+
+        string sanitized = TextSanitizer.Clean(text);
+        if (!string.IsNullOrWhiteSpace(sanitized))
+        {
+            target.Add(sanitized);
+        }
+    }
+
+    private static void TryAnnounceHousingQuery(string? text)
+    {
+        if (string.IsNullOrWhiteSpace(text))
+        {
+            return;
+        }
+
+        if (!Main.playerInventory)
+        {
+            return;
+        }
+
+        string sanitized = TextSanitizer.Clean(text);
+        if (string.IsNullOrWhiteSpace(sanitized))
+        {
+            return;
+        }
+
+        if (HousingQueryPhrases.Value.Contains(sanitized) || sanitized.Contains("housing", StringComparison.OrdinalIgnoreCase))
+        {
+            ScreenReaderService.Announce(sanitized, force: true);
+        }
     }
 
 
