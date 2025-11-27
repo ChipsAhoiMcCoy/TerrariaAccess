@@ -441,6 +441,35 @@ public sealed partial class InGameNarrationSystem : ModSystem
       return LeftIndexToCategory.TryGetValue(leftIndex, out category);
     }
 
+    internal static string ComposeItemLabel(Item item, bool includeCountWhenSingular = false)
+    {
+      string name = TextSanitizer.Clean(item.AffixName());
+      if (string.IsNullOrWhiteSpace(name))
+      {
+        name = TextSanitizer.Clean(item.Name);
+      }
+
+      if (string.IsNullOrWhiteSpace(name))
+      {
+        name = TextSanitizer.Clean(Lang.GetItemNameValue(item.type));
+      }
+
+      if (string.IsNullOrWhiteSpace(name))
+      {
+        name = $"Item {item.type}";
+      }
+
+      string mainLabel = item.stack > 1 || includeCountWhenSingular ? $"{item.stack} {name}" : name;
+      var parts = new List<string> { mainLabel };
+
+      if (item.favorited)
+      {
+        parts.Add("favorited");
+      }
+
+      return TextSanitizer.JoinWithComma(parts.ToArray());
+    }
+
     public static bool TryGetOptionLabel(int category, int optionIndex, out string label)
     {
       return OptionLabels.TryGetValue((category, optionIndex), out label!);
