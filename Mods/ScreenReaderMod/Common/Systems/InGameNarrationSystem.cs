@@ -668,10 +668,14 @@ public sealed partial class InGameNarrationSystem : ModSystem
             }
 
             Item announcementItem = template.Clone();
-            announcementItem.stack = currentStack;
+            int stackDelta = currentStack - previousStack;
+            announcementItem.stack = stackDelta;
 
-            string label = ComposeItemLabel(announcementItem);
-            ScreenReaderService.Announce($"Picked up {label}", category: ScreenReaderService.AnnouncementCategory.Pickup);
+            string label = ComposeItemLabel(announcementItem, includeCountWhenSingular: true);
+            ScreenReaderService.Announce(
+                $"Picked up {label}",
+                force: true,
+                category: ScreenReaderService.AnnouncementCategory.Pickup);
         }
 
         _inventoryStacksByType.Clear();
@@ -696,7 +700,7 @@ public sealed partial class InGameNarrationSystem : ModSystem
         return null;
     }
 
-    internal static string ComposeItemLabel(Item item)
+    internal static string ComposeItemLabel(Item item, bool includeCountWhenSingular = false)
     {
         string name = TextSanitizer.Clean(item.AffixName());
         if (string.IsNullOrWhiteSpace(name))
@@ -714,7 +718,7 @@ public sealed partial class InGameNarrationSystem : ModSystem
             name = $"Item {item.type}";
         }
 
-        string mainLabel = item.stack > 1 ? $"{item.stack} {name}" : name;
+        string mainLabel = item.stack > 1 || includeCountWhenSingular ? $"{item.stack} {name}" : name;
         var parts = new List<string> { mainLabel };
 
         if (item.favorited)
