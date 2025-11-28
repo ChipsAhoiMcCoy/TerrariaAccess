@@ -133,6 +133,12 @@ public sealed partial class InGameNarrationSystem
 
         public void Update(Player player)
         {
+            if (Main.ingameOptionsWindow)
+            {
+                Reset();
+                return;
+            }
+
             if (!IsInventoryUiOpen(player))
             {
                 Reset();

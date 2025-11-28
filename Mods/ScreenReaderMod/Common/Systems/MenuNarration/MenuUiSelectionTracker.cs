@@ -55,6 +55,7 @@ internal sealed class MenuUiSelectionTracker
     private static readonly FieldInfo? WorldCreationSizeButtonsField = UiWorldCreationType?.GetField("_sizeButtons", CharacterBindingFlags);
     private static readonly FieldInfo? WorldCreationDifficultyButtonsField = UiWorldCreationType?.GetField("_difficultyButtons", CharacterBindingFlags);
     private static readonly FieldInfo? WorldCreationEvilButtonsField = UiWorldCreationType?.GetField("_evilButtons", CharacterBindingFlags);
+    private const int CharacterCreationTabCount = 10;
     private static readonly string?[] HairStyleDescriptions =
     {
         "Large messy",
@@ -226,12 +227,18 @@ internal sealed class MenuUiSelectionTracker
 
     private UIElement? _lastElement;
     private string? _lastLabel;
+    private static UIElement? _lastWorldCreationRoot;
+    private static string? _lastWorldCreationGroup;
+    private static UIElement? _lastWorldCreationElement;
     private readonly Stack<UIElement> _traversalStack = new();
 
     public void Reset()
     {
         _lastElement = null;
         _lastLabel = null;
+        _lastWorldCreationRoot = null;
+        _lastWorldCreationGroup = null;
+        _lastWorldCreationElement = null;
     }
 
     public bool TryGetHoverLabel(UserInterface? menuUi, out MenuUiLabel label)
@@ -365,6 +372,8 @@ internal sealed class MenuUiSelectionTracker
 
     private static string ExtractSpecializedLabel(Type type, UIElement element)
     {
+        ResetWorldCreationContextIfNeeded(element);
+
         string characterCreationLabel = DescribeCharacterCreationElement(element);
         if (!string.IsNullOrWhiteSpace(characterCreationLabel))
         {
@@ -1395,9 +1404,13 @@ internal sealed class MenuUiSelectionTracker
                 return DescribeClothingStyleOption(root, element);
             }
 
-            if (UiDifficultyButtonType?.IsInstanceOfType(element) == true)
+            UIElement? difficultyButton = UiDifficultyButtonType?.IsInstanceOfType(element) == true
+                ? element
+                : FindAncestor(element, type => UiDifficultyButtonType?.IsAssignableFrom(type) == true);
+
+            if (difficultyButton is not null)
             {
-                return DescribeDifficultyButton(root, element);
+                return DescribeDifficultyButton(root, difficultyButton);
             }
 
             UIElement? slider = UiColoredSliderType?.IsInstanceOfType(element) == true
@@ -1505,27 +1518,49 @@ internal sealed class MenuUiSelectionTracker
 
     private static string DescribeCharacterCreationCategory(CharacterCreationCategoryId category, bool isSelected)
     {
-        string label = category switch
+        (int tabIndex, string title) = category switch
         {
-            CharacterCreationCategoryId.CharInfo => "Tab 1: Character info",
-            CharacterCreationCategoryId.Clothing => "Tab 2: Clothing styles",
-            CharacterCreationCategoryId.HairStyle => "Tab 3: Hair styles",
-            CharacterCreationCategoryId.HairColor => "Tab 4: Hair color",
-            CharacterCreationCategoryId.Eye => "Tab 5: Eye color",
-            CharacterCreationCategoryId.Skin => "Tab 6: Skin color",
-            CharacterCreationCategoryId.Shirt => "Tab 7: Shirt color",
-            CharacterCreationCategoryId.Undershirt => "Tab 8: Undershirt color",
-            CharacterCreationCategoryId.Pants => "Tab 9: Pants color",
-            CharacterCreationCategoryId.Shoes => "Tab 10: Shoes color",
-            _ => string.Empty,
+            CharacterCreationCategoryId.CharInfo => (1, "Character info"),
+            CharacterCreationCategoryId.Clothing => (2, "Clothing styles"),
+            CharacterCreationCategoryId.HairStyle => (3, "Hair styles"),
+            CharacterCreationCategoryId.HairColor => (4, "Hair color"),
+            CharacterCreationCategoryId.Eye => (5, "Eye color"),
+            CharacterCreationCategoryId.Skin => (6, "Skin color"),
+            CharacterCreationCategoryId.Shirt => (7, "Shirt color"),
+            CharacterCreationCategoryId.Undershirt => (8, "Undershirt color"),
+            CharacterCreationCategoryId.Pants => (9, "Pants color"),
+            CharacterCreationCategoryId.Shoes => (10, "Shoes color"),
+            _ => (0, string.Empty),
         };
 
-        if (string.IsNullOrWhiteSpace(label))
+        if (tabIndex <= 0 || string.IsNullOrWhiteSpace(title))
         {
             return string.Empty;
         }
 
-        return isSelected ? TextSanitizer.JoinWithComma(label, "Selected") : label;
+        if (isSelected)
+        {
+            return TextSanitizer.JoinWithComma("Selected", title, $"{tabIndex} of {CharacterCreationTabCount}");
+        }
+
+        return TextSanitizer.JoinWithComma(title, $"{tabIndex} of {CharacterCreationTabCount}");
+    }
+
+    private static void ResetWorldCreationContextIfNeeded(UIElement element)
+    {
+        if (_lastWorldCreationRoot is null)
+        {
+            return;
+        }
+
+        if (ReferenceEquals(element, _lastWorldCreationRoot) || IsAncestor(_lastWorldCreationRoot, element))
+        {
+            return;
+        }
+
+        _lastWorldCreationRoot = null;
+        _lastWorldCreationGroup = null;
+        _lastWorldCreationElement = null;
     }
 
     private static string DescribeWorldCreationElement(UIElement element)
@@ -1539,6 +1574,12 @@ internal sealed class MenuUiSelectionTracker
         if (root is null)
         {
             return string.Empty;
+        }
+
+        if (!ReferenceEquals(root, _lastWorldCreationRoot))
+        {
+            _lastWorldCreationGroup = null;
+            _lastWorldCreationElement = null;
         }
 
         if (TryDescribeWorldCreationButton(root, element, WorldCreationSizeButtonsField, "World size", out string label))
@@ -1556,6 +1597,16 @@ internal sealed class MenuUiSelectionTracker
             return label;
         }
 
+        if (TryDescribeWorldCreationInput(root, element, out label))
+        {
+            return label;
+        }
+
+        // Leaving grouped options inside world creation; reset so categories will be re-announced next time.
+        _lastWorldCreationGroup = null;
+        _lastWorldCreationElement = null;
+        _lastWorldCreationRoot = root;
+
         return string.Empty;
     }
 
@@ -1567,19 +1618,10 @@ internal sealed class MenuUiSelectionTracker
             return false;
         }
 
-        for (int i = 0; i < buttons.Length; i++)
+        int buttonIndex = ResolveWorldCreationButtonIndex(buttons, element);
+        if (buttonIndex >= 0 && buttons.GetValue(buttonIndex) is UIElement button)
         {
-            if (buttons.GetValue(i) is not UIElement button)
-            {
-                continue;
-            }
-
-            if (!ReferenceEquals(button, element) && !IsAncestor(button, element))
-            {
-                continue;
-            }
-
-            label = DescribeWorldGroupOption(button, groupLabel, i, buttons.Length);
+            label = DescribeWorldGroupOption(root, button, groupLabel, buttonIndex, buttons.Length);
             return true;
         }
 
@@ -1587,7 +1629,43 @@ internal sealed class MenuUiSelectionTracker
         return false;
     }
 
-    private static string DescribeWorldGroupOption(UIElement element, string groupLabel, int index, int total)
+    private static int ResolveWorldCreationButtonIndex(Array buttons, UIElement element)
+    {
+        int ancestorIndex = -1;
+        int selectedIndex = -1;
+
+        for (int i = 0; i < buttons.Length; i++)
+        {
+            if (buttons.GetValue(i) is not UIElement button)
+            {
+                continue;
+            }
+
+            if (ReferenceEquals(button, element) || IsAncestor(button, element))
+            {
+                return i;
+            }
+
+            if (IsAncestor(element, button) && ancestorIndex < 0)
+            {
+                ancestorIndex = i;
+            }
+
+            if (selectedIndex < 0 && IsGroupOptionSelected(button))
+            {
+                selectedIndex = i;
+            }
+        }
+
+        if (ancestorIndex >= 0)
+        {
+            return selectedIndex >= 0 ? selectedIndex : ancestorIndex;
+        }
+
+        return -1;
+    }
+
+    private static string DescribeWorldGroupOption(UIElement root, UIElement element, string groupLabel, int index, int total)
     {
         string optionLabel = TryGetGroupOptionTitle(element);
         if (string.IsNullOrWhiteSpace(optionLabel))
@@ -1595,7 +1673,7 @@ internal sealed class MenuUiSelectionTracker
             optionLabel = groupLabel;
         }
 
-        string label = TextSanitizer.JoinWithComma(groupLabel, optionLabel);
+        string label = optionLabel;
         if (total > 0)
         {
             label = TextSanitizer.JoinWithComma(label, $"{index + 1} of {total}");
@@ -1603,10 +1681,118 @@ internal sealed class MenuUiSelectionTracker
 
         if (IsGroupOptionSelected(element))
         {
-            label = TextSanitizer.JoinWithComma(label, "Selected");
+            label = TextSanitizer.JoinWithComma("Selected", label);
         }
 
+        _lastWorldCreationRoot = root;
+        _lastWorldCreationGroup = groupLabel;
+        _lastWorldCreationElement = element;
+
         return TextSanitizer.Clean(label);
+    }
+
+    private static bool TryDescribeWorldCreationInput(UIElement root, UIElement element, out string label)
+    {
+        if (TryMatchWorldCreationInput(root, element, "name", out UIElement? nameInput))
+        {
+            label = BuildWorldTextInputLabel("World name", nameInput!);
+            return true;
+        }
+
+        if (TryMatchWorldCreationInput(root, element, "seed", out UIElement? seedInput))
+        {
+            label = BuildWorldTextInputLabel("World seed", seedInput!);
+            return true;
+        }
+
+        label = string.Empty;
+        return false;
+    }
+
+    private static bool TryMatchWorldCreationInput(UIElement root, UIElement element, string hint, out UIElement inputElement)
+    {
+        inputElement = null!;
+
+        try
+        {
+            FieldInfo[] fields = root.GetType().GetFields(CharacterBindingFlags);
+            foreach (FieldInfo field in fields)
+            {
+                string? fieldName = field.Name;
+                if (string.IsNullOrWhiteSpace(fieldName) || fieldName.IndexOf(hint, StringComparison.OrdinalIgnoreCase) < 0)
+                {
+                    continue;
+                }
+
+                if (field.GetValue(root) is not UIElement candidate || !IsTextInputLike(candidate))
+                {
+                    continue;
+                }
+
+                if (ReferenceEquals(candidate, element) || IsAncestor(candidate, element) || IsAncestor(element, candidate))
+                {
+                    inputElement = candidate;
+                    return true;
+                }
+            }
+        }
+        catch
+        {
+            // ignore input detection failures
+        }
+
+        return false;
+    }
+
+    private static bool IsTextInputLike(UIElement element)
+    {
+        string typeName = element.GetType().Name;
+        return typeName.IndexOf("Input", StringComparison.OrdinalIgnoreCase) >= 0
+            || typeName.IndexOf("Text", StringComparison.OrdinalIgnoreCase) >= 0
+            || typeName.IndexOf("Field", StringComparison.OrdinalIgnoreCase) >= 0
+            || typeName.IndexOf("Box", StringComparison.OrdinalIgnoreCase) >= 0;
+    }
+
+    private static string BuildWorldTextInputLabel(string prefix, UIElement input)
+    {
+        string value = TryGetInputText(input);
+        if (string.IsNullOrWhiteSpace(value))
+        {
+            return prefix;
+        }
+
+        return TextSanitizer.JoinWithComma(prefix, value);
+    }
+
+    private static string TryGetInputText(UIElement element)
+    {
+        try
+        {
+            Type type = element.GetType();
+            foreach (string propertyName in new[] { "CurrentString", "Text", "InputText", "Value" })
+            {
+                PropertyInfo? property = type.GetProperty(propertyName, CharacterBindingFlags);
+                if (property?.GetValue(element) is string text && !string.IsNullOrWhiteSpace(text))
+                {
+                    return TextSanitizer.Clean(text);
+                }
+            }
+
+            foreach (string fieldName in new[] { "_currentString", "_text", "_value" })
+            {
+                FieldInfo? field = type.GetField(fieldName, CharacterBindingFlags);
+                if (field?.GetValue(element) is string fieldText && !string.IsNullOrWhiteSpace(fieldText))
+                {
+                    return TextSanitizer.Clean(fieldText);
+                }
+            }
+        }
+        catch
+        {
+            // ignore lookup failures
+        }
+
+        return string.Empty;
     }
 
     private static string TryGetGroupOptionTitle(UIElement element)
@@ -1832,7 +2018,21 @@ internal sealed class MenuUiSelectionTracker
     private static string DescribeDifficultyButton(UIElement root, UIElement element)
     {
         byte? difficulty = DifficultyButtonValueField?.GetValue(element) is byte value ? value : null;
-        string label = difficulty switch
+        string difficultyLabel = DescribeDifficultyValue(difficulty);
+
+        Player? player = TryGetCharacterCreationPlayer(root);
+        bool isSelected = IsDifficultySelected(element, difficulty, player);
+
+        string label = isSelected
+            ? TextSanitizer.JoinWithComma(LocalizationHelper.GetTextOrFallback("Mods.ScreenReaderMod.Controls.ToggleOn", "Selected"), difficultyLabel)
+            : difficultyLabel;
+
+        return TextSanitizer.Clean(label);
+    }
+
+    private static string DescribeDifficultyValue(byte? difficulty)
+    {
+        return difficulty switch
         {
             0 => LocalizationHelper.GetTextOrFallback("UI.Classic", "Classic"),
             1 => LocalizationHelper.GetTextOrFallback("UI.Mediumcore", "Mediumcore"),
@@ -1840,14 +2040,6 @@ internal sealed class MenuUiSelectionTracker
             3 => LocalizationHelper.GetTextOrFallback("UI.Journey", "Journey"),
             _ => LocalizationHelper.GetTextOrFallback("UI.Difficulty", "Difficulty"),
         };
-
-        Player? player = TryGetCharacterCreationPlayer(root);
-        if (IsDifficultySelected(element, difficulty, player))
-        {
-            label = TextSanitizer.JoinWithComma(label, LocalizationHelper.GetTextOrFallback("Mods.ScreenReaderMod.Controls.ToggleOn", "Selected"));
-        }
-
-        return TextSanitizer.Clean(label);
     }
 
     private static bool IsDifficultySelected(UIElement element, byte? difficulty, Player? player)

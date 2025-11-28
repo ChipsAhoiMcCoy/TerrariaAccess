@@ -47,6 +47,11 @@ internal static class WorldAnnouncementService
             return;
         }
 
+        if (!force && !ScreenReaderService.SpeechEnabled)
+        {
+            return;
+        }
+
         DateTime now = DateTime.UtcNow;
 
         lock (SyncRoot)
@@ -58,6 +63,11 @@ internal static class WorldAnnouncementService
 
             _lastMessage = sanitized;
             _lastAnnouncedAt = now;
+        }
+
+        if (ScreenReaderService.SpeechInterruptEnabled)
+        {
+            ScreenReaderService.Interrupt();
         }
 
         SapiSpeechProvider.Speak(sanitized);

@@ -8,6 +8,7 @@ namespace ScreenReaderMod.Common.Services;
 internal static class SapiSpeechProvider
 {
     private const int SpeechVoiceSpeakFlagsAsync = 1;
+    private const int SpeechVoiceSpeakFlagsPurgeBeforeSpeak = 2;
 
     private static readonly object SyncRoot = new();
 
@@ -100,6 +101,32 @@ internal static class SapiSpeechProvider
                 ScreenReaderMod.Instance?.Logger.Warn($"[SAPI] Speak failed: {ex.Message}");
                 _available = false;
                 DisposeVoice();
+            }
+        }
+    }
+
+    public static void Interrupt()
+    {
+        lock (SyncRoot)
+        {
+            if (!_initialized)
+            {
+                return;
+            }
+
+            if (!_available || _voice is null || _voiceType is null)
+            {
+                return;
+            }
+
+            try
+            {
+                object[] args = { string.Empty, SpeechVoiceSpeakFlagsPurgeBeforeSpeak };
+                _voiceType.InvokeMember("Speak", BindingFlags.InvokeMethod, binder: null, target: _voice, args: args);
+            }
+            catch (Exception ex)
+            {
+                ScreenReaderMod.Instance?.Logger.Debug($"[SAPI] Interrupt failed: {ex.Message}");
             }
         }
     }

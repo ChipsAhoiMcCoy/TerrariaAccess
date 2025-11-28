@@ -15,20 +15,26 @@ public static class ScreenReaderService
         Pickup,
     }
 
+    private static readonly TimeSpan RepeatWindow = TimeSpan.FromMilliseconds(250);
     private static readonly Queue<string> RecentMessages = new();
-    private static readonly TimeSpan RepeatWindow = TimeSpan.FromMilliseconds(300);
-    private static DateTime _lastAnnouncedAt = DateTime.MinValue;
-    private static string? _lastMessage;
     private static readonly Dictionary<AnnouncementCategory, string?> LastCategoryAnnouncements = new();
+    private static string? _lastMessage;
+    private static DateTime _lastAnnouncedAt = DateTime.MinValue;
+    private static bool _muted;
+    private static bool _interruptEnabled;
 
     public static IReadOnlyCollection<string> Snapshot => RecentMessages.ToArray();
+    public static bool SpeechEnabled => !_muted;
+    public static bool SpeechInterruptEnabled => _interruptEnabled;
 
     public static void Initialize()
     {
         RecentMessages.Clear();
-        _lastAnnouncedAt = DateTime.MinValue;
-        _lastMessage = null;
         LastCategoryAnnouncements.Clear();
+        _lastMessage = null;
+        _lastAnnouncedAt = DateTime.MinValue;
+        _muted = false;
+        _interruptEnabled = true;
         ScreenReaderDiagnostics.DumpStartupSnapshot();
         NvdaSpeechProvider.Initialize();
     }
@@ -36,85 +42,98 @@ public static class ScreenReaderService
     public static void Unload()
     {
         RecentMessages.Clear();
-        _lastMessage = null;
         LastCategoryAnnouncements.Clear();
-        NvdaSpeechProvider.Interrupt();
+        _lastMessage = null;
+        _lastAnnouncedAt = DateTime.MinValue;
+        _muted = false;
+        _interruptEnabled = false;
         NvdaSpeechProvider.Shutdown();
     }
 
     public static void Interrupt()
     {
         NvdaSpeechProvider.Interrupt();
+        SapiSpeechProvider.Interrupt();
+    }
+
+    public static bool ToggleSpeechInterrupt()
+    {
+        _interruptEnabled = !_interruptEnabled;
+        return _interruptEnabled;
+    }
+
+    public static bool ToggleSpeechEnabled()
+    {
+        _muted = !_muted;
+        return !_muted;
     }
 
     public static void Announce(
         string? message,
         bool force = false,
-        bool interrupt = true,
-        AnnouncementCategory category = AnnouncementCategory.Default)
+        AnnouncementCategory category = AnnouncementCategory.Default,
+        bool allowWhenMuted = false)
     {
         if (string.IsNullOrWhiteSpace(message))
         {
             return;
         }
 
-        string trimmed = message.Trim();
-        DateTime now = DateTime.UtcNow;
-        if (!force)
+        if (_muted && !allowWhenMuted)
         {
-            if (ShouldSuppressByCategory(category, trimmed))
-            {
-                return;
-            }
-
-            if (category == AnnouncementCategory.Default &&
-                string.Equals(trimmed, _lastMessage, StringComparison.OrdinalIgnoreCase) &&
-                now - _lastAnnouncedAt < RepeatWindow)
-            {
-                return;
-            }
+            return;
         }
 
-        TrackCategoryAnnouncement(category, trimmed);
-        _lastMessage = trimmed;
-        _lastAnnouncedAt = now;
+        string trimmed = message.Trim();
+        DateTime now = DateTime.UtcNow;
+        if (!force && ShouldSuppress(category, trimmed, now))
+        {
+            return;
+        }
+
+        if (_interruptEnabled)
+        {
+            Interrupt();
+        }
+
+        TrackAnnouncement(category, trimmed, now);
         RecentMessages.Enqueue(trimmed);
         while (RecentMessages.Count > 25)
         {
             RecentMessages.Dequeue();
         }
 
-        if (interrupt)
-        {
-            NvdaSpeechProvider.Interrupt();
-        }
-
         NvdaSpeechProvider.Speak(trimmed);
         ScreenReaderMod.Instance?.Logger.Info($"[Narration] {trimmed}");
     }
 
-    private static bool ShouldSuppressByCategory(AnnouncementCategory category, string trimmed)
+    private static bool ShouldSuppress(AnnouncementCategory category, string trimmed, DateTime now)
     {
-        if (category == AnnouncementCategory.Default)
+        if (category != AnnouncementCategory.Default &&
+            LastCategoryAnnouncements.TryGetValue(category, out string? lastForCategory) &&
+            string.Equals(trimmed, lastForCategory, StringComparison.OrdinalIgnoreCase))
         {
-            return false;
+            return true;
         }
 
-        if (!LastCategoryAnnouncements.TryGetValue(category, out string? last))
+        if (category == AnnouncementCategory.Default &&
+            string.Equals(trimmed, _lastMessage, StringComparison.OrdinalIgnoreCase) &&
+            now - _lastAnnouncedAt < RepeatWindow)
         {
-            return false;
+            return true;
         }
 
-        return string.Equals(trimmed, last, StringComparison.OrdinalIgnoreCase);
+        return false;
     }
 
-    private static void TrackCategoryAnnouncement(AnnouncementCategory category, string trimmed)
+    private static void TrackAnnouncement(AnnouncementCategory category, string trimmed, DateTime now)
     {
-        if (category == AnnouncementCategory.Default)
+        if (category != AnnouncementCategory.Default)
         {
-            return;
+            LastCategoryAnnouncements[category] = trimmed;
         }
 
-        LastCategoryAnnouncements[category] = trimmed;
+        _lastMessage = trimmed;
+        _lastAnnouncedAt = now;
     }
 }

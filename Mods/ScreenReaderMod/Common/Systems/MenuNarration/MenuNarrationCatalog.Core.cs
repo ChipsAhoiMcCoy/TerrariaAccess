@@ -7,6 +7,7 @@ using Terraria;
 using Terraria.ID;
 using Terraria.Localization;
 using Terraria.ModLoader;
+using Terraria.UI;
 using ScreenReaderMod.Common.Utilities;
 
 namespace ScreenReaderMod.Common.Systems;
@@ -16,7 +17,7 @@ internal static partial class MenuNarrationCatalog
     private static readonly Dictionary<int, string> MenuModeNames = new()
     {
         [0] = "Main menu",
-        [1] = "Single player worlds",
+        [1] = "Player selection",
         [2] = "Player selection",
         [11] = "Multiplayer menu",
         [12] = "Join by IP",
@@ -85,14 +86,56 @@ internal static partial class MenuNarrationCatalog
     private static int _lastSnapshotMode = int.MinValue;
     private static DateTime _lastSnapshotAt = DateTime.MinValue;
 
-    public static string DescribeMenuMode(int menuMode)
+    public static string DescribeMenuMode(int menuMode, UIState? uiState = null)
     {
+        if (TryDescribeUiState(uiState, out string uiLabel))
+        {
+            return uiLabel;
+        }
+
         if (MenuModeNames.TryGetValue(menuMode, out string? value))
         {
             return value;
         }
 
         return $"Menu mode {menuMode}";
+    }
+
+    private static bool TryDescribeUiState(UIState? uiState, out string label)
+    {
+        label = string.Empty;
+        if (uiState is null)
+        {
+            return false;
+        }
+
+        string typeName = uiState.GetType().FullName ?? string.Empty;
+        if (typeName.Contains("UICharacterSelect", StringComparison.Ordinal))
+        {
+            label = "Player selection";
+            return true;
+        }
+
+        if (typeName.Contains("UIWorldSelect", StringComparison.Ordinal) ||
+            typeName.Contains("UIWorldList", StringComparison.Ordinal))
+        {
+            label = "World selection";
+            return true;
+        }
+
+        if (typeName.Contains("UIWorkshopHub", StringComparison.Ordinal))
+        {
+            label = "Workshop hub";
+            return true;
+        }
+
+        if (typeName.Contains("UIManageControls", StringComparison.Ordinal))
+        {
+            label = "Controls menu";
+            return true;
+        }
+
+        return false;
     }
 
     public static string DescribeMenuItem(int menuMode, int focusedIndex)

@@ -131,6 +131,7 @@ Keybinds: {
 	WaypointPrevious.DisplayName: Waypoint Previous
 	WaypointCreate.DisplayName: Waypoint Create
 	WaypointDelete.DisplayName: Waypoint Delete
+	SpeechInterrupt.DisplayName: Toggle Speech Interrupt
 	GuidanceCategoryNext.DisplayName: Next Guidance Category
 	GuidanceCategoryPrevious.DisplayName: Previous Guidance Category
 	GuidanceEntryNext.DisplayName: Next Guidance Entry

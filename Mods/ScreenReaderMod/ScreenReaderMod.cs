@@ -1,6 +1,7 @@
 #nullable enable
 using ScreenReaderMod.Common.Services;
 using ScreenReaderMod.Common.Systems.Guidance;
+using ScreenReaderMod.Common.Systems;
 using Terraria.ModLoader;
 
 namespace ScreenReaderMod;
@@ -15,10 +16,12 @@ public class ScreenReaderMod : Mod
         ScreenReaderService.Initialize();
         WorldAnnouncementService.Initialize();
         GuidanceKeybinds.EnsureInitialized(this);
+        SpeechInterruptKeybinds.EnsureInitialized(this);
     }
 
     public override void Unload()
     {
+        SpeechInterruptKeybinds.Unload();
         GuidanceKeybinds.Unload();
         WorldAnnouncementService.Unload();
         ScreenReaderService.Unload();

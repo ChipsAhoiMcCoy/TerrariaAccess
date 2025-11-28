@@ -682,7 +682,6 @@ public sealed partial class InGameNarrationSystem : ModSystem
             string label = ComposeItemLabel(announcementItem, includeCountWhenSingular: true);
             ScreenReaderService.Announce(
                 $"Picked up {label}",
-                force: true,
                 category: ScreenReaderService.AnnouncementCategory.Pickup);
         }
 
