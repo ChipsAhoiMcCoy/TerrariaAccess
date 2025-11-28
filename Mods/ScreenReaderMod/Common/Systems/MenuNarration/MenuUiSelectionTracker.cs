@@ -50,6 +50,174 @@ internal sealed class MenuUiSelectionTracker
     private static readonly FieldInfo? NameButtonContentsField = UiCharacterNameButtonType?.GetField("actualContents", CharacterBindingFlags);
     private static readonly FieldInfo? NameButtonEmptyTextField = UiCharacterNameButtonType?.GetField("_textToShowWhenEmpty", CharacterBindingFlags);
     private static readonly FieldInfo? DifficultyButtonValueField = UiDifficultyButtonType?.GetField("_difficulty", CharacterBindingFlags);
+    private static readonly string?[] HairStyleDescriptions =
+    {
+        "Large messy",
+        "Small messy",
+        "Combed forward, two strands sticking up, long pointed beard.",
+        "Anvil like, flat, short, flat top",
+        "Short, covers face",
+        "Bangs, small ponytail, covers face",
+        "Long Curly Braid.",
+        "Short, bangs",
+        "Front swoop",
+        "Pronounced bangs, L shaped ponytail",
+        "Massive Mohawk",
+        "Circular Space Buns",
+        "Curly dreads, covers face",
+        "Medium messy",
+        "Combed forward, two strands sticking up",
+        "Bald",
+        "Impressively large Afro",
+        "Combed, small beard",
+        "Bangs, curly ponytail",
+        "Short, swoop, parted in middle",
+        "Wizard hat like, parted in middle, two points in back",
+        "Bangs, small singular curl as ponytail",
+        "Bowl ish cut, wavy long ponytail",
+        "Spiky Sonic the Hedgehog-like",
+        "Parted in middle, two left swoops",
+        "Princess Leia buns",
+        "Bangs, combed, small ponytail",
+        "Old-Century styled Mens Ponytail.",
+        "Combed, Elvis ish, pushed up top",
+        "Bowlish cut, high ponytail, long, straight",
+        "Windswept, combed back",
+        "Wavy, Spiked, Tapered Sides.",
+        "Small pigtails, bangs",
+        "Small braids, shoulder length",
+        "Tight Braids",
+        "Small spiked up, like Sam from Stardew Valley",
+        "Bow shape, umbrella, mop style",
+        "Johnny Bravo Pompadour",
+        "Large ponytail, straight, wavy ponytail",
+        "A-line Bob",
+        "Single curl, pronounced part in middle, covers face, Bob",
+        "Partly covers left eye, single curl, parted in middle, Bob",
+        "Partly covers left eye, swoop right, parted in middle, Bob",
+        "Flame ponytail, partly covers left eye, Super Saiyan",
+        "Parted diagonally, bob, curl",
+        "Straight Karen cut, parted diagonally",
+        "Curly ponytail, medium, bangs",
+        "Long High Ponytail, bangs",
+        "Braided Bun",
+        "Very Short Flat Bob",
+        "Bangs, Medium Curly Ponytail",
+        "Bangs, straight, forehead peak, Y in back of hairstyle",
+        "Shaved side, unibrow, forward front Pompadour",
+        "Bush like, puffy, messy",
+        "Leaf shaped bangs, short-medium, front part",
+        "Long, leafish shaped points, front part",
+        "Straight, long, beard Jesus style",
+        "Straight, Medium, beard Jesus style",
+        "Short, parted in middle, Jesus beard",
+        "Very short, parted diagonally, Jesus beard",
+        "Parted in middle, bangs, C shape, short beard",
+        "Short, front part, left piece, Chin-strap Beard",
+        "Fancy, combed, parted in middle, beard, mustache",
+        "Wavy, long, Hair and beard Jesus style",
+        "Bangs, Y shaped, long, straight, leafish shaped bangs",
+        "Tucked front braid, long, straight",
+        "Long, parted in middle, twist at back.",
+        "Front part, medium, straight",
+        "Parted diagonally, Curtain bangs, long, straight",
+        "Covers left eye, wavy, front part, straight",
+        "Widows peak, medium, ear space",
+        "Leaf shaped bangs, parted in middle, medium, straight",
+        "Covers left eye, pronounced parted in middle, long, straight",
+        "Curtain bangs, parted in middle, long chunky braid",
+        "Short, neat, thin evil twirly mustache with Pointy Beard",
+        "Short, pronounced parted in middle, Long Curly Mustache,",
+        "Bald, eyebrow, Goatee",
+        "Pronounced parted in middle, short, evil mustache, straight",
+        "Short ponytail, front part, v in side, covers left eye",
+        "Short ponytail, Straight Blunt Bangs, Fluffy",
+        "Very Long Ponytail with Scrunchie",
+        "2 long Pigtails, curly front, parted in middle",
+        "Short, straight, Deeply Parted, bangs",
+        "Pronounced bangs, \"fox ears\", Thick Spiraled ponytail",
+        "Pronounced bangs, puffy, shoulder length",
+        "Middle-part Lara Croft Braid.",
+        "Covers left eye, Y in part of hair, very large ponytail, Wavy",
+        "Covers left eye, very long, wavy",
+        "Sideswept, curly",
+        "Side-swept, Braided Hair, Blunt Straight Bangs",
+        "Medium Curly Pigtails, Straight Blunt Bangs",
+        "Low Medium Ponytail, , straight Blunt bangs",
+        "Four Large Spikes on either side of head going toward back of head.",
+        "Short, straight, 2 sections, round",
+        "Chinese (?) / Asian ponytail, bald other side, sm mustache",
+        "Straight, medium, uncombed, pronounced parted in middle",
+        "Picard, Monk Hair",
+        "Bowlish cut, winter hat ish, bun raised",
+        "Medium Straight Afro",
+        "Combed-back Afro",
+        "Medium Straight Afro, Short Beard",
+        "Long, curly, fluffy",
+        "Medium, curly, bangs",
+        "Leaf shaped bangs, long, curly",
+        "Short, front part.",
+        "Short, front part, bowlish cut",
+        "Long, fluffy, bangs, wavy, ahoge",
+        "Combed, round.",
+        "Bald, ahoge",
+        "Tight pulled hair, short ponytail, eyebrow",
+        "Bob, ahoge, curly",
+        "Sideswept, short, Dreads",
+        "Sideswept, long Dreads",
+        "Fancy, combed, curl",
+        "Short, flat, pronounced bangs, 2 sections",
+        "Shaved side, very short bangs",
+        "Shaved side, very short bangs with beard stubble",
+        "Combed, short, shaved side, small beard, mustache",
+        "Roundish, long thin mustache, short, with Beard",
+        "Short, small swoops, small beard, small mustache",
+        "Very short, thin, thin long beard",
+        "Combed, round, Short Full Beard",
+        "Round, combed, side shaved, mutton chops",
+        "Wizard hat ish, medium, cone, cake layer ish",
+        "Ram horn ish, round, short, curl",
+        "Alien probe",
+        "UFO",
+        "Medusa Hair",
+        "Many bulbs or circles, approximately 15-20",
+        "Parted diagonally, 3 sections, geometric",
+        "Bowl cut, short",
+        "Wild, large spikes, Super Saiyan",
+        "Medium mohawk, shaved side, Predator Hair",
+        "Pronounced bangs, long, ahoge, wavy, round",
+        "Rockstar, pronounced bangs, long, wavy",
+        "Short, ear hole, bangs, parted diagonally, straight",
+        "Shaved side, Short Pulled-back Ponytail, medium triangle shaped beard",
+        "Short Pronounced Middle-part",
+        "Flat, ear hole, , short \"The Johnny Bravo\".",
+        "Picard, small beard, \"The Monk Hairstyle\"",
+        "Mullet, curls out on ends.",
+        "Short, parted diagonally, bangs",
+        "Short, puffy, pronounced bangs, round",
+        "Winter hat ish, puffy, round, loose bun",
+        "Very short, buzz cut",
+        "Curly Pig-tail Space-buns with Curled bangs.",
+        "Long, wavy, very small ahoge, Layered",
+        "Short, combed, side shaved, medium beard",
+        "Curl on top, fluffy, short, small beard, parted diagonally",
+        "Spiky, short, parted diagonally, very small beard. Roxas from Kingdom Hearts",
+        "Roundish, short, small beard, messy",
+        "Round, combed, ear hole, short, medium beard",
+        "Balding, mutton chops, large beard",
+        "Flat, short, mutton chops, medium beard",
+        "Mohawk, small ahoge, long beard",
+        "Combed, round, short, top point, medium beard. Rhett from Good Mythical Morning",
+        "Combed, fancy, swirlish, earhole, small beard",
+        "Messy, pronounced parted in middle, round, long beard",
+        "Short, parted in middle, round, long beard",
+        "Short, combed, pointy, medium beard, mutton chops",
+        "Thin Pony-tail Balding, mutton chops",
+        "Short, earhole, parted in middle, bangs, small beard, mutton chops",
+        "Medium, wavy, medium ponytail, bangs",
+        "Giant Crab-Claw-like Hair",
+        "Spiked Bangs with Curly Long Pony-tail with Short Ahoge",
+    };
 
     private UIElement? _lastElement;
     private string? _lastLabel;
@@ -1379,6 +1547,11 @@ internal sealed class MenuUiSelectionTracker
             label = TextSanitizer.JoinWithComma(label, "Selected");
         }
 
+        if (styleId.HasValue && TryGetHairStyleDescription(styleId.Value, out string? description))
+        {
+            label = TextSanitizer.JoinWithComma(label, description);
+        }
+
         return TextSanitizer.Clean(label);
     }
 
@@ -1394,6 +1567,18 @@ internal sealed class MenuUiSelectionTracker
         }
 
         return TextSanitizer.Clean(label);
+    }
+
+    private static bool TryGetHairStyleDescription(int styleId, out string? description)
+    {
+        if ((uint)styleId < (uint)HairStyleDescriptions.Length)
+        {
+            description = HairStyleDescriptions[styleId];
+            return !string.IsNullOrWhiteSpace(description);
+        }
+
+        description = null;
+        return false;
     }
 
     private static string DescribeHslSlider(UIElement root, UIElement element)

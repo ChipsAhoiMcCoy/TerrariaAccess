@@ -502,7 +502,7 @@ public sealed partial class InGameNarrationSystem : ModSystem
     private static void HandleNewText(On_Main.orig_NewText_string_byte_byte_byte orig, string newText, byte r, byte g, byte b)
     {
         orig(newText, r, g, b);
-        TryAnnounceHousingQuery(newText);
+        TryAnnounceHousingQuery(newText, new Color(r, g, b));
     }
 
     private static void HandleBroadcastChatMessage(On_ChatHelper.orig_BroadcastChatMessage orig, NetworkText text, Color color, int excludedPlayer)
@@ -510,7 +510,7 @@ public sealed partial class InGameNarrationSystem : ModSystem
         orig(text, color, excludedPlayer);
         string message = text.ToString();
         TryAnnounceWorldText(message);
-        TryAnnounceHousingQuery(message);
+        TryAnnounceHousingQuery(message, color);
     }
 
     private static void TryAnnounceWorldText(string? text)
@@ -535,6 +535,7 @@ public sealed partial class InGameNarrationSystem : ModSystem
     }
 
     private static readonly Lazy<HashSet<string>> HousingQueryPhrases = new(BuildHousingQueryPhraseSet);
+    private static readonly Color HousingQueryTextColor = new(255, 240, 20);
 
     private static HashSet<string> BuildHousingQueryPhraseSet()
     {
@@ -581,7 +582,7 @@ public sealed partial class InGameNarrationSystem : ModSystem
         }
     }
 
-    private static void TryAnnounceHousingQuery(string? text)
+    private static void TryAnnounceHousingQuery(string? text, Color? color = null)
     {
         if (string.IsNullOrWhiteSpace(text))
         {
@@ -599,7 +600,14 @@ public sealed partial class InGameNarrationSystem : ModSystem
             return;
         }
 
-        if (HousingQueryPhrases.Value.Contains(sanitized) || sanitized.Contains("housing", StringComparison.OrdinalIgnoreCase))
+        bool matchesHousingColor = color.HasValue &&
+                                   color.Value.R == HousingQueryTextColor.R &&
+                                   color.Value.G == HousingQueryTextColor.G &&
+                                   color.Value.B == HousingQueryTextColor.B;
+
+        if (matchesHousingColor ||
+            HousingQueryPhrases.Value.Contains(sanitized) ||
+            sanitized.Contains("housing", StringComparison.OrdinalIgnoreCase))
         {
             ScreenReaderService.Announce(sanitized, force: true);
         }
@@ -782,7 +790,10 @@ public sealed partial class InGameNarrationSystem : ModSystem
                     return true;
                 }
 
-                return false;
+                // Treat open air as a narratable target so cursor navigation isn't silent.
+                name = "Empty";
+                tileType = -1;
+                return true;
             }
 
             tileType = tile.TileType;
