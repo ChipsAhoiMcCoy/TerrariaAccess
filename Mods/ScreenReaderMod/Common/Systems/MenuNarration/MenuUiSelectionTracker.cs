@@ -28,6 +28,7 @@ internal sealed class MenuUiSelectionTracker
     private static readonly Type? UiColoredSliderType = Type.GetType("Terraria.GameContent.UI.Elements.UIColoredSlider, tModLoader");
     private static readonly Type? UiCharacterNameButtonType = Type.GetType("Terraria.GameContent.UI.Elements.UICharacterNameButton, tModLoader");
     private static readonly Type? UiDifficultyButtonType = Type.GetType("Terraria.GameContent.UI.Elements.UIDifficultyButton, tModLoader");
+    private static readonly Type? UiWorldCreationType = Type.GetType("Terraria.GameContent.UI.States.UIWorldCreation, tModLoader");
     private const BindingFlags CharacterBindingFlags = BindingFlags.Instance | BindingFlags.Public | BindingFlags.NonPublic;
     private static readonly FieldInfo? CharacterCreationColorPickersField = UiCharacterCreationType?.GetField("_colorPickers", CharacterBindingFlags);
     private static readonly FieldInfo? CharacterCreationClothingButtonField = UiCharacterCreationType?.GetField("_clothingStylesCategoryButton", CharacterBindingFlags);
@@ -50,6 +51,10 @@ internal sealed class MenuUiSelectionTracker
     private static readonly FieldInfo? NameButtonContentsField = UiCharacterNameButtonType?.GetField("actualContents", CharacterBindingFlags);
     private static readonly FieldInfo? NameButtonEmptyTextField = UiCharacterNameButtonType?.GetField("_textToShowWhenEmpty", CharacterBindingFlags);
     private static readonly FieldInfo? DifficultyButtonValueField = UiDifficultyButtonType?.GetField("_difficulty", CharacterBindingFlags);
+    private static readonly PropertyInfo? DifficultyButtonSelectedProperty = UiDifficultyButtonType?.GetProperty("IsSelected", CharacterBindingFlags);
+    private static readonly FieldInfo? WorldCreationSizeButtonsField = UiWorldCreationType?.GetField("_sizeButtons", CharacterBindingFlags);
+    private static readonly FieldInfo? WorldCreationDifficultyButtonsField = UiWorldCreationType?.GetField("_difficultyButtons", CharacterBindingFlags);
+    private static readonly FieldInfo? WorldCreationEvilButtonsField = UiWorldCreationType?.GetField("_evilButtons", CharacterBindingFlags);
     private static readonly string?[] HairStyleDescriptions =
     {
         "Large messy",
@@ -364,6 +369,12 @@ internal sealed class MenuUiSelectionTracker
         if (!string.IsNullOrWhiteSpace(characterCreationLabel))
         {
             return characterCreationLabel;
+        }
+
+        string worldCreationLabel = DescribeWorldCreationElement(element);
+        if (!string.IsNullOrWhiteSpace(worldCreationLabel))
+        {
+            return worldCreationLabel;
         }
 
         string? fullName = type.FullName;
@@ -1517,6 +1528,143 @@ internal sealed class MenuUiSelectionTracker
         return isSelected ? TextSanitizer.JoinWithComma(label, "Selected") : label;
     }
 
+    private static string DescribeWorldCreationElement(UIElement element)
+    {
+        if (UiWorldCreationType is null)
+        {
+            return string.Empty;
+        }
+
+        UIElement? root = FindAncestor(element, static type => UiWorldCreationType.IsAssignableFrom(type));
+        if (root is null)
+        {
+            return string.Empty;
+        }
+
+        if (TryDescribeWorldCreationButton(root, element, WorldCreationSizeButtonsField, "World size", out string label))
+        {
+            return label;
+        }
+
+        if (TryDescribeWorldCreationButton(root, element, WorldCreationDifficultyButtonsField, "World difficulty", out label))
+        {
+            return label;
+        }
+
+        if (TryDescribeWorldCreationButton(root, element, WorldCreationEvilButtonsField, "World evil", out label))
+        {
+            return label;
+        }
+
+        return string.Empty;
+    }
+
+    private static bool TryDescribeWorldCreationButton(UIElement root, UIElement element, FieldInfo? buttonArrayField, string groupLabel, out string label)
+    {
+        if (buttonArrayField?.GetValue(root) is not Array buttons || buttons.Length == 0)
+        {
+            label = string.Empty;
+            return false;
+        }
+
+        for (int i = 0; i < buttons.Length; i++)
+        {
+            if (buttons.GetValue(i) is not UIElement button)
+            {
+                continue;
+            }
+
+            if (!ReferenceEquals(button, element) && !IsAncestor(button, element))
+            {
+                continue;
+            }
+
+            label = DescribeWorldGroupOption(button, groupLabel, i, buttons.Length);
+            return true;
+        }
+
+        label = string.Empty;
+        return false;
+    }
+
+    private static string DescribeWorldGroupOption(UIElement element, string groupLabel, int index, int total)
+    {
+        string optionLabel = TryGetGroupOptionTitle(element);
+        if (string.IsNullOrWhiteSpace(optionLabel))
+        {
+            optionLabel = groupLabel;
+        }
+
+        string label = TextSanitizer.JoinWithComma(groupLabel, optionLabel);
+        if (total > 0)
+        {
+            label = TextSanitizer.JoinWithComma(label, $"{index + 1} of {total}");
+        }
+
+        if (IsGroupOptionSelected(element))
+        {
+            label = TextSanitizer.JoinWithComma(label, "Selected");
+        }
+
+        return TextSanitizer.Clean(label);
+    }
+
+    private static string TryGetGroupOptionTitle(UIElement element)
+    {
+        try
+        {
+            FieldInfo? titleField = element.GetType().GetField("_title", CharacterBindingFlags);
+            if (titleField?.GetValue(element) is object titleObject)
+            {
+                PropertyInfo? textProp = titleObject.GetType().GetProperty("Text", CharacterBindingFlags);
+                if (textProp?.GetValue(titleObject) is string text && !string.IsNullOrWhiteSpace(text))
+                {
+                    return TextSanitizer.Clean(text);
+                }
+            }
+
+            PropertyInfo? optionValueProp = element.GetType().GetProperty("OptionValue", CharacterBindingFlags);
+            if (optionValueProp?.GetValue(element) is object optionValue)
+            {
+                string text = optionValue.ToString() ?? string.Empty;
+                if (!string.IsNullOrWhiteSpace(text))
+                {
+                    return TextSanitizer.Clean(text);
+                }
+            }
+        }
+        catch
+        {
+            // ignore option title lookup failures
+        }
+
+        return string.Empty;
+    }
+
+    private static bool IsGroupOptionSelected(UIElement element)
+    {
+        try
+        {
+            PropertyInfo? selectedProp = element.GetType().GetProperty("IsSelected", CharacterBindingFlags);
+            if (selectedProp?.GetValue(element) is bool selected)
+            {
+                return selected;
+            }
+
+            FieldInfo? currentOptionField = element.GetType().GetField("_currentOption", CharacterBindingFlags);
+            if (currentOptionField?.GetValue(element) is bool currentOption && currentOption)
+            {
+                return true;
+            }
+        }
+        catch
+        {
+            // ignore selection lookup failures
+        }
+
+        return false;
+    }
+
     private static string DescribeCharacterName(UIElement element)
     {
         string? value = NameButtonContentsField?.GetValue(element) as string;
@@ -1694,12 +1842,33 @@ internal sealed class MenuUiSelectionTracker
         };
 
         Player? player = TryGetCharacterCreationPlayer(root);
-        if (player is not null && difficulty.HasValue && player.difficulty == difficulty.Value)
+        if (IsDifficultySelected(element, difficulty, player))
         {
             label = TextSanitizer.JoinWithComma(label, LocalizationHelper.GetTextOrFallback("Mods.ScreenReaderMod.Controls.ToggleOn", "Selected"));
         }
 
         return TextSanitizer.Clean(label);
+    }
+
+    private static bool IsDifficultySelected(UIElement element, byte? difficulty, Player? player)
+    {
+        if (player is not null && difficulty.HasValue && player.difficulty == difficulty.Value)
+        {
+            return true;
+        }
+
+        if (DifficultyButtonSelectedProperty?.GetValue(element) is bool selected && selected)
+        {
+            return true;
+        }
+
+        FieldInfo? selectedField = element.GetType().GetField("_selected", CharacterBindingFlags);
+        if (selectedField?.GetValue(element) is bool selectedFlag && selectedFlag)
+        {
+            return true;
+        }
+
+        return false;
     }
 
     private static string DescribeTagFilterToggle(UIElement element)
