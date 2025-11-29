@@ -142,6 +142,7 @@ public sealed partial class InGameNarrationSystem
         private float _lastSoundVolume = -1f;
         private float _lastAmbientVolume = -1f;
         private int _lastParallax = int.MinValue;
+        private bool _wasOpen;
 
         public void PrimeReflection()
         {
@@ -150,10 +151,22 @@ public sealed partial class InGameNarrationSystem
 
         public void Update()
         {
-            if (!Main.ingameOptionsWindow)
+            bool isOpen = Main.ingameOptionsWindow;
+            if (!isOpen)
+            {
+                if (_wasOpen)
+                {
+                    Reset();
+                }
+
+                _wasOpen = false;
+                return;
+            }
+
+            if (!_wasOpen)
             {
                 Reset();
-                return;
+                _wasOpen = true;
             }
 
             EnsureReflection();
