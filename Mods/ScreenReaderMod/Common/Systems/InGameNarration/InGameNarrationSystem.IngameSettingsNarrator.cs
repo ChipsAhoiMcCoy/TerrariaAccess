@@ -179,6 +179,7 @@ public sealed partial class InGameNarrationSystem
                 string? label = GetLeftCategoryLabel(leftHover, allowMouseTextFallback: true);
                 if (!string.IsNullOrWhiteSpace(label))
                 {
+                    PlayTick();
                     ScreenReaderService.Announce(label);
                 }
 
@@ -199,6 +200,7 @@ public sealed partial class InGameNarrationSystem
 
                 if (categoryChanged || _forceCategoryAnnouncement)
                 {
+                    PlayTick();
                     ScreenReaderService.Announce(categoryLabel);
                     _lastCategory = categoryId;
                     _lastCategoryLabel = categoryLabel;
@@ -219,6 +221,7 @@ public sealed partial class InGameNarrationSystem
                 string? description = DescribeOption(categoryId, rightHover, categoryLabel);
                 if (!string.IsNullOrWhiteSpace(description))
                 {
+                    PlayTick();
                     ScreenReaderService.Announce(description);
                 }
 
@@ -911,6 +914,11 @@ public sealed partial class InGameNarrationSystem
             _lastAmbientVolume = -1f;
             _lastParallax = int.MinValue;
             _forceCategoryAnnouncement = false;
+        }
+
+        private static void PlayTick()
+        {
+            SoundEngine.PlaySound(SoundID.MenuTick);
         }
     }
 }

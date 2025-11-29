@@ -39,6 +39,7 @@ public sealed partial class InGameNarrationSystem
         private readonly MenuUiSelectionTracker _inGameUiTracker = new();
         private readonly NarrationHistory _narrationHistory = new();
         private SlotFocus? _currentFocus;
+        private string? _lastFocusKey;
         private const UiNarrationArea InventoryNarrationAreas =
             UiNarrationArea.Inventory |
             UiNarrationArea.Storage |
@@ -211,6 +212,7 @@ public sealed partial class InGameNarrationSystem
                 if (craftingAvailableIndex >= 0 &&
                     CraftingNarrator.TryFocusRecipeAtAvailableIndex(craftingAvailableIndex))
                 {
+                    PlayTickIfNew($"craft-{craftingAvailableIndex}");
                     ResetHoverSlotsAndTooltips();
                     return;
                 }
@@ -248,6 +250,8 @@ public sealed partial class InGameNarrationSystem
             }
 
             HoverTarget target = new(hover, identity, location, rawTooltip, normalizedTooltip, focus, AllowMouseText: !usingGamepadFocus);
+            string focusKey = BuildFocusKey(target, focus, inGamepadCraftingGrid ? craftingAvailableIndex : (int?)null);
+            PlayTickIfNew(focusKey);
 
             if (target.HasItem)
             {
@@ -530,6 +534,44 @@ public sealed partial class InGameNarrationSystem
             LinkPointFocusCache.Clear();
             _inGameUiTracker.Reset();
             UiAreaNarrationContext.Clear();
+            _lastFocusKey = null;
+        }
+
+        private static string BuildFocusKey(HoverTarget target, SlotFocus? focus, int? craftingIndex)
+        {
+            if (craftingIndex.HasValue && craftingIndex.Value >= 0)
+            {
+                return $"craft-{craftingIndex.Value}";
+            }
+
+            if (focus.HasValue)
+            {
+                SlotFocus value = focus.Value;
+                return $"slot-{value.Context}-{value.Slot}-{target.Identity.Type}-{target.Identity.Prefix}-{target.Identity.Stack}";
+            }
+
+            if (target.Identity.Type > 0)
+            {
+                return $"item-{target.Identity.Type}-{target.Identity.Prefix}-{target.Identity.Stack}-{target.Location}";
+            }
+
+            if (!string.IsNullOrWhiteSpace(target.Location))
+            {
+                return $"loc-{target.Location}";
+            }
+
+            return string.Empty;
+        }
+
+        private void PlayTickIfNew(string key)
+        {
+            if (string.IsNullOrWhiteSpace(key) || string.Equals(key, _lastFocusKey, StringComparison.Ordinal))
+            {
+                return;
+            }
+
+            _lastFocusKey = key;
+            SoundEngine.PlaySound(SoundID.MenuTick);
         }
 
         public void ForceReset()
