@@ -144,6 +144,7 @@ public sealed partial class InGameNarrationSystem
         private int _lastParallax = int.MinValue;
         private bool _forceCategoryAnnouncement;
         private string? _lastTickKey;
+        private uint _lastTickFrame;
 
         public void OnMenuOpened()
         {
@@ -253,7 +254,10 @@ public sealed partial class InGameNarrationSystem
                     float value = MathF.Round(Main.musicVolume * 100f);
                     if (Math.Abs(value - _lastMusicVolume) >= 1f || _lastSpecialFeature != specialFeature)
                     {
-                        ScreenReaderService.Announce($"{value:0}%");
+                        string name = TextSanitizer.Clean(Lang.menu[98].Value);
+                        bool featureChanged = _lastSpecialFeature != specialFeature || _lastMusicVolume < 0f;
+                        string message = featureChanged ? $"{name} {value:0}%" : $"{value:0}%";
+                        ScreenReaderService.Announce(message);
                         _lastMusicVolume = value;
                     }
                     break;
@@ -263,7 +267,10 @@ public sealed partial class InGameNarrationSystem
                     float value = MathF.Round(Main.soundVolume * 100f);
                     if (Math.Abs(value - _lastSoundVolume) >= 1f || _lastSpecialFeature != specialFeature)
                     {
-                        ScreenReaderService.Announce($"{value:0}%");
+                        string name = TextSanitizer.Clean(Lang.menu[99].Value);
+                        bool featureChanged = _lastSpecialFeature != specialFeature || _lastSoundVolume < 0f;
+                        string message = featureChanged ? $"{name} {value:0}%" : $"{value:0}%";
+                        ScreenReaderService.Announce(message);
                         _lastSoundVolume = value;
                     }
                     break;
@@ -273,7 +280,10 @@ public sealed partial class InGameNarrationSystem
                     float value = MathF.Round(Main.ambientVolume * 100f);
                     if (Math.Abs(value - _lastAmbientVolume) >= 1f || _lastSpecialFeature != specialFeature)
                     {
-                        ScreenReaderService.Announce($"{value:0}%");
+                        string name = TextSanitizer.Clean(Lang.menu[119].Value);
+                        bool featureChanged = _lastSpecialFeature != specialFeature || _lastAmbientVolume < 0f;
+                        string message = featureChanged ? $"{name} {value:0}%" : $"{value:0}%";
+                        ScreenReaderService.Announce(message);
                         _lastAmbientVolume = value;
                     }
                     break;
@@ -916,6 +926,7 @@ public sealed partial class InGameNarrationSystem
             _lastParallax = int.MinValue;
             _forceCategoryAnnouncement = false;
             _lastTickKey = null;
+            _lastTickFrame = 0;
         }
 
         private void PlayTickIfNew(string key)
@@ -925,7 +936,15 @@ public sealed partial class InGameNarrationSystem
                 return;
             }
 
+            uint frame = Main.GameUpdateCount;
+            uint age = frame >= _lastTickFrame ? frame - _lastTickFrame : uint.MaxValue - _lastTickFrame + frame + 1;
+            if (age < 5)
+            {
+                return;
+            }
+
             _lastTickKey = key;
+            _lastTickFrame = frame;
             SoundEngine.PlaySound(SoundID.MenuTick);
         }
     }
