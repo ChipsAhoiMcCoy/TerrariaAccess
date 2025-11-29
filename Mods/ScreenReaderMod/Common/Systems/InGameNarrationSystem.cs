@@ -57,6 +57,7 @@ public sealed partial class InGameNarrationSystem : ModSystem
     private const float ScreenEdgePaddingPixels = 48f;
     private static readonly Dictionary<int, int> _inventoryStacksByType = new();
     private static bool _inventoryInitialized;
+    private bool _wasIngameOptionsOpen;
 
     public override void Load()
     {
@@ -163,7 +164,15 @@ public sealed partial class InGameNarrationSystem : ModSystem
             return;
         }
 
+        Player player = Main.LocalPlayer;
+        if (player is null || !player.active)
+        {
+            return;
+        }
+
         bool isPaused = Main.gamePaused;
+        SynchronizeIngameOptionsState();
+
         if (requirePaused)
         {
             if (!isPaused)
@@ -172,12 +181,6 @@ public sealed partial class InGameNarrationSystem : ModSystem
             }
         }
         else if (isPaused)
-        {
-            return;
-        }
-
-        Player player = Main.LocalPlayer;
-        if (player is null || !player.active)
         {
             return;
         }
@@ -217,6 +220,33 @@ public sealed partial class InGameNarrationSystem : ModSystem
         LogDuration("ControlsMenu", ref _timingScratch);
         _modConfigMenuNarrator.TryHandleIngameUi(Main.InGameUI, isPaused);
         LogDuration("ModConfigMenu", ref _timingScratch);
+    }
+
+    private void SynchronizeIngameOptionsState()
+    {
+        bool open = Main.ingameOptionsWindow;
+        if (open == _wasIngameOptionsOpen)
+        {
+            return;
+        }
+
+        if (open)
+        {
+            ScreenReaderService.Interrupt();
+            UiAreaNarrationContext.RecordArea(UiNarrationArea.Settings);
+            _inventoryNarrator.ForceReset();
+            _craftingNarrator.ForceReset();
+            _ingameSettingsNarrator.OnMenuOpened();
+        }
+        else
+        {
+            UiAreaNarrationContext.Clear();
+            _inventoryNarrator.ForceReset();
+            _craftingNarrator.ForceReset();
+            _ingameSettingsNarrator.OnMenuClosed();
+        }
+
+        _wasIngameOptionsOpen = open;
     }
 
     private static bool IsWorldPositionApproximatelyOnScreen(Vector2 worldPosition, float paddingPixels = ScreenEdgePaddingPixels)

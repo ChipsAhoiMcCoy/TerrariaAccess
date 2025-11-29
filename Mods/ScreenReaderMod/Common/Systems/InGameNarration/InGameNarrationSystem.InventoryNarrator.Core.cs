@@ -169,8 +169,7 @@ public sealed partial class InGameNarrationSystem
                    player.chest != -1 ||
                    Main.npcShop != 0 ||
                    Main.InGuideCraftMenu ||
-                   Main.InReforgeMenu ||
-                   Main.ingameOptionsWindow;
+                   Main.InReforgeMenu;
         }
 
         private void HandleMouseItem()
@@ -531,6 +530,11 @@ public sealed partial class InGameNarrationSystem
             LinkPointFocusCache.Clear();
             _inGameUiTracker.Reset();
             UiAreaNarrationContext.Clear();
+        }
+
+        public void ForceReset()
+        {
+            Reset();
         }
 
         private static string DescribeLocation(Player player, ItemIdentity identity, SlotFocus? focus)

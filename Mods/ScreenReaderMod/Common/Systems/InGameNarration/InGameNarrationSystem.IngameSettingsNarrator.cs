@@ -142,7 +142,19 @@ public sealed partial class InGameNarrationSystem
         private float _lastSoundVolume = -1f;
         private float _lastAmbientVolume = -1f;
         private int _lastParallax = int.MinValue;
-        private bool _wasOpen;
+        private bool _forceCategoryAnnouncement;
+
+        public void OnMenuOpened()
+        {
+            Reset();
+            _forceCategoryAnnouncement = true;
+        }
+
+        public void OnMenuClosed()
+        {
+            Reset();
+            _forceCategoryAnnouncement = false;
+        }
 
         public void PrimeReflection()
         {
@@ -151,24 +163,6 @@ public sealed partial class InGameNarrationSystem
 
         public void Update()
         {
-            bool isOpen = Main.ingameOptionsWindow;
-            if (!isOpen)
-            {
-                if (_wasOpen)
-                {
-                    Reset();
-                }
-
-                _wasOpen = false;
-                return;
-            }
-
-            if (!_wasOpen)
-            {
-                Reset();
-                _wasOpen = true;
-            }
-
             EnsureReflection();
 
             int leftHover = ReadInt(_leftHoverField);
@@ -203,11 +197,12 @@ public sealed partial class InGameNarrationSystem
                     categoryChanged = !string.Equals(categoryLabel, _lastCategoryLabel, StringComparison.Ordinal);
                 }
 
-                if (categoryChanged)
+                if (categoryChanged || _forceCategoryAnnouncement)
                 {
                     ScreenReaderService.Announce(categoryLabel);
                     _lastCategory = categoryId;
                     _lastCategoryLabel = categoryLabel;
+                    _forceCategoryAnnouncement = false;
                 }
             }
 
@@ -915,6 +910,7 @@ public sealed partial class InGameNarrationSystem
             _lastSoundVolume = -1f;
             _lastAmbientVolume = -1f;
             _lastParallax = int.MinValue;
+            _forceCategoryAnnouncement = false;
         }
     }
 }

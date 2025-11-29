@@ -596,6 +596,11 @@ public sealed partial class InGameNarrationSystem
             _missingRequirementRecipes.Clear();
         }
 
+        public void ForceReset()
+        {
+            Reset();
+        }
+
         private void ResetFocus()
         {
             _lastAnnouncement = null;
