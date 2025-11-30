@@ -20,27 +20,124 @@ internal static partial class MenuNarrationCatalog
 {
     private static string DescribeSettingsAudioMenu(int index)
     {
-        if (index == 2)
+        string backLabel = GetBackLabel();
+
+        int rightHover = IngameOptions.rightHover;
+        int rightLock = IngameOptions.rightLock;
+        bool sliderActive = rightHover >= 0 || rightLock >= 0;
+
+        if (index >= 3 || (!sliderActive && index >= 2))
         {
-            return TextSanitizer.Clean(Language.GetTextValue("UI.Back"));
+            LogAudioDebug($"forced back idx={index} rightHover={rightHover} rightLock={rightLock}");
+            return backLabel;
+        }
+
+        if (TryGetTrackedAudioOption(index, backLabel, out string tracked))
+        {
+            LogAudioDebug($"tracked label idx={index} -> {tracked}");
+            return tracked;
         }
 
         string[] menuItems = GetMenuItemArray();
-        if (index >= 0 && index < menuItems.Length)
+        if ((uint)index < (uint)menuItems.Length)
         {
             string option = menuItems[index];
             if (!string.IsNullOrWhiteSpace(option))
             {
-                return option;
+                LogAudioDebug($"menuItems label idx={index} -> {option}");
+                return NormalizeBackLabel(option, backLabel);
+            }
+
+            if (index == menuItems.Length - 1 && menuItems.Length > 0)
+            {
+                LogAudioDebug($"menuItems back idx={index}");
+                return backLabel;
             }
         }
 
-        if (index is 0 or 1)
+        LogAudioDebug($"fallback idx={index}");
+        return GetFallbackAudioOption(index, backLabel);
+    }
+
+    private static string NormalizeBackLabel(string rawLabel, string backLabel)
+    {
+        string cleaned = TextSanitizer.Clean(rawLabel);
+        if (LooksLikeBackOption(cleaned, backLabel))
         {
-            return TextSanitizer.Clean(Lang.menu[65].Value);
+            return backLabel;
         }
 
-        return string.Empty;
+        return cleaned;
+    }
+
+    private static string GetBackLabel()
+    {
+        string label = TextSanitizer.Clean(Language.GetTextValue("UI.Back"));
+        if (string.IsNullOrWhiteSpace(label))
+        {
+            label = TextSanitizer.Clean(Lang.menu[5].Value);
+        }
+
+        return label;
+    }
+
+    private static bool TryGetTrackedAudioOption(int index, string backLabel, out string label)
+    {
+        if (InGameNarrationSystem.IngameOptionsLabelTracker.TryGetCurrentOptionLabel(index, out string tracked) &&
+            !string.IsNullOrWhiteSpace(tracked))
+        {
+            label = NormalizeBackLabel(tracked, backLabel);
+            return true;
+        }
+
+        label = string.Empty;
+        return false;
+    }
+
+    private static bool LooksLikeBackOption(string value, string backLabel)
+    {
+        if (string.IsNullOrWhiteSpace(value))
+        {
+            return false;
+        }
+
+        if (!string.IsNullOrWhiteSpace(backLabel) && string.Equals(value, backLabel, StringComparison.OrdinalIgnoreCase))
+        {
+            return true;
+        }
+
+        string langBack = TextSanitizer.Clean(Lang.menu[5].Value);
+        if (!string.IsNullOrWhiteSpace(langBack) && string.Equals(value, langBack, StringComparison.OrdinalIgnoreCase))
+        {
+            return true;
+        }
+
+        return value.Contains("back", StringComparison.OrdinalIgnoreCase) ||
+            value.Contains("close", StringComparison.OrdinalIgnoreCase);
+    }
+
+    private static string GetFallbackAudioOption(int index, string backLabel)
+    {
+        return index switch
+        {
+            0 => TextSanitizer.Clean(Lang.menu[99].Value),
+            1 => TextSanitizer.Clean(Lang.menu[98].Value),
+            2 => TextSanitizer.Clean(Lang.menu[119].Value),
+            3 => backLabel,
+            _ => string.Empty,
+        };
+    }
+
+    private static void LogAudioDebug(string message)
+    {
+        try
+        {
+            ScreenReaderMod.Instance?.Logger.Info($"[MenuNarration][AudioDebug] {message}");
+        }
+        catch
+        {
+            // logging is best-effort for diagnostics
+        }
     }
 
     private static string DescribeSettingsGeneralMenu(int index)

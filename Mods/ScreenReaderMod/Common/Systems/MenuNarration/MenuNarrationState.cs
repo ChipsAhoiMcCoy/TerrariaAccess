@@ -19,9 +19,15 @@ internal sealed class MenuNarrationState
     internal string? LastModeAnnouncement;
     internal DateTime LastModeAnnouncedAt = DateTime.MinValue;
     internal int LastSliderId = -1;
+    internal MenuSliderKind LastSliderKind = MenuSliderKind.Unknown;
     internal float LastMusicVolume = -1f;
     internal float LastSoundVolume = -1f;
     internal float LastAmbientVolume = -1f;
+    internal float LastZoom = -1f;
+    internal float LastInterfaceScale = -1f;
+    internal int LastSpecialFeature = -1;
+    internal int LastParallax = -1;
+    internal int LastCategoryId = -1;
 
     internal void ResetForMode(int mode)
     {
@@ -51,8 +57,24 @@ internal sealed class MenuNarrationState
     internal void ResetSliderTracking()
     {
         LastSliderId = -1;
+        LastSliderKind = MenuSliderKind.Unknown;
         LastMusicVolume = -1f;
         LastSoundVolume = -1f;
         LastAmbientVolume = -1f;
+        LastZoom = -1f;
+        LastInterfaceScale = -1f;
+        LastSpecialFeature = -1;
+        LastParallax = -1;
+        LastCategoryId = -1;
     }
+}
+
+internal enum MenuSliderKind
+{
+    Unknown = 0,
+    Music = 1,
+    Sound = 2,
+    Ambient = 3,
+    Zoom = 4,
+    InterfaceScale = 5,
 }

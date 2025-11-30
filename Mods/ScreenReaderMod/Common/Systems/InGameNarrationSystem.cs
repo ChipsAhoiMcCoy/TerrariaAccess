@@ -361,7 +361,7 @@ public sealed partial class InGameNarrationSystem : ModSystem
             return result;
         }
 
-        private static class IngameOptionsLabelTracker
+        internal static class IngameOptionsLabelTracker
         {
             private static readonly Dictionary<int, string> LeftLabels = new();
             private static readonly Dictionary<int, int> LeftIndexToCategory = new();
@@ -474,6 +474,18 @@ public sealed partial class InGameNarrationSystem : ModSystem
                 return OptionLabels.TryGetValue((category, optionIndex), out label!);
             }
 
+            public static bool TryGetCurrentOptionLabel(int optionIndex, out string label)
+            {
+                int category = GetCurrentCategory();
+                if (category < 0)
+                {
+                    label = string.Empty;
+                    return false;
+                }
+
+                return OptionLabels.TryGetValue((category, optionIndex), out label!);
+            }
+
             public static bool IsOptionSkipped(int optionIndex)
             {
                 return (uint)optionIndex < (uint)_skipRightSlotSnapshot.Length && _skipRightSlotSnapshot[optionIndex];
@@ -506,7 +518,7 @@ public sealed partial class InGameNarrationSystem : ModSystem
                 return EmptyMapping;
             }
 
-            private static int GetCurrentCategory()
+            public static int GetCurrentCategory()
             {
                 if (_categoryField?.GetValue(null) is int value)
                 {

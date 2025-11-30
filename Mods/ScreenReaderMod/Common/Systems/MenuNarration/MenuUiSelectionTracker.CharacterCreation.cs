@@ -82,6 +82,12 @@ internal sealed partial class MenuUiSelectionTracker
             return DescribeDifficultyButton(root, element);
         }
 
+        UIElement? difficultyButton = UiDifficultyButtonType is null ? null : FindAncestor(element, static type => UiDifficultyButtonType.IsAssignableFrom(type));
+        if (difficultyButton is not null)
+        {
+            return DescribeDifficultyButton(root, difficultyButton);
+        }
+
         if (UiColoredSliderType?.IsInstanceOfType(element) == true || FindAncestor(element, static type => UiColoredSliderType?.IsAssignableFrom(type) == true) is not null)
         {
             return DescribeHslSlider(root, element);
@@ -422,15 +428,17 @@ internal sealed partial class MenuUiSelectionTracker
 
     private static string DescribeDifficultyButton(UIElement root, UIElement element)
     {
-        byte? difficulty = DifficultyButtonValueField?.GetValue(element) is byte value ? value : null;
+        byte? difficulty = TryGetDifficultyValue(element);
         string difficultyLabel = DescribeDifficultyValue(difficulty);
 
         Player? player = TryGetCharacterCreationPlayer(root);
         bool isSelected = IsDifficultySelected(element, difficulty, player);
 
-        string label = isSelected
-            ? TextSanitizer.JoinWithComma(LocalizationHelper.GetTextOrFallback("Mods.ScreenReaderMod.Controls.ToggleOn", "Selected"), difficultyLabel)
-            : difficultyLabel;
+        string label = difficultyLabel;
+        if (isSelected)
+        {
+            label = TextSanitizer.JoinWithComma(difficultyLabel, LocalizationHelper.GetTextOrFallback("Mods.ScreenReaderMod.Controls.ToggleOn", "Selected"));
+        }
 
         return TextSanitizer.Clean(label);
     }
@@ -459,6 +467,11 @@ internal sealed partial class MenuUiSelectionTracker
             return true;
         }
 
+        if (IsGroupOptionSelected(element))
+        {
+            return true;
+        }
+
         FieldInfo? selectedField = element.GetType().GetField("_selected", CharacterBindingFlags);
         if (selectedField?.GetValue(element) is bool selectedFlag && selectedFlag)
         {
@@ -466,5 +479,32 @@ internal sealed partial class MenuUiSelectionTracker
         }
 
         return false;
+    }
+
+    private static byte? TryGetDifficultyValue(UIElement element)
+    {
+        try
+        {
+            object? value = DifficultyButtonValueField?.GetValue(element);
+            if (value is null)
+            {
+                PropertyInfo? optionValue = element.GetType().GetProperty("OptionValue", CharacterBindingFlags);
+                value = optionValue?.GetValue(element);
+            }
+
+            return value switch
+            {
+                byte b => b,
+                sbyte sb => (byte)sb,
+                int i => unchecked((byte)i),
+                uint ui => unchecked((byte)ui),
+                Enum e => Convert.ToByte(e),
+                _ => null,
+            };
+        }
+        catch
+        {
+            return null;
+        }
     }
 }
