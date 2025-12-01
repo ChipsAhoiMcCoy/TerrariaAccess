@@ -429,29 +429,36 @@ internal sealed partial class MenuUiSelectionTracker
     private static string DescribeDifficultyButton(UIElement root, UIElement element)
     {
         byte? difficulty = TryGetDifficultyValue(element);
-        string difficultyLabel = DescribeDifficultyValue(difficulty);
+        (string difficultyLabel, string? difficultyDescription) = DescribeDifficultyValue(difficulty);
 
         Player? player = TryGetCharacterCreationPlayer(root);
         bool isSelected = IsDifficultySelected(element, difficulty, player);
 
-        string label = difficultyLabel;
+        var parts = new List<string>(3);
         if (isSelected)
         {
-            label = TextSanitizer.JoinWithComma(difficultyLabel, LocalizationHelper.GetTextOrFallback("Mods.ScreenReaderMod.Controls.ToggleOn", "Selected"));
+            parts.Add(LocalizationHelper.GetTextOrFallback("Mods.ScreenReaderMod.Controls.ToggleOn", "Selected"));
         }
 
-        return TextSanitizer.Clean(label);
+        parts.Add(difficultyLabel);
+
+        if (!string.IsNullOrWhiteSpace(difficultyDescription))
+        {
+            parts.Add(difficultyDescription);
+        }
+
+        return TextSanitizer.Clean(TextSanitizer.JoinWithComma(parts.ToArray()));
     }
 
-    private static string DescribeDifficultyValue(byte? difficulty)
+    private static (string Label, string? Description) DescribeDifficultyValue(byte? difficulty)
     {
         return difficulty switch
         {
-            0 => LocalizationHelper.GetTextOrFallback("UI.Classic", "Classic"),
-            1 => LocalizationHelper.GetTextOrFallback("UI.Mediumcore", "Mediumcore"),
-            2 => LocalizationHelper.GetTextOrFallback("UI.Hardcore", "Hardcore"),
-            3 => LocalizationHelper.GetTextOrFallback("UI.Journey", "Journey"),
-            _ => LocalizationHelper.GetTextOrFallback("UI.Difficulty", "Difficulty"),
+            0 => (LocalizationHelper.GetTextOrFallback("UI.Classic", "Classic"), GetMenuTextOrFallback(31, "Classic characters drop money on death.")),
+            1 => (LocalizationHelper.GetTextOrFallback("UI.Mediumcore", "Mediumcore"), GetMenuTextOrFallback(30, "Mediumcore characters drop items on death.")),
+            2 => (LocalizationHelper.GetTextOrFallback("UI.Hardcore", "Hardcore"), GetMenuTextOrFallback(29, "Hardcore characters die for good.")),
+            3 => (LocalizationHelper.GetTextOrFallback("UI.Journey", "Journey"), LocalizationHelper.GetTextOrFallback("CreativeDescriptionPlayer", "Journey characters start with extra equipment. Can only be played on Journey worlds.")),
+            _ => (LocalizationHelper.GetTextOrFallback("UI.Difficulty", "Difficulty"), null),
         };
     }
 
@@ -506,5 +513,23 @@ internal sealed partial class MenuUiSelectionTracker
         {
             return null;
         }
+    }
+
+    private static string GetMenuTextOrFallback(int index, string fallback)
+    {
+        try
+        {
+            LocalizedText[] menu = Lang.menu;
+            if ((uint)index < (uint)menu.Length && !string.IsNullOrWhiteSpace(menu[index].Value))
+            {
+                return menu[index].Value;
+            }
+        }
+        catch
+        {
+            // ignore menu lookup failures and fall back to hard-coded text
+        }
+
+        return fallback;
     }
 }

@@ -1,5 +1,6 @@
 #nullable enable
 using System;
+using System.Collections.Generic;
 using ScreenReaderMod.Common.Services;
 using ScreenReaderMod.Common.Utilities;
 using ScreenReaderMod.Common.Systems;
@@ -19,6 +20,7 @@ internal sealed class MenuNarrationController
     private readonly MenuUiSelectionTracker _uiSelectionTracker = new();
     private readonly ModConfigMenuNarrator _modConfigNarrator = new();
     private readonly MenuNarrationState _state = new();
+    private MenuUiSelectionTracker.WorldCreationSnapshot _lastWorldCreationSnapshot;
 
     public void Process(Main main)
     {
@@ -41,6 +43,11 @@ internal sealed class MenuNarrationController
         }
 
         if (TryHandleUiHover())
+        {
+            return;
+        }
+
+        if (TryHandleWorldCreationSnapshot())
         {
             return;
         }
@@ -101,6 +108,11 @@ internal sealed class MenuNarrationController
             return;
         }
 
+        if (TryHandleWorldCreationSnapshot())
+        {
+            return;
+        }
+
         if (TryHandleSettingsSlider())
         {
             return;
@@ -115,6 +127,12 @@ internal sealed class MenuNarrationController
     private bool TryHandleUiHover()
     {
         if (!_uiSelectionTracker.TryGetHoverLabel(Main.MenuUI, out MenuUiLabel hover))
+        {
+            return false;
+        }
+
+        if (MenuUiSelectionTracker.IsWorldCreationElement(hover.Element) &&
+            MenuUiSelectionTracker.IsTrackedWorldCreationElement(hover.Element))
         {
             return false;
         }
@@ -683,5 +701,149 @@ internal sealed class MenuNarrationController
         _uiSelectionTracker.Reset();
         _modConfigNarrator.Reset();
         _state.ResetAll();
+        _lastWorldCreationSnapshot = default;
+    }
+
+    private bool TryHandleWorldCreationSnapshot()
+    {
+        UIElement? hovered = null;
+        if (_uiSelectionTracker.TryGetHoverLabel(Main.MenuUI, out MenuUiLabel hover) &&
+            MenuUiSelectionTracker.IsWorldCreationElement(hover.Element))
+        {
+            hovered = hover.Element;
+        }
+
+        if (!MenuUiSelectionTracker.TryBuildWorldCreationSnapshot(Main.MenuUI?.CurrentState, hovered, out MenuUiSelectionTracker.WorldCreationSnapshot snapshot))
+        {
+            _lastWorldCreationSnapshot = default;
+            return false;
+        }
+
+        if (snapshot.IsEmpty)
+        {
+            _lastWorldCreationSnapshot = snapshot;
+            return false;
+        }
+
+        var changes = new List<(string Text, bool Focused)>(5);
+
+        static void AddSelectionChange(MenuUiSelectionTracker.WorldCreationSelection current, MenuUiSelectionTracker.WorldCreationSelection previous, List<(string Text, bool Focused)> buffer, bool isFocused, bool wasFocused)
+        {
+            if (!isFocused && !previous.IsEmpty)
+            {
+                return;
+            }
+
+            if (current.IsEmpty)
+            {
+                return;
+            }
+
+            bool unchanged = !previous.IsEmpty &&
+                string.Equals(current.Option ?? string.Empty, previous.Option ?? string.Empty, StringComparison.OrdinalIgnoreCase) &&
+                current.Index == previous.Index &&
+                current.Total == previous.Total &&
+                current.Selected == previous.Selected;
+            bool focusChanged = isFocused != wasFocused;
+            if (unchanged && !focusChanged)
+            {
+                return;
+            }
+
+            bool includeGroup = previous.IsEmpty ||
+                (isFocused && !wasFocused) ||
+                !string.Equals(current.Group ?? string.Empty, previous.Group ?? string.Empty, StringComparison.OrdinalIgnoreCase);
+
+            string option = string.IsNullOrWhiteSpace(current.Option) ? current.Group ?? string.Empty : current.Option ?? string.Empty;
+            string group = current.Group ?? string.Empty;
+            string description;
+            if (includeGroup)
+            {
+                if (string.IsNullOrWhiteSpace(group))
+                {
+                    description = current.Describe(includeGroup: true);
+                }
+                else
+                {
+                    description = current.Selected
+                        ? TextSanitizer.JoinWithComma(group, $"Selected {option}")
+                        : TextSanitizer.JoinWithComma(group, option);
+                }
+            }
+            else
+            {
+                description = TextSanitizer.Clean(option ?? string.Empty);
+                if (current.Selected)
+                {
+                    description = TextSanitizer.JoinWithComma("Selected", description);
+                }
+            }
+
+            if (string.IsNullOrWhiteSpace(description))
+            {
+                return;
+            }
+
+            buffer.Add((description, isFocused));
+        }
+
+        static void AddInputChange(MenuUiSelectionTracker.WorldCreationInput current, MenuUiSelectionTracker.WorldCreationInput previous, List<(string Text, bool Focused)> buffer, bool isFocused, bool wasFocused)
+        {
+            if (!isFocused && !previous.IsEmpty)
+            {
+                return;
+            }
+
+            if (current.IsEmpty)
+            {
+                return;
+            }
+
+            bool unchanged = !previous.IsEmpty &&
+                string.Equals(current.Value ?? string.Empty, previous.Value ?? string.Empty, StringComparison.OrdinalIgnoreCase) &&
+                string.Equals(current.Prefix ?? string.Empty, previous.Prefix ?? string.Empty, StringComparison.OrdinalIgnoreCase);
+            bool focusChanged = isFocused != wasFocused;
+            if (unchanged && !focusChanged)
+            {
+                return;
+            }
+
+            bool includePrefix = previous.IsEmpty || (isFocused && !wasFocused);
+            string description = current.Describe(includePrefix);
+            if (!includePrefix && !string.IsNullOrWhiteSpace(current.Value))
+            {
+                description = TextSanitizer.Clean(current.Value);
+            }
+
+            if (string.IsNullOrWhiteSpace(description))
+            {
+                return;
+            }
+
+            buffer.Add((description, isFocused));
+        }
+
+        AddSelectionChange(snapshot.Size, _lastWorldCreationSnapshot.Size, changes, snapshot.SizeFocused, _lastWorldCreationSnapshot.SizeFocused);
+        AddSelectionChange(snapshot.Difficulty, _lastWorldCreationSnapshot.Difficulty, changes, snapshot.DifficultyFocused, _lastWorldCreationSnapshot.DifficultyFocused);
+        AddSelectionChange(snapshot.Evil, _lastWorldCreationSnapshot.Evil, changes, snapshot.EvilFocused, _lastWorldCreationSnapshot.EvilFocused);
+        AddInputChange(snapshot.Name, _lastWorldCreationSnapshot.Name, changes, snapshot.NameFocused, _lastWorldCreationSnapshot.NameFocused);
+        AddInputChange(snapshot.Seed, _lastWorldCreationSnapshot.Seed, changes, snapshot.SeedFocused, _lastWorldCreationSnapshot.SeedFocused);
+
+        _lastWorldCreationSnapshot = snapshot;
+
+        if (changes.Count == 0)
+        {
+            return false;
+        }
+
+        (string Text, bool Focused) announcement = changes.Find(change => change.Focused);
+        if (string.IsNullOrWhiteSpace(announcement.Text))
+        {
+            announcement = changes[0];
+        }
+
+        ScreenReaderMod.Instance?.Logger.Info($"[MenuNarration] World creation -> {announcement.Text}");
+        ScreenReaderService.Announce(announcement.Text, force: true);
+        return true;
     }
 }
