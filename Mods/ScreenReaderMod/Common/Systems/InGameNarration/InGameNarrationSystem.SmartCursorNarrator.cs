@@ -135,6 +135,14 @@ public sealed partial class InGameNarrationSystem
             _suppressCursorAnnouncement = false;
         }
 
+        private void ResetSmartCursorRepeatTracking()
+        {
+            _lastCursorAnnouncementKey = int.MinValue;
+            _lastCursorTileType = -1;
+            _lastTileX = int.MinValue;
+            _lastTileY = int.MinValue;
+        }
+
         private static bool ShouldSuppressForMenus(Player player)
         {
             if (InventoryNarrator.IsInventoryUiOpen(player))
@@ -267,6 +275,12 @@ public sealed partial class InGameNarrationSystem
                 return null;
             }
 
+            if (IsAirDescriptor(tileType, tileName))
+            {
+                ResetSmartCursorRepeatTracking();
+                return null;
+            }
+
             int announcementKey = ResolveTileAnnouncementKey(tileType);
             if (tileX == _lastTileX && tileY == _lastTileY && string.Equals(tileName, _lastAnnouncement, StringComparison.Ordinal))
             {
@@ -356,5 +370,10 @@ public sealed partial class InGameNarrationSystem
         }
 
         return held.createWall > WallID.None;
+    }
+
+    private static bool IsAirDescriptor(int tileType, string? tileName)
+    {
+        return tileType == -1 || string.Equals(tileName, "Empty", StringComparison.OrdinalIgnoreCase);
     }
 }
