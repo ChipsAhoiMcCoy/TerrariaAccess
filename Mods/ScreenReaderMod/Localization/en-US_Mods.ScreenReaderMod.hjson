@@ -137,4 +137,6 @@ Keybinds: {
 	GuidanceEntryNext.DisplayName: Next Guidance Entry
 	GuidanceEntryPrevious.DisplayName: Previous Guidance Entry
 	GuidanceTeleport.DisplayName: Teleport to Guidance Target
+	BuildModeToggle.DisplayName: Toggle Build Mode
+	BuildModePlace.DisplayName: Set Build Point
 }

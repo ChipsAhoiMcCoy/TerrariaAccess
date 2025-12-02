@@ -59,6 +59,12 @@ public sealed partial class InGameNarrationSystem
                 return;
             }
 
+            if (Main.gameMenu || Main.ingameOptionsWindow || Main.InGameUI?.CurrentState is not null || PlayerInput.UsingGamepadUI)
+            {
+                ResetCursorFeedback();
+                return;
+            }
+
             bool smartCursorActive = Main.SmartCursorIsUsed || Main.SmartCursorWanted;
             bool hasSmartInteract = Main.HasSmartInteractTarget;
             bool canProvideCursorFeedback = !hasSmartInteract || PlayerInput.UsingGamepad;
