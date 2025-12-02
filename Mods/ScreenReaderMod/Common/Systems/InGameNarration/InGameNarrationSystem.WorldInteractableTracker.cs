@@ -6,6 +6,7 @@ using Microsoft.Xna.Framework;
 using Microsoft.Xna.Framework.Audio;
 using ScreenReaderMod.Common.Services;
 using ScreenReaderMod.Common.Systems;
+using ScreenReaderMod.Common.Utilities;
 using Terraria;
 using Terraria.Audio;
 using Terraria.ID;
@@ -573,6 +574,8 @@ public sealed partial class InGameNarrationSystem
             }
         }
 
+        protected IReadOnlyList<TileInteractableDefinition> Definitions => _definitions;
+
         public override void Collect(Player player, List<Candidate> buffer)
         {
             if (_definitions.Length == 0)
@@ -628,7 +631,7 @@ public sealed partial class InGameNarrationSystem
 
         protected virtual bool ShouldIncludeAnchor(TileInteractableDefinition definition, Player player, Point anchor) => true;
 
-        private static bool IsAnchorTile(Tile tile, TileInteractableDefinition definition)
+        protected static bool IsAnchorTile(Tile tile, TileInteractableDefinition definition)
         {
             if (definition.FrameWidth <= 0 || definition.FrameHeight <= 0)
             {
@@ -653,6 +656,79 @@ public sealed partial class InGameNarrationSystem
         public ChestInteractableSource(float scanRadiusTiles, params TileInteractableDefinition[] definitions)
             : base(scanRadiusTiles, definitions)
         {
+        }
+
+        public override void Collect(Player player, List<Candidate> buffer)
+        {
+            Vector2 playerCenter = player.Center;
+            int playerTileX = (int)(playerCenter.X / 16f);
+            int playerTileY = (int)(playerCenter.Y / 16f);
+
+            int scanRadius = (int)Math.Clamp(ScanRadiusTiles, 1f, 200f);
+            int minX = Math.Max(0, playerTileX - scanRadius);
+            int maxX = Math.Min(Main.maxTilesX - 1, playerTileX + scanRadius);
+            int minY = Math.Max(0, playerTileY - scanRadius);
+            int maxY = Math.Min(Main.maxTilesY - 1, playerTileY + scanRadius);
+
+            foreach (TileInteractableDefinition definition in Definitions)
+            {
+                for (int x = minX; x <= maxX; x++)
+                {
+                    for (int y = minY; y <= maxY; y++)
+                    {
+                        Tile tile = Main.tile[x, y];
+                        if (!tile.HasTile)
+                        {
+                            continue;
+                        }
+
+                        if (!definition.MatchesTile(tile))
+                        {
+                            continue;
+                        }
+
+                        if (!IsAnchorTile(tile, definition))
+                        {
+                            continue;
+                        }
+
+                        Point anchor = new(x, y);
+                        if (!ShouldIncludeAnchor(definition, player, anchor))
+                        {
+                            continue;
+                        }
+
+                        Vector2 worldPosition = definition.GetWorldCenter(anchor);
+                        int localId = HashCode.Combine(definition.DefinitionId, anchor.X, anchor.Y);
+                        string label = ResolveChestLabel(anchor, tile);
+                        buffer.Add(new Candidate(new TrackedInteractableKey(SourceId, localId), worldPosition, definition.Profile, label));
+                    }
+                }
+            }
+        }
+
+        private static string ResolveChestLabel(Point anchor, Tile tile)
+        {
+            string name = string.Empty;
+            int chestIndex = Chest.FindChestByGuessing(anchor.X, anchor.Y);
+            if (chestIndex >= 0 && chestIndex < Main.chest.Length)
+            {
+                Chest? chest = Main.chest[chestIndex];
+                if (chest is not null)
+                {
+                    name = TextSanitizer.Clean(chest.name);
+                }
+            }
+
+            if (string.IsNullOrWhiteSpace(name))
+            {
+                if (TileDescriptor.TryDescribe(anchor.X, anchor.Y, out _, out string? fallback) && !string.IsNullOrWhiteSpace(fallback))
+                {
+                    name = fallback;
+                }
+            }
+
+            return string.IsNullOrWhiteSpace(name) ? "Chest" : name;
         }
     }
 
@@ -742,7 +818,8 @@ public sealed partial class InGameNarrationSystem
 
                     Vector2 worldPosition = new((bestAnchor.X + 0.5f) * 16f, (bestAnchor.Y + 0.5f) * 16f);
                     int localId = HashCode.Combine(oreType, bestAnchor.X, bestAnchor.Y);
-                    buffer.Add(new Candidate(new TrackedInteractableKey(SourceId, localId), worldPosition, InteractableCueProfile.Ore, null));
+                    string oreLabel = ResolveOreLabel(bestAnchor.X, bestAnchor.Y);
+                    buffer.Add(new Candidate(new TrackedInteractableKey(SourceId, localId), worldPosition, InteractableCueProfile.Ore, oreLabel));
                 }
             }
         }
@@ -764,6 +841,16 @@ public sealed partial class InGameNarrationSystem
         }
 
         private static bool IsOre(int tileType) => tileType >= 0 && tileType < TileID.Sets.Ore.Length && TileID.Sets.Ore[tileType];
+
+        private static string ResolveOreLabel(int tileX, int tileY)
+        {
+            if (TileDescriptor.TryDescribe(tileX, tileY, out _, out string? name) && !string.IsNullOrWhiteSpace(name))
+            {
+                return name;
+            }
+
+            return "Ore";
+        }
 
         private static IEnumerable<Point> GetNeighbors(Point point, int minX, int maxX, int minY, int maxY)
         {

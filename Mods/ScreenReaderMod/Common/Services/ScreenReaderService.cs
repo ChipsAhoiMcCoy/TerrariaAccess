@@ -53,7 +53,7 @@ public static class ScreenReaderService
     public static void Interrupt()
     {
         NvdaSpeechProvider.Interrupt();
-        SapiSpeechProvider.Interrupt();
+        // Intentionally avoid interrupting SAPI so world announcements are not cut off.
     }
 
     public static bool ToggleSpeechInterrupt()

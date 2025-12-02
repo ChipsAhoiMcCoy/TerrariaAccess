@@ -42,6 +42,7 @@ public sealed partial class InGameNarrationSystem
         private int _lastProj = -1;
         private int _lastInteractTileType = -1;
         private int _lastCursorTileType = -1;
+        private int _lastCursorAnnouncementKey = int.MinValue;
         private bool _lastSmartCursorEnabled;
         private string? _pendingStatePrefix;
         private bool _suppressCursorAnnouncement;
@@ -93,7 +94,7 @@ public sealed partial class InGameNarrationSystem
             }
 
             AnnouncementCategory category = AnnouncementCategory.Default;
-            string? message = hasInteract ? DescribeSmartInteract(out category) : DescribeSmartCursor(out category);
+            string? message = hasInteract ? DescribeSmartInteract(out category) : DescribeSmartCursor(player, out category);
             if (string.IsNullOrWhiteSpace(message))
             {
                 AnnouncePendingStateIfAny();
@@ -124,6 +125,7 @@ public sealed partial class InGameNarrationSystem
             _lastProj = -1;
             _lastInteractTileType = -1;
             _lastCursorTileType = -1;
+            _lastCursorAnnouncementKey = int.MinValue;
         }
 
         private void Reset()
@@ -249,7 +251,7 @@ public sealed partial class InGameNarrationSystem
             return null;
         }
 
-        private string? DescribeSmartCursor(out AnnouncementCategory category)
+        private string? DescribeSmartCursor(Player player, out AnnouncementCategory category)
         {
             category = AnnouncementCategory.Default;
 
@@ -260,12 +262,18 @@ public sealed partial class InGameNarrationSystem
                 return null;
             }
 
+            if (IsWallDescriptor(tileType) && !ShouldAnnounceWall(player))
+            {
+                return null;
+            }
+
+            int announcementKey = ResolveTileAnnouncementKey(tileType);
             if (tileX == _lastTileX && tileY == _lastTileY && string.Equals(tileName, _lastAnnouncement, StringComparison.Ordinal))
             {
                 return null;
             }
 
-            if (tileType == _lastCursorTileType)
+            if (announcementKey == _lastCursorAnnouncementKey)
             {
                 return null;
             }
@@ -275,6 +283,7 @@ public sealed partial class InGameNarrationSystem
             _lastNpc = -1;
             _lastProj = -1;
             _lastCursorTileType = tileType;
+            _lastCursorAnnouncementKey = announcementKey;
 
             if (string.IsNullOrWhiteSpace(tileName))
             {
@@ -310,5 +319,42 @@ public sealed partial class InGameNarrationSystem
             ScreenReaderService.Announce(prefix, force: force);
         }
 
+    }
+
+    private static int ResolveTileAnnouncementKey(int tileType)
+    {
+        if (tileType >= 0 && tileType < TileID.Sets.Conversion.Grass.Length &&
+            (TileID.Sets.Conversion.Grass[tileType] || tileType == TileID.Dirt))
+        {
+            return TileID.Dirt;
+        }
+
+        return tileType;
+    }
+
+    private static bool ShouldSuppressVariantNames(int announcementKey)
+    {
+        return announcementKey == TileID.Dirt;
+    }
+
+    private static bool IsWallDescriptor(int tileType)
+    {
+        return TileDescriptor.GetAnnouncementCategory(tileType) == AnnouncementCategory.Wall;
+    }
+
+    private static bool ShouldAnnounceWall(Player player)
+    {
+        Item held = player?.HeldItem ?? new Item();
+        if (held is null || held.IsAir)
+        {
+            return false;
+        }
+
+        if (held.hammer > 0)
+        {
+            return true;
+        }
+
+        return held.createWall > WallID.None;
     }
 }

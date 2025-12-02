@@ -8,6 +8,7 @@ using System.Text;
 using Microsoft.Xna.Framework;
 using Microsoft.Xna.Framework.Audio;
 using Microsoft.Xna.Framework.Graphics;
+using Microsoft.Xna.Framework.Input;
 using ScreenReaderMod.Common.Services;
 using ScreenReaderMod.Common.Systems.MenuNarration;
 using ScreenReaderMod.Common.Utilities;
@@ -47,6 +48,7 @@ public sealed partial class InGameNarrationSystem
         private static readonly List<SoundEffectInstance> ActiveInstances = new();
         private static bool _suppressNextAnnouncement;
         private string? _lastTileAnnouncementName;
+        private int _lastTileAnnouncementKey = int.MinValue;
 
         public void Update()
         {
@@ -164,17 +166,46 @@ public sealed partial class InGameNarrationSystem
                 return;
             }
 
+            bool isWall = IsWallDescriptor(tileType);
+            if (isWall && !ShouldAnnounceWall(player))
+            {
+                _lastTileAnnouncementName = null;
+                _lastTileAnnouncementKey = int.MinValue;
+                return;
+            }
+
             if (string.IsNullOrWhiteSpace(name))
             {
                 _lastTileAnnouncementName = null;
                 return;
             }
 
-            if (string.Equals(name, _lastTileAnnouncementName, StringComparison.Ordinal))
+            if (!smartCursorActive && PlayerInput.UsingGamepad && !IsGamepadDpadPressed() &&
+                string.Equals(name, "Empty", StringComparison.OrdinalIgnoreCase))
+            {
+                _lastTileAnnouncementName = null;
+                _lastTileAnnouncementKey = int.MinValue;
+                return;
+            }
+
+            int announcementKey = ResolveTileAnnouncementKey(tileType);
+
+            bool suppressRepeats = smartCursorActive || (PlayerInput.UsingGamepad && !IsGamepadDpadPressed());
+            if (suppressRepeats &&
+                string.Equals(name, _lastTileAnnouncementName, StringComparison.Ordinal) &&
+                announcementKey == _lastTileAnnouncementKey)
             {
                 return;
             }
 
+            if (suppressRepeats &&
+                announcementKey == _lastTileAnnouncementKey &&
+                ShouldSuppressVariantNames(announcementKey))
+            {
+                return;
+            }
+
+            _lastTileAnnouncementKey = announcementKey;
             _lastTileAnnouncementName = name;
 
             string message = string.IsNullOrWhiteSpace(coordinates) ? name : $"{name}, {coordinates}";
@@ -201,6 +232,7 @@ public sealed partial class InGameNarrationSystem
             _originTileX = int.MinValue;
             _originTileY = int.MinValue;
             _lastTileAnnouncementName = null;
+            _lastTileAnnouncementKey = int.MinValue;
         }
 
         private static bool IsHoveringPlayer(Player player, Vector2 cursorWorld)
@@ -415,6 +447,27 @@ public sealed partial class InGameNarrationSystem
                     instance.Dispose();
                     ActiveInstances.RemoveAt(i);
                 }
+            }
+        }
+
+        private static bool IsGamepadDpadPressed()
+        {
+            try
+            {
+                GamePadState state = GamePad.GetState(PlayerIndex.One);
+                if (!state.IsConnected)
+                {
+                    return false;
+                }
+
+                return state.DPad.Up == ButtonState.Pressed ||
+                    state.DPad.Down == ButtonState.Pressed ||
+                    state.DPad.Left == ButtonState.Pressed ||
+                    state.DPad.Right == ButtonState.Pressed;
+            }
+            catch
+            {
+                return false;
             }
         }
     }

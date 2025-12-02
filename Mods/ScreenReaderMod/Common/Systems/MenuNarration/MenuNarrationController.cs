@@ -42,12 +42,9 @@ internal sealed class MenuNarrationController
             return;
         }
 
-        if (TryHandleUiHover())
-        {
-            return;
-        }
-
-        if (TryHandleWorldCreationSnapshot())
+        bool hoverHandled = TryHandleUiHover();
+        bool worldCreationHandled = TryHandleWorldCreationSnapshot();
+        if (hoverHandled || worldCreationHandled)
         {
             return;
         }
@@ -103,12 +100,9 @@ internal sealed class MenuNarrationController
             return;
         }
 
-        if (TryHandleUiHover())
-        {
-            return;
-        }
-
-        if (TryHandleWorldCreationSnapshot())
+        bool hoverHandled = TryHandleUiHover();
+        bool worldCreationHandled = TryHandleWorldCreationSnapshot();
+        if (hoverHandled || worldCreationHandled)
         {
             return;
         }
