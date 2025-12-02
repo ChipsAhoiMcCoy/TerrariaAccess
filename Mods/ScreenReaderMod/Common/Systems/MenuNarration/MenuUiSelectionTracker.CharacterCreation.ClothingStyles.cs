@@ -8,16 +8,16 @@ internal sealed partial class MenuUiSelectionTracker
 {
     private static readonly string?[] ClothingStyleDescriptions =
     {
-        "Masculine outfit featuring a long-sleeved primary-color shirt layered under a contrasting vest, paired with straight-leg pants and sturdy boots mostly hidden beneath the cuffs.",
-        "Casual masculine look with a short-sleeved shirt under a secondary-color vest, matched with relaxed-fit jeans that drape over rugged boots.",
-        "Sporty masculine style with a fitted tank top, skinny jeans tucked into boots, and simple armbands at the wrists.",
-        "Edgy masculine ensemble with a basic T-shirt layered under a long trenchcoat, finished with jeans and utilitarian boots.",
-        "Feminine outfit with a long-sleeved T-shirt topped by a form-fitting chestplate that subtly shows cleavage, worn with shorts and flats.",
-        "Relaxed feminine style with a short-sleeved shirt, a secondary-color chestplate, loose-fit jeans, and sturdy boots.",
-        "Sleek feminine look featuring a tank top, delicate arm bands, skinny jeans, and stylish boots.",
-        "Layered feminine ensemble with a long-sleeved shirt, a short-sleeved trenchcoat, skinny jeans, and boots.",
-        "Elegant, wizard-like masculine attire with a Roman-inspired draped shirt, one shoulder pad, and a long flowing skirt paired with simple flats.",
-        "Soft, flowing feminine outfit with a tank top, detached sleeves, and a long, graceful skirt paired with flats.",
+        "Masculine outfit featuring a long-sleeved primary-color shirt layered under a contrasting vest, paired with straight-leg pants and sturdy boots mostly hidden beneath the cuffs,",
+        "Casual masculine look with a short-sleeved shirt under a secondary-color vest, matched with relaxed-fit jeans that drape over rugged boots,",
+        "Sporty masculine style with a fitted tank top, skinny jeans tucked into boots, and simple armbands at the wrists,",
+        "Edgy masculine ensemble with a basic T-shirt layered under a long trenchcoat, finished with jeans and utilitarian boots,",
+        "Feminine outfit with a long-sleeved T-shirt topped by a form-fitting chestplate that subtly shows cleavage, worn with shorts and flats,",
+        "Relaxed feminine style with a short-sleeved shirt, a secondary-color chestplate, loose-fit jeans, and sturdy boots,",
+        "Sleek feminine look featuring a tank top, delicate arm bands, skinny jeans, and stylish boots,",
+        "Layered feminine ensemble with a long-sleeved shirt, a short-sleeved trenchcoat, skinny jeans, and boots,",
+        "Elegant, wizard-like masculine attire with a Roman-inspired draped shirt, one shoulder pad, and a long flowing skirt paired with simple flats,",
+        "Soft, flowing feminine outfit with a tank top, detached sleeves, and a long, graceful skirt paired with flats,",
     };
 
     // Ordinal order for the clothing styles as presented in-game.
