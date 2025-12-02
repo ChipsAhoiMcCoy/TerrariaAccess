@@ -152,7 +152,7 @@ public sealed partial class InGameNarrationSystem
             frequency = onPlatform
                 ? MathHelper.Lerp(360f, 430f, normalized)
                 : MathHelper.Lerp(190f, 220f, normalized);
-            float baseVolume = MathHelper.Lerp(0.18f, 0.35f, normalized);
+            float baseVolume = MathHelper.Lerp(0.225f, 0.4375f, normalized);
             loudness = SoundLoudnessUtility.ApplyDistanceFalloff(baseVolume, distanceTiles: 0f, referenceTiles: 1f);
         }
     }

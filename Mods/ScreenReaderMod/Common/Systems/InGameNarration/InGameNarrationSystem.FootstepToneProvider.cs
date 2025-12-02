@@ -12,7 +12,7 @@ public sealed partial class InGameNarrationSystem
     private static class FootstepToneProvider
     {
         private const int SampleRate = 44100;
-        private const float DurationSeconds = 0.16f;
+        private const float DurationSeconds = 0.08f;
 
         private static readonly Dictionary<int, SoundEffect?> ToneCache = new();
         private static readonly List<SoundEffectInstance> ActiveInstances = new();

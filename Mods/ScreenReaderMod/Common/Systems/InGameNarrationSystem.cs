@@ -1,4 +1,4 @@
-﻿#nullable enable
+#nullable enable
 using System;
 using System.Collections;
 using System.Collections.Generic;
@@ -544,6 +544,7 @@ public sealed partial class InGameNarrationSystem : ModSystem
     private static void HandleNewText(On_Main.orig_NewText_string_byte_byte_byte orig, string newText, byte r, byte g, byte b)
     {
         orig(newText, r, g, b);
+        TryAnnounceWorldText(newText);
         TryAnnounceHousingQuery(newText, new Color(r, g, b));
     }
 
@@ -1192,3 +1193,5 @@ public sealed partial class InGameNarrationSystem : ModSystem
         InventoryNarrator.RecordMouseTextSnapshot(string.IsNullOrWhiteSpace(cursorText) ? buffTooltip : cursorText);
     }
 }
+
+
