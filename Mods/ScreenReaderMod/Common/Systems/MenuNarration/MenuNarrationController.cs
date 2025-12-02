@@ -42,12 +42,12 @@ internal sealed class MenuNarrationController
             return;
         }
 
-        if (TryHandleWorldCreationSnapshot())
+        if (TryHandleUiHover())
         {
             return;
         }
 
-        if (TryHandleUiHover())
+        if (TryHandleWorldCreationSnapshot())
         {
             return;
         }
@@ -103,12 +103,12 @@ internal sealed class MenuNarrationController
             return;
         }
 
-        if (TryHandleWorldCreationSnapshot())
+        if (TryHandleUiHover())
         {
             return;
         }
 
-        if (TryHandleUiHover())
+        if (TryHandleWorldCreationSnapshot())
         {
             return;
         }
