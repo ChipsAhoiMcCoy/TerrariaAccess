@@ -303,15 +303,38 @@ internal sealed partial class MenuUiSelectionTracker
     private static string DescribeClothingStyleOption(UIElement root, UIElement element)
     {
         int? styleId = ClothStyleIdField?.GetValue(element) is int value ? value : null;
-        string label = styleId.HasValue ? $"Clothing style {styleId.Value + 1}" : "Clothing style";
+        int totalStyles = ClothingStyleDescriptions.Length;
+        string? ordinal = null;
+        if (styleId.HasValue)
+        {
+            ordinal = TryGetClothingStylePosition(styleId.Value, out int position)
+                ? $"{position} of {totalStyles}"
+                : $"{styleId.Value + 1} of {totalStyles}";
+        }
+
+        var parts = new List<string>(4);
 
         Player? player = TryGetCharacterCreationPlayer(root);
         if (player is not null && styleId.HasValue && player.skinVariant == styleId.Value)
         {
-            label = TextSanitizer.JoinWithComma(label, "Selected");
+            parts.Add("Selected");
         }
 
-        return TextSanitizer.Clean(label);
+        if (styleId.HasValue && TryGetClothingStyleDescription(styleId.Value, out string? description))
+        {
+            parts.Add(description);
+        }
+
+        if (!string.IsNullOrWhiteSpace(ordinal))
+        {
+            parts.Add(ordinal);
+        }
+        else
+        {
+            parts.Insert(0, "Clothing style");
+        }
+
+        return TextSanitizer.Clean(TextSanitizer.JoinWithComma(parts.ToArray()));
     }
 
     private static bool TryGetHairStyleDescription(int styleId, out string? description)
