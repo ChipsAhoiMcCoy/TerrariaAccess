@@ -173,11 +173,11 @@ public sealed partial class InGameNarrationSystem
             }
 
             bool isWall = IsWallDescriptor(tileType);
-            if (isWall && !ShouldAnnounceWall(player))
+            bool suppressedWall = isWall && !ShouldAnnounceWall(player);
+            if (suppressedWall)
             {
-                _lastTileAnnouncementName = null;
-                _lastTileAnnouncementKey = int.MinValue;
-                return;
+                tileType = -1;
+                name = "Empty";
             }
 
             if (string.IsNullOrWhiteSpace(name))
@@ -187,7 +187,7 @@ public sealed partial class InGameNarrationSystem
             }
 
             if (!smartCursorActive && PlayerInput.UsingGamepad && !IsGamepadDpadPressed() &&
-                string.Equals(name, "Empty", StringComparison.OrdinalIgnoreCase))
+                string.Equals(name, "Empty", StringComparison.OrdinalIgnoreCase) && !suppressedWall)
             {
                 _lastTileAnnouncementName = null;
                 _lastTileAnnouncementKey = int.MinValue;

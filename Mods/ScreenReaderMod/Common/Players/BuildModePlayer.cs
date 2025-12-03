@@ -1,5 +1,6 @@
 #nullable enable
 using System;
+using System.Collections.Generic;
 using Microsoft.Xna.Framework;
 using global::ScreenReaderMod;
 using ScreenReaderMod.Common.Services;
@@ -34,6 +35,7 @@ public sealed class BuildModePlayer : ModPlayer
     private int _wallsPlaced;
     private bool _actionCompletedAnnounced;
     private int _actionCooldown;
+    private int _autoToolRevertSlot = -1;
 
     private bool HasSelection => _firstCorner.HasValue && _secondCorner.HasValue;
 
@@ -136,7 +138,7 @@ public sealed class BuildModePlayer : ModPlayer
         bool acted = ProcessSelectionStep(selection, action, held);
         if (!acted && _selectionIndex >= selection.Width * selection.Height && !_actionCompletedAnnounced)
         {
-            AnnounceCompletion(action, selection, held);
+            AnnounceCompletion(action, selection, Player.HeldItem);
             _actionCompletedAnnounced = true;
         }
     }
@@ -181,6 +183,7 @@ public sealed class BuildModePlayer : ModPlayer
 
     private void ResetActiveAction()
     {
+        RevertAutoToolIfNeeded();
         _activeSelection = Rectangle.Empty;
         _activeAction = SelectionAction.None;
         _activeItemType = 0;
@@ -191,6 +194,7 @@ public sealed class BuildModePlayer : ModPlayer
         _wallsPlaced = 0;
         _actionCompletedAnnounced = false;
         _actionCooldown = 0;
+        _autoToolRevertSlot = -1;
     }
 
     private void EnsureActiveAction(Rectangle selection, SelectionAction action, Item held)
@@ -275,9 +279,15 @@ public sealed class BuildModePlayer : ModPlayer
         }
 
         Tile tile = Framing.GetTileSafely(x, y);
+        if (RequiresAxe(tile) && held.axe <= 0 && TryAutoSwapToAxe(tile, ref held))
+        {
+            tile = Framing.GetTileSafely(x, y);
+        }
+
         bool advanced = true;
         int tilePower = Math.Max(held.pick, held.axe);
         int swingDelay = Math.Max(1, held.useTime);
+        bool wasTree = RequiresAxe(tile);
 
         if (tile.HasTile && tilePower > 0)
         {
@@ -286,6 +296,11 @@ public sealed class BuildModePlayer : ModPlayer
             if (hadTile && !Main.tile[x, y].HasTile)
             {
                 _tilesCleared++;
+                if (wasTree)
+                {
+                    RevertAutoToolIfNeeded();
+                }
+
                 if (Main.netMode == NetmodeID.MultiplayerClient)
                 {
                     NetMessage.SendData(MessageID.TileManipulation, -1, -1, null, 0, x, y);
@@ -348,7 +363,7 @@ public sealed class BuildModePlayer : ModPlayer
             return true;
         }
 
-        WorldGen.PlaceTile(x, y, held.createTile, mute: true, forced: true, plr: Player.whoAmI, style: held.placeStyle);
+        WorldGen.PlaceTile(x, y, held.createTile, mute: false, forced: false, plr: Player.whoAmI, style: held.placeStyle);
         Tile after = Main.tile[x, y];
         bool placedNow = after.HasTile && after.TileType == held.createTile && (!beforeHadTile || beforeType != held.createTile);
         if (!placedNow)
@@ -368,7 +383,6 @@ public sealed class BuildModePlayer : ModPlayer
             NetMessage.SendTileSquare(-1, x, y, 1);
         }
 
-        SoundEngine.PlaySound(SoundID.Dig, new Vector2(x * 16, y * 16));
         _actionCooldown = Math.Max(1, held.useTime);
         return true;
     }
@@ -393,7 +407,7 @@ public sealed class BuildModePlayer : ModPlayer
             return true;
         }
 
-        WorldGen.PlaceWall(x, y, held.createWall, mute: true);
+        WorldGen.PlaceWall(x, y, held.createWall, mute: false);
         int afterWall = Main.tile[x, y].WallType;
 
         if (afterWall == beforeWall || afterWall != held.createWall)
@@ -413,7 +427,6 @@ public sealed class BuildModePlayer : ModPlayer
             NetMessage.SendTileSquare(-1, x, y, 1);
         }
 
-        SoundEngine.PlaySound(SoundID.Dig, new Vector2(x * 16, y * 16));
         _actionCooldown = Math.Max(1, held.useTime);
         return true;
     }
@@ -530,25 +543,117 @@ public sealed class BuildModePlayer : ModPlayer
         _lastAnnouncedCursor = tile;
         _cursorAnnounceCooldown = 6;
 
-        int deltaX = Math.Abs(tile.X - _firstCorner.Value.X);
-        int deltaY = Math.Abs(tile.Y - _firstCorner.Value.Y);
-        if (deltaX == 0 && deltaY == 0)
+        string announcement = BuildDirectionalCursorAnnouncement(_firstCorner.Value, tile);
+        if (!string.IsNullOrWhiteSpace(announcement))
+        {
+            ScreenReaderService.Announce(announcement);
+        }
+    }
+
+    private string BuildDirectionalCursorAnnouncement(Point origin, Point current)
+    {
+        int deltaX = current.X - origin.X;
+        int deltaY = current.Y - origin.Y;
+
+        List<string> parts = new();
+
+        if (deltaY != 0)
+        {
+            string direction = deltaY > 0 ? "down" : "up";
+            parts.Add($"{Math.Abs(deltaY)} {direction}");
+        }
+
+        if (deltaX != 0)
+        {
+            string direction = deltaX > 0 ? "right" : "left";
+            parts.Add($"{Math.Abs(deltaX)} {direction}");
+        }
+
+        return parts.Count == 0 ? string.Empty : string.Join(", ", parts);
+    }
+
+    private static bool RequiresAxe(Tile tile)
+    {
+        return tile.HasTile && tile.TileType >= 0 && tile.TileType < Main.tileAxe.Length && Main.tileAxe[tile.TileType];
+    }
+
+    private bool TryAutoSwapToAxe(Tile tile, ref Item held)
+    {
+        if (!RequiresAxe(tile) || held.axe > 0)
+        {
+            return false;
+        }
+
+        int bestAxeIndex = FindBestAxeIndex();
+        if (bestAxeIndex < 0 || bestAxeIndex == Player.selectedItem)
+        {
+            return false;
+        }
+
+        if (_autoToolRevertSlot == -1)
+        {
+            _autoToolRevertSlot = Player.selectedItem;
+        }
+
+        Player.selectedItem = bestAxeIndex;
+        held = Player.HeldItem;
+        _activeItemType = held.type;
+        _actionCooldown = 0;
+        return true;
+    }
+
+    private int FindBestAxeIndex()
+    {
+        int bestIndex = -1;
+        int bestPower = -1;
+
+        for (int i = 0; i < Player.inventory.Length; i++)
+        {
+            Item candidate = Player.inventory[i];
+            if (candidate is null || candidate.IsAir)
+            {
+                continue;
+            }
+
+            int power = candidate.axe;
+            if (power <= 0)
+            {
+                continue;
+            }
+
+            if (power > bestPower || (power == bestPower && bestIndex == -1))
+            {
+                bestPower = power;
+                bestIndex = i;
+            }
+        }
+
+        return bestIndex;
+    }
+
+    private void RevertAutoToolIfNeeded()
+    {
+        if (_autoToolRevertSlot < 0)
         {
             return;
         }
 
-        if (deltaX > 0 && deltaY > 0)
+        int targetSlot = _autoToolRevertSlot;
+        _autoToolRevertSlot = -1;
+
+        if (targetSlot < 0 || targetSlot >= Player.inventory.Length)
         {
-            ScreenReaderService.Announce($"{deltaX} X, {deltaY} Y.");
+            return;
         }
-        else if (deltaX > 0)
+
+        Item target = Player.inventory[targetSlot];
+        if (target is null || target.IsAir)
         {
-            ScreenReaderService.Announce($"{deltaX} X.");
+            return;
         }
-        else
-        {
-            ScreenReaderService.Announce($"{deltaY} Y.");
-        }
+
+        Player.selectedItem = targetSlot;
+        _activeItemType = Player.HeldItem.type;
     }
 
     private enum SelectionAction

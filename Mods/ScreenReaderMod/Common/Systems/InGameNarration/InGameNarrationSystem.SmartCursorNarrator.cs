@@ -270,12 +270,14 @@ public sealed partial class InGameNarrationSystem
                 return null;
             }
 
-            if (IsWallDescriptor(tileType) && !ShouldAnnounceWall(player))
+            bool suppressedWall = IsWallDescriptor(tileType) && !ShouldAnnounceWall(player);
+            if (suppressedWall)
             {
-                return null;
+                tileType = -1;
+                tileName = "Empty";
             }
 
-            if (IsAirDescriptor(tileType, tileName))
+            if (!suppressedWall && IsAirDescriptor(tileType, tileName))
             {
                 ResetSmartCursorRepeatTracking();
                 return null;
