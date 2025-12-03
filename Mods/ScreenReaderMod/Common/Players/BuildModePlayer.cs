@@ -368,7 +368,7 @@ public sealed class BuildModePlayer : ModPlayer
 
         bool advanced = true;
         int tilePower = Math.Max(held.pick, held.axe);
-        int swingDelay = Math.Max(1, held.useTime);
+        int swingDelay = GetAdjustedMiningDelay(held);
         bool wasTree = RequiresAxe(tile);
         bool hadTile = tile.HasTile;
 
@@ -448,7 +448,7 @@ public sealed class BuildModePlayer : ModPlayer
         bool placedNow = after.HasTile && after.TileType == held.createTile && (!beforeHadTile || beforeType != held.createTile);
         if (!placedNow)
         {
-            _actionCooldown = Math.Max(1, held.useTime);
+            _actionCooldown = GetAdjustedPlacementDelay(held, isWall: false);
             return placed;
         }
 
@@ -460,7 +460,7 @@ public sealed class BuildModePlayer : ModPlayer
             NetMessage.SendTileSquare(-1, x, y, 1);
         }
 
-        _actionCooldown = Math.Max(1, held.useTime);
+        _actionCooldown = GetAdjustedPlacementDelay(held, isWall: false);
         return true;
     }
 
@@ -490,7 +490,7 @@ public sealed class BuildModePlayer : ModPlayer
 
         if (!placed)
         {
-            _actionCooldown = Math.Max(1, held.useTime);
+            _actionCooldown = GetAdjustedPlacementDelay(held, isWall: true);
             return placed;
         }
 
@@ -502,7 +502,7 @@ public sealed class BuildModePlayer : ModPlayer
             NetMessage.SendTileSquare(-1, x, y, 1);
         }
 
-        _actionCooldown = Math.Max(1, held.useTime);
+        _actionCooldown = GetAdjustedPlacementDelay(held, isWall: true);
         return true;
     }
 
@@ -721,6 +721,25 @@ public sealed class BuildModePlayer : ModPlayer
     private static bool RequiresAxe(Tile tile)
     {
         return tile.HasTile && tile.TileType >= 0 && tile.TileType < Main.tileAxe.Length && Main.tileAxe[tile.TileType];
+    }
+
+    private int GetAdjustedMiningDelay(Item held)
+    {
+        int baseUse = Math.Max(1, held.useTime);
+        float pickSpeed = Math.Max(0.3f, Player.pickSpeed);
+        return Math.Max(1, (int)MathF.Ceiling(baseUse * pickSpeed));
+    }
+
+    private int GetAdjustedPlacementDelay(Item held, bool isWall)
+    {
+        int baseUse = Math.Max(1, held.useTime);
+        float speedMult = isWall ? Player.wallSpeed : Player.tileSpeed;
+        if (speedMult <= 0f)
+        {
+            return baseUse;
+        }
+
+        return Math.Max(1, (int)MathF.Ceiling(baseUse / speedMult));
     }
 
     private bool TryAutoSwapToAxe(Tile tile, ref Item held)
