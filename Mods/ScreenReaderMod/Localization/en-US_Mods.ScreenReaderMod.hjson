@@ -118,25 +118,34 @@ Mods: {
 			WaypointNext.DisplayName: Next Waypoint
 			WaypointPrevious.DisplayName: Previous Waypoint
 			WaypointCreate.DisplayName: Create Waypoint
+			WaypointDelete.DisplayName: Waypoint Delete
+			GuidanceCategoryNext.DisplayName: Next Guidance Category
+			GuidanceCategoryPrevious.DisplayName: Previous Guidance Category
+			GuidanceEntryNext.DisplayName: Next Guidance Entry
+			GuidanceEntryPrevious.DisplayName: Previous Guidance Entry
 			GuidanceTeleport.DisplayName: Teleport to Guidance Target
+			SpeechInterrupt.DisplayName: Toggle Speech Interrupt
+			BuildModeToggle.DisplayName: Toggle Build Mode
+			BuildModePlace.DisplayName: Set Build Point
+			ControllerInventorySmartSelect.DisplayName: Inventory Smart Select
+			ControllerInventorySectionNext.DisplayName: Inventory Section Next
+			ControllerInventorySectionPrevious.DisplayName: Inventory Section Previous
 		}
 	}
 }
 
 Keybinds: {
-	"Next Waypoint.DisplayName": Next  Waypoint
-	"Previous Waypoint.DisplayName": Previous  Waypoint
-	"Create Waypoint.DisplayName": Create  Waypoint
-	WaypointNext.DisplayName: Waypoint Next
-	WaypointPrevious.DisplayName: Waypoint Previous
+	GuidanceCategoryNext.DisplayName: Guidance Category Next
+	GuidanceCategoryPrevious.DisplayName: Guidance Category Previous
+	GuidanceEntryNext.DisplayName: Guidance Entry Next
+	GuidanceEntryPrevious.DisplayName: Guidance Entry Previous
 	WaypointCreate.DisplayName: Waypoint Create
 	WaypointDelete.DisplayName: Waypoint Delete
-	SpeechInterrupt.DisplayName: Toggle Speech Interrupt
-	GuidanceCategoryNext.DisplayName: Next Guidance Category
-	GuidanceCategoryPrevious.DisplayName: Previous Guidance Category
-	GuidanceEntryNext.DisplayName: Next Guidance Entry
-	GuidanceEntryPrevious.DisplayName: Previous Guidance Entry
-	GuidanceTeleport.DisplayName: Teleport to Guidance Target
-	BuildModeToggle.DisplayName: Toggle Build Mode
-	BuildModePlace.DisplayName: Set Build Point
+	GuidanceTeleport.DisplayName: Guidance Teleport
+	ControllerInventorySmartSelect.DisplayName: Controller Inventory Smart Select
+	ControllerInventorySectionNext.DisplayName: Controller Inventory Section Next
+	ControllerInventorySectionPrevious.DisplayName: Controller Inventory Section Previous
+	SpeechInterrupt.DisplayName: Speech Interrupt
+	BuildModeToggle.DisplayName: Build Mode Toggle
+	BuildModePlace.DisplayName: Build Mode Place
 }

@@ -1,4 +1,4 @@
-#nullable enable
+﻿#nullable enable
 using System;
 using System.Collections;
 using System.Collections.Generic;
@@ -16,6 +16,7 @@ using ScreenReaderMod.Common.Utilities;
 using Terraria;
 using Terraria.Audio;
 using Terraria.GameContent;
+using Terraria.GameContent.UI.Chat;
 using Terraria.GameContent.UI.BigProgressBar;
 using Terraria.GameContent.Events;
 using Terraria.GameContent.UI.Elements;
@@ -112,6 +113,7 @@ public sealed partial class InGameNarrationSystem : ModSystem
         On_IngameOptions.DrawLeftSide += CaptureIngameOptionsLeft;
         On_IngameOptions.DrawRightSide += CaptureIngameOptionsRight;
         On_ChatHelper.BroadcastChatMessage += HandleBroadcastChatMessage;
+        On_RemadeChatMonitor.AddNewMessage += HandleChatMonitorMessage;
     }
 
     private void UnregisterHooks()
@@ -126,6 +128,7 @@ public sealed partial class InGameNarrationSystem : ModSystem
         On_IngameOptions.DrawLeftSide -= CaptureIngameOptionsLeft;
         On_IngameOptions.DrawRightSide -= CaptureIngameOptionsRight;
         On_ChatHelper.BroadcastChatMessage -= HandleBroadcastChatMessage;
+        On_RemadeChatMonitor.AddNewMessage -= HandleChatMonitorMessage;
     }
 
     private void ResetSharedResources()
@@ -556,6 +559,12 @@ public sealed partial class InGameNarrationSystem : ModSystem
         TryAnnounceHousingQuery(message, color);
     }
 
+    private static void HandleChatMonitorMessage(On_RemadeChatMonitor.orig_AddNewMessage orig, RemadeChatMonitor self, string text, Color color, int widthLimitInPixels)
+    {
+        orig(self, text, color, widthLimitInPixels);
+        TryAnnounceChatLine(text);
+    }
+
     private static void TryAnnounceWorldText(string? text)
     {
         if (string.IsNullOrWhiteSpace(text))
@@ -570,6 +579,17 @@ public sealed partial class InGameNarrationSystem : ModSystem
         }
 
         WorldAnnouncementService.Announce(sanitized, force: true);
+    }
+
+    private static void TryAnnounceChatLine(string? rawText)
+    {
+        string sanitized = TextSanitizer.Clean(rawText);
+        if (string.IsNullOrWhiteSpace(sanitized))
+        {
+            return;
+        }
+
+        ScreenReaderService.Announce(sanitized);
     }
 
     private static bool IsLikelyPlayerChat(string text)
@@ -1193,5 +1213,6 @@ public sealed partial class InGameNarrationSystem : ModSystem
         InventoryNarrator.RecordMouseTextSnapshot(string.IsNullOrWhiteSpace(cursorText) ? buffTooltip : cursorText);
     }
 }
+
 
 
