@@ -157,6 +157,7 @@ public sealed partial class InGameNarrationSystem
         };
 
         private bool _initializedTownNpcSnapshot;
+        private int _townNpcSnapshotDelayTicks;
         private bool _wasBloodMoon;
         private bool _wasEclipse;
         private bool _wasPumpkinMoon;
@@ -173,6 +174,7 @@ public sealed partial class InGameNarrationSystem
             _previousTownNpcTypes.Clear();
             _currentTownNpcTypes.Clear();
             _initializedTownNpcSnapshot = false;
+            _townNpcSnapshotDelayTicks = 0;
             _wasBloodMoon = false;
             _wasEclipse = false;
             _wasPumpkinMoon = false;
@@ -210,8 +212,6 @@ public sealed partial class InGameNarrationSystem
             {
                 monitor.InitializeFromWorld();
             }
-
-            SnapshotTownNpcTypes();
         }
 
         public void Update()
@@ -252,6 +252,11 @@ public sealed partial class InGameNarrationSystem
 
         private void AnnounceTownNpcArrivals()
         {
+            if (!_initializedTownNpcSnapshot)
+            {
+                return;
+            }
+
             _currentTownNpcTypes.Clear();
 
             for (int i = 0; i < Main.maxNPCs; i++)
@@ -383,6 +388,29 @@ public sealed partial class InGameNarrationSystem
             if (_initializedTownNpcSnapshot)
             {
                 return;
+            }
+
+            bool isMultiplayerClient = Main.netMode == NetmodeID.MultiplayerClient;
+            _townNpcSnapshotDelayTicks++;
+
+            if (isMultiplayerClient)
+            {
+                bool anyTownNpcActive = false;
+                for (int i = 0; i < Main.maxNPCs; i++)
+                {
+                    NPC npc = Main.npc[i];
+                    if (npc.active && (npc.townNPC || npc.type == NPCID.TravellingMerchant))
+                    {
+                        anyTownNpcActive = true;
+                        break;
+                    }
+                }
+
+                // Delay the first snapshot on MP clients until town NPCs have synced, or after ~1 second as a fallback.
+                if (!anyTownNpcActive && _townNpcSnapshotDelayTicks < 60)
+                {
+                    return;
+                }
             }
 
             SnapshotTownNpcTypes();
