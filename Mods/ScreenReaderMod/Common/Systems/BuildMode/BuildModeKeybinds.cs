@@ -17,7 +17,7 @@ internal static class BuildModeKeybinds
         }
 
         Toggle = KeybindLoader.RegisterKeybind(mod, "BuildModeToggle", Keys.None);
-        Place = KeybindLoader.RegisterKeybind(mod, "BuildModePlace", Keys.None);
+        Place = KeybindLoader.RegisterKeybind(mod, "BuildModePlace", Keys.A);
     }
 
     internal static void Unload()

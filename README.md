@@ -34,7 +34,7 @@ See `Docs/features.md` for deeper coverage of each system.
 | Create / Delete Waypoint | Backslash / Delete | Create a waypoint at your position; delete the selected waypoint. |
 | Guidance Teleport | P | Teleport to the active guidance target when a safe landing spot exists. |
 | Build Mode Toggle | Start (gamepad), Unbound (keyboard) | Toggles build mode on controllers by default; bind a keyboard key if preferred. |
-| Build Mode Place Corner | Unbound | Set your own binding; when active, use the place key (or Quick Mount/mouse left) to mark corners. |
+| Build Mode Place Corner | A (keyboard) | Marks selection corners; also works with Quick Mount or mouse left while build mode is active. |
 
 Configure bindings under `Settings > Controls > Keybindings > Screen Reader` to match your controller or keyboard preferences.
 
