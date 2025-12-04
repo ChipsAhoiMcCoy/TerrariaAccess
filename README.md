@@ -15,8 +15,7 @@ A screen-reader-first tModLoader mod that makes Terraria playable for blind and 
 3. Place `ScreenReaderMod.tmod` in `/documents/my games/terraria/tmodloader/mods`.
 4. Place the `enabled.json` in `/documents/my games/terraria/tmodloader/mods`.
 5. Place the inputs file in `/documents/my games/terraria/tmodloader`.
-6. Launch tModLoader, enable **Terraria Access** from the Mods menu, and restart tModLoader to activate hooks.
-7. Bind the mod keybinds under `Settings > Controls > Keybindings > Screen Reader` (defaults listed below).
+6. Bind the mod keybinds under `Settings > Controls > Keybindings > Screen Reader` (defaults listed below).
 
 ## Feature highlights
 - **Menu narration:** Title, player/world creation & deletion, settings (audio/video/interface/gameplay/cursor/effects/resolution), multiplayer/host & play, join by IP, tModLoader settings, mod browser/workshop, and mod configuration screens.
