@@ -3,18 +3,20 @@
 A screen-reader-first tModLoader mod that makes Terraria playable for blind and low-vision players. The mod narrates menus, in-game UI, navigation cues, and world events while layering positional audio to keep you oriented without visuals.
 
 ## Latest release
-- Download: https://drive.google.com/file/d/1Hm7q4lqIMEQE4_J8KxPZWmIBDCWc_zgr/view
+- Grab the [latest ScreenReaderMod.tmod](https://drive.google.com/file/d/1Hm7q4lqIMEQE4_J8KxPZWmIBDCWc_zgr/view) before following the install steps below.
 
 ## Requirements
 - tModLoader (Steam install or manual distribution)
 - NVDA with `nvdaControllerClient64.dll` placed next to `tModLoader.exe` (or in `Mods/ScreenReaderMod/Libraries/`)
 
 ## Install & Play
-1. Install tModLoader and ensure NVDA is running with `nvdaControllerClient64.dll` beside `tModLoader.exe` (or in `Mods/ScreenReaderMod/Libraries/`).
-2. Download the latest `.tmod` release: https://drive.google.com/file/d/1Hm7q4lqIMEQE4_J8KxPZWmIBDCWc_zgr/view
-3. Drop `ScreenReaderMod.tmod` into `%USERPROFILE%\Documents\My Games\Terraria\tModLoader\Mods`. Alternatively, run `pwsh -NoProfile -ExecutionPolicy Bypass -File Tools/build.ps1` to build and deploy it; the script resolves your tModLoader install and copies the artifact unless `-SkipDeploy` is used.
-4. Launch tModLoader, enable **Terraria Access** from the Mods menu, and restart tModLoader to activate hooks.
-5. Bind the mod keybinds under `Settings > Controls > Keybindings > Screen Reader` (defaults listed below).
+1. Install Terraria and tModLoader.
+2. Place `nvdaControllerClient64.dll` in `/steamapps/common/tmodloader`.
+3. Place `ScreenReaderMod.tmod` in `/documents/my games/terraria/tmodloader/mods`.
+4. Place the `enabled.json` in `/documents/my games/terraria/tmodloader/mods`.
+5. Place the inputs file in `/documents/my games/terraria/tmodloader`.
+6. Launch tModLoader, enable **Terraria Access** from the Mods menu, and restart tModLoader to activate hooks.
+7. Bind the mod keybinds under `Settings > Controls > Keybindings > Screen Reader` (defaults listed below).
 
 ## Feature highlights
 - **Menu narration:** Title, player/world creation & deletion, settings (audio/video/interface/gameplay/cursor/effects/resolution), multiplayer/host & play, join by IP, tModLoader settings, mod browser/workshop, and mod configuration screens.
