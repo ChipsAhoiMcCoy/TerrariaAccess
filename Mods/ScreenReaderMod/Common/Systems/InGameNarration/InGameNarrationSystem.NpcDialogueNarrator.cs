@@ -75,7 +75,7 @@ public sealed partial class InGameNarrationSystem
             HandleNpcChat(npc, category, interruptsAllowed);
             HandleTypedInput(player, category, interruptsAllowed);
 
-            bool allowInterrupt = interruptsAllowed && NpcDialogueInputTracker.IsNavigationPressed;
+            bool allowInterrupt = interruptsAllowed;
 
             HandleButtonFocus(Main.npcChatFocus2, ref _lastPrimaryFocus, _currentPrimaryButton, allowInterrupt, category);
             HandleButtonFocus(Main.npcChatFocus1, ref _lastCloseFocus, _currentCloseButton, allowInterrupt, category);
