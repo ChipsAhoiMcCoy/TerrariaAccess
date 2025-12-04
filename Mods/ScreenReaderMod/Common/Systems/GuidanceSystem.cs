@@ -5,6 +5,7 @@ using Microsoft.Xna.Framework;
 using Microsoft.Xna.Framework.Audio;
 using ScreenReaderMod.Common.Services;
 using ScreenReaderMod.Common.Systems.Guidance;
+using ScreenReaderMod.Common.Utilities;
 using Terraria;
 using Terraria.GameContent.UI.States;
 using Terraria.GameInput;
@@ -31,6 +32,14 @@ public sealed partial class GuidanceSystem : ModSystem
     private const float MinVolume = 0.18f;
     private const int TeleportSearchRadiusTiles = 18;
     private const int TeleportVerticalSearchTiles = 8;
+    private static readonly TeleportSafetyEvaluator TeleportSafety = new(TeleportSearchRadiusTiles, TeleportVerticalSearchTiles);
+    private static readonly SpatialAudioPanner.SpatialAudioProfile GuidanceAudioProfile = new(
+        PitchScalePixels: PitchScale,
+        PanScalePixels: PanScalePixels,
+        DistanceReferenceTiles: DistanceReferenceTiles,
+        MinVolume: MinVolume,
+        VolumeScale: 0.85f,
+        PitchClamp: 0.7f);
 
     public override void Load()
     {
@@ -253,7 +262,7 @@ public sealed partial class GuidanceSystem : ModSystem
 
         void FinalizeCreation(string rawInput, string logContext)
         {
-            string resolvedName = string.IsNullOrWhiteSpace(rawInput) ? fallbackName : rawInput.Trim();
+            string resolvedName = TextSanitizer.Clean(string.IsNullOrWhiteSpace(rawInput) ? fallbackName : rawInput.Trim());
             global::ScreenReaderMod.ScreenReaderMod.Instance?.Logger.Info($"[WaypointNaming:{logContext}] Resolved name: \"{resolvedName}\" (input: \"{rawInput}\")");
 
             Waypoints.Add(new Waypoint(resolvedName, worldPosition));
@@ -444,10 +453,12 @@ public sealed partial class GuidanceSystem : ModSystem
             return;
         }
 
-        if (!TryFindTeleportDestination(player, targetPosition, out Vector2 destination))
+        if (!TeleportSafety.TryFindSafeDestination(player, targetPosition, out Vector2 destination, out string failureReason))
         {
             string displayLabel = string.IsNullOrWhiteSpace(label) ? "the target" : label;
-            ScreenReaderService.Announce($"Unable to find a safe teleport location near {displayLabel}.");
+            string detail = string.IsNullOrWhiteSpace(failureReason) ? string.Empty : $" {failureReason}";
+            ScreenReaderService.Announce($"Unable to find a safe teleport location near {displayLabel}.{detail}");
+            global::ScreenReaderMod.ScreenReaderMod.Instance?.Logger.Info($"[GuidanceTeleport] failed near \"{displayLabel}\" ({NarrationStringCatalog.Coordinates(targetPosition)}) reason=\"{failureReason}\"");
             return;
         }
 
@@ -487,65 +498,6 @@ public sealed partial class GuidanceSystem : ModSystem
         worldPosition = default;
         label = string.Empty;
         return false;
-    }
-
-    private static bool TryFindTeleportDestination(Player player, Vector2 targetCenter, out Vector2 destination)
-    {
-        int width = player.width;
-        int height = player.height;
-        Vector2 baseTopLeft = targetCenter - new Vector2(width * 0.5f, height);
-
-        for (int radius = 0; radius <= TeleportSearchRadiusTiles; radius++)
-        {
-            for (int dx = -radius; dx <= radius; dx++)
-            {
-                for (int dy = -radius; dy <= radius; dy++)
-                {
-                    if (Math.Abs(dx) + Math.Abs(dy) != radius)
-                    {
-                        continue;
-                    }
-
-                    Vector2 ringOffset = new(dx * 16f, dy * 16f);
-                    Vector2 candidateBase = baseTopLeft + ringOffset;
-                    if (!IsTeleportPositionWithinWorld(candidateBase, width, height))
-                    {
-                        continue;
-                    }
-
-                    for (int vertical = -TeleportVerticalSearchTiles; vertical <= TeleportVerticalSearchTiles; vertical++)
-                    {
-                        Vector2 candidate = candidateBase + new Vector2(0f, vertical * 16f);
-                        if (!IsTeleportPositionWithinWorld(candidate, width, height))
-                        {
-                            continue;
-                        }
-
-                        if (!Collision.SolidCollision(candidate, width, height))
-                        {
-                            destination = candidate;
-                            return true;
-                        }
-                    }
-                }
-            }
-        }
-
-        destination = default;
-        return false;
-    }
-
-    private static bool IsTeleportPositionWithinWorld(Vector2 topLeft, int width, int height)
-    {
-        float minX = 16f;
-        float minY = 16f;
-        float maxX = (Main.maxTilesX - 2) * 16f - width;
-        float maxY = (Main.maxTilesY - 2) * 16f - height;
-
-        return topLeft.X >= minX &&
-               topLeft.X <= maxX &&
-               topLeft.Y >= minY &&
-               topLeft.Y <= maxY;
     }
 
     private static string BuildDefaultName()
@@ -975,10 +927,16 @@ public sealed partial class GuidanceSystem : ModSystem
 
     private static string ComposeEntityAnnouncement(string displayName, Player player, Vector2 targetPosition, int position, int total)
     {
+        string sanitizedName = SanitizeLabel(displayName);
+        if (string.IsNullOrWhiteSpace(sanitizedName))
+        {
+            sanitizedName = "target";
+        }
+
         string ordinal = FormatEntryOrdinal(position, total);
         string announcement = string.IsNullOrWhiteSpace(ordinal)
-            ? displayName
-            : $"{displayName} {ordinal}";
+            ? sanitizedName
+            : $"{sanitizedName} {ordinal}";
 
         string relative = DescribeRelativeOffset(player.Center, targetPosition);
         if (string.IsNullOrWhiteSpace(relative))
@@ -1025,7 +983,7 @@ public sealed partial class GuidanceSystem : ModSystem
             ClearCategoryAnnouncement();
             _nextPingUpdateFrame = -1;
             _arrivalAnnounced = false;
-            ScreenReaderService.Announce($"Deleted waypoint {removed.Name}.");
+            ScreenReaderService.Announce($"Deleted waypoint {SanitizeLabel(removed.Name)}.");
             AnnounceDisabledSelection();
             return;
         }
@@ -1037,7 +995,7 @@ public sealed partial class GuidanceSystem : ModSystem
 
         Waypoint nextWaypoint = Waypoints[_selectedIndex];
         string nextAnnouncement = ComposeWaypointAnnouncement(nextWaypoint, player);
-        ScreenReaderService.Announce($"Deleted waypoint {removed.Name}.");
+        ScreenReaderService.Announce($"Deleted waypoint {SanitizeLabel(removed.Name)}.");
         AnnounceCategoryEntry(SelectionMode.Waypoint, "Waypoints", nextAnnouncement);
         RescheduleGuidancePing(player);
         EmitCurrentGuidancePing(player);
@@ -1061,10 +1019,11 @@ public sealed partial class GuidanceSystem : ModSystem
         int total = Waypoints.Count;
         int position = _selectedIndex + 1;
 
+        string waypointName = SanitizeLabel(waypoint.Name);
         string ordinal = FormatEntryOrdinal(position, total);
         string announcement = string.IsNullOrWhiteSpace(ordinal)
-            ? waypoint.Name
-            : $"{waypoint.Name} {ordinal}";
+            ? waypointName
+            : $"{waypointName} {ordinal}";
 
         string relative = DescribeRelativeOffset(player.Center, waypoint.WorldPosition);
         if (string.IsNullOrWhiteSpace(relative))
@@ -1077,13 +1036,14 @@ public sealed partial class GuidanceSystem : ModSystem
 
     private static string ComposeCreationAnnouncement(string waypointName, Player player, Vector2 worldPosition)
     {
+        string sanitizedName = SanitizeLabel(waypointName);
         string relative = DescribeRelativeOffset(player.Center, worldPosition);
         if (string.IsNullOrWhiteSpace(relative))
         {
-            return $"Created waypoint {waypointName}";
+            return $"Created waypoint {sanitizedName}";
         }
 
-        return $"Created waypoint {waypointName}, {relative}";
+        return $"Created waypoint {sanitizedName}, {relative}";
     }
 
     private static bool TryGetSelectedNpc(Player player, out NPC npc, out NpcGuidanceEntry entry)
@@ -1236,6 +1196,11 @@ public sealed partial class GuidanceSystem : ModSystem
         return $"{position} of {total}";
     }
 
+    private static string SanitizeLabel(string? text)
+    {
+        return TextSanitizer.Clean(text ?? string.Empty);
+    }
+
     private static void AnnounceCategorySelection(string categoryLabel, string detail)
     {
         if (string.IsNullOrWhiteSpace(categoryLabel))
@@ -1338,23 +1303,23 @@ public sealed partial class GuidanceSystem : ModSystem
         {
             case SelectionMode.Waypoint when TryGetSelectedWaypoint(out Waypoint waypoint):
                 worldPosition = waypoint.WorldPosition;
-                label = waypoint.Name;
+                label = SanitizeLabel(waypoint.Name);
                 return true;
             case SelectionMode.Exploration when TryGetSelectedExploration(out ExplorationTargetRegistry.ExplorationTarget exploration):
                 worldPosition = exploration.WorldPosition;
-                label = exploration.Label;
+                label = SanitizeLabel(exploration.Label);
                 return true;
             case SelectionMode.Npc when TryGetSelectedNpc(player, out NPC npc, out NpcGuidanceEntry entry):
                 worldPosition = npc.Center;
-                label = entry.DisplayName;
+                label = SanitizeLabel(entry.DisplayName);
                 return true;
             case SelectionMode.Interactable when TryGetSelectedInteractable(player, out InteractableGuidanceEntry interactable):
                 worldPosition = interactable.WorldPosition;
-                label = interactable.DisplayName;
+                label = SanitizeLabel(interactable.DisplayName);
                 return true;
             case SelectionMode.Player when TryGetSelectedPlayer(player, out Player targetPlayer, out PlayerGuidanceEntry playerEntry):
                 worldPosition = targetPlayer.Center;
-                label = playerEntry.DisplayName;
+                label = SanitizeLabel(playerEntry.DisplayName);
                 return true;
             default:
                 worldPosition = default;

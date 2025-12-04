@@ -394,12 +394,16 @@ public sealed partial class InGameNarrationSystem
                 return;
             }
 
-            Vector2 offset = entry.Candidate.WorldPosition - playerCenter;
+            SpatialAudioPanner.SpatialDirection direction = SpatialAudioPanner.ComputeDirection(
+                playerCenter,
+                entry.Candidate.WorldPosition,
+                entry.Candidate.Profile.PitchScalePixels,
+                entry.Candidate.Profile.PanScalePixels,
+                pitchClamp: 0.8f);
             InteractableCueProfile profile = entry.Candidate.Profile;
 
             if (profile.SoundStyle.HasValue)
             {
-                float pitchOffset = MathHelper.Clamp(-offset.Y / profile.PitchScalePixels, -0.8f, 0.8f);
                 float soundStyleBaseVolume = profile.ComputeVolume(entry.DistanceTiles);
                 float soundStyleLoudness = SoundLoudnessUtility.ApplyDistanceFalloff(
                     soundStyleBaseVolume,
@@ -417,13 +421,11 @@ public sealed partial class InGameNarrationSystem
 
                 SoundStyle style = profile.SoundStyle.Value
                     .WithVolumeScale(soundStyleScaledVolume)
-                    .WithPitchOffset(pitchOffset);
+                    .WithPitchOffset(direction.Pitch);
                 SoundEngine.PlaySound(style, entry.Candidate.WorldPosition);
                 return;
             }
 
-            float pitch = MathHelper.Clamp(-offset.Y / profile.PitchScalePixels, -0.8f, 0.8f);
-            float pan = MathHelper.Clamp(offset.X / profile.PanScalePixels, -1f, 1f);
             float baseVolume = profile.ComputeVolume(entry.DistanceTiles);
             float loudness = SoundLoudnessUtility.ApplyDistanceFalloff(
                 baseVolume,
@@ -448,8 +450,8 @@ public sealed partial class InGameNarrationSystem
             SoundEffect tone = EnsureTone(profile);
             SoundEffectInstance instance = tone.CreateInstance();
             instance.IsLooped = false;
-            instance.Pitch = pitch;
-            instance.Pan = pan;
+            instance.Pitch = direction.Pitch;
+            instance.Pan = direction.Pan;
             instance.Volume = scaledVolume;
 
             try
@@ -722,9 +724,9 @@ public sealed partial class InGameNarrationSystem
 
             if (string.IsNullOrWhiteSpace(name))
             {
-                if (TileDescriptor.TryDescribe(anchor.X, anchor.Y, out _, out string? fallback) && !string.IsNullOrWhiteSpace(fallback))
+                if (CursorDescriptors.TryDescribe(anchor.X, anchor.Y, out CursorDescriptorService.CursorDescriptor descriptor) && !string.IsNullOrWhiteSpace(descriptor.Name))
                 {
-                    name = fallback;
+                    name = descriptor.Name;
                 }
             }
 
@@ -842,11 +844,11 @@ public sealed partial class InGameNarrationSystem
 
         private static bool IsOre(int tileType) => tileType >= 0 && tileType < TileID.Sets.Ore.Length && TileID.Sets.Ore[tileType];
 
-        private static string ResolveOreLabel(int tileX, int tileY)
+        private string ResolveOreLabel(int tileX, int tileY)
         {
-            if (TileDescriptor.TryDescribe(tileX, tileY, out _, out string? name) && !string.IsNullOrWhiteSpace(name))
+            if (CursorDescriptors.TryDescribe(tileX, tileY, out CursorDescriptorService.CursorDescriptor descriptor) && !string.IsNullOrWhiteSpace(descriptor.Name))
             {
-                return name;
+                return descriptor.Name;
             }
 
             return "Ore";

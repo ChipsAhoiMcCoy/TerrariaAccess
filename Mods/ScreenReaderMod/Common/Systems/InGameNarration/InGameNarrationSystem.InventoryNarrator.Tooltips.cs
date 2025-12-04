@@ -179,6 +179,7 @@ public sealed partial class InGameNarrationSystem
         private static HashSet<string> BuildItemNameCandidates(Item item, string hoverName)
         {
             HashSet<string> candidates = new(StringComparer.OrdinalIgnoreCase);
+            AddCandidate(candidates, NarrationTextFormatter.ComposeItemName(item));
             AddCandidate(candidates, hoverName);
             AddCandidate(candidates, item.Name);
             AddCandidate(candidates, item.AffixName());
@@ -200,24 +201,6 @@ public sealed partial class InGameNarrationSystem
             }
         }
 
-        internal static string CombineItemAnnouncement(string message, string? details)
-        {
-            string normalizedMessage = GlyphTagFormatter.Normalize(message.Trim());
-            if (string.IsNullOrWhiteSpace(details))
-            {
-                return normalizedMessage;
-            }
-
-            string normalizedDetails = GlyphTagFormatter.Normalize(details.Trim());
-            if (!HasTerminalPunctuation(normalizedMessage))
-            {
-                normalizedMessage += '.';
-            }
-
-            string combined = $"{normalizedMessage} {normalizedDetails}";
-            return combined;
-        }
-
         private static string FormatTooltipLines(List<string> lines)
         {
             StringBuilder builder = new();
@@ -229,33 +212,33 @@ public sealed partial class InGameNarrationSystem
                     continue;
                 }
 
-                if (builder.Length > 0)
-                {
-                    builder.Append(' ');
-                }
-
-                if (line.EndsWith(":", StringComparison.Ordinal))
-                {
-                    builder.Append(line);
-                    if (i + 1 < lines.Count)
+                    if (builder.Length > 0)
                     {
-                        string next = lines[++i];
-                        if (!string.IsNullOrWhiteSpace(next))
+                        builder.Append(' ');
+                    }
+
+                    if (line.EndsWith(":", StringComparison.Ordinal))
+                    {
+                        builder.Append(line);
+                        if (i + 1 < lines.Count)
                         {
-                            builder.Append(' ');
-                            builder.Append(next);
-                            if (!HasTerminalPunctuation(next))
+                            string next = lines[++i];
+                            if (!string.IsNullOrWhiteSpace(next))
                             {
-                                builder.Append('.');
+                                builder.Append(' ');
+                                builder.Append(next);
+                                if (!NarrationTextFormatter.HasTerminalPunctuation(next))
+                                {
+                                    builder.Append('.');
+                                }
                             }
                         }
-                    }
 
                     continue;
                 }
 
                 builder.Append(line);
-                if (!HasTerminalPunctuation(line))
+                if (!NarrationTextFormatter.HasTerminalPunctuation(line))
                 {
                     builder.Append('.');
                 }
@@ -263,18 +246,6 @@ public sealed partial class InGameNarrationSystem
 
             string result = builder.ToString();
             return GlyphTagFormatter.Normalize(result);
-        }
-
-        private static bool HasTerminalPunctuation(string text)
-        {
-            text = text.TrimEnd();
-            if (text.Length == 0)
-            {
-                return false;
-            }
-
-            char last = text[^1];
-            return last == '.' || last == '!' || last == '?' || last == ':' || last == ')';
         }
     }
 }

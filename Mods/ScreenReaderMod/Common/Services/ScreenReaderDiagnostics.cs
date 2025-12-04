@@ -1,5 +1,7 @@
 #nullable enable
 using System;
+using System.Collections.Generic;
+using System.Linq;
 using System.Reflection;
 using ScreenReaderMod.Common.Utilities;
 using Terraria;
@@ -10,11 +12,13 @@ namespace ScreenReaderMod.Common.Services;
 internal static class ScreenReaderDiagnostics
 {
     private const string TraceEnvVariable = "SCREENREADERMOD_TRACE";
+    private const string SpeechLogEnvVariable = "SCREENREADERMOD_SPEECH_LOG_ONLY";
 
     private static bool? _traceEnabled;
+    private static bool? _speechLogOnlyEnabled;
     private static bool _langSnapshotPrinted;
 
-    internal static void DumpStartupSnapshot()
+    internal static void DumpStartupSnapshot(SpeechControllerSnapshot? speechSnapshot = null)
     {
         if (!IsTraceEnabled())
         {
@@ -25,6 +29,10 @@ internal static class ScreenReaderDiagnostics
         {
             DumpMenuState();
             DumpLangMenuSnapshot();
+            if (speechSnapshot.HasValue)
+            {
+                DumpSpeechSnapshot(speechSnapshot.Value);
+            }
         }
         catch (Exception ex)
         {
@@ -32,7 +40,7 @@ internal static class ScreenReaderDiagnostics
         }
     }
 
-    private static bool IsTraceEnabled()
+    internal static bool IsTraceEnabled()
     {
         if (_traceEnabled.HasValue)
         {
@@ -40,12 +48,71 @@ internal static class ScreenReaderDiagnostics
         }
 
         string? value = Environment.GetEnvironmentVariable(TraceEnvVariable);
-        _traceEnabled = !string.IsNullOrWhiteSpace(value) &&
-            (string.Equals(value, "1", StringComparison.OrdinalIgnoreCase) ||
-             string.Equals(value, "true", StringComparison.OrdinalIgnoreCase) ||
-             string.Equals(value, "yes", StringComparison.OrdinalIgnoreCase));
+        _traceEnabled = ParseFlag(value);
 
         return _traceEnabled.Value;
+    }
+
+    internal static bool IsSpeechLogOnlyEnabled()
+    {
+        if (_speechLogOnlyEnabled.HasValue)
+        {
+            return _speechLogOnlyEnabled.Value;
+        }
+
+        string? value = Environment.GetEnvironmentVariable(SpeechLogEnvVariable);
+        _speechLogOnlyEnabled = ParseFlag(value);
+        return _speechLogOnlyEnabled.Value;
+    }
+
+    internal static void LogSpeechEvent(SpeechRequest request, string providerName, bool logOnly)
+    {
+        if (!IsTraceEnabled() || ScreenReaderMod.Instance?.Logger is not { } logger)
+        {
+            return;
+        }
+
+        logger.Info($"[Diagnostics][Speech] provider={providerName} channel={request.Channel} category={request.Category} force={request.Force} allowWhenMuted={request.AllowWhenMuted} logOnly={logOnly} text={request.Text}");
+    }
+
+    internal static void LogSpeechSuppressed(SpeechRequest request, string reason)
+    {
+        if (!IsTraceEnabled() || ScreenReaderMod.Instance?.Logger is not { } logger)
+        {
+            return;
+        }
+
+        logger.Info($"[Diagnostics][Speech] suppressed reason={reason} channel={request.Channel} category={request.Category} text={request.Text}");
+    }
+
+    internal static void DumpSpeechSnapshot(SpeechControllerSnapshot snapshot)
+    {
+        if (!IsTraceEnabled() || ScreenReaderMod.Instance?.Logger is not { } logger)
+        {
+            return;
+        }
+
+        logger.Info($"[Diagnostics][Speech] initialized={snapshot.Initialized} muted={snapshot.Muted} interruptEnabled={snapshot.InterruptEnabled} logOnly={snapshot.LogOnly}");
+
+        foreach (KeyValuePair<ScreenReaderService.AnnouncementCategory, string?> kvp in snapshot.LastCategoryMessages)
+        {
+            if (!string.IsNullOrWhiteSpace(kvp.Value))
+            {
+                logger.Info($"[Diagnostics][Speech] last[{kvp.Key}]={kvp.Value}");
+            }
+        }
+
+        if (snapshot.RecentMessages.Count > 0)
+        {
+            logger.Info($"[Diagnostics][Speech] recent={string.Join(" | ", snapshot.RecentMessages.Take(10))}");
+        }
+
+        foreach (SpeechProviderSnapshot provider in snapshot.Providers)
+        {
+            string lastMessage = string.IsNullOrWhiteSpace(provider.LastMessage) ? "<none>" : provider.LastMessage!;
+            string lastError = string.IsNullOrWhiteSpace(provider.LastError) ? "<none>" : provider.LastError!;
+            logger.Info($"[Diagnostics][Speech] provider={provider.Name} initialized={provider.Initialized} available={provider.Available} lastMessage={lastMessage} lastError={lastError}");
+        }
     }
 
     private static void DumpMenuState()
@@ -98,5 +165,13 @@ internal static class ScreenReaderDiagnostics
             string value = TextSanitizer.Clean(entries[i].Value);
             logger.Info($"[Diagnostics] Lang.menu[{i}] = {value}");
         }
+    }
+
+    private static bool ParseFlag(string? value)
+    {
+        return !string.IsNullOrWhiteSpace(value) &&
+            (string.Equals(value, "1", StringComparison.OrdinalIgnoreCase) ||
+             string.Equals(value, "true", StringComparison.OrdinalIgnoreCase) ||
+             string.Equals(value, "yes", StringComparison.OrdinalIgnoreCase));
     }
 }

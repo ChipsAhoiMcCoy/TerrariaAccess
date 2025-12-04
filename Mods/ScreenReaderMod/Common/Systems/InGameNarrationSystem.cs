@@ -2,7 +2,6 @@
 using System;
 using System.Collections;
 using System.Collections.Generic;
-using System.Diagnostics;
 using System.Linq;
 using System.Reflection;
 using System.Text;
@@ -36,28 +35,97 @@ namespace ScreenReaderMod.Common.Systems;
 
 public sealed partial class InGameNarrationSystem : ModSystem
 {
-    private readonly HotbarNarrator _hotbarNarrator = new();
-    private readonly SmartCursorNarrator _smartCursorNarrator = new();
-    private readonly CraftingNarrator _craftingNarrator = new();
-    private readonly CursorNarrator _cursorNarrator = new();
-    private readonly TreasureBagBeaconEmitter _treasureBagBeaconEmitter = new();
-    private readonly HostileStaticAudioEmitter _hostileStaticAudioEmitter = new();
-    private readonly WorldInteractableTracker _worldInteractableTracker = new();
-    private readonly InventoryNarrator _inventoryNarrator = new();
-    private readonly NpcDialogueNarrator _npcDialogueNarrator = new();
-    private readonly IngameSettingsNarrator _ingameSettingsNarrator = new();
-    private readonly WorldEventNarrator _worldEventNarrator = new();
-    private readonly ControlsMenuNarrator _controlsMenuNarrator = new();
-    private readonly ModConfigMenuNarrator _modConfigMenuNarrator = new();
-    private readonly FootstepAudioEmitter _footstepAudioEmitter = new();
-    private readonly BiomeAnnouncementEmitter _biomeAnnouncementEmitter = new();
-    private readonly LockOnNarrator _lockOnNarrator = new();
-    private static readonly bool LogNarratorTimings = false;
-    private static readonly double TicksToMilliseconds = 1000d / Stopwatch.Frequency;
+    private readonly HotbarNarrator _hotbarNarrator;
+    private readonly SmartCursorNarrator _smartCursorNarrator;
+    private readonly CraftingNarrator _craftingNarrator;
+    private readonly CursorNarrator _cursorNarrator;
+    private readonly TreasureBagBeaconEmitter _treasureBagBeaconEmitter;
+    private readonly HostileStaticAudioEmitter _hostileStaticAudioEmitter;
+    private readonly WorldInteractableTracker _worldInteractableTracker;
+    private readonly InventoryNarrator _inventoryNarrator;
+    private readonly NpcDialogueNarrator _npcDialogueNarrator;
+    private readonly IngameSettingsNarrator _ingameSettingsNarrator;
+    private readonly WorldEventNarrator _worldEventNarrator;
+    private readonly ControlsMenuNarrator _controlsMenuNarrator;
+    private readonly ModConfigMenuNarrator _modConfigMenuNarrator;
+    private readonly FootstepAudioEmitter _footstepAudioEmitter;
+    private readonly BiomeAnnouncementEmitter _biomeAnnouncementEmitter;
+    private readonly WorldPositionalAudioService _worldPositionalAudioService;
+    private readonly LockOnNarrator _lockOnNarrator;
+    private readonly CursorDescriptorService _cursorDescriptorService;
+    private static CursorDescriptorService? _sharedCursorDescriptorService;
+    private readonly INarrationScheduler _narrationScheduler;
+    private readonly INarrationService _hotbarNarrationService;
+    private readonly INarrationService _inventoryNarrationService;
+    private readonly INarrationService _craftingGuideReforgeNarrationService;
+    private readonly INarrationService _cursorNarrationService;
+    private readonly INarrationService _npcDialogueNarrationService;
+    private readonly INarrationService _settingsControlsNarrationService;
+    private readonly INarrationService _worldEventsNarrationService;
+    private readonly INarrationService _lockOnNarrationService;
+    private readonly INarrationService _worldAudioNarrationService;
+    private readonly INarrationService _interactableTrackerNarrationService;
+    private static readonly bool SchedulerTraceOnly = NarrationSchedulerSettings.IsTraceOnlyEnabled();
     private const float ScreenEdgePaddingPixels = 48f;
-    private static readonly Dictionary<int, int> _inventoryStacksByType = new();
-    private static bool _inventoryInitialized;
+    private readonly Dictionary<int, int> _inventoryStacksByType = new();
+    private bool _inventoryInitialized;
     private bool _wasIngameOptionsOpen;
+    private NarrationInstrumentation? _instrumentation;
+
+    internal static CursorDescriptorService CursorDescriptors => _sharedCursorDescriptorService ??= new CursorDescriptorService();
+
+    public InGameNarrationSystem()
+    {
+        _hotbarNarrator = new HotbarNarrator();
+        _cursorDescriptorService = new CursorDescriptorService();
+        _smartCursorNarrator = new SmartCursorNarrator(_cursorDescriptorService);
+        _craftingNarrator = new CraftingNarrator();
+        _cursorNarrator = new CursorNarrator(_cursorDescriptorService);
+        _treasureBagBeaconEmitter = new TreasureBagBeaconEmitter();
+        _hostileStaticAudioEmitter = new HostileStaticAudioEmitter();
+        _worldInteractableTracker = new WorldInteractableTracker();
+        _inventoryNarrator = new InventoryNarrator();
+        _npcDialogueNarrator = new NpcDialogueNarrator();
+        _ingameSettingsNarrator = new IngameSettingsNarrator();
+        _worldEventNarrator = new WorldEventNarrator();
+        _controlsMenuNarrator = new ControlsMenuNarrator();
+        _modConfigMenuNarrator = new ModConfigMenuNarrator();
+        _footstepAudioEmitter = new FootstepAudioEmitter();
+        _biomeAnnouncementEmitter = new BiomeAnnouncementEmitter();
+        _worldPositionalAudioService = new WorldPositionalAudioService(
+            _treasureBagBeaconEmitter,
+            _hostileStaticAudioEmitter,
+            _footstepAudioEmitter,
+            _biomeAnnouncementEmitter);
+        _lockOnNarrator = new LockOnNarrator();
+        _narrationScheduler = new NarrationScheduler();
+        _sharedCursorDescriptorService = _cursorDescriptorService;
+
+        _hotbarNarrationService = new DelegatedNarrationService("Hotbar", ctx => _hotbarNarrator.Update(ctx.Player));
+        _inventoryNarrationService = new DelegatedNarrationService("Inventory", ctx => _inventoryNarrator.Update(ctx.Player));
+        _craftingGuideReforgeNarrationService = new DelegatedNarrationService("CraftingGuideReforge", ctx => _craftingNarrator.Update(ctx.Player));
+        _cursorNarrationService = new DelegatedNarrationService(
+            "CursorAndSmartCursor",
+            ctx =>
+            {
+                _smartCursorNarrator.Update();
+                _cursorNarrator.Update();
+            });
+        _npcDialogueNarrationService = new DelegatedNarrationService("NpcDialogue", ctx => _npcDialogueNarrator.Update(ctx));
+        _settingsControlsNarrationService = new DelegatedNarrationService("SettingsAndControls", ctx => _controlsMenuNarrator.Update(ctx.IsPaused));
+        _worldEventsNarrationService = new DelegatedNarrationService("WorldEvents", _ => _worldEventNarrator.Update());
+        _lockOnNarrationService = new DelegatedNarrationService("LockOn", _ => _lockOnNarrator.Update());
+        _worldAudioNarrationService = new DelegatedNarrationService(
+            "WorldAudio",
+            ctx =>
+            {
+                _worldPositionalAudioService.Update(ctx);
+            },
+            "biome/footstep/hostile static/treasure beacon");
+        _interactableTrackerNarrationService = new DelegatedNarrationService(
+            "InteractableTracker",
+            ctx => _worldInteractableTracker.Update(ctx.Player, GuidanceSystem.IsExplorationTrackingEnabled));
+    }
 
     public override void Load()
     {
@@ -67,6 +135,7 @@ public sealed partial class InGameNarrationSystem : ModSystem
         }
 
         RegisterHooks();
+        ConfigureNarrationScheduler();
     }
 
     public override void Unload()
@@ -76,6 +145,7 @@ public sealed partial class InGameNarrationSystem : ModSystem
             return;
         }
 
+        _narrationScheduler.Clear();
         ResetSharedResources();
         UnregisterHooks();
     }
@@ -88,11 +158,6 @@ public sealed partial class InGameNarrationSystem : ModSystem
     public override void OnWorldUnload()
     {
         ResetPerWorldResources();
-    }
-
-    public override void PostUpdateWorld()
-    {
-        _worldEventNarrator.Update();
     }
 
     public override void PostUpdatePlayers()
@@ -114,6 +179,76 @@ public sealed partial class InGameNarrationSystem : ModSystem
         On_ChatHelper.BroadcastChatMessage += HandleBroadcastChatMessage;
     }
 
+    private void ConfigureNarrationScheduler()
+    {
+        _narrationScheduler.Clear();
+        _narrationScheduler.Register(new NarrationServiceRegistration(
+            _hotbarNarrationService,
+            new NarrationServiceGating
+            {
+                Category = ScreenReaderService.AnnouncementCategory.Default,
+            }));
+        _narrationScheduler.Register(new NarrationServiceRegistration(
+            _inventoryNarrationService,
+            new NarrationServiceGating
+            {
+                Category = ScreenReaderService.AnnouncementCategory.Default,
+            }));
+        _narrationScheduler.Register(new NarrationServiceRegistration(
+            _craftingGuideReforgeNarrationService,
+            new NarrationServiceGating
+            {
+                Category = ScreenReaderService.AnnouncementCategory.Default,
+            }));
+        _narrationScheduler.Register(new NarrationServiceRegistration(
+            _cursorNarrationService,
+            new NarrationServiceGating
+            {
+                Category = ScreenReaderService.AnnouncementCategory.Tile,
+            }));
+        _narrationScheduler.Register(new NarrationServiceRegistration(
+            _npcDialogueNarrationService,
+            new NarrationServiceGating
+            {
+                Category = ScreenReaderService.AnnouncementCategory.World,
+            }));
+        _narrationScheduler.Register(new NarrationServiceRegistration(
+            _settingsControlsNarrationService,
+            new NarrationServiceGating
+            {
+                RequiresPaused = true,
+                Category = ScreenReaderService.AnnouncementCategory.Default,
+            }));
+        _narrationScheduler.Register(new NarrationServiceRegistration(
+            _lockOnNarrationService,
+            new NarrationServiceGating
+            {
+                SkipWhenPaused = true,
+                Category = ScreenReaderService.AnnouncementCategory.World,
+            }));
+        _narrationScheduler.Register(new NarrationServiceRegistration(
+            _worldEventsNarrationService,
+            new NarrationServiceGating
+            {
+                SkipWhenPaused = true,
+                Category = ScreenReaderService.AnnouncementCategory.World,
+            }));
+        _narrationScheduler.Register(new NarrationServiceRegistration(
+            _worldAudioNarrationService,
+            new NarrationServiceGating
+            {
+                SkipWhenPaused = true,
+                Category = ScreenReaderService.AnnouncementCategory.World,
+            }));
+        _narrationScheduler.Register(new NarrationServiceRegistration(
+            _interactableTrackerNarrationService,
+            new NarrationServiceGating
+            {
+                SkipWhenPaused = true,
+                Category = ScreenReaderService.AnnouncementCategory.World,
+            }));
+    }
+
     private void UnregisterHooks()
     {
         On_ItemSlot.MouseHover_ItemArray_int_int -= HandleItemSlotHover;
@@ -132,22 +267,18 @@ public sealed partial class InGameNarrationSystem : ModSystem
     {
         ResetPerWorldResources();
         CursorNarrator.DisposeStaticResources();
-        TreasureBagBeaconEmitter.DisposeStaticResources();
-        FootstepToneProvider.DisposeStaticResources();
+        _worldPositionalAudioService.ResetStaticResources();
         WorldInteractableTracker.DisposeStaticResources();
-        HostileStaticAudioEmitter.DisposeStaticResources();
     }
 
     private void ResetPerWorldResources()
     {
         _worldEventNarrator.Reset();
-        _treasureBagBeaconEmitter.Reset();
-        _hostileStaticAudioEmitter.Reset();
-        _footstepAudioEmitter.Reset();
+        _worldPositionalAudioService.Reset();
         _worldInteractableTracker.Reset();
-        _biomeAnnouncementEmitter.Reset();
         _inventoryStacksByType.Clear();
         _inventoryInitialized = false;
+        InventoryNarrator.ResetStaticCaches();
     }
 
     public override void UpdateUI(GameTime gameTime)
@@ -155,11 +286,10 @@ public sealed partial class InGameNarrationSystem : ModSystem
         TryUpdateNarrators(requirePaused: true);
     }
 
-    private long _timingScratch;
-
     private void TryUpdateNarrators(bool requirePaused)
     {
-        if (Main.dedServ || Main.gameMenu)
+        RuntimeContextSnapshot runtime = RuntimeContext.GetSnapshot();
+        if (runtime.IsServer || runtime.InMenu || !runtime.HasActivePlayer)
         {
             return;
         }
@@ -170,8 +300,8 @@ public sealed partial class InGameNarrationSystem : ModSystem
             return;
         }
 
-        bool isPaused = Main.gamePaused;
         SynchronizeIngameOptionsState();
+        bool isPaused = runtime.IsPaused;
 
         if (requirePaused)
         {
@@ -186,40 +316,27 @@ public sealed partial class InGameNarrationSystem : ModSystem
         }
 
         DetectInventoryGains(player);
-
-        _timingScratch = StartTiming();
-        _hotbarNarrator.Update(player);
-        LogDuration("Hotbar", ref _timingScratch);
-        _inventoryNarrator.Update(player);
-        LogDuration("Inventory", ref _timingScratch);
-        _craftingNarrator.Update(player);
-        LogDuration("Crafting", ref _timingScratch);
-        _smartCursorNarrator.Update();
-        LogDuration("SmartCursor", ref _timingScratch);
-        _cursorNarrator.Update();
-        LogDuration("Cursor", ref _timingScratch);
-        _lockOnNarrator.Update();
-        LogDuration("LockOn", ref _timingScratch);
-        if (!isPaused)
-        {
-            _treasureBagBeaconEmitter.Update(player);
-            LogDuration("TreasureBagBeacon", ref _timingScratch);
-            _hostileStaticAudioEmitter.Update(player);
-            LogDuration("HostileStaticAudio", ref _timingScratch);
-            _footstepAudioEmitter.Update(player);
-            LogDuration("FootstepAudio", ref _timingScratch);
-            _worldInteractableTracker.Update(player, GuidanceSystem.IsExplorationTrackingEnabled);
-            LogDuration("WorldInteractables", ref _timingScratch);
-        _biomeAnnouncementEmitter.Update(player);
-        LogDuration("BiomeAnnouncement", ref _timingScratch);
-        }
-
-        _npcDialogueNarrator.Update(player);
-        LogDuration("NpcDialogue", ref _timingScratch);
-        _controlsMenuNarrator.Update(isPaused);
-        LogDuration("ControlsMenu", ref _timingScratch);
+        RunNarrationScheduler(runtime, player, isPaused, requirePaused);
         _modConfigMenuNarrator.TryHandleIngameUi(Main.InGameUI, isPaused);
-        LogDuration("ModConfigMenu", ref _timingScratch);
+    }
+
+    private void RunNarrationScheduler(RuntimeContextSnapshot runtime, Player player, bool isPaused, bool requirePaused)
+    {
+        NarrationSchedulerContext context = new(
+            runtime,
+            player,
+            isPaused,
+            requirePaused,
+            ScreenReaderDiagnostics.IsTraceEnabled(),
+            SchedulerTraceOnly,
+            GetOrCreateInstrumentation());
+        _narrationScheduler.Update(context);
+    }
+
+    private NarrationInstrumentation GetOrCreateInstrumentation()
+    {
+        _instrumentation ??= new NarrationInstrumentation();
+        return _instrumentation;
     }
 
     private void SynchronizeIngameOptionsState()
@@ -272,29 +389,6 @@ public sealed partial class InGameNarrationSystem : ModSystem
     {
         orig(inv, context, slot);
         InventoryNarrator.RecordFocus(inv, context, slot);
-    }
-
-    private static long StartTiming()
-    {
-        if (!LogNarratorTimings)
-        {
-            return 0;
-        }
-
-        return Stopwatch.GetTimestamp();
-    }
-
-    private static void LogDuration(string name, ref long startTicks)
-    {
-        if (!LogNarratorTimings)
-        {
-            return;
-        }
-
-        long now = Stopwatch.GetTimestamp();
-        double elapsedMs = (now - startTicks) * TicksToMilliseconds;
-        global::ScreenReaderMod.ScreenReaderMod.Instance?.Logger.Info($"[NarratorTiming] {name}: {elapsedMs:0.###} ms");
-        startTicks = now;
     }
 
     private static void CaptureNpcChatButtons(On_Main.orig_DrawNPCChatButtons orig, int superColor, Color chatColor, int numLines, string focusText, string focusText3)
@@ -668,7 +762,7 @@ public sealed partial class InGameNarrationSystem : ModSystem
 
 
 
-    private static void DetectInventoryGains(Player player)
+    private void DetectInventoryGains(Player player)
     {
         if (player.inventory is null)
         {
@@ -722,7 +816,7 @@ public sealed partial class InGameNarrationSystem : ModSystem
             int stackDelta = currentStack - previousStack;
             announcementItem.stack = stackDelta;
 
-            string label = ComposeItemLabel(announcementItem, includeCountWhenSingular: true);
+            string label = NarrationTextFormatter.ComposeItemLabel(announcementItem, includeCountWhenSingular: true);
             ScreenReaderService.Announce(
                 $"Picked up {label}",
                 category: ScreenReaderService.AnnouncementCategory.Pickup);
@@ -748,443 +842,6 @@ public sealed partial class InGameNarrationSystem : ModSystem
         }
 
         return null;
-    }
-
-    internal static string ComposeItemLabel(Item item, bool includeCountWhenSingular = false)
-    {
-        string name = TextSanitizer.Clean(item.AffixName());
-        if (string.IsNullOrWhiteSpace(name))
-        {
-            name = TextSanitizer.Clean(item.Name);
-        }
-
-        if (string.IsNullOrWhiteSpace(name))
-        {
-            name = TextSanitizer.Clean(Lang.GetItemNameValue(item.type));
-        }
-
-        if (string.IsNullOrWhiteSpace(name))
-        {
-            name = $"Item {item.type}";
-        }
-
-        string mainLabel = item.stack > 1 || includeCountWhenSingular ? $"{item.stack} {name}" : name;
-        var parts = new List<string> { mainLabel };
-
-        if (item.favorited)
-        {
-            parts.Add("favorited");
-        }
-
-        return TextSanitizer.JoinWithComma(parts.ToArray());
-    }
-
-    private static class TileDescriptor
-    {
-        private const int LiquidDescriptorBaseTileType = -1000;
-        private const int WallDescriptorBaseTileType = -2000;
-        private static readonly int[] StyledTileTypes =
-        {
-            TileID.Banners,
-            TileID.Statues,
-            TileID.AlphabetStatues,
-            TileID.MushroomStatue,
-            TileID.BoulderStatue,
-            TileID.Painting2X3,
-            TileID.Painting3X2,
-            TileID.Painting3X3,
-            TileID.Painting4X3,
-            TileID.Painting6X4,
-        };
-        private static readonly Dictionary<int, Dictionary<int, int>> TileStyleToItemType = BuildTileStyleMap();
-        private static readonly Dictionary<int, int> WallTypeToItemType = BuildWallItemMap();
-
-        public static ScreenReaderService.AnnouncementCategory GetAnnouncementCategory(int tileType)
-        {
-            if (tileType <= WallDescriptorBaseTileType)
-            {
-                return ScreenReaderService.AnnouncementCategory.Wall;
-            }
-
-            return ScreenReaderService.AnnouncementCategory.Tile;
-        }
-
-        public static bool TryDescribe(int tileX, int tileY, out int tileType, out string? name)
-        {
-            tileType = -1;
-            name = string.Empty;
-
-            if (!WorldGen.InWorld(tileX, tileY))
-            {
-                return false;
-            }
-
-            Tile tile = Main.tile[tileX, tileY];
-            if (!tile.HasTile)
-            {
-                if (tile.LiquidAmount > 0 && TryDescribeLiquid(tile, out tileType, out name))
-                {
-                    return true;
-                }
-
-                if (TryDescribeWall(tile, out tileType, out name))
-                {
-                    return true;
-                }
-
-                // Treat open air as a narratable target so cursor navigation isn't silent.
-                name = "Empty";
-                tileType = -1;
-                return true;
-            }
-
-            tileType = tile.TileType;
-
-            if (tileType == TileID.Banners && TryDescribeBanner(tile, out name))
-            {
-                return true;
-            }
-
-            if (tileType != TileID.Banners && TryDescribeTileFromItemPlacement(tile, tileType, out name))
-            {
-                return true;
-            }
-
-            try
-            {
-                int lookup = MapHelper.TileToLookup(tileType, 0);
-                name = Lang.GetMapObjectName(lookup);
-            }
-            catch
-            {
-                name = null;
-            }
-
-            if (string.IsNullOrWhiteSpace(name))
-            {
-                name = TileID.Search.GetName(tileType);
-            }
-
-            if (string.IsNullOrWhiteSpace(name))
-            {
-                name = $"tile {tileType}";
-            }
-
-            OverrideChestName(tileX, tileY, tileType, ref name);
-
-            return true;
-        }
-
-        private static void OverrideChestName(int tileX, int tileY, int tileType, ref string? name)
-        {
-            if (!IsChestTile(tileType))
-            {
-                return;
-            }
-
-            int chestIndex = Chest.FindChestByGuessing(tileX, tileY);
-            if (chestIndex < 0 || chestIndex >= Main.chest.Length)
-            {
-                return;
-            }
-
-            Chest? chest = Main.chest[chestIndex];
-            if (chest is null)
-            {
-                return;
-            }
-
-            string sanitized = TextSanitizer.Clean(chest.name);
-            if (string.IsNullOrWhiteSpace(sanitized))
-            {
-                return;
-            }
-
-            if (string.IsNullOrWhiteSpace(name))
-            {
-                name = "Chest";
-            }
-
-            name = $"\"{sanitized}\" {name}";
-        }
-
-        private static bool IsChestTile(int tileType)
-        {
-            return tileType == TileID.Containers ||
-                   tileType == TileID.Containers2 ||
-                   tileType == TileID.Dressers;
-        }
-
-        private static bool TryDescribeBanner(Tile tile, out string? name)
-        {
-            name = null;
-
-            int style = TileObjectData.GetTileStyle(tile);
-            if (style < 0)
-            {
-                return false;
-            }
-
-            int itemType = ResolveBannerItemType(style);
-            if (itemType > ItemID.None)
-            {
-                string itemName = Lang.GetItemNameValue(itemType);
-                if (!string.IsNullOrWhiteSpace(itemName))
-                {
-                    name = itemName;
-                    return true;
-                }
-            }
-
-            int npcType = Item.BannerToNPC(style);
-            if (npcType > NPCID.None)
-            {
-                string npcName = Lang.GetNPCNameValue(npcType);
-                if (!string.IsNullOrWhiteSpace(npcName))
-                {
-                    name = $"{npcName} banner";
-                    return true;
-                }
-            }
-
-            return false;
-        }
-
-        private static bool TryDescribeTileFromItemPlacement(Tile tile, int tileType, out string? name)
-        {
-            name = null;
-
-            int style = TileObjectData.GetTileStyle(tile);
-            if (style < 0)
-            {
-                return false;
-            }
-
-            if (!TryResolveStyleItemType(tileType, style, out int itemType) || itemType <= ItemID.None)
-            {
-                return false;
-            }
-
-            string itemName = Lang.GetItemNameValue(itemType);
-            if (string.IsNullOrWhiteSpace(itemName))
-            {
-                return false;
-            }
-
-            name = itemName;
-            return true;
-        }
-
-        private static bool TryResolveStyleItemType(int tileType, int style, out int itemType)
-        {
-            itemType = ItemID.None;
-            if (!TileStyleToItemType.TryGetValue(tileType, out Dictionary<int, int>? map))
-            {
-                return false;
-            }
-
-            return map.TryGetValue(Math.Max(0, style), out itemType);
-        }
-
-        private static int ResolveBannerItemType(int style)
-        {
-            if (TryResolveStyleItemType(TileID.Banners, style, out int itemType))
-            {
-                return itemType;
-            }
-
-            int fallback = Item.BannerToItem(style);
-            if (fallback > ItemID.None)
-            {
-                if (!TileStyleToItemType.TryGetValue(TileID.Banners, out Dictionary<int, int>? map))
-                {
-                    map = new Dictionary<int, int>();
-                    TileStyleToItemType[TileID.Banners] = map;
-                }
-
-                map[Math.Max(0, style)] = fallback;
-            }
-
-            return fallback;
-        }
-
-        private static Dictionary<int, Dictionary<int, int>> BuildTileStyleMap()
-        {
-            Dictionary<int, Dictionary<int, int>> map = new();
-            HashSet<int> explicitTargets = new(StyledTileTypes);
-            Item scratch = new();
-            for (int type = 1; type < ItemLoader.ItemCount; type++)
-            {
-                try
-                {
-                    scratch.SetDefaults(type, true);
-                }
-                catch
-                {
-                    continue;
-                }
-
-                int tileType = scratch.createTile;
-                if (tileType < 0)
-                {
-                    continue;
-                }
-
-                bool shouldTrack = explicitTargets.Contains(tileType);
-                if (!shouldTrack && tileType < TileID.Sets.Platforms.Length && TileID.Sets.Platforms[tileType])
-                {
-                    shouldTrack = true;
-                }
-
-                if (!shouldTrack)
-                {
-                    continue;
-                }
-
-                if (!map.TryGetValue(tileType, out Dictionary<int, int>? styleMap))
-                {
-                    styleMap = new Dictionary<int, int>();
-                    map[tileType] = styleMap;
-                }
-
-                int style = Math.Max(0, scratch.placeStyle);
-                styleMap[style] = type;
-            }
-
-            return map;
-        }
-
-        private static Dictionary<int, int> BuildWallItemMap()
-        {
-            Dictionary<int, int> map = new();
-            Item scratch = new();
-            for (int type = 1; type < ItemLoader.ItemCount; type++)
-            {
-                try
-                {
-                    scratch.SetDefaults(type, true);
-                }
-                catch
-                {
-                    continue;
-                }
-
-                int wallType = scratch.createWall;
-                if (wallType <= WallID.None)
-                {
-                    continue;
-                }
-
-                if (!map.ContainsKey(wallType))
-                {
-                    map[wallType] = type;
-                }
-            }
-
-            return map;
-        }
-
-        private static bool TryDescribeLiquid(Tile tile, out int tileType, out string? name)
-        {
-            tileType = -1;
-            name = null;
-
-            int liquidType = tile.LiquidType;
-            string? key = liquidType switch
-            {
-                LiquidID.Water => "Mods.ScreenReaderMod.CursorLiquids.Water",
-                LiquidID.Lava => "Mods.ScreenReaderMod.CursorLiquids.Lava",
-                LiquidID.Honey => "Mods.ScreenReaderMod.CursorLiquids.Honey",
-                _ => null,
-            };
-
-            if (string.IsNullOrEmpty(key))
-            {
-                return false;
-            }
-
-            string fallback = liquidType switch
-            {
-                LiquidID.Water => "Water",
-                LiquidID.Lava => "Lava",
-                LiquidID.Honey => "Honey",
-                _ => string.Empty,
-            };
-
-            string localizedName = Language.GetTextValue(key);
-            if (string.IsNullOrWhiteSpace(localizedName) || string.Equals(localizedName, key, StringComparison.Ordinal))
-            {
-                localizedName = fallback;
-            }
-
-            if (string.IsNullOrWhiteSpace(localizedName))
-            {
-                return false;
-            }
-
-            tileType = LiquidDescriptorBaseTileType - liquidType;
-            name = localizedName;
-            return true;
-        }
-
-        private static bool TryDescribeWall(Tile tile, out int tileType, out string? name)
-        {
-            tileType = -1;
-            name = null;
-
-            int wallType = tile.WallType;
-            if (wallType <= WallID.None)
-            {
-                return false;
-            }
-
-            if (WallTypeToItemType.TryGetValue(wallType, out int itemType) && itemType > ItemID.None)
-            {
-                string itemName = Lang.GetItemNameValue(itemType);
-                if (!string.IsNullOrWhiteSpace(itemName))
-                {
-                    name = itemName;
-                }
-            }
-
-            if (string.IsNullOrWhiteSpace(name))
-            {
-                name = WallID.Search.GetName(wallType);
-                name = TextSanitizer.Clean(name);
-            }
-
-            if (!string.IsNullOrWhiteSpace(name))
-            {
-                name = StripUnsafeDescriptor(name);
-            }
-
-            if (string.IsNullOrWhiteSpace(name))
-            {
-                name = $"Wall {wallType}";
-            }
-
-            tileType = WallDescriptorBaseTileType - wallType;
-            return true;
-        }
-
-        private static string StripUnsafeDescriptor(string name)
-        {
-            string cleaned = name.Trim();
-
-            const string prefix = "Unsafe ";
-            if (cleaned.StartsWith(prefix, StringComparison.OrdinalIgnoreCase))
-            {
-                cleaned = cleaned[prefix.Length..].TrimStart();
-            }
-
-            const string suffix = " unsafe";
-            if (cleaned.EndsWith(suffix, StringComparison.OrdinalIgnoreCase))
-            {
-                cleaned = cleaned[..^suffix.Length].TrimEnd();
-            }
-
-            return string.IsNullOrWhiteSpace(cleaned) ? name : cleaned;
-        }
     }
 
     private static void CaptureMouseText(On_Main.orig_MouseText_string_string_int_byte_int_int_int_int_int_bool orig, Main self, string cursorText, string buffTooltip, int rare, byte diff, int hackedMouseX, int hackedMouseY, int hackedScreenWidth, int hackedScreenHeight, int pushWidthX, bool noOverride)

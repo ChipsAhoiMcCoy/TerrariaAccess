@@ -2,6 +2,7 @@
 using System;
 using System.Collections;
 using System.Collections.Generic;
+using System.Globalization;
 using System.Linq;
 using System.Reflection;
 using System.Text;
@@ -38,6 +39,7 @@ public sealed partial class InGameNarrationSystem
     {
         private readonly MenuUiSelectionTracker _inGameUiTracker = new();
         private readonly NarrationHistory _narrationHistory = new();
+        private static readonly FocusTracker _focusTracker = new();
         private SlotFocus? _currentFocus;
         private string? _lastFocusKey;
         private const UiNarrationArea InventoryNarrationAreas =
@@ -48,8 +50,6 @@ public sealed partial class InGameNarrationSystem
             UiNarrationArea.Shop |
             UiNarrationArea.Guide;
 
-        private static SlotFocus? _pendingFocus;
-        private static readonly Dictionary<int, SlotFocus> LinkPointFocusCache = new();
         private static readonly bool NarrationDebugEnabled = !string.IsNullOrEmpty(Environment.GetEnvironmentVariable("SRM_DEBUG_NARRATION"));
 
         private static readonly Lazy<FieldInfo?> MouseTextCacheField = new(() =>
@@ -63,35 +63,19 @@ public sealed partial class InGameNarrationSystem
         public static void RecordFocus(Item[] inventory, int context, int slot)
         {
             SlotFocus focus = new(inventory, null, context, slot);
-            CacheLinkPointFocus(focus);
-
-            if (ShouldCaptureFocusForContext(context))
-            {
-                StorePendingFocus(focus);
-            }
+            _focusTracker.Capture(focus);
         }
 
         public static void RecordFocus(Item item, int context)
         {
             SlotFocus focus = new(null, item, context, -1);
-            CacheLinkPointFocus(focus);
             CraftingNarrator.TryCaptureRecipeHover(item, context);
-
-            if (ShouldCaptureFocusForContext(context))
-            {
-                StorePendingFocus(focus);
-            }
+            _focusTracker.Capture(focus);
         }
 
         private static bool ShouldCaptureFocusForContext(int context)
         {
             return true;
-        }
-
-        private static void StorePendingFocus(SlotFocus focus)
-        {
-            UiAreaNarrationContext.RecordSlotContext(focus.Context);
-            _pendingFocus = focus;
         }
 
         internal static void RecordMouseTextSnapshot(string? text)
@@ -107,6 +91,16 @@ public sealed partial class InGameNarrationSystem
             _capturedMouseTextFrame = Main.GameUpdateCount;
         }
 
+        internal static void ResetStaticCaches()
+        {
+            _focusTracker.ClearAll();
+            _capturedMouseText = null;
+            _capturedMouseTextFrame = 0;
+            LoggedUnknownInventoryPoints.Clear();
+            SpecialSelectionRepeat.Clear();
+            _lastOptionsStateHash = int.MinValue;
+        }
+
         private void ClearSpecialLinkPointFocus()
         {
             int point = UILinkPointNavigator.CurrentPoint;
@@ -115,21 +109,8 @@ public sealed partial class InGameNarrationSystem
                 return;
             }
 
-            _pendingFocus = null;
             _currentFocus = null;
-            LinkPointFocusCache.Remove(point);
-        }
-
-        private SlotFocus? ConsumePendingFocus()
-        {
-            if (!_pendingFocus.HasValue)
-            {
-                return null;
-            }
-
-            SlotFocus focus = _pendingFocus.Value;
-            _pendingFocus = null;
-            return focus;
+            _focusTracker.ClearSpecialLinkPoint(point);
         }
 
         public void Update(Player player)
@@ -152,11 +133,7 @@ public sealed partial class InGameNarrationSystem
                 ClearSpecialLinkPointFocus();
             }
 
-            SlotFocus? nextFocus = ConsumePendingFocus();
-            if (!nextFocus.HasValue && usingGamepad)
-            {
-                nextFocus = ResolveFocusFromLinkPoint();
-            }
+            SlotFocus? nextFocus = _focusTracker.Consume(usingGamepad);
 
             _currentFocus = nextFocus.HasValue && IsFocusValid(nextFocus.Value) ? nextFocus : null;
 
@@ -183,7 +160,7 @@ public sealed partial class InGameNarrationSystem
                 return;
             }
 
-            string message = $"Holding {ComposeItemLabel(mouse)}";
+            string message = $"Holding {NarrationTextFormatter.ComposeItemLabel(mouse)}";
             TryAnnounceCue(
                 NarrationCue.ForMouse(identity, message),
                 allowedAreas: InventoryNarrationAreas | UiNarrationArea.Crafting | UiNarrationArea.Guide);
@@ -304,7 +281,7 @@ public sealed partial class InGameNarrationSystem
 
         private void AnnounceItemHover(Player player, HoverTarget target)
         {
-            string label = ComposeItemLabel(target.Item);
+            string label = NarrationTextFormatter.ComposeItemLabel(target.Item);
             string message = string.IsNullOrEmpty(target.Location) ? label : $"{label}, {target.Location}";
             string? details = BuildTooltipDetails(target.Item, target.RawTooltip, allowMouseText: target.AllowMouseText);
             string? requirementDetails = CraftingNarrator.TryGetRequirementTooltipDetails(target.Item, string.IsNullOrWhiteSpace(target.Location));
@@ -314,9 +291,9 @@ public sealed partial class InGameNarrationSystem
             string? sellDetails = BuildSellPriceDetails(player, target.Item, target.Identity);
             details = MergeDetails(details, sellDetails);
 
-            string combined = CombineItemAnnouncement(message, details);
+            string combined = NarrationTextFormatter.CombineItemAnnouncement(message, details);
             int slotSignature = ComputeSlotSignature(target.Focus);
-            if (TryAnnounceCue(NarrationCue.ForItem(target.Identity, combined, target.Location, target.NormalizedTooltip, details, slotSignature)))
+            if (TryAnnounceCue(NarrationCue.ForItem(target.Identity, combined, target.Location, target.NormalizedTooltip, details, slotSignature), focus: target.Focus))
             {
                 _narrationHistory.Reset(NarrationKind.EmptySlot);
                 _narrationHistory.Reset(NarrationKind.Tooltip);
@@ -342,7 +319,7 @@ public sealed partial class InGameNarrationSystem
 
             string message = $"Empty, {target.Location}";
             int slotSignature = ComputeSlotSignature(target.Focus);
-            if (TryAnnounceCue(NarrationCue.ForEmpty(message, target.Location, slotSignature)))
+            if (TryAnnounceCue(NarrationCue.ForEmpty(message, target.Location, slotSignature), focus: target.Focus))
             {
                 _narrationHistory.Reset(NarrationKind.HoverItem);
                 _narrationHistory.Reset(NarrationKind.Tooltip);
@@ -381,98 +358,14 @@ public sealed partial class InGameNarrationSystem
             }
         }
 
-        private static void CacheLinkPointFocus(SlotFocus focus)
-        {
-            if (!PlayerInput.UsingGamepadUI)
-            {
-                return;
-            }
-
-            int point = UILinkPointNavigator.CurrentPoint;
-            if (point < 0)
-            {
-                return;
-            }
-
-            LinkPointFocusCache[point] = focus;
-        }
-
-        private static SlotFocus? ResolveFocusFromLinkPoint()
-        {
-            int point = UILinkPointNavigator.CurrentPoint;
-            if (point < 0)
-            {
-                return null;
-            }
-
-            if (!LinkPointFocusCache.TryGetValue(point, out SlotFocus focus))
-            {
-                return null;
-            }
-
-            if (!ShouldCaptureFocusForContext(focus.Context))
-            {
-                return null;
-            }
-
-            if (IsFocusValid(focus))
-            {
-                return focus;
-            }
-
-            LinkPointFocusCache.Remove(point);
-            return null;
-        }
-
         public static bool TryGetContextForLinkPoint(int point, out int context)
         {
-            if (point >= 0 && LinkPointFocusCache.TryGetValue(point, out SlotFocus focus))
-            {
-                context = focus.Context;
-                return true;
-            }
-
-            context = -1;
-            return false;
+            return _focusTracker.TryGetContextForLinkPoint(point, out context);
         }
 
         public static bool TryGetItemForLinkPoint(int point, out Item? item, out int context)
         {
-            item = null;
-            context = -1;
-
-            if (point < 0)
-            {
-                return false;
-            }
-
-            if (!LinkPointFocusCache.TryGetValue(point, out SlotFocus focus))
-            {
-                return false;
-            }
-
-            context = focus.Context;
-
-            if (focus.Items is Item[] items)
-            {
-                int index = focus.Slot;
-                if ((uint)index < (uint)items.Length)
-                {
-                    item = items[index];
-                }
-            }
-            else
-            {
-                item = focus.SingleItem;
-            }
-
-            if (item is null || item.IsAir)
-            {
-                item = null;
-                return false;
-            }
-
-            return true;
+            return _focusTracker.TryGetItemForLinkPoint(point, out item, out context);
         }
 
         private static bool IsFocusValid(SlotFocus focus)
@@ -511,27 +404,14 @@ public sealed partial class InGameNarrationSystem
 
         private static string GetHoverNameForItem(Item item)
         {
-            string name = item.AffixName();
-            if (!string.IsNullOrWhiteSpace(name))
-            {
-                return name;
-            }
-
-            if (!string.IsNullOrWhiteSpace(item.Name))
-            {
-                return item.Name;
-            }
-
-            string fallback = Lang.GetItemNameValue(item.type);
-            return string.IsNullOrWhiteSpace(fallback) ? string.Empty : fallback;
+            return NarrationTextFormatter.ComposeItemName(item);
         }
 
         private void Reset()
         {
             _narrationHistory.ResetAll();
             _currentFocus = null;
-            _pendingFocus = null;
-            LinkPointFocusCache.Clear();
+            _focusTracker.ClearAll();
             _inGameUiTracker.Reset();
             UiAreaNarrationContext.Clear();
             _lastFocusKey = null;
@@ -620,7 +500,7 @@ public sealed partial class InGameNarrationSystem
 
             if (TryMatch(player.armor, identity, out int armorIndex))
             {
-                return DescribeArmorSlot(armorIndex);
+                return SlotContextFormatter.DescribeArmorSlot(armorIndex);
             }
 
             if (TryMatch(player.dye, identity, out int dyeIndex))
@@ -641,7 +521,7 @@ public sealed partial class InGameNarrationSystem
             int chestIndex = player.chest;
             if (chestIndex != -1)
             {
-                string container = DescribeContainer(chestIndex);
+                string container = SlotContextFormatter.DescribeContainer(chestIndex);
                 Item[]? containerItems = GetContainerItems(player, chestIndex);
                 if (containerItems is not null && TryMatch(containerItems, identity, out int containerSlot))
                 {
@@ -678,7 +558,7 @@ public sealed partial class InGameNarrationSystem
             {
                 if (ReferenceEquals(items, player.inventory))
                 {
-                    return DescribeInventorySlot(focus.Slot);
+                    return SlotContextFormatter.DescribeInventorySlot(focus.Slot);
                 }
 
                 if (ReferenceEquals(items, player.bank.item))
@@ -703,7 +583,7 @@ public sealed partial class InGameNarrationSystem
 
                 if (ReferenceEquals(items, player.armor))
                 {
-                    return DescribeArmorSlot(focus.Slot);
+                    return SlotContextFormatter.DescribeArmorSlot(focus.Slot);
                 }
 
                 if (ReferenceEquals(items, player.dye))
@@ -727,7 +607,7 @@ public sealed partial class InGameNarrationSystem
                     {
                         if (ReferenceEquals(Main.chest[i]?.item, items))
                         {
-                            string container = DescribeContainer(i);
+                            string container = SlotContextFormatter.DescribeContainer(i);
                             return focus.Slot >= 0 ? $"{container} slot {focus.Slot + 1}" : container;
                         }
                     }
@@ -793,36 +673,6 @@ public sealed partial class InGameNarrationSystem
 
             availableIndex = candidate;
             return true;
-        }
-
-        private static string DescribeInventorySlot(int slot)
-        {
-            if (slot < 0)
-            {
-                return string.Empty;
-            }
-
-            if (slot < 10)
-            {
-                return $"Hotbar slot {slot + 1}";
-            }
-
-            if (slot < 50)
-            {
-                return $"Inventory slot {slot - 9}";
-            }
-
-            if (slot < 54)
-            {
-                return $"Coin slot {slot - 49}";
-            }
-
-            if (slot < 58)
-            {
-                return $"Ammo slot {slot - 53}";
-            }
-
-            return string.Empty;
         }
 
         private static int ComputeSlotSignature(SlotFocus? focus)
@@ -1124,35 +974,6 @@ public sealed partial class InGameNarrationSystem
             return ItemIdentity.From(item).Equals(identity);
         }
 
-        private static string DescribeContainer(int chestIndex)
-        {
-            return chestIndex switch
-            {
-                >= 0 => "Chest",
-                -2 => "Piggy bank",
-                -3 => "Safe",
-                -4 => "Defender's forge",
-                -5 => "Void vault",
-                _ => "Chest",
-            };
-        }
-
-        private static string DescribeArmorSlot(int index)
-        {
-            return index switch
-            {
-                0 => "Helmet slot",
-                1 => "Chestplate slot",
-                2 => "Leggings slot",
-                >= 3 and < 10 => $"Accessory slot {index - 2}",
-                10 => "Vanity helmet slot",
-                11 => "Vanity chestplate slot",
-                12 => "Vanity leggings slot",
-                >= 13 and < 20 => $"Vanity accessory slot {index - 12}",
-                _ => $"Armor slot {index + 1}",
-            };
-        }
-
         private static string? TryGetMouseText()
         {
             string? captured = TryGetCapturedMouseText();
@@ -1240,20 +1061,22 @@ public sealed partial class InGameNarrationSystem
         private bool TryAnnounceCue(
             in NarrationCue cue,
             bool force = false,
-            UiNarrationArea allowedAreas = InventoryNarrationAreas)
+            UiNarrationArea allowedAreas = InventoryNarrationAreas,
+            SlotFocus? focus = null)
         {
             if (!_narrationHistory.TryStore(cue))
             {
-                LogNarrationDebug("history-suppressed", cue);
+                LogNarrationDebug("history-suppressed", cue, allowedAreas, focus);
                 return false;
             }
 
             if (!UiAreaNarrationContext.IsActiveArea(allowedAreas))
             {
-                LogNarrationDebug($"area-blocked (active={UiAreaNarrationContext.ActiveArea})", cue);
+                LogNarrationDebug("area-blocked", cue, allowedAreas, focus);
                 return false;
             }
 
+            NarrationInstrumentationContext.SetPendingKey(BuildInstrumentationKey(cue));
             ScreenReaderService.Announce(cue.Message, force);
             return true;
         }
@@ -1264,21 +1087,55 @@ public sealed partial class InGameNarrationSystem
             _narrationHistory.Reset(NarrationKind.EmptySlot);
         }
 
-        private static void LogNarrationDebug(string reason, in NarrationCue cue)
+        private static void LogNarrationDebug(string reason, in NarrationCue cue, UiNarrationArea allowedAreas, SlotFocus? focus = null)
         {
             if (!NarrationDebugEnabled)
             {
                 return;
             }
 
+            string activeArea = UiAreaNarrationContext.ActiveArea.ToString();
+            int focusContext = focus?.Context ?? -1;
+            string focusLabel = string.Empty;
+            Player? player = Main.LocalPlayer;
+            if (player is not null && focus.HasValue)
+            {
+                focusLabel = DescribeFocusedSlot(player, focus.Value);
+            }
+
             ScreenReaderMod.Instance?.Logger.Info(
-                $"[InventoryNarration][Debug] {reason}: kind={cue.Kind} type={cue.Identity.Type} prefix={cue.Identity.Prefix} stack={cue.Identity.Stack} fav={(cue.Identity.Favorited ? 1 : 0)} location='{cue.Location ?? string.Empty}' message='{cue.Message}'");
+                $"[InventoryNarration][Debug] {reason}: kind={cue.Kind} type={cue.Identity.Type} prefix={cue.Identity.Prefix} stack={cue.Identity.Stack} fav={(cue.Identity.Favorited ? 1 : 0)} slotSig={cue.SlotSignature} allowedAreas={allowedAreas} activeArea={activeArea} focusContext={focusContext} focusLabel='{focusLabel}' location='{cue.Location ?? string.Empty}' message='{cue.Message}'");
         }
 
         private void ResetHoverSlotsAndTooltips()
         {
             ResetHoverSlotCues();
             _narrationHistory.Reset(NarrationKind.Tooltip);
+        }
+
+        private static string BuildInstrumentationKey(in NarrationCue cue)
+        {
+            return cue.Kind switch
+            {
+                NarrationKind.MouseItem => $"mouse:{cue.Identity.Type}:{cue.Identity.Prefix}:{cue.Identity.Stack}:{(cue.Identity.Favorited ? 1 : 0)}",
+                NarrationKind.HoverItem => $"hover:{cue.SlotSignature}:{cue.Identity.Type}:{cue.Identity.Prefix}:{cue.Identity.Stack}:{(cue.Identity.Favorited ? 1 : 0)}",
+                NarrationKind.EmptySlot => $"empty:{cue.SlotSignature}",
+                NarrationKind.Tooltip => $"tooltip:{SanitizeKey(cue.Message)}",
+                NarrationKind.UiHover => $"ui:{SanitizeKey(cue.Message)}",
+                NarrationKind.SpecialSelection => $"special:{SanitizeKey(cue.Message)}",
+                _ => $"other:{SanitizeKey(cue.Message)}",
+            };
+        }
+
+        private static string SanitizeKey(string? value)
+        {
+            string normalized = GlyphTagFormatter.Normalize(value ?? string.Empty).Trim();
+            if (normalized.Length > 120)
+            {
+                normalized = normalized[..120];
+            }
+
+            return normalized;
         }
 
     }

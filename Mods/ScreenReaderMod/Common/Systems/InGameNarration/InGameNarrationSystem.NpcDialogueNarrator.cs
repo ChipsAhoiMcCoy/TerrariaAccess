@@ -47,66 +47,89 @@ public sealed partial class InGameNarrationSystem
         private static string? _currentSecondaryButton;
         private static string? _currentHappinessButton;
 
-        public void Update(Player player)
+        public void Update(NarrationServiceContext context)
         {
-            int talkNpc = player.talkNPC;
-            bool hasNpc = talkNpc >= 0 && talkNpc < Main.npc.Length;
-
-            if (!hasNpc)
+            Player player = context.Player;
+            if (!IsLocalPlayer(player))
             {
-                if (talkNpc == -1)
-                {
-                    _lastNpc = -1;
-                    _lastChat = null;
-                    _lastPrimaryFocus = false;
-                    _lastCloseFocus = false;
-                    _lastSecondaryFocus = false;
-                    _lastHappinessFocus = false;
-                    _suppressNextButtonAnnouncement = false;
-                }
-
+                ResetState();
                 return;
             }
 
-            NPC npc = Main.npc[talkNpc];
-            if (!npc.active)
+            NPC? npc = TryGetActiveNpc(player.talkNPC);
+            if (npc is null)
             {
-                _lastNpc = -1;
-                _lastChat = null;
-                _lastPrimaryFocus = false;
-                _lastCloseFocus = false;
-                _lastSecondaryFocus = false;
-                _lastHappinessFocus = false;
-                _suppressNextButtonAnnouncement = false;
+                ResetState();
                 return;
             }
 
-            if (talkNpc != _lastNpc)
-            {
-                string npcName = npc.GivenOrTypeName;
-                if (!string.IsNullOrWhiteSpace(npcName))
-                {
-                    ScreenReaderService.Announce($"Talking to {npcName}", force: true);
-                }
+            ScreenReaderService.AnnouncementCategory category = ResolveCategory(context);
 
-                _lastNpc = talkNpc;
-                _lastChat = null;
-                _suppressNextButtonAnnouncement = true;
+            if (npc.whoAmI != _lastNpc)
+            {
+                OnNpcChanged(npc, category);
             }
 
+            HandleNpcChat(npc, category);
+            HandleTypedInput(player, category);
+
+            bool allowInterrupt = NpcDialogueInputTracker.IsNavigationPressed;
+
+            HandleButtonFocus(Main.npcChatFocus2, ref _lastPrimaryFocus, _currentPrimaryButton, allowInterrupt, category);
+            HandleButtonFocus(Main.npcChatFocus1, ref _lastCloseFocus, _currentCloseButton, allowInterrupt, category);
+            HandleButtonFocus(Main.npcChatFocus3, ref _lastSecondaryFocus, _currentSecondaryButton, allowInterrupt, category);
+            HandleButtonFocus(Main.npcChatFocus4, ref _lastHappinessFocus, _currentHappinessButton, allowInterrupt, category);
+        }
+
+        private static bool IsLocalPlayer(Player player)
+        {
+            return player is not null &&
+                   player.active &&
+                   player.whoAmI == Main.myPlayer &&
+                   Main.netMode != NetmodeID.Server;
+        }
+
+        private static NPC? TryGetActiveNpc(int npcIndex)
+        {
+            if (npcIndex < 0 || npcIndex >= Main.npc.Length)
+            {
+                return null;
+            }
+
+            NPC npc = Main.npc[npcIndex];
+            return npc.active ? npc : null;
+        }
+
+        private void OnNpcChanged(NPC npc, ScreenReaderService.AnnouncementCategory category)
+        {
+            ResetFocus();
+            string npcName = npc.GivenOrTypeName;
+            if (!string.IsNullOrWhiteSpace(npcName))
+            {
+                NarrationInstrumentationContext.SetPendingKey($"npc-dialogue:npc:{npcName}");
+                ScreenReaderService.Announce($"Talking to {npcName}", force: true, category: category);
+            }
+
+            _lastNpc = npc.whoAmI;
+            _lastChat = null;
+            _suppressNextButtonAnnouncement = true;
+            NpcDialogueInputTracker.Reset();
+        }
+
+        private void HandleNpcChat(NPC npc, ScreenReaderService.AnnouncementCategory category)
+        {
             string chat = Main.npcChatText ?? string.Empty;
             string normalizedText = NormalizeChat(chat);
-            if (!string.IsNullOrWhiteSpace(normalizedText) && !string.Equals(normalizedText, _lastChat, StringComparison.Ordinal))
+            if (!string.IsNullOrWhiteSpace(normalizedText) &&
+                !string.Equals(normalizedText, _lastChat, StringComparison.Ordinal))
             {
                 string prefix = npc.GivenOrTypeName;
-                if (!string.IsNullOrWhiteSpace(prefix))
-                {
-                    ScreenReaderService.Announce($"{prefix} says: {normalizedText}");
-                }
-                else
-                {
-                    ScreenReaderService.Announce(normalizedText);
-                }
+                string announcement = string.IsNullOrWhiteSpace(prefix)
+                    ? normalizedText
+                    : $"{prefix} says: {normalizedText}";
+
+                NarrationInstrumentationContext.SetPendingKey("npc-dialogue:text");
+                ScreenReaderService.Announce(announcement, category: category);
 
                 _lastChat = normalizedText;
                 _suppressNextButtonAnnouncement = true;
@@ -116,13 +139,40 @@ public sealed partial class InGameNarrationSystem
                 _lastChat = null;
                 _suppressNextButtonAnnouncement = false;
             }
+        }
 
-            bool allowInterrupt = NpcDialogueInputTracker.IsNavigationPressed;
+        private void HandleTypedInput(Player player, ScreenReaderService.AnnouncementCategory category)
+        {
+            bool inputActive = IsTypingToNpc(player);
+            NpcDialogueInputTracker.RecordTypedInput(Main.chatText, inputActive);
 
-            HandleButtonFocus(Main.npcChatFocus2, ref _lastPrimaryFocus, _currentPrimaryButton, allowInterrupt);
-            HandleButtonFocus(Main.npcChatFocus1, ref _lastCloseFocus, _currentCloseButton, allowInterrupt);
-            HandleButtonFocus(Main.npcChatFocus3, ref _lastSecondaryFocus, _currentSecondaryButton, allowInterrupt);
-            HandleButtonFocus(Main.npcChatFocus4, ref _lastHappinessFocus, _currentHappinessButton, allowInterrupt);
+            if (!inputActive || !NpcDialogueInputTracker.TryDequeueTypedInput(out string typedText))
+            {
+                return;
+            }
+
+            NarrationInstrumentationContext.SetPendingKey("npc-dialogue:typed");
+            ScreenReaderService.Announce(
+                $"You typed: {typedText}",
+                category: category,
+                requestInterrupt: true);
+
+            _suppressNextButtonAnnouncement = true;
+        }
+
+        private static bool IsTypingToNpc(Player player)
+        {
+            if (player is null || player.whoAmI != Main.myPlayer)
+            {
+                return false;
+            }
+
+            if (!Main.drawingPlayerChat || Main.gameMenu || Main.blockInput || Main.editSign || Main.editChest)
+            {
+                return false;
+            }
+
+            return player.talkNPC >= 0;
         }
 
         private static string NormalizeChat(string rawText)
@@ -191,7 +241,12 @@ public sealed partial class InGameNarrationSystem
             return string.IsNullOrWhiteSpace(normalized) ? null : normalized;
         }
 
-        private void HandleButtonFocus(bool isFocused, ref bool lastState, string? label, bool allowInterrupt)
+        private void HandleButtonFocus(
+            bool isFocused,
+            ref bool lastState,
+            string? label,
+            bool allowInterrupt,
+            ScreenReaderService.AnnouncementCategory category)
         {
             if (!isFocused)
             {
@@ -215,10 +270,37 @@ public sealed partial class InGameNarrationSystem
                     announcement = $"{trimmed} button";
                 }
 
-                ScreenReaderService.Announce(announcement);
+                NarrationInstrumentationContext.SetPendingKey($"npc-dialogue:choice:{trimmed}");
+                ScreenReaderService.Announce(announcement, category: category, requestInterrupt: allowInterrupt);
             }
 
             lastState = true;
+        }
+
+        private static ScreenReaderService.AnnouncementCategory ResolveCategory(NarrationServiceContext context)
+        {
+            return context.Category ?? ScreenReaderService.AnnouncementCategory.Default;
+        }
+
+        private void ResetState()
+        {
+            _lastNpc = -1;
+            _lastChat = null;
+            ResetFocus();
+            _suppressNextButtonAnnouncement = false;
+            _currentPrimaryButton = null;
+            _currentCloseButton = null;
+            _currentSecondaryButton = null;
+            _currentHappinessButton = null;
+            NpcDialogueInputTracker.Reset();
+        }
+
+        private void ResetFocus()
+        {
+            _lastPrimaryFocus = false;
+            _lastCloseFocus = false;
+            _lastSecondaryFocus = false;
+            _lastHappinessFocus = false;
         }
     }
 }

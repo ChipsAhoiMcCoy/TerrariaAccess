@@ -21,7 +21,15 @@ public sealed class BuildModePlayer : ModPlayer
     private const int CursorAnnouncementCooldownTicks = 6;
     private const int HurtInputGraceTicks = 15;
 
-    private bool _buildModeActive;
+    private enum BuildModeState
+    {
+        Inactive,
+        AwaitingFirstCorner,
+        AwaitingSecondCorner,
+        Executing,
+    }
+
+    private BuildModeState _state = BuildModeState.Inactive;
     private Point? _firstCorner;
     private Point? _secondCorner;
     private Point _lastAnnouncedCursor;
@@ -30,10 +38,8 @@ public sealed class BuildModePlayer : ModPlayer
     private bool _lastQuickMount;
     private bool _lastGamepadStart;
     private bool _lastGamepadA;
-    private Rectangle _activeSelection;
     private SelectionAction _activeAction;
     private int _activeItemType;
-    private int _selectionIndex;
     private int _tilesCleared;
     private int _wallsCleared;
     private int _tilesPlaced;
@@ -42,37 +48,36 @@ public sealed class BuildModePlayer : ModPlayer
     private int _actionCooldown;
     private int _autoToolRevertSlot = -1;
     private string? _lastCursorAnnouncement;
-    private bool _rangeExpanded;
-    private int _originalTileRangeX;
-    private int _originalTileRangeY;
-    private int _originalBlockRange;
     private bool _wasUseHeld;
     private int _hurtGraceTicks;
+    private SelectionIterator _selectionIterator;
+    private readonly BuildModeRangeManager _rangeManager = new();
 
-    private bool HasSelection => _firstCorner.HasValue && _secondCorner.HasValue;
-    private bool AwaitingSecondCorner => _firstCorner.HasValue && !_secondCorner.HasValue;
+    private bool BuildModeActive => _state != BuildModeState.Inactive;
+    private bool HasSelection => _state == BuildModeState.Executing && _firstCorner.HasValue && _secondCorner.HasValue;
+    private bool AwaitingSecondCorner => _state == BuildModeState.AwaitingSecondCorner && _firstCorner.HasValue && !_secondCorner.HasValue;
 
     public override void ResetEffects()
     {
-        if (!_buildModeActive)
+        if (!BuildModeActive)
         {
             RestorePlacementRangeIfNeeded();
             return;
         }
 
-        ExpandPlacementRangeToViewport();
+        _rangeManager.ExpandPlacementRangeToViewport(Player);
     }
 
     public override void PreUpdate()
     {
-        if (!_buildModeActive)
+        if (!BuildModeActive)
         {
             RestorePlacementRangeIfNeeded();
             return;
         }
 
         GuardBuildModeInput();
-        ExpandPlacementRangeToViewport();
+        _rangeManager.ExpandPlacementRangeToViewport(Player);
     }
 
     public override void ProcessTriggers(TriggersSet triggersSet)
@@ -86,7 +91,7 @@ public sealed class BuildModePlayer : ModPlayer
             ToggleBuildMode();
         }
 
-        if (!_buildModeActive)
+        if (!BuildModeActive)
         {
             TrackMouseForCornerPlacement(triggersSet);
             return;
@@ -100,7 +105,7 @@ public sealed class BuildModePlayer : ModPlayer
 
         if (!TryCaptureCursorTile(out Point tile))
         {
-            ScreenReaderService.Announce("Build mode: cursor is out of world bounds.");
+            ScreenReaderService.Announce(BuildModeNarrationCatalog.CursorOutOfBounds());
             return;
         }
 
@@ -116,12 +121,12 @@ public sealed class BuildModePlayer : ModPlayer
         AnnounceCursorPositionIfNeeded();
         InGameNarrationSystem.HotbarNarrator.SetExternalSuppression(false);
 
-        if (!_buildModeActive)
+        if (!BuildModeActive)
         {
             RestorePlacementRangeIfNeeded();
         }
 
-        if (!_buildModeActive || !HasSelection)
+        if (!BuildModeActive || !HasSelection)
         {
             ResetActiveAction();
             return;
@@ -153,7 +158,6 @@ public sealed class BuildModePlayer : ModPlayer
         }
 
         Rectangle selection = GetSelection();
-        int totalTiles = selection.Width * selection.Height;
         SelectionAction action = DetermineAction(held);
         if (action == SelectionAction.None)
         {
@@ -161,7 +165,7 @@ public sealed class BuildModePlayer : ModPlayer
             return;
         }
 
-        if (useJustPressed && _activeSelection == selection && _activeAction != SelectionAction.None && _selectionIndex >= totalTiles)
+        if (useJustPressed && _activeAction != SelectionAction.None && _selectionIterator.Completed)
         {
             ResetActiveAction();
         }
@@ -171,63 +175,32 @@ public sealed class BuildModePlayer : ModPlayer
         InGameNarrationSystem.HotbarNarrator.SetExternalSuppression(action is SelectionAction.PlaceTile or SelectionAction.PlaceWall);
 
         bool acted = ProcessSelectionStep(selection, action, ref held);
-        if (!acted && _selectionIndex >= totalTiles && !_actionCompletedAnnounced)
+        if (!acted && _selectionIterator.Completed && !_actionCompletedAnnounced)
         {
             AnnounceCompletion(action, selection, Player.HeldItem);
             _actionCompletedAnnounced = true;
         }
     }
 
-    private void ExpandPlacementRangeToViewport()
-    {
-        float zoomX = Math.Abs(Main.GameViewMatrix.Zoom.X) < 0.001f ? 1f : Main.GameViewMatrix.Zoom.X;
-        float zoomY = Math.Abs(Main.GameViewMatrix.Zoom.Y) < 0.001f ? zoomX : Main.GameViewMatrix.Zoom.Y;
-        float zoom = Math.Max(0.001f, Math.Min(zoomX, zoomY));
-
-        float viewWidth = Main.screenWidth / zoom;
-        float viewHeight = Main.screenHeight / zoom;
-
-        Vector2 topLeft = Main.screenPosition;
-        Vector2 bottomRight = topLeft + new Vector2(viewWidth, viewHeight);
-
-        float leftTiles = MathF.Abs(Player.Center.X - topLeft.X) / 16f;
-        float rightTiles = MathF.Abs(bottomRight.X - Player.Center.X) / 16f;
-        float upTiles = MathF.Abs(Player.Center.Y - topLeft.Y) / 16f;
-        float downTiles = MathF.Abs(bottomRight.Y - Player.Center.Y) / 16f;
-
-        int horizontalRange = (int)Math.Ceiling(Math.Max(leftTiles, rightTiles)) + 2;
-        int verticalRange = (int)Math.Ceiling(Math.Max(upTiles, downTiles)) + 2;
-
-        if (!_rangeExpanded)
-        {
-            _rangeExpanded = true;
-            _originalTileRangeX = Player.tileRangeX;
-            _originalTileRangeY = Player.tileRangeY;
-            _originalBlockRange = Player.blockRange;
-        }
-
-        Player.tileRangeX = Math.Max(Player.tileRangeX, horizontalRange);
-        Player.tileRangeY = Math.Max(Player.tileRangeY, verticalRange);
-        Player.blockRange = Math.Max(Player.blockRange, Math.Max(horizontalRange, verticalRange));
-    }
-
     private void ToggleBuildMode()
     {
-        _buildModeActive = !_buildModeActive;
-        if (!_buildModeActive)
+        if (BuildModeActive)
         {
+            _state = BuildModeState.Inactive;
             RestorePlacementRangeIfNeeded();
             ResetSelection();
-            ScreenReaderService.Announce("Build mode disabled.");
+            ScreenReaderService.Announce(BuildModeNarrationCatalog.Disabled());
             return;
         }
 
-        ScreenReaderService.Announce("Build mode enabled. Press A to mark corners.");
+        ResetSelection();
+        _state = BuildModeState.AwaitingFirstCorner;
+        ScreenReaderService.Announce(BuildModeNarrationCatalog.Enabled());
     }
 
     private void ResetState()
     {
-        _buildModeActive = false;
+        _state = BuildModeState.Inactive;
         RestorePlacementRangeIfNeeded();
         ResetSelection();
         _cursorAnnounceCooldown = 0;
@@ -243,10 +216,9 @@ public sealed class BuildModePlayer : ModPlayer
     private void ResetActiveAction()
     {
         RevertAutoToolIfNeeded();
-        _activeSelection = Rectangle.Empty;
         _activeAction = SelectionAction.None;
         _activeItemType = 0;
-        _selectionIndex = 0;
+        _selectionIterator.Clear();
         _tilesCleared = 0;
         _wallsCleared = 0;
         _tilesPlaced = 0;
@@ -263,6 +235,10 @@ public sealed class BuildModePlayer : ModPlayer
         _firstCorner = null;
         _secondCorner = null;
         _lastCursorAnnouncement = null;
+        if (_state != BuildModeState.Inactive)
+        {
+            _state = BuildModeState.AwaitingFirstCorner;
+        }
         ResetActiveAction();
     }
 
@@ -279,12 +255,11 @@ public sealed class BuildModePlayer : ModPlayer
 
     private void EnsureActiveAction(Rectangle selection, SelectionAction action, ref Item held)
     {
-        if (selection != _activeSelection || action != _activeAction || held.type != _activeItemType)
+        if (!_selectionIterator.IsSameSelection(selection) || action != _activeAction || held.type != _activeItemType)
         {
-            _activeSelection = selection;
+            _selectionIterator.Reset(selection);
             _activeAction = action;
             _activeItemType = held.type;
-            _selectionIndex = 0;
             _tilesCleared = 0;
             _wallsCleared = 0;
             _tilesPlaced = 0;
@@ -321,19 +296,15 @@ public sealed class BuildModePlayer : ModPlayer
 
     private bool ProcessSelectionStep(Rectangle selection, SelectionAction action, ref Item held)
     {
-        int total = selection.Width * selection.Height;
-        if (_selectionIndex >= total)
+        if (!_selectionIterator.TryGetNext(out int x, out int y))
         {
             return false;
         }
 
-        int offset = _selectionIndex;
-        int x = selection.Left + offset % selection.Width;
-        int y = selection.Top + offset / selection.Width;
         bool advance = HandleSelectionPosition(action, ref held, x, y);
-        if (advance)
+        if (!advance)
         {
-            _selectionIndex++;
+            _selectionIterator.Rewind();
         }
 
         return true;
@@ -522,11 +493,11 @@ public sealed class BuildModePlayer : ModPlayer
             case SelectionAction.Clear:
                 if (_tilesCleared > 0 || _wallsCleared > 0)
                 {
-                    ScreenReaderService.Announce($"Build mode: cleared {_tilesCleared + _wallsCleared} blocks with {itemName}.");
+                    ScreenReaderService.Announce(BuildModeNarrationCatalog.ClearedBlocks(_tilesCleared + _wallsCleared, itemName));
                 }
                 else
                 {
-                    ScreenReaderService.Announce("Build mode: nothing to clear in the selected area.");
+                    ScreenReaderService.Announce(BuildModeNarrationCatalog.NothingToClear());
                 }
 
                 break;
@@ -535,11 +506,11 @@ public sealed class BuildModePlayer : ModPlayer
                 if (_tilesPlaced > 0)
                 {
                     string blockName = TextSanitizer.Clean(held.Name);
-                    ScreenReaderService.Announce($"Build mode: placed {_tilesPlaced} tiles of {blockName}.");
+                    ScreenReaderService.Announce(BuildModeNarrationCatalog.PlacedTiles(_tilesPlaced, blockName));
                 }
                 else
                 {
-                    ScreenReaderService.Announce("Build mode: could not place tiles in the selected area.");
+                    ScreenReaderService.Announce(BuildModeNarrationCatalog.CannotPlaceTiles());
                 }
 
                 break;
@@ -548,11 +519,11 @@ public sealed class BuildModePlayer : ModPlayer
                 if (_wallsPlaced > 0)
                 {
                     string wallName = TextSanitizer.Clean(held.Name);
-                    ScreenReaderService.Announce($"Build mode: placed {_wallsPlaced} walls of {wallName}.");
+                    ScreenReaderService.Announce(BuildModeNarrationCatalog.PlacedWalls(_wallsPlaced, wallName));
                 }
                 else
                 {
-                    ScreenReaderService.Announce("Build mode: could not place walls in the selected area.");
+                    ScreenReaderService.Announce(BuildModeNarrationCatalog.CannotPlaceWalls());
                 }
 
                 break;
@@ -617,22 +588,25 @@ public sealed class BuildModePlayer : ModPlayer
         {
             _firstCorner = tile;
             _lastAnnouncedCursor = tile;
-            ScreenReaderService.Announce("Build mode: point one set.");
+            _state = BuildModeState.AwaitingSecondCorner;
+            ScreenReaderService.Announce(BuildModeNarrationCatalog.PointOneSet());
             return;
         }
 
         if (!_secondCorner.HasValue)
         {
             _secondCorner = tile;
+            _state = BuildModeState.Executing;
             Rectangle bounds = GetSelection();
-            ScreenReaderService.Announce($"Build mode: points set. Selection is {bounds.Width} by {bounds.Height} tiles.");
+            ScreenReaderService.Announce(BuildModeNarrationCatalog.SelectionSet(bounds.Width, bounds.Height));
             return;
         }
 
         _firstCorner = tile;
         _secondCorner = null;
         _lastAnnouncedCursor = tile;
-        ScreenReaderService.Announce("Build mode: selection reset. Point one set.");
+        _state = BuildModeState.AwaitingSecondCorner;
+        ScreenReaderService.Announce(BuildModeNarrationCatalog.SelectionReset());
     }
 
     private static bool TryCaptureCursorTile(out Point tile)
@@ -670,7 +644,7 @@ public sealed class BuildModePlayer : ModPlayer
 
     private void AnnounceCursorPositionIfNeeded()
     {
-        if (!_buildModeActive || !_firstCorner.HasValue || _secondCorner.HasValue)
+        if (!BuildModeActive || !_firstCorner.HasValue || _secondCorner.HasValue)
         {
             _cursorAnnounceCooldown = 0;
             return;
@@ -935,15 +909,7 @@ public sealed class BuildModePlayer : ModPlayer
 
     private void RestorePlacementRangeIfNeeded()
     {
-        if (!_rangeExpanded)
-        {
-            return;
-        }
-
-        Player.tileRangeX = _originalTileRangeX;
-        Player.tileRangeY = _originalTileRangeY;
-        Player.blockRange = _originalBlockRange;
-        _rangeExpanded = false;
+        _rangeManager.RestorePlacementRange(Player);
     }
 
     private bool IsPlayerMoving()
@@ -962,5 +928,58 @@ public sealed class BuildModePlayer : ModPlayer
         Clear,
         PlaceTile,
         PlaceWall
+    }
+
+    private struct SelectionIterator
+    {
+        public Rectangle Selection { get; private set; }
+        private int _index;
+        private int _total;
+
+        public bool Completed => HasSelection && _index >= _total;
+
+        private bool HasSelection => _total > 0 && Selection != Rectangle.Empty;
+
+        public void Reset(Rectangle selection)
+        {
+            Selection = selection;
+            _total = selection.Width * selection.Height;
+            _index = 0;
+        }
+
+        public bool TryGetNext(out int x, out int y)
+        {
+            if (!HasSelection || _index >= _total)
+            {
+                x = 0;
+                y = 0;
+                return false;
+            }
+
+            int offset = _index++;
+            x = Selection.Left + offset % Selection.Width;
+            y = Selection.Top + offset / Selection.Width;
+            return true;
+        }
+
+        public void Rewind()
+        {
+            if (_index > 0)
+            {
+                _index--;
+            }
+        }
+
+        public bool IsSameSelection(Rectangle selection)
+        {
+            return HasSelection && Selection == selection;
+        }
+
+        public void Clear()
+        {
+            Selection = Rectangle.Empty;
+            _index = 0;
+            _total = 0;
+        }
     }
 }

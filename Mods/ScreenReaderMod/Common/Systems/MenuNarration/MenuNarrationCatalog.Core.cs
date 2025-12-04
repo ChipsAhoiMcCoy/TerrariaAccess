@@ -14,6 +14,8 @@ namespace ScreenReaderMod.Common.Systems;
 
 internal static partial class MenuNarrationCatalog
 {
+    private static readonly Dictionary<int, MenuOption[]> MenuOptionTables = BuildMenuOptionTables();
+
     private static readonly Dictionary<int, string> MenuModeNames = new()
     {
         [0] = "Main menu",
@@ -40,7 +42,6 @@ internal static partial class MenuNarrationCatalog
         [MenuID.Title] = DescribeMainMenuItem,
         [MenuID.CharacterDeletion] = DescribePlayerDeletionConfirmation,
         [MenuID.CharacterDeletionConfirmation] = DescribePlayerDeletionConfirmation,
-        [11] = DescribeSettingsMenu,
         [26] = DescribeSettingsAudioMenu,
         [112] = DescribeSettingsGeneralMenu,
         [1112] = DescribeSettingsInterfaceMenu,
@@ -145,6 +146,11 @@ internal static partial class MenuNarrationCatalog
             return string.Empty;
         }
 
+        if (TryDescribeFromTable(menuMode, focusedIndex, out string tableLabel))
+        {
+            return tableLabel;
+        }
+
         if (ModeResolvers.TryGetValue(menuMode, out Func<int, string>? resolver))
         {
             string modeSpecific = resolver(focusedIndex);
@@ -177,6 +183,28 @@ internal static partial class MenuNarrationCatalog
         }
 
         return $"Option {focusedIndex + 1}";
+    }
+
+    private static bool TryDescribeFromTable(int menuMode, int focusedIndex, out string label)
+    {
+        label = string.Empty;
+
+        if (!MenuOptionTables.TryGetValue(menuMode, out MenuOption[]? options) ||
+            options is null ||
+            focusedIndex < 0 ||
+            focusedIndex >= options.Length)
+        {
+            return false;
+        }
+
+        string resolved = TextSanitizer.Clean(options[focusedIndex].Resolve());
+        if (string.IsNullOrWhiteSpace(resolved) && !options[focusedIndex].AllowEmpty)
+        {
+            return false;
+        }
+
+        label = resolved;
+        return !string.IsNullOrWhiteSpace(label);
     }
 
     private static bool TryReadStatic<T>(Lazy<FieldInfo?> fieldHandle, out T value) where T : struct
@@ -345,5 +373,55 @@ internal static partial class MenuNarrationCatalog
         return (uint)index < (uint)entries.Count ? entries[index] : string.Empty;
     }
 
+    private static Dictionary<int, MenuOption[]> BuildMenuOptionTables()
+    {
+        return new Dictionary<int, MenuOption[]>
+        {
+            [11] = new[]
+            {
+                MenuOption.FromLangMenu(114),
+                MenuOption.FromLangMenu(210),
+                MenuOption.FromLangMenu(63),
+                MenuOption.FromLangMenu(65),
+                MenuOption.FromLangMenu(218),
+                MenuOption.FromLangMenu(219),
+                MenuOption.FromLangMenu(103),
+                MenuOption.FromLocalizationKey("tModLoader.tModLoaderSettings"),
+                MenuOption.FromLangMenu(5),
+            },
+        };
+    }
 
+    private readonly record struct MenuOption(Func<string> Resolver, bool AllowEmpty = false)
+    {
+        public string Resolve()
+        {
+            try
+            {
+                return Resolver();
+            }
+            catch
+            {
+                return string.Empty;
+            }
+        }
+
+        public static MenuOption FromLangMenu(int index, bool allowEmpty = false)
+        {
+            return new MenuOption(() =>
+            {
+                if (index < 0 || index >= Lang.menu.Length)
+                {
+                    return string.Empty;
+                }
+
+                return Lang.menu[index].Value;
+            }, allowEmpty);
+        }
+
+        public static MenuOption FromLocalizationKey(string key, bool allowEmpty = false)
+        {
+            return new MenuOption(() => Language.GetTextValue(key), allowEmpty);
+        }
+    }
 }

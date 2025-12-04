@@ -42,20 +42,22 @@ public sealed partial class GuidanceSystem
         {
             CleanupFinishedWaypointInstances();
 
-            Vector2 offset = worldPosition - player.Center;
-            float pitch = MathHelper.Clamp(-offset.Y / PitchScale, -0.7f, 0.7f);
-            float pan = MathHelper.Clamp(offset.X / PanScalePixels, -1f, 1f);
-
-            float distanceTiles = offset.Length() / 16f;
-            float distanceFactor = 1f / (1f + (distanceTiles / Math.Max(1f, DistanceReferenceTiles)));
-            float volume = MathHelper.Clamp(MinVolume + distanceFactor * 0.85f, 0f, 1f) * Main.soundVolume;
+            SpatialAudioPanner.SpatialAudioSample sample = SpatialAudioPanner.ComputeSample(
+                player.Center,
+                worldPosition,
+                GuidanceAudioProfile,
+                Main.soundVolume);
+            if (sample.Volume <= 0f)
+            {
+                return;
+            }
 
             SoundEffect tone = EnsureWaypointTone();
             SoundEffectInstance instance = tone.CreateInstance();
             instance.IsLooped = false;
-            instance.Pan = pan;
-            instance.Pitch = pitch;
-            instance.Volume = MathHelper.Clamp(volume, 0f, 1f);
+            instance.Pan = sample.Pan;
+            instance.Pitch = sample.Pitch;
+            instance.Volume = MathHelper.Clamp(sample.Volume, 0f, 1f);
 
             try
             {

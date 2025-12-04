@@ -1,7 +1,6 @@
 #nullable enable
 using System;
 using System.Collections.Generic;
-using Terraria;
 
 namespace ScreenReaderMod.Common.Services;
 
@@ -13,127 +12,83 @@ public static class ScreenReaderService
         Tile,
         Wall,
         Pickup,
+        World,
     }
 
-    private static readonly TimeSpan RepeatWindow = TimeSpan.FromMilliseconds(250);
-    private static readonly Queue<string> RecentMessages = new();
-    private static readonly Dictionary<AnnouncementCategory, string?> LastCategoryAnnouncements = new();
-    private static string? _lastMessage;
-    private static DateTime _lastAnnouncedAt = DateTime.MinValue;
-    private static bool _muted;
-    private static bool _interruptEnabled;
+    private static SpeechController? _controller;
 
-    public static IReadOnlyCollection<string> Snapshot => RecentMessages.ToArray();
-    public static bool SpeechEnabled => !_muted;
-    public static bool SpeechInterruptEnabled => _interruptEnabled;
+    private static SpeechController Controller => _controller ??= BuildController();
+
+    public static IReadOnlyCollection<string> Snapshot => Controller.GetSnapshot().RecentMessages;
+    public static bool SpeechEnabled => Controller.SpeechEnabled;
+    public static bool SpeechInterruptEnabled => Controller.InterruptEnabled;
 
     public static void Initialize()
     {
-        RecentMessages.Clear();
-        LastCategoryAnnouncements.Clear();
-        _lastMessage = null;
-        _lastAnnouncedAt = DateTime.MinValue;
-        _muted = false;
-        _interruptEnabled = true;
-        ScreenReaderDiagnostics.DumpStartupSnapshot();
-        NvdaSpeechProvider.Initialize();
+        SpeechController controller = Controller;
+        controller.SetLogOnly(ScreenReaderDiagnostics.IsSpeechLogOnlyEnabled());
+        controller.Initialize();
+        ScreenReaderDiagnostics.DumpStartupSnapshot(controller.GetSnapshot());
     }
 
     public static void Unload()
     {
-        RecentMessages.Clear();
-        LastCategoryAnnouncements.Clear();
-        _lastMessage = null;
-        _lastAnnouncedAt = DateTime.MinValue;
-        _muted = false;
-        _interruptEnabled = false;
-        NvdaSpeechProvider.Shutdown();
+        _controller?.Shutdown();
+        _controller = null;
     }
 
-    public static void Interrupt()
+    public static void Interrupt(SpeechChannel channel = SpeechChannel.Primary)
     {
-        NvdaSpeechProvider.Interrupt();
-        // Intentionally avoid interrupting SAPI so world announcements are not cut off.
+        Controller.Interrupt(channel);
     }
 
     public static bool ToggleSpeechInterrupt()
     {
-        _interruptEnabled = !_interruptEnabled;
-        return _interruptEnabled;
+        return Controller.ToggleInterrupts();
     }
 
     public static bool ToggleSpeechEnabled()
     {
-        _muted = !_muted;
-        return !_muted;
+        return Controller.ToggleMute();
     }
 
     public static void Announce(
         string? message,
         bool force = false,
         AnnouncementCategory category = AnnouncementCategory.Default,
-        bool allowWhenMuted = false)
+        bool allowWhenMuted = false,
+        SpeechChannel channel = SpeechChannel.Primary,
+        bool requestInterrupt = true)
     {
-        if (string.IsNullOrWhiteSpace(message))
-        {
-            return;
-        }
-
-        if (_muted && !allowWhenMuted)
-        {
-            return;
-        }
-
-        string trimmed = message.Trim();
-        DateTime now = DateTime.UtcNow;
-        if (!force && ShouldSuppress(category, trimmed, now))
-        {
-            return;
-        }
-
-        if (_interruptEnabled)
-        {
-            Interrupt();
-        }
-
-        TrackAnnouncement(category, trimmed, now);
-        RecentMessages.Enqueue(trimmed);
-        while (RecentMessages.Count > 25)
-        {
-            RecentMessages.Dequeue();
-        }
-
-        NvdaSpeechProvider.Speak(trimmed);
-        ScreenReaderMod.Instance?.Logger.Info($"[Narration] {trimmed}");
+        RecordInstrumentationKey(message);
+        Controller.Enqueue(
+            new SpeechRequest(
+                Text: message ?? string.Empty,
+                Category: category,
+                Channel: channel,
+                Force: force,
+                AllowWhenMuted: allowWhenMuted,
+                RequestInterrupt: requestInterrupt));
     }
 
-    private static bool ShouldSuppress(AnnouncementCategory category, string trimmed, DateTime now)
+    private static void RecordInstrumentationKey(string? message)
     {
-        if (category != AnnouncementCategory.Default &&
-            LastCategoryAnnouncements.TryGetValue(category, out string? lastForCategory) &&
-            string.Equals(trimmed, lastForCategory, StringComparison.OrdinalIgnoreCase))
+        string? key = NarrationInstrumentationContext.ConsumePendingKey();
+        if (string.IsNullOrWhiteSpace(key))
         {
-            return true;
+            key = message;
         }
 
-        if (category == AnnouncementCategory.Default &&
-            string.Equals(trimmed, _lastMessage, StringComparison.OrdinalIgnoreCase) &&
-            now - _lastAnnouncedAt < RepeatWindow)
-        {
-            return true;
-        }
-
-        return false;
+        NarrationInstrumentationContext.RecordKey(key);
     }
 
-    private static void TrackAnnouncement(AnnouncementCategory category, string trimmed, DateTime now)
+    private static SpeechController BuildController()
     {
-        if (category != AnnouncementCategory.Default)
-        {
-            LastCategoryAnnouncements[category] = trimmed;
-        }
-
-        _lastMessage = trimmed;
-        _lastAnnouncedAt = now;
+        var controller = new SpeechController(new NvdaSpeechProvider(), new SapiSpeechProvider());
+        controller.SetCategoryWindow(AnnouncementCategory.World, TimeSpan.FromSeconds(2));
+        controller.SetCategoryWindow(AnnouncementCategory.Tile, TimeSpan.FromMilliseconds(150));
+        controller.SetCategoryWindow(AnnouncementCategory.Wall, TimeSpan.FromMilliseconds(150));
+        controller.SetCategoryWindow(AnnouncementCategory.Pickup, TimeSpan.FromMilliseconds(150));
+        return controller;
     }
 }

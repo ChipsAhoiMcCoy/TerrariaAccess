@@ -38,6 +38,7 @@ public sealed partial class InGameNarrationSystem
     {
         private const float CursorLoudnessReferenceTiles = 90f;
 
+        private readonly CursorDescriptorService _descriptorService;
         private int _lastTileX = int.MinValue;
         private int _lastTileY = int.MinValue;
         private bool _lastSmartCursorActive;
@@ -49,6 +50,11 @@ public sealed partial class InGameNarrationSystem
         private static bool _suppressNextAnnouncement;
         private string? _lastTileAnnouncementName;
         private int _lastTileAnnouncementKey = int.MinValue;
+
+        public CursorNarrator(CursorDescriptorService descriptorService)
+        {
+            _descriptorService = descriptorService;
+        }
 
         public void Update()
         {
@@ -166,39 +172,38 @@ public sealed partial class InGameNarrationSystem
 
             string coordinates = smartCursorActive ? string.Empty : BuildCoordinateMessage(tileX, tileY);
 
-            if (!TileDescriptor.TryDescribe(tileX, tileY, out int tileType, out string? name))
+            if (!_descriptorService.TryDescribe(tileX, tileY, out var descriptor))
             {
                 _lastTileAnnouncementName = null;
                 return;
             }
 
-            bool isWall = IsWallDescriptor(tileType);
+            bool isWall = descriptor.IsWall;
             bool suppressedWall = isWall && !ShouldAnnounceWall(player);
             if (suppressedWall)
             {
-                tileType = -1;
-                name = "Empty";
+                descriptor = descriptor with { TileType = -1, Name = "Empty", Category = AnnouncementCategory.Tile, IsWall = false, IsAir = false };
             }
 
-            if (string.IsNullOrWhiteSpace(name))
+            if (string.IsNullOrWhiteSpace(descriptor.Name))
             {
                 _lastTileAnnouncementName = null;
                 return;
             }
 
             if (!smartCursorActive && PlayerInput.UsingGamepad && !IsGamepadDpadPressed() &&
-                string.Equals(name, "Empty", StringComparison.OrdinalIgnoreCase) && !suppressedWall)
+                string.Equals(descriptor.Name, "Empty", StringComparison.OrdinalIgnoreCase) && !suppressedWall)
             {
                 _lastTileAnnouncementName = null;
                 _lastTileAnnouncementKey = int.MinValue;
                 return;
             }
 
-            int announcementKey = ResolveTileAnnouncementKey(tileType);
+            int announcementKey = CursorDescriptorService.ResolveAnnouncementKey(descriptor.TileType);
 
             bool suppressRepeats = smartCursorActive || (PlayerInput.UsingGamepad && !IsGamepadDpadPressed());
             if (suppressRepeats &&
-                string.Equals(name, _lastTileAnnouncementName, StringComparison.Ordinal) &&
+                string.Equals(descriptor.Name, _lastTileAnnouncementName, StringComparison.Ordinal) &&
                 announcementKey == _lastTileAnnouncementKey)
             {
                 return;
@@ -206,16 +211,16 @@ public sealed partial class InGameNarrationSystem
 
             if (suppressRepeats &&
                 announcementKey == _lastTileAnnouncementKey &&
-                ShouldSuppressVariantNames(announcementKey))
+                CursorDescriptorService.ShouldSuppressVariantNames(announcementKey))
             {
                 return;
             }
 
             _lastTileAnnouncementKey = announcementKey;
-            _lastTileAnnouncementName = name;
+            _lastTileAnnouncementName = descriptor.Name;
 
-            string message = string.IsNullOrWhiteSpace(coordinates) ? name : $"{name}, {coordinates}";
-            AnnouncementCategory category = TileDescriptor.GetAnnouncementCategory(tileType);
+            string message = string.IsNullOrWhiteSpace(coordinates) ? descriptor.Name : $"{descriptor.Name}, {coordinates}";
+            AnnouncementCategory category = descriptor.Category;
             AnnounceCursorMessage(message, force: true, category: category);
         }
 
@@ -290,17 +295,31 @@ public sealed partial class InGameNarrationSystem
 
         private static void AnnounceCursorMessage(string message, bool force, AnnouncementCategory category = AnnouncementCategory.Default)
         {
-            if (HotbarNarrator.TryDequeuePendingAnnouncement(out string hotbarAnnouncement))
+            string messageKey = NormalizeKey(message);
+            if (HotbarNarrator.TryDequeuePendingAnnouncement(out string hotbarAnnouncement, out string? hotbarKey))
             {
                 string combined = string.IsNullOrWhiteSpace(hotbarAnnouncement)
                     ? message
                     : $"{hotbarAnnouncement}. {message}";
 
+                NarrationInstrumentationContext.SetPendingKey(hotbarKey ?? $"cursor:{messageKey}");
                 ScreenReaderService.Announce(combined, force: force, category: category);
                 return;
             }
 
+            NarrationInstrumentationContext.SetPendingKey($"cursor:{messageKey}");
             ScreenReaderService.Announce(message, force: force, category: category);
+        }
+
+        private static string NormalizeKey(string text)
+        {
+            string normalized = GlyphTagFormatter.Normalize(text ?? string.Empty).Trim();
+            if (normalized.Length > 120)
+            {
+                normalized = normalized[..120];
+            }
+
+            return normalized;
         }
 
         private static Vector2 GetPlayerChestWorld(Player player)

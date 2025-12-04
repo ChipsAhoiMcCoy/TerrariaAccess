@@ -7,7 +7,7 @@ using Terraria;
 
 namespace ScreenReaderMod.Common.Services;
 
-internal static class NvdaSpeechProvider
+internal sealed class NvdaSpeechProvider : ISpeechProvider
 {
     private const string NvdaLibraryName = "nvdaControllerClient64.dll";
 
@@ -15,39 +15,59 @@ internal static class NvdaSpeechProvider
     private delegate int NvdaCancelDelegate();
     private delegate int NvdaTestDelegate();
 
-    private static bool _initialized;
-    private static bool _available;
-    private static IntPtr _libraryHandle;
-    private static NvdaSpeakDelegate? _speak;
-    private static NvdaCancelDelegate? _cancel;
-    private static NvdaTestDelegate? _test;
+    private readonly object _syncRoot = new();
 
-    public static void Interrupt()
+    private bool _initialized;
+    private bool _available;
+    private IntPtr _libraryHandle;
+    private NvdaSpeakDelegate? _speak;
+    private NvdaCancelDelegate? _cancel;
+    private NvdaTestDelegate? _test;
+    private string? _lastMessage;
+    private string? _lastError;
+
+    public string Name => "NVDA";
+
+    public bool IsAvailable => _available;
+
+    public bool IsInitialized => _initialized;
+
+    public void Interrupt()
     {
-        if (!_available || _cancel is null)
+        lock (_syncRoot)
         {
-            return;
-        }
+            if (!_available || _cancel is null)
+            {
+                return;
+            }
 
-        try
-        {
-            _cancel();
-        }
-        catch (Exception ex)
-        {
-            ScreenReaderMod.Instance?.Logger.Debug($"[NVDA] Cancel threw {ex.Message}. Disabling NVDA output.");
-            _available = false;
+            try
+            {
+                _cancel();
+            }
+            catch (Exception ex)
+            {
+                _lastError = ex.Message;
+                ScreenReaderMod.Instance?.Logger.Debug($"[NVDA] Cancel threw {ex.Message}. Disabling NVDA output.");
+                _available = false;
+            }
         }
     }
 
-    public static void Initialize()
+    public void Initialize()
     {
-        if (_initialized)
+        lock (_syncRoot)
         {
-            return;
-        }
+            if (_initialized)
+            {
+                return;
+            }
 
-        _initialized = true;
+            _initialized = true;
+            _available = false;
+            _lastMessage = null;
+            _lastError = null;
+        }
 
         try
         {
@@ -59,110 +79,143 @@ internal static class NvdaSpeechProvider
                 }
             }
 
+            _lastError = $"Unable to locate {NvdaLibraryName}";
             ScreenReaderMod.Instance?.Logger.Warn($"[NVDA] Unable to locate {NvdaLibraryName}. Copy it next to tModLoader.exe or into Mods/ScreenReaderMod/Libraries.");
         }
         catch (Exception ex)
         {
+            _lastError = ex.Message;
             ScreenReaderMod.Instance?.Logger.Error($"[NVDA] Initialization failed: {ex.Message}");
         }
     }
 
-    public static void Shutdown()
+    public void Shutdown()
     {
-        if (_libraryHandle != IntPtr.Zero)
+        lock (_syncRoot)
         {
-            try
+            if (_libraryHandle != IntPtr.Zero)
             {
-                _cancel?.Invoke();
-            }
-            catch
-            {
-                // ignore shutdown errors
+                try
+                {
+                    _cancel?.Invoke();
+                }
+                catch
+                {
+                    // ignore shutdown errors
+                }
+
+                NativeLibrary.Free(_libraryHandle);
+                _libraryHandle = IntPtr.Zero;
             }
 
-            NativeLibrary.Free(_libraryHandle);
-            _libraryHandle = IntPtr.Zero;
+            _available = false;
+            _speak = null;
+            _cancel = null;
+            _test = null;
+            _lastMessage = null;
+            _lastError = null;
+            _initialized = false;
         }
-
-        _available = false;
-        _speak = null;
-        _cancel = null;
-        _test = null;
-        _initialized = false;
     }
 
-    public static void Speak(string message)
+    public void Speak(string message)
     {
-        if (!_initialized)
-        {
-            Initialize();
-        }
-
-        if (!_available || _speak is null)
+        if (string.IsNullOrWhiteSpace(message))
         {
             return;
         }
 
-        try
+        lock (_syncRoot)
         {
-            int result = _speak(message);
-            if (result != 0)
+            if (!_initialized)
             {
-                ScreenReaderMod.Instance?.Logger.Warn($"[NVDA] Speak returned code {result}. Disabling NVDA output until restart.");
+                Initialize();
+            }
+
+            if (!_available || _speak is null)
+            {
+                return;
+            }
+
+            try
+            {
+                int result = _speak(message);
+                _lastMessage = message;
+                if (result != 0)
+                {
+                    _lastError = $"Speak returned code {result}";
+                    ScreenReaderMod.Instance?.Logger.Warn($"[NVDA] Speak returned code {result}. Disabling NVDA output until restart.");
+                    _available = false;
+                }
+            }
+            catch (Exception ex)
+            {
+                _lastError = ex.Message;
+                ScreenReaderMod.Instance?.Logger.Warn($"[NVDA] Speak threw {ex.Message}. Disabling NVDA output.");
                 _available = false;
             }
         }
-        catch (Exception ex)
+    }
+
+    public SpeechProviderSnapshot GetSnapshot()
+    {
+        lock (_syncRoot)
         {
-            ScreenReaderMod.Instance?.Logger.Warn($"[NVDA] Speak threw {ex.Message}. Disabling NVDA output.");
-            _available = false;
+            return new SpeechProviderSnapshot(Name, _initialized, _available, _lastMessage, _lastError);
         }
     }
 
-    private static bool TryLoad(string libraryPath)
+    private bool TryLoad(string libraryPath)
     {
         if (string.IsNullOrWhiteSpace(libraryPath))
         {
             return false;
         }
 
-        try
+        lock (_syncRoot)
         {
-            if (!NativeLibrary.TryLoad(libraryPath, out IntPtr handle))
+            try
             {
-                return false;
+                if (!NativeLibrary.TryLoad(libraryPath, out IntPtr handle))
+                {
+                    return false;
+                }
+
+                _libraryHandle = handle;
+                _speak = Marshal.GetDelegateForFunctionPointer<NvdaSpeakDelegate>(NativeLibrary.GetExport(handle, "nvdaController_speakText"));
+                _cancel = Marshal.GetDelegateForFunctionPointer<NvdaCancelDelegate>(NativeLibrary.GetExport(handle, "nvdaController_cancelSpeech"));
+                _test = Marshal.GetDelegateForFunctionPointer<NvdaTestDelegate>(NativeLibrary.GetExport(handle, "nvdaController_testIfRunning"));
+
+                int status = _test();
+                if (status == 0)
+                {
+                    _available = true;
+                    _lastError = null;
+                    ScreenReaderMod.Instance?.Logger.Info($"[NVDA] Connected via {libraryPath}.");
+                    return true;
+                }
+
+                _lastError = $"NVDA not running (code {status})";
+                ScreenReaderMod.Instance?.Logger.Warn($"[NVDA] Library loaded from {libraryPath}, but NVDA not running (code {status}).");
+            }
+            catch (Exception ex)
+            {
+                _lastError = ex.Message;
+                ScreenReaderMod.Instance?.Logger.Debug($"[NVDA] Failed to load {libraryPath}: {ex.Message}");
             }
 
-            _libraryHandle = handle;
-            _speak = Marshal.GetDelegateForFunctionPointer<NvdaSpeakDelegate>(NativeLibrary.GetExport(handle, "nvdaController_speakText"));
-            _cancel = Marshal.GetDelegateForFunctionPointer<NvdaCancelDelegate>(NativeLibrary.GetExport(handle, "nvdaController_cancelSpeech"));
-            _test = Marshal.GetDelegateForFunctionPointer<NvdaTestDelegate>(NativeLibrary.GetExport(handle, "nvdaController_testIfRunning"));
-
-            int status = _test();
-            if (status == 0)
+            if (_libraryHandle != IntPtr.Zero)
             {
-                _available = true;
-                ScreenReaderMod.Instance?.Logger.Info($"[NVDA] Connected via {libraryPath}.");
-                return true;
+                NativeLibrary.Free(_libraryHandle);
+                _libraryHandle = IntPtr.Zero;
             }
 
-            ScreenReaderMod.Instance?.Logger.Warn($"[NVDA] Library loaded from {libraryPath}, but NVDA not running (code {status}).");
+            _speak = null;
+            _cancel = null;
+            _test = null;
+            _available = false;
+            return false;
         }
-        catch (Exception ex)
-        {
-            ScreenReaderMod.Instance?.Logger.Debug($"[NVDA] Failed to load {libraryPath}: {ex.Message}");
-        }
-
-        if (_libraryHandle != IntPtr.Zero)
-        {
-            NativeLibrary.Free(_libraryHandle);
-            _libraryHandle = IntPtr.Zero;
-        }
-
-        _speak = null;
-        _cancel = null;
-        _test = null;
-        return false;
     }
 
     private static IEnumerable<string> EnumerateCandidatePaths()

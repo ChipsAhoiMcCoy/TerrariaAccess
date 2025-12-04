@@ -920,7 +920,7 @@ public sealed partial class InGameNarrationSystem
                 return fallback;
             }
 
-            return GetDefaultSliderLabel(kind);
+            return SliderNarrationHelper.GetDefaultSliderLabel(kind);
         }
 
         private static float ReadAudioSliderPercent(MenuSliderKind kind)
@@ -950,66 +950,7 @@ public sealed partial class InGameNarrationSystem
 
         private static string BuildSliderAnnouncement(string rawLabel, MenuSliderKind kind, float percent, bool includeLabel)
         {
-            string baseLabel = ExtractBaseLabel(rawLabel, kind);
-            return includeLabel ? $"{baseLabel} {percent:0} percent" : $"{percent:0} percent";
-        }
-
-        private static string ExtractBaseLabel(string rawLabel, MenuSliderKind kind)
-        {
-            string sanitized = TextSanitizer.Clean(rawLabel);
-            if (!string.IsNullOrWhiteSpace(sanitized))
-            {
-                int percentIndex = sanitized.IndexOf('%');
-                if (percentIndex >= 0)
-                {
-                    sanitized = sanitized[..percentIndex];
-                }
-
-                int percentWord = sanitized.IndexOf("percent", StringComparison.OrdinalIgnoreCase);
-                if (percentWord >= 0)
-                {
-                    sanitized = sanitized[..percentWord];
-                }
-
-                sanitized = sanitized.Trim().TrimEnd(':').Trim();
-                sanitized = TrimTrailingNumber(sanitized);
-            }
-
-            if (!string.IsNullOrWhiteSpace(sanitized))
-            {
-                return sanitized;
-            }
-
-            return GetDefaultSliderLabel(kind);
-        }
-
-        private static string GetDefaultSliderLabel(MenuSliderKind kind)
-        {
-            return kind switch
-            {
-                MenuSliderKind.Music => "Music volume",
-                MenuSliderKind.Sound => "Sound volume",
-                MenuSliderKind.Ambient => "Ambient volume",
-                MenuSliderKind.Zoom => "Zoom",
-                MenuSliderKind.InterfaceScale => "Interface scale",
-                _ => "Volume",
-            };
-        }
-
-        private static string TrimTrailingNumber(string value)
-        {
-            int end = value.Length;
-            while (end > 0 && (char.IsWhiteSpace(value[end - 1]) || char.IsDigit(value[end - 1]) || value[end - 1] == ':' || value[end - 1] == '.'))
-            {
-                end--;
-            }
-
-            if (end < value.Length)
-            {
-                return value[..end].TrimEnd();
-            }
-
-            return value;
+            return SliderNarrationHelper.BuildSliderAnnouncement(rawLabel, kind, percent, includeLabel);
         }
 
         private static string? DescribeFallback(int category, int option, string? categoryLabel)

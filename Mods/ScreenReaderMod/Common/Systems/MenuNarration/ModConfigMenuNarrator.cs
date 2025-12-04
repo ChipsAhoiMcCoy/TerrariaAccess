@@ -1,5 +1,6 @@
 #nullable enable
 using System;
+using System.Collections.Generic;
 using System.Globalization;
 using System.Reflection;
 using Terraria;
@@ -50,15 +51,30 @@ internal sealed class ModConfigMenuNarrator
         _uiTracker.Reset();
     }
 
-    public bool TryHandleFancyUi(int menuMode, UserInterface? menuUi)
+    private static void AddEvent(ICollection<MenuNarrationEvent> target, string? text, bool force, MenuNarrationEventKind kind)
     {
-        if (menuMode != MenuID.FancyUI)
+        if (string.IsNullOrWhiteSpace(text))
+        {
+            return;
+        }
+
+        target.Add(new MenuNarrationEvent(text, force, kind));
+    }
+
+    public bool TryBuildMenuEvents(MenuNarrationContext context, List<MenuNarrationEvent> events)
+    {
+        if (context.MenuMode != MenuID.FancyUI)
         {
             Reset();
             return false;
         }
 
-        return TryHandleState(menuUi?.CurrentState, menuUi, alignCursor: false, enableHover: false);
+        return TryHandleState(
+            context.UiState,
+            Main.MenuUI,
+            alignCursor: false,
+            enableHover: false,
+            (text, force, kind) => AddEvent(events, text, force, kind));
     }
 
     public bool TryHandleIngameUi(UserInterface? inGameUi, bool requiresPause)
@@ -69,10 +85,20 @@ internal sealed class ModConfigMenuNarrator
             return false;
         }
 
-        return TryHandleState(inGameUi?.CurrentState, inGameUi, alignCursor: true, enableHover: true);
+        return TryHandleState(
+            inGameUi?.CurrentState,
+            inGameUi,
+            alignCursor: true,
+            enableHover: true,
+            (text, force, kind) => ScreenReaderService.Announce(text, force));
     }
 
-    private bool TryHandleState(UIState? state, UserInterface? uiContext, bool alignCursor, bool enableHover)
+    private bool TryHandleState(
+        UIState? state,
+        UserInterface? uiContext,
+        bool alignCursor,
+        bool enableHover,
+        Action<string, bool, MenuNarrationEventKind> announce)
     {
         if (state is null)
         {
@@ -85,7 +111,7 @@ internal sealed class ModConfigMenuNarrator
         if (ModConfigListType is not null && ModConfigListType.IsAssignableFrom(stateType))
         {
             PrepareForState(state, alignCursor);
-            HandleListState(state);
+            HandleListState(state, announce);
             _lastState = state;
             return true;
         }
@@ -93,11 +119,11 @@ internal sealed class ModConfigMenuNarrator
         if (ModConfigStateType is not null && ModConfigStateType.IsAssignableFrom(stateType))
         {
             PrepareForState(state, alignCursor);
-            HandleConfigState(state);
+            HandleConfigState(state, announce);
 
             if (enableHover)
             {
-                TryAnnounceHover(uiContext);
+                TryAnnounceHover(uiContext, announce);
             }
 
             _lastState = state;
@@ -122,12 +148,12 @@ internal sealed class ModConfigMenuNarrator
         }
     }
 
-    private void HandleListState(UIState state)
+    private void HandleListState(UIState state, Action<string, bool, MenuNarrationEventKind> announce)
     {
         if (!_listIntroAnnounced || !ReferenceEquals(_lastState, state))
         {
             string intro = LocalizationHelper.GetTextOrFallback("Mods.ScreenReaderMod.ModConfigMenu.ListIntro", "Mod configuration list.");
-            ScreenReaderService.Announce(intro, force: true);
+            announce(intro, true, MenuNarrationEventKind.ModConfig);
             _listIntroAnnounced = true;
             _detailIntroAnnounced = false;
         }
@@ -145,11 +171,11 @@ internal sealed class ModConfigMenuNarrator
         }
 
         string template = LocalizationHelper.GetTextOrFallback("Mods.ScreenReaderMod.ModConfigMenu.SelectedMod", "Selected mod: {0}");
-        ScreenReaderService.Announce(string.Format(template, modName), force: true);
+        announce(string.Format(template, modName), true, MenuNarrationEventKind.ModConfig);
         _lastModName = modName;
     }
 
-    private void HandleConfigState(UIState state)
+    private void HandleConfigState(UIState state, Action<string, bool, MenuNarrationEventKind> announce)
     {
         object? mod = EditingModField?.GetValue(state);
         object? config = ActiveConfigField?.GetValue(state);
@@ -160,7 +186,7 @@ internal sealed class ModConfigMenuNarrator
         if (!_detailIntroAnnounced || !ReferenceEquals(_lastState, state) || !string.Equals(configName, _lastConfigLabel, StringComparison.OrdinalIgnoreCase))
         {
             string message = ComposeConfigAnnouncement(configName, modName);
-            ScreenReaderService.Announce(message, force: true);
+            announce(message, true, MenuNarrationEventKind.ModConfig);
             _detailIntroAnnounced = true;
             _lastConfigLabel = configName;
         }
@@ -168,7 +194,7 @@ internal sealed class ModConfigMenuNarrator
         _listIntroAnnounced = false;
     }
 
-    private void TryAnnounceHover(UserInterface? uiContext)
+    private void TryAnnounceHover(UserInterface? uiContext, Action<string, bool, MenuNarrationEventKind> announce)
     {
         if (uiContext is null)
         {
@@ -192,7 +218,7 @@ internal sealed class ModConfigMenuNarrator
         }
 
         _lastHoverAnnouncement = announcement;
-        ScreenReaderService.Announce(announcement);
+        announce(announcement, false, MenuNarrationEventKind.Hover);
     }
 
     private static string BuildHoverAnnouncement(MenuUiLabel hover)

@@ -35,6 +35,7 @@ public sealed partial class InGameNarrationSystem
 {
     private sealed class SmartCursorNarrator
     {
+        private readonly CursorDescriptorService _descriptorService;
         private string? _lastAnnouncement;
         private int _lastTileX = int.MinValue;
         private int _lastTileY = int.MinValue;
@@ -46,6 +47,11 @@ public sealed partial class InGameNarrationSystem
         private bool _lastSmartCursorEnabled;
         private string? _pendingStatePrefix;
         private bool _suppressCursorAnnouncement;
+
+        public SmartCursorNarrator(CursorDescriptorService descriptorService)
+        {
+            _descriptorService = descriptorService;
+        }
 
         public void Update()
         {
@@ -113,6 +119,7 @@ public sealed partial class InGameNarrationSystem
             }
 
             _lastAnnouncement = message;
+            NarrationInstrumentationContext.SetPendingKey(BuildSmartCursorKey(message));
             ScreenReaderService.Announce(message, category: category);
         }
 
@@ -228,17 +235,17 @@ public sealed partial class InGameNarrationSystem
             int tileY = Main.SmartInteractY;
             if (tileX >= 0 && tileY >= 0)
             {
-                if (!TileDescriptor.TryDescribe(tileX, tileY, out int tileType, out string? tileName))
+                if (!_descriptorService.TryDescribe(tileX, tileY, out var descriptor))
                 {
                     return null;
                 }
 
-                if (tileX == _lastTileX && tileY == _lastTileY && string.Equals(tileName, _lastAnnouncement, StringComparison.Ordinal))
+                if (tileX == _lastTileX && tileY == _lastTileY && string.Equals(descriptor.Name, _lastAnnouncement, StringComparison.Ordinal))
                 {
                     return null;
                 }
 
-                if (tileType == _lastInteractTileType)
+                if (descriptor.TileType == _lastInteractTileType)
                 {
                     return null;
                 }
@@ -247,12 +254,12 @@ public sealed partial class InGameNarrationSystem
                 _lastTileY = tileY;
                 _lastNpc = -1;
                 _lastProj = -1;
-                _lastInteractTileType = tileType;
+                _lastInteractTileType = descriptor.TileType;
 
-                if (!string.IsNullOrWhiteSpace(tileName))
+                if (!string.IsNullOrWhiteSpace(descriptor.Name))
                 {
-                    category = TileDescriptor.GetAnnouncementCategory(tileType);
-                    return tileName;
+                    category = descriptor.Category;
+                    return descriptor.Name;
                 }
             }
 
@@ -265,26 +272,25 @@ public sealed partial class InGameNarrationSystem
 
             int tileX = Main.SmartCursorX;
             int tileY = Main.SmartCursorY;
-            if (!TileDescriptor.TryDescribe(tileX, tileY, out int tileType, out string? tileName))
+            if (!_descriptorService.TryDescribe(tileX, tileY, out var descriptor))
             {
                 return null;
             }
 
-            bool suppressedWall = IsWallDescriptor(tileType) && !ShouldAnnounceWall(player);
+            bool suppressedWall = descriptor.IsWall && !ShouldAnnounceWall(player);
             if (suppressedWall)
             {
-                tileType = -1;
-                tileName = "Empty";
+                descriptor = descriptor with { TileType = -1, Name = "Empty", Category = AnnouncementCategory.Tile, IsWall = false, IsAir = false };
             }
 
-            if (!suppressedWall && IsAirDescriptor(tileType, tileName))
+            if (!suppressedWall && descriptor.IsAir)
             {
                 ResetSmartCursorRepeatTracking();
                 return null;
             }
 
-            int announcementKey = ResolveTileAnnouncementKey(tileType);
-            if (tileX == _lastTileX && tileY == _lastTileY && string.Equals(tileName, _lastAnnouncement, StringComparison.Ordinal))
+            int announcementKey = CursorDescriptorService.ResolveAnnouncementKey(descriptor.TileType);
+            if (tileX == _lastTileX && tileY == _lastTileY && string.Equals(descriptor.Name, _lastAnnouncement, StringComparison.Ordinal))
             {
                 return null;
             }
@@ -298,16 +304,16 @@ public sealed partial class InGameNarrationSystem
             _lastTileY = tileY;
             _lastNpc = -1;
             _lastProj = -1;
-            _lastCursorTileType = tileType;
+            _lastCursorTileType = descriptor.TileType;
             _lastCursorAnnouncementKey = announcementKey;
 
-            if (string.IsNullOrWhiteSpace(tileName))
+            if (string.IsNullOrWhiteSpace(descriptor.Name))
             {
                 return null;
             }
 
-            category = TileDescriptor.GetAnnouncementCategory(tileType);
-            return tileName;
+            category = descriptor.Category;
+            return descriptor.Name;
         }
 
         private void AnnouncePendingStateIfAny(bool force = false)
@@ -332,30 +338,21 @@ public sealed partial class InGameNarrationSystem
             }
 
             _lastAnnouncement = prefix;
+            NarrationInstrumentationContext.SetPendingKey(BuildSmartCursorKey(prefix));
             ScreenReaderService.Announce(prefix, force: force);
         }
 
-    }
-
-    private static int ResolveTileAnnouncementKey(int tileType)
-    {
-        if (tileType >= 0 && tileType < TileID.Sets.Conversion.Grass.Length &&
-            (TileID.Sets.Conversion.Grass[tileType] || tileType == TileID.Dirt))
+        private static string BuildSmartCursorKey(string? message)
         {
-            return TileID.Dirt;
+            string normalized = GlyphTagFormatter.Normalize(message ?? string.Empty).Trim();
+            if (normalized.Length > 120)
+            {
+                normalized = normalized[..120];
+            }
+
+            return $"smart:{normalized}";
         }
 
-        return tileType;
-    }
-
-    private static bool ShouldSuppressVariantNames(int announcementKey)
-    {
-        return announcementKey == TileID.Dirt;
-    }
-
-    private static bool IsWallDescriptor(int tileType)
-    {
-        return TileDescriptor.GetAnnouncementCategory(tileType) == AnnouncementCategory.Wall;
     }
 
     private static bool ShouldAnnounceWall(Player player)
@@ -372,10 +369,5 @@ public sealed partial class InGameNarrationSystem
         }
 
         return held.createWall > WallID.None;
-    }
-
-    private static bool IsAirDescriptor(int tileType, string? tileName)
-    {
-        return tileType == -1 || string.Equals(tileName, "Empty", StringComparison.OrdinalIgnoreCase);
     }
 }

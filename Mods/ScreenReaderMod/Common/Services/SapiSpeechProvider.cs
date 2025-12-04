@@ -5,21 +5,29 @@ using System.Runtime.InteropServices;
 
 namespace ScreenReaderMod.Common.Services;
 
-internal static class SapiSpeechProvider
+internal sealed class SapiSpeechProvider : ISpeechProvider
 {
     private const int SpeechVoiceSpeakFlagsAsync = 1;
     private const int SpeechVoiceSpeakFlagsPurgeBeforeSpeak = 2;
 
-    private static readonly object SyncRoot = new();
+    private readonly object _syncRoot = new();
 
-    private static bool _initialized;
-    private static bool _available;
-    private static object? _voice;
-    private static Type? _voiceType;
+    private bool _initialized;
+    private bool _available;
+    private object? _voice;
+    private Type? _voiceType;
+    private string? _lastMessage;
+    private string? _lastError;
 
-    public static void Initialize()
+    public string Name => "SAPI";
+
+    public bool IsAvailable => _available;
+
+    public bool IsInitialized => _initialized;
+
+    public void Initialize()
     {
-        lock (SyncRoot)
+        lock (_syncRoot)
         {
             if (_initialized)
             {
@@ -27,12 +35,16 @@ internal static class SapiSpeechProvider
             }
 
             _initialized = true;
+            _available = false;
+            _lastMessage = null;
+            _lastError = null;
 
             try
             {
                 Type? voiceType = Type.GetTypeFromProgID("SAPI.SpVoice");
                 if (voiceType is null)
                 {
+                    _lastError = "SpVoice ProgID unavailable";
                     ScreenReaderMod.Instance?.Logger.Warn("[SAPI] SpVoice ProgID unavailable. World announcements disabled.");
                     return;
                 }
@@ -40,6 +52,7 @@ internal static class SapiSpeechProvider
                 object? instance = Activator.CreateInstance(voiceType);
                 if (instance is null)
                 {
+                    _lastError = "Failed to create SpVoice instance";
                     ScreenReaderMod.Instance?.Logger.Warn("[SAPI] Failed to create SpVoice instance. World announcements disabled.");
                     return;
                 }
@@ -47,10 +60,12 @@ internal static class SapiSpeechProvider
                 _voiceType = voiceType;
                 _voice = instance;
                 _available = true;
+                _lastError = null;
                 ScreenReaderMod.Instance?.Logger.Info("[SAPI] Connected using SpVoice.");
             }
             catch (Exception ex)
             {
+                _lastError = ex.Message;
                 ScreenReaderMod.Instance?.Logger.Warn($"[SAPI] Initialization failed: {ex.Message}");
                 _available = false;
             }
@@ -62,24 +77,26 @@ internal static class SapiSpeechProvider
         }
     }
 
-    public static void Shutdown()
+    public void Shutdown()
     {
-        lock (SyncRoot)
+        lock (_syncRoot)
         {
             DisposeVoice();
             _initialized = false;
             _available = false;
+            _lastMessage = null;
+            _lastError = null;
         }
     }
 
-    public static void Speak(string message)
+    public void Speak(string message)
     {
         if (string.IsNullOrWhiteSpace(message))
         {
             return;
         }
 
-        lock (SyncRoot)
+        lock (_syncRoot)
         {
             if (!_initialized)
             {
@@ -95,9 +112,11 @@ internal static class SapiSpeechProvider
             {
                 object[] args = { message, SpeechVoiceSpeakFlagsAsync };
                 _voiceType.InvokeMember("Speak", BindingFlags.InvokeMethod, binder: null, target: _voice, args: args);
+                _lastMessage = message;
             }
             catch (Exception ex)
             {
+                _lastError = ex.Message;
                 ScreenReaderMod.Instance?.Logger.Warn($"[SAPI] Speak failed: {ex.Message}");
                 _available = false;
                 DisposeVoice();
@@ -105,9 +124,9 @@ internal static class SapiSpeechProvider
         }
     }
 
-    public static void Interrupt()
+    public void Interrupt()
     {
-        lock (SyncRoot)
+        lock (_syncRoot)
         {
             if (!_initialized)
             {
@@ -126,12 +145,21 @@ internal static class SapiSpeechProvider
             }
             catch (Exception ex)
             {
+                _lastError = ex.Message;
                 ScreenReaderMod.Instance?.Logger.Debug($"[SAPI] Interrupt failed: {ex.Message}");
             }
         }
     }
 
-    private static void DisposeVoice()
+    public SpeechProviderSnapshot GetSnapshot()
+    {
+        lock (_syncRoot)
+        {
+            return new SpeechProviderSnapshot(Name, _initialized, _available, _lastMessage, _lastError);
+        }
+    }
+
+    private void DisposeVoice()
     {
         if (_voice is null)
         {

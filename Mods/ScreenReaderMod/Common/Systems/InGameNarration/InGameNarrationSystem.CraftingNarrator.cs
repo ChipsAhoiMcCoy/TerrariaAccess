@@ -41,12 +41,17 @@ public sealed partial class InGameNarrationSystem
         private static int _recipeLookupVersion = -1;
         private static Dictionary<Item, int>? _recipeResultLookup;
         private readonly HashSet<int> _missingRequirementRecipes = new();
+        private RecipeIdentity _lastGuideIdentity;
+        private RecipeIdentity _lastReforgeIdentity;
+        private int _lastGuideRecipeCount;
+        private bool _announcedEmptyReforge;
 
         private static readonly Lazy<Dictionary<int, int>> RecipeGroupLookup = new(DiscoverRecipeGroupLookup);
         private static readonly Func<Recipe, int, int>? AcceptedGroupResolver = CreateAcceptedGroupResolver();
 
         private static bool _loggedRecipeGroupReflectionWarning;
         private static bool _loggedRecipeFlagReflectionWarning;
+        private static bool _loggedReforgeReflectionWarning;
 
         private readonly struct RecipeFocus
         {
@@ -335,6 +340,8 @@ public sealed partial class InGameNarrationSystem
                 return;
             }
 
+            HandleGuideAndReforge(player);
+
             if (!UiAreaNarrationContext.IsActiveArea(UiNarrationArea.Crafting | UiNarrationArea.Guide))
             {
                 ResetFocus();
@@ -367,6 +374,164 @@ public sealed partial class InGameNarrationSystem
 
             _lastAnnouncement = announcement;
             ScreenReaderService.Announce(announcement.Message, force: true);
+        }
+
+        private void HandleGuideAndReforge(Player player)
+        {
+            bool inGuide = Main.InGuideCraftMenu;
+            bool inReforge = Main.InReforgeMenu;
+
+            if (inGuide)
+            {
+                UiAreaNarrationContext.RecordArea(UiNarrationArea.Guide);
+                TryAnnounceGuideItem();
+            }
+            else
+            {
+                ResetGuideState();
+            }
+
+            if (inReforge)
+            {
+                UiAreaNarrationContext.RecordArea(UiNarrationArea.Reforge);
+                TryAnnounceReforgeItem(player);
+            }
+            else
+            {
+                ResetReforgeState();
+            }
+        }
+
+        private void TryAnnounceGuideItem()
+        {
+            Item guideItem = Main.guideItem;
+            RecipeIdentity identity = RecipeIdentity.From(guideItem);
+            int recipeCount = Math.Clamp(Main.numAvailableRecipes, 0, Main.availableRecipe.Length);
+
+            bool identityChanged = !_lastGuideIdentity.Equals(identity);
+            bool recipeCountChanged = recipeCount != _lastGuideRecipeCount;
+            if (!identityChanged && !recipeCountChanged)
+            {
+                return;
+            }
+
+            _lastGuideIdentity = identity;
+            _lastGuideRecipeCount = recipeCount;
+
+            if (identity.Type <= 0)
+            {
+                return;
+            }
+
+            string label = NarrationTextFormatter.ComposeItemLabel(guideItem, includeCountWhenSingular: true);
+            string message = $"Guide: {label}";
+            if (recipeCount > 0)
+            {
+                string suffix = recipeCount == 1 ? " recipe available" : " recipes available";
+                message = $"{message}. {recipeCount}{suffix}";
+            }
+
+            NarrationInstrumentationContext.SetPendingKey($"guide:{identity.Type}:{identity.Prefix}");
+            ScreenReaderService.Announce(message, force: true);
+        }
+
+        private void ResetGuideState()
+        {
+            _lastGuideIdentity = default;
+            _lastGuideRecipeCount = 0;
+        }
+
+        private void TryAnnounceReforgeItem(Player player)
+        {
+            Item reforgeItem = Main.reforgeItem;
+            RecipeIdentity identity = RecipeIdentity.From(reforgeItem);
+
+            if (identity.Type <= 0 || reforgeItem.IsAir)
+            {
+                if (!_announcedEmptyReforge)
+                {
+                    ScreenReaderService.Announce("Place an item to reforge.");
+                    _announcedEmptyReforge = true;
+                }
+
+                _lastReforgeIdentity = default;
+                return;
+            }
+
+            bool changed = !_lastReforgeIdentity.Equals(identity);
+            if (!changed)
+            {
+                return;
+            }
+
+            _announcedEmptyReforge = false;
+
+            string label = NarrationTextFormatter.ComposeItemLabel(reforgeItem, includeCountWhenSingular: true);
+            string message = $"Reforge {label}";
+            if (TryGetReforgePrice(reforgeItem, out long price) && price > 0)
+            {
+                string coins = CoinFormatter.ValueToCoinString(price);
+                if (!string.IsNullOrWhiteSpace(coins))
+                {
+                    message = $"{message}. Cost {coins}";
+                }
+            }
+
+            string prefixName = TextSanitizer.Clean(reforgeItem.prefix > 0 ? Lang.prefix[reforgeItem.prefix].Value : string.Empty);
+            if (!string.IsNullOrWhiteSpace(prefixName))
+            {
+                message = $"{message}. Current prefix {prefixName}";
+            }
+
+            NarrationInstrumentationContext.SetPendingKey($"reforge:{identity.Type}:{identity.Prefix}");
+            ScreenReaderService.Announce(message, force: true);
+            _lastReforgeIdentity = identity;
+        }
+
+        private void ResetReforgeState()
+        {
+            _lastReforgeIdentity = default;
+            _announcedEmptyReforge = false;
+        }
+
+        private static bool TryGetReforgePrice(Item item, out long price)
+        {
+            price = 0;
+            if (item is null || item.IsAir)
+            {
+                return false;
+            }
+
+            try
+            {
+                MethodInfo? method = typeof(ItemLoader).GetMethod(
+                    "ReforgePrice",
+                    BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Static,
+                    binder: null,
+                    types: new[] { typeof(Item) },
+                    modifiers: null);
+                if (method is not null)
+                {
+                    object? result = method.Invoke(null, new object[] { item });
+                    switch (result)
+                    {
+                        case int intValue when intValue > 0:
+                            price = intValue;
+                            return true;
+                        case long longValue when longValue > 0:
+                            price = longValue;
+                            return true;
+                    }
+                }
+            }
+            catch (Exception ex) when (!_loggedReforgeReflectionWarning)
+            {
+                _loggedReforgeReflectionWarning = true;
+                ScreenReaderMod.Instance?.Logger.Warn($"[CraftingNarrator] Failed to resolve reforge price: {ex}");
+            }
+
+            price = Math.Max(1, Math.Max(item.value, 0) / 3);
+            return price > 0;
         }
 
         private static bool TryCaptureFocus(out RecipeFocus focus)
@@ -491,7 +656,7 @@ public sealed partial class InGameNarrationSystem
                 return false;
             }
 
-            string label = ComposeItemLabel(result);
+            string label = NarrationTextFormatter.ComposeItemLabel(result);
 
             string? details = InventoryNarrator.BuildTooltipDetails(
                 result,
@@ -512,7 +677,7 @@ public sealed partial class InGameNarrationSystem
                 LogMissingRequirementNarration(focus.RecipeIndex, label);
             }
 
-            string combined = InventoryNarrator.CombineItemAnnouncement(label, details);
+            string combined = NarrationTextFormatter.CombineItemAnnouncement(label, details);
             if (string.IsNullOrWhiteSpace(combined))
             {
                 combined = label;
@@ -593,6 +758,10 @@ public sealed partial class InGameNarrationSystem
         private void Reset()
         {
             ResetFocus();
+            _lastGuideIdentity = default;
+            _lastReforgeIdentity = default;
+            _lastGuideRecipeCount = 0;
+            _announcedEmptyReforge = false;
             _missingRequirementRecipes.Clear();
         }
 
