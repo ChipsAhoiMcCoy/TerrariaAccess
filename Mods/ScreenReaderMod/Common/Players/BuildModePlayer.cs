@@ -29,6 +29,7 @@ public sealed class BuildModePlayer : ModPlayer
     private bool _lastMouseLeft;
     private bool _lastQuickMount;
     private bool _lastGamepadStart;
+    private bool _lastGamepadA;
     private Rectangle _activeSelection;
     private SelectionAction _activeAction;
     private int _activeItemType;
@@ -234,6 +235,7 @@ public sealed class BuildModePlayer : ModPlayer
         _lastMouseLeft = false;
         _lastQuickMount = false;
         _lastGamepadStart = false;
+        _lastGamepadA = false;
         ResetActiveAction();
         _hurtGraceTicks = 0;
     }
@@ -566,6 +568,10 @@ public sealed class BuildModePlayer : ModPlayer
     {
         bool placePressed = BuildModeKeybinds.Place?.JustPressed ?? false;
         bool usingGamepad = PlayerInput.UsingGamepad;
+        bool gamepadAPressed = usingGamepad && IsGamepadAButtonPressed();
+        bool gamepadAJustPressed = gamepadAPressed && !_lastGamepadA;
+        _lastGamepadA = gamepadAPressed;
+
         bool quickMountPressed = triggersSet.QuickMount;
         bool quickMountJustPressed = quickMountPressed && !_lastQuickMount;
         _lastQuickMount = quickMountPressed;
@@ -574,6 +580,11 @@ public sealed class BuildModePlayer : ModPlayer
         {
             placePressed |= quickMountJustPressed;
             SuppressQuickMount(triggersSet);
+        }
+
+        if (gamepadAJustPressed)
+        {
+            placePressed = true;
         }
 
         if (!placePressed && !usingGamepad)
@@ -902,6 +913,19 @@ public sealed class BuildModePlayer : ModPlayer
         {
             GamePadState state = GamePad.GetState(PlayerIndex.One);
             return state.IsConnected && state.Buttons.Start == ButtonState.Pressed;
+        }
+        catch
+        {
+            return false;
+        }
+    }
+
+    private static bool IsGamepadAButtonPressed()
+    {
+        try
+        {
+            GamePadState state = GamePad.GetState(PlayerIndex.One);
+            return state.IsConnected && state.Buttons.A == ButtonState.Pressed;
         }
         catch
         {
