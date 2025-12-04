@@ -33,8 +33,10 @@ See `Docs/features.md` for deeper coverage of each system.
 | Guidance Entry Next/Previous | Page Down / Page Up | Cycle entries within the active guidance category. |
 | Create / Delete Waypoint | Backslash / Delete | Create a waypoint at your position; delete the selected waypoint. |
 | Guidance Teleport | P | Teleport to the active guidance target when a safe landing spot exists. |
-| Build Mode Toggle | Start (gamepad) | Toggles build mode by default on controllers; rebind in Controls if you want a keyboard shortcut. |
+| Build Mode Toggle | Start (gamepad) | Toggles build mode by default on controllers; rebind under Settings > Controls if you want a keyboard shortcut. |
 | Build Mode Place Corner | A (gamepad) | Marks selection corners; also works with Quick Mount or mouse left while build mode is active. |
+
+To change any defaults, open the in-world menu, go to Settings > Controls, and select the input tab at the top (Gamepad, Keyboard, etc.) before binding. The **Screen Reader** section lists these actions for rebinding.
 
 Configure bindings under `Settings > Controls > Keybindings > Screen Reader` to match your controller or keyboard preferences.
 
