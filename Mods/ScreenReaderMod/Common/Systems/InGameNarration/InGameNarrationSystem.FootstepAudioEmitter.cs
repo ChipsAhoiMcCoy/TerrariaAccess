@@ -18,6 +18,7 @@ public sealed partial class InGameNarrationSystem
         private const float MinLandingDisplacement = 6f;
 
         private Point _lastFootTile = new(-1, -1);
+        private float _lastFootX = float.NaN;
         private bool _suppressNextStep = true;
         private bool _wasAirborne;
         private float _airborneStartY;
@@ -35,14 +36,16 @@ public sealed partial class InGameNarrationSystem
             if (!grounded)
             {
                 TrackAirborneDisplacement(player);
+                _lastFootX = float.NaN;
                 return;
             }
 
             bool landingStep = ConsumeLandingStep();
-            Point footTile = GetFootTile(player);
-            bool movedToNewTile = footTile != _lastFootTile;
-            if (!landingStep && !movedToNewTile)
+            Point footTile = GetFootTile(player, out float footX);
+            bool crossedTileCenter = HasCrossedTileCenter(footTile.X, footX);
+            if (!landingStep && !crossedTileCenter)
             {
+                _lastFootX = footX;
                 return;
             }
 
@@ -50,10 +53,12 @@ public sealed partial class InGameNarrationSystem
             {
                 _suppressNextStep = false;
                 _lastFootTile = footTile;
+                _lastFootX = footX;
                 return;
             }
 
             _lastFootTile = footTile;
+            _lastFootX = footX;
             bool onPlatform = IsPlatform(footTile.X, footTile.Y);
             PlayStep(player, onPlatform);
         }
@@ -83,10 +88,22 @@ public sealed partial class InGameNarrationSystem
             return Math.Abs(player.velocity.Y) < 0.02f;
         }
 
-        private static Point GetFootTile(Player player)
+        private bool HasCrossedTileCenter(int tileX, float footX)
+        {
+            if (float.IsNaN(_lastFootX) || _lastFootX == footX)
+            {
+                return false;
+            }
+
+            float tileCenterX = tileX * 16f + 8f;
+            return (_lastFootX < tileCenterX && footX >= tileCenterX) ||
+                   (_lastFootX > tileCenterX && footX <= tileCenterX);
+        }
+
+        private static Point GetFootTile(Player player, out float footX)
         {
             Rectangle hitbox = player.Hitbox;
-            float footX = hitbox.Center.X;
+            footX = hitbox.Center.X;
             int tileX = Math.Clamp((int)(footX / 16f), 0, Main.maxTilesX - 1);
             int tileY = Math.Clamp(hitbox.Bottom / 16, 0, Main.maxTilesY - 1);
             return new Point(tileX, tileY);
@@ -102,6 +119,7 @@ public sealed partial class InGameNarrationSystem
         {
             _suppressNextStep = true;
             _lastFootTile = new Point(-1, -1);
+            _lastFootX = float.NaN;
             _wasAirborne = false;
             _airborneStartY = 0f;
             _maxAirborneDisplacement = 0f;
