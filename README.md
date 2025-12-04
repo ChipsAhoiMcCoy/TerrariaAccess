@@ -15,7 +15,6 @@ A screen-reader-first tModLoader mod that makes Terraria playable for blind and 
 3. Place `ScreenReaderMod.tmod` in `/documents/my games/terraria/tmodloader/mods`.
 4. Place the `enabled.json` in `/documents/my games/terraria/tmodloader/mods`.
 5. Place the inputs file in `/documents/my games/terraria/tmodloader`.
-6. Bind the mod keybinds under `Settings > Controls > Keybindings > Screen Reader` (defaults listed below).
 
 ## Feature highlights
 - **Menu narration:** Title, player/world creation & deletion, settings (audio/video/interface/gameplay/cursor/effects/resolution), multiplayer/host & play, join by IP, tModLoader settings, mod browser/workshop, and mod configuration screens.
@@ -30,11 +29,12 @@ See `Docs/features.md` for deeper coverage of each system.
 | Action | Default | Notes |
 | --- | --- | --- |
 | Speech Interrupt | `F2` | Cancel current speech and toggle interrupt on/off. |
-| Guidance Category Next/Previous | `]` / `[` | Cycle between None, Exploration, Interactable, NPC, Player, and Waypoint tracking modes. |
-| Guidance Entry Next/Previous | `PageDown` / `PageUp` | Cycle entries within the active guidance category. |
-| Create / Delete Waypoint | `\` / `Delete` | Create a waypoint at your position; delete the selected waypoint. |
-| Guidance Teleport | `P` | Teleport to the active guidance target when a safe landing spot exists. |
-| Build Mode Toggle / Place Corner | Unbound | Set your own bindings; when active, use the place key (or Quick Mount/mouse left) to mark corners. |
+| Guidance Category Next/Previous | Right bracket / Left bracket | Cycle between None, Exploration, Interactable, NPC, Player, and Waypoint tracking modes. |
+| Guidance Entry Next/Previous | Page Down / Page Up | Cycle entries within the active guidance category. |
+| Create / Delete Waypoint | Backslash / Delete | Create a waypoint at your position; delete the selected waypoint. |
+| Guidance Teleport | P | Teleport to the active guidance target when a safe landing spot exists. |
+| Build Mode Toggle | Start (gamepad), Unbound (keyboard) | Toggles build mode on controllers by default; bind a keyboard key if preferred. |
+| Build Mode Place Corner | Unbound | Set your own binding; when active, use the place key (or Quick Mount/mouse left) to mark corners. |
 
 Configure bindings under `Settings > Controls > Keybindings > Screen Reader` to match your controller or keyboard preferences.
 

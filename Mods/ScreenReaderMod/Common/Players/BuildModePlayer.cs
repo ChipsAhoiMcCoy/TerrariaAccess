@@ -28,6 +28,7 @@ public sealed class BuildModePlayer : ModPlayer
     private int _cursorAnnounceCooldown;
     private bool _lastMouseLeft;
     private bool _lastQuickMount;
+    private bool _lastGamepadStart;
     private Rectangle _activeSelection;
     private SelectionAction _activeAction;
     private int _activeItemType;
@@ -75,7 +76,11 @@ public sealed class BuildModePlayer : ModPlayer
 
     public override void ProcessTriggers(TriggersSet triggersSet)
     {
-        if (BuildModeKeybinds.Toggle?.JustPressed ?? false)
+        bool startPressed = PlayerInput.UsingGamepad && IsGamepadStartPressed();
+        bool startJustPressed = startPressed && !_lastGamepadStart;
+        _lastGamepadStart = startPressed;
+
+        if (startJustPressed || (BuildModeKeybinds.Toggle?.JustPressed ?? false))
         {
             ToggleBuildMode();
         }
@@ -228,6 +233,7 @@ public sealed class BuildModePlayer : ModPlayer
         _lastAnnouncedCursor = Point.Zero;
         _lastMouseLeft = false;
         _lastQuickMount = false;
+        _lastGamepadStart = false;
         ResetActiveAction();
         _hurtGraceTicks = 0;
     }
@@ -883,6 +889,19 @@ public sealed class BuildModePlayer : ModPlayer
                 state.DPad.Down == ButtonState.Pressed ||
                 state.DPad.Left == ButtonState.Pressed ||
                 state.DPad.Right == ButtonState.Pressed;
+        }
+        catch
+        {
+            return false;
+        }
+    }
+
+    private static bool IsGamepadStartPressed()
+    {
+        try
+        {
+            GamePadState state = GamePad.GetState(PlayerIndex.One);
+            return state.IsConnected && state.Buttons.Start == ButtonState.Pressed;
         }
         catch
         {
