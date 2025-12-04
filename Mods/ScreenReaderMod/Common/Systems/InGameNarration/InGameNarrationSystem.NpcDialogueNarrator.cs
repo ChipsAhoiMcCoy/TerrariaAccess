@@ -70,10 +70,12 @@ public sealed partial class InGameNarrationSystem
                 OnNpcChanged(npc, category);
             }
 
-            HandleNpcChat(npc, category);
-            HandleTypedInput(player, category);
+            bool interruptsAllowed = ScreenReaderService.SpeechInterruptEnabled;
 
-            bool allowInterrupt = NpcDialogueInputTracker.IsNavigationPressed;
+            HandleNpcChat(npc, category, interruptsAllowed);
+            HandleTypedInput(player, category, interruptsAllowed);
+
+            bool allowInterrupt = interruptsAllowed && NpcDialogueInputTracker.IsNavigationPressed;
 
             HandleButtonFocus(Main.npcChatFocus2, ref _lastPrimaryFocus, _currentPrimaryButton, allowInterrupt, category);
             HandleButtonFocus(Main.npcChatFocus1, ref _lastCloseFocus, _currentCloseButton, allowInterrupt, category);
@@ -107,7 +109,11 @@ public sealed partial class InGameNarrationSystem
             if (!string.IsNullOrWhiteSpace(npcName))
             {
                 NarrationInstrumentationContext.SetPendingKey($"npc-dialogue:npc:{npcName}");
-                ScreenReaderService.Announce($"Talking to {npcName}", force: true, category: category);
+                ScreenReaderService.Announce(
+                    $"Talking to {npcName}",
+                    force: true,
+                    category: category,
+                    requestInterrupt: ScreenReaderService.SpeechInterruptEnabled);
             }
 
             _lastNpc = npc.whoAmI;
@@ -116,7 +122,7 @@ public sealed partial class InGameNarrationSystem
             NpcDialogueInputTracker.Reset();
         }
 
-        private void HandleNpcChat(NPC npc, ScreenReaderService.AnnouncementCategory category)
+        private void HandleNpcChat(NPC npc, ScreenReaderService.AnnouncementCategory category, bool interruptsAllowed)
         {
             string chat = Main.npcChatText ?? string.Empty;
             string normalizedText = NormalizeChat(chat);
@@ -129,7 +135,7 @@ public sealed partial class InGameNarrationSystem
                     : $"{prefix} says: {normalizedText}";
 
                 NarrationInstrumentationContext.SetPendingKey("npc-dialogue:text");
-                ScreenReaderService.Announce(announcement, category: category);
+                ScreenReaderService.Announce(announcement, category: category, requestInterrupt: interruptsAllowed);
 
                 _lastChat = normalizedText;
                 _suppressNextButtonAnnouncement = true;
@@ -141,7 +147,7 @@ public sealed partial class InGameNarrationSystem
             }
         }
 
-        private void HandleTypedInput(Player player, ScreenReaderService.AnnouncementCategory category)
+        private void HandleTypedInput(Player player, ScreenReaderService.AnnouncementCategory category, bool interruptsAllowed)
         {
             bool inputActive = IsTypingToNpc(player);
             NpcDialogueInputTracker.RecordTypedInput(Main.chatText, inputActive);
@@ -155,7 +161,7 @@ public sealed partial class InGameNarrationSystem
             ScreenReaderService.Announce(
                 $"You typed: {typedText}",
                 category: category,
-                requestInterrupt: true);
+                requestInterrupt: interruptsAllowed);
 
             _suppressNextButtonAnnouncement = true;
         }
