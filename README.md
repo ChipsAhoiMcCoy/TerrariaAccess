@@ -38,8 +38,6 @@ See `Docs/features.md` for deeper coverage of each system.
 
 To change any defaults, open the in-world menu, go to Settings > Controls, and select the input tab at the top (Gamepad, Keyboard, etc.) before binding. The **Screen Reader** section lists these actions for rebinding.
 
-Configure bindings under `Settings > Controls > Keybindings > Screen Reader` to match your controller or keyboard preferences.
-
 ## Building from source
 Run the repo-root command (from WSL or PowerShell):
 
