@@ -86,7 +86,7 @@ public sealed partial class InGameNarrationSystem
                 string npcName = npc.GivenOrTypeName;
                 if (!string.IsNullOrWhiteSpace(npcName))
                 {
-                    ScreenReaderService.Announce($"Talking to {npcName}", force: true, interrupt: false);
+                    ScreenReaderService.Announce($"Talking to {npcName}", force: true);
                 }
 
                 _lastNpc = talkNpc;
@@ -101,11 +101,11 @@ public sealed partial class InGameNarrationSystem
                 string prefix = npc.GivenOrTypeName;
                 if (!string.IsNullOrWhiteSpace(prefix))
                 {
-                    ScreenReaderService.Announce($"{prefix} says: {normalizedText}", interrupt: false);
+                    ScreenReaderService.Announce($"{prefix} says: {normalizedText}");
                 }
                 else
                 {
-                    ScreenReaderService.Announce(normalizedText, interrupt: false);
+                    ScreenReaderService.Announce(normalizedText);
                 }
 
                 _lastChat = normalizedText;
@@ -215,7 +215,7 @@ public sealed partial class InGameNarrationSystem
                     announcement = $"{trimmed} button";
                 }
 
-                ScreenReaderService.Announce(announcement, interrupt: allowInterrupt);
+                ScreenReaderService.Announce(announcement);
             }
 
             lastState = true;

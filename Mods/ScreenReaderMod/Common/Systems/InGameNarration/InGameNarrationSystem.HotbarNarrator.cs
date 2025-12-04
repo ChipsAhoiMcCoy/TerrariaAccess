@@ -32,7 +32,7 @@ namespace ScreenReaderMod.Common.Systems;
 
 public sealed partial class InGameNarrationSystem
 {
-    private sealed class HotbarNarrator
+    internal sealed class HotbarNarrator
     {
         private int _lastSelectedSlot = -1;
         private int _lastItemType = -1;
@@ -41,6 +41,7 @@ public sealed partial class InGameNarrationSystem
         private static string? _pendingAnnouncement;
         private static int _pendingAnnouncementTicks;
         private const int PendingAnnouncementTimeoutTicks = 1;
+        private static bool _externalSuppressed;
 
         public void Update(Player player)
         {
@@ -94,6 +95,11 @@ public sealed partial class InGameNarrationSystem
 
         private static bool ShouldSuppressHotbarNarration(Player player)
         {
+            if (_externalSuppressed)
+            {
+                return true;
+            }
+
             int selectedSlot = player.selectedItem;
             if (selectedSlot < 0 || selectedSlot > 9)
             {
@@ -160,6 +166,15 @@ public sealed partial class InGameNarrationSystem
             _pendingAnnouncement = null;
             _pendingAnnouncementTicks = 0;
             return true;
+        }
+
+        internal static void SetExternalSuppression(bool suppressed)
+        {
+            _externalSuppressed = suppressed;
+            if (suppressed)
+            {
+                ClearPendingAnnouncement();
+            }
         }
     }
 }

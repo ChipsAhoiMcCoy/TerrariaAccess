@@ -124,22 +124,12 @@ Mods: {
 			GuidanceEntryNext.DisplayName: Next Guidance Entry
 			GuidanceEntryPrevious.DisplayName: Previous Guidance Entry
 			GuidanceTeleport.DisplayName: Teleport to Guidance Target
+			SpeechInterrupt.DisplayName: Toggle Speech Interrupt
+			BuildModeToggle.DisplayName: Toggle Build Mode
+			BuildModePlace.DisplayName: Set Build Point
 			ControllerInventorySmartSelect.DisplayName: Inventory Smart Select
 			ControllerInventorySectionNext.DisplayName: Inventory Section Next
 			ControllerInventorySectionPrevious.DisplayName: Inventory Section Previous
 		}
 	}
-}
-
-Keybinds: {
-	GuidanceCategoryNext.DisplayName: Guidance Category Next
-	GuidanceCategoryPrevious.DisplayName: Guidance Category Previous
-	GuidanceEntryNext.DisplayName: Guidance Entry Next
-	GuidanceEntryPrevious.DisplayName: Guidance Entry Previous
-	WaypointCreate.DisplayName: Waypoint Create
-	WaypointDelete.DisplayName: Waypoint Delete
-	GuidanceTeleport.DisplayName: Guidance Teleport
-	ControllerInventorySmartSelect.DisplayName: Controller Inventory Smart Select
-	ControllerInventorySectionNext.DisplayName: Controller Inventory Section Next
-	ControllerInventorySectionPrevious.DisplayName: Controller Inventory Section Previous
 }

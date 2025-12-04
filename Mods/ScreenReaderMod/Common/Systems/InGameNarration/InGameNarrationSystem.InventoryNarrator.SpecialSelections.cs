@@ -32,6 +32,7 @@ public sealed partial class InGameNarrationSystem
                 return true;
             }
 
+            PlayTickIfNew($"special-{currentPoint}");
             _currentFocus = null;
             _pendingFocus = null;
             if (currentPoint >= 0)

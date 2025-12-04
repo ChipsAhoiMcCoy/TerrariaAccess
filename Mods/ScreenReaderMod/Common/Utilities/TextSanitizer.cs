@@ -1,4 +1,4 @@
-#nullable enable
+﻿#nullable enable
 using System;
 using System.Linq;
 using System.Text;
@@ -101,3 +101,4 @@ internal static class TextSanitizer
         return false;
     }
 }
+

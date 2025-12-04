@@ -10,14 +10,13 @@ namespace ScreenReaderMod.Common.Systems;
 public sealed partial class InGameNarrationSystem
 {
     /// <summary>
-    /// Emits a single tone whenever the player’s footprint crosses into a new tile or finishes a landing.
+    /// Emits a single tone whenever the player's footprint crosses into a new tile or finishes a landing.
     /// Keeps light-weight state so narration stays in sync with movement without allocating per frame.
     /// </summary>
     private sealed class FootstepAudioEmitter
     {
         private const float MinLandingDisplacement = 6f;
 
-        // Tracks the last tile column/row we acknowledged so each tile triggers at most one tone.
         private Point _lastFootTile = new(-1, -1);
         private bool _suppressNextStep = true;
         private bool _wasAirborne;
@@ -95,13 +94,7 @@ public sealed partial class InGameNarrationSystem
 
         private void PlayStep(Player player, bool onPlatform)
         {
-            float horizontalSpeed = Math.Abs(player.velocity.X);
-            float normalized = MathHelper.Clamp(horizontalSpeed / 6f, 0f, 1f);
-            float frequency = onPlatform
-                ? MathHelper.Lerp(360f, 430f, normalized)
-                : MathHelper.Lerp(190f, 220f, normalized);
-            float baseVolume = MathHelper.Lerp(0.18f, 0.35f, normalized);
-            float loudness = SoundLoudnessUtility.ApplyDistanceFalloff(baseVolume, distanceTiles: 0f, referenceTiles: 1f);
+            ComputeStepAudio(player, onPlatform, out float frequency, out float loudness);
             FootstepToneProvider.Play(frequency, loudness);
         }
 
@@ -150,6 +143,17 @@ public sealed partial class InGameNarrationSystem
         {
             Tile tile = Framing.GetTileSafely(tileX, tileY);
             return tile.HasTile && TileID.Sets.Platforms[tile.TileType];
+        }
+
+        private static void ComputeStepAudio(Player player, bool onPlatform, out float frequency, out float loudness)
+        {
+            float horizontalSpeed = Math.Abs(player.velocity.X);
+            float normalized = MathHelper.Clamp(horizontalSpeed / 6f, 0f, 1f);
+            frequency = onPlatform
+                ? MathHelper.Lerp(360f, 430f, normalized)
+                : MathHelper.Lerp(190f, 220f, normalized);
+            float baseVolume = MathHelper.Lerp(0.225f, 0.4375f, normalized);
+            loudness = SoundLoudnessUtility.ApplyDistanceFalloff(baseVolume, distanceTiles: 0f, referenceTiles: 1f);
         }
     }
 }

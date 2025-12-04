@@ -1,11 +1,16 @@
 #nullable enable
 using System;
+using System.Collections.Generic;
 using ScreenReaderMod.Common.Services;
 using ScreenReaderMod.Common.Utilities;
+using ScreenReaderMod.Common.Systems;
 using Terraria;
 using Terraria.GameContent.UI;
+using Terraria.GameInput;
 using Terraria.UI;
 using Terraria.ID;
+using Terraria.Localization;
+using Terraria.UI.Gamepad;
 
 namespace ScreenReaderMod.Common.Systems.MenuNarration;
 
@@ -14,16 +19,8 @@ internal sealed class MenuNarrationController
     private readonly MenuFocusResolver _focusResolver = new();
     private readonly MenuUiSelectionTracker _uiSelectionTracker = new();
     private readonly ModConfigMenuNarrator _modConfigNarrator = new();
-
-    private int _lastMenuMode = -1;
-    private MenuFocus? _lastFocus;
-    private bool _announcedFallback;
-    private int _focusFailureCount;
-    private bool _forceNextFocus;
-    private int _lastSliderId = -1;
-    private float _lastMusicVolume = -1f;
-    private float _lastSoundVolume = -1f;
-    private float _lastAmbientVolume = -1f;
+    private readonly MenuNarrationState _state = new();
+    private MenuUiSelectionTracker.WorldCreationSnapshot _lastWorldCreationSnapshot;
 
     public void Process(Main main)
     {
@@ -34,18 +31,25 @@ internal sealed class MenuNarrationController
         }
 
         int currentMode = Main.menuMode;
-        if (currentMode != _lastMenuMode)
+        if (currentMode != _state.LastMenuMode)
         {
             HandleMenuModeChanged(main, currentMode);
             return;
         }
 
-        if (TryHandleUiHover())
+        if (TryHandleSettingsSpecialFeature())
         {
             return;
         }
 
-        if (TryHandleVolumeSlider())
+        bool hoverHandled = TryHandleUiHover();
+        bool worldCreationHandled = TryHandleWorldCreationSnapshot();
+        if (hoverHandled || worldCreationHandled)
+        {
+            return;
+        }
+
+        if (TryHandleSettingsSlider())
         {
             return;
         }
@@ -63,18 +67,22 @@ internal sealed class MenuNarrationController
 
     private void HandleMenuModeChanged(Main main, int currentMode)
     {
-        _lastMenuMode = currentMode;
-        _lastFocus = null;
-        _announcedFallback = false;
-        _focusFailureCount = 0;
-        _forceNextFocus = true;
+        _state.ResetForMode(currentMode);
         _focusResolver.Reset();
         _uiSelectionTracker.Reset();
         _modConfigNarrator.Reset();
-        ResetSliderTracking();
 
-        string modeLabel = MenuNarrationCatalog.DescribeMenuMode(currentMode);
-        ScreenReaderService.Announce($"{modeLabel}.", force: true);
+        string modeLabel = MenuNarrationCatalog.DescribeMenuMode(currentMode, Main.MenuUI?.CurrentState);
+        DateTime now = DateTime.UtcNow;
+        bool modeRepeat = !string.IsNullOrWhiteSpace(_state.LastModeAnnouncement) &&
+            string.Equals(modeLabel, _state.LastModeAnnouncement, StringComparison.OrdinalIgnoreCase) &&
+            now - _state.LastModeAnnouncedAt < TimeSpan.FromSeconds(1);
+        if (!modeRepeat)
+        {
+            ScreenReaderService.Announce($"{modeLabel}.", force: true);
+            _state.LastModeAnnouncement = modeLabel;
+            _state.LastModeAnnouncedAt = now;
+        }
         MenuNarrationCatalog.LogMenuSnapshot(currentMode);
 
         UIState? uiState = Main.MenuUI?.CurrentState;
@@ -87,12 +95,19 @@ internal sealed class MenuNarrationController
             ScreenReaderMod.Instance?.Logger.Info("[MenuNarration] UI state: <null>");
         }
 
-        if (TryHandleUiHover())
+        if (TryHandleSettingsSpecialFeature())
         {
             return;
         }
 
-        if (TryHandleVolumeSlider())
+        bool hoverHandled = TryHandleUiHover();
+        bool worldCreationHandled = TryHandleWorldCreationSnapshot();
+        if (hoverHandled || worldCreationHandled)
+        {
+            return;
+        }
+
+        if (TryHandleSettingsSlider())
         {
             return;
         }
@@ -110,6 +125,12 @@ internal sealed class MenuNarrationController
             return false;
         }
 
+        if (MenuUiSelectionTracker.IsWorldCreationElement(hover.Element) &&
+            MenuUiSelectionTracker.IsTrackedWorldCreationElement(hover.Element))
+        {
+            return false;
+        }
+
         if (!hover.IsNew)
         {
             return true;
@@ -123,107 +144,504 @@ internal sealed class MenuNarrationController
 
         ScreenReaderMod.Instance?.Logger.Info($"[MenuNarration] UI hover -> {cleaned}");
         ScreenReaderService.Announce(cleaned);
+        _state.LastHoverAnnouncement = cleaned;
+        _state.LastHoverAnnouncedAt = DateTime.UtcNow;
+        _state.SawHoverThisMode = true;
         return true;
     }
 
     private void ResetSliderTracking()
     {
-        _lastSliderId = -1;
-        _lastMusicVolume = -1f;
-        _lastSoundVolume = -1f;
-        _lastAmbientVolume = -1f;
+        _state.ResetSliderTracking();
     }
 
-    private bool TryHandleVolumeSlider()
+    private bool TryHandleSettingsSpecialFeature()
     {
         if (!Main.gameMenu)
         {
             return false;
         }
 
-        int sliderId = IngameOptions.rightLock >= 0 ? IngameOptions.rightLock : IngameOptions.rightHover;
-        if (sliderId is not (2 or 3 or 4))
+        int special = UILinkPointNavigator.Shortcuts.OPTIONS_BUTTON_SPECIALFEATURE;
+        if (special <= 0)
         {
+            _state.LastSpecialFeature = special;
             return false;
         }
 
-        string label;
-        float value;
-        ref float lastValue = ref _lastMusicVolume;
-        switch (sliderId)
+        int currentMode = Main.menuMode;
+        bool inSettingsMenu = currentMode is 26 or 112 or 1112 or 1111 or 2008 or 111 or 1125 or 1127 or 10017;
+        if (!inSettingsMenu)
         {
-            case 3:
-                label = $"Music volume {Math.Round(Main.musicVolume * 100f)} percent";
-                value = Main.musicVolume;
-                lastValue = ref _lastMusicVolume;
+            _state.LastSpecialFeature = special;
+            return false;
+        }
+
+        bool handled = false;
+        switch (special)
+        {
+            case 1:
+            {
+                int parallax = Utils.Clamp(Main.bgScroll, 0, 100);
+                bool parallaxChanged = parallax != _state.LastParallax || _state.LastSpecialFeature != special;
+                if (parallaxChanged)
+                {
+                    ScreenReaderMod.Instance?.Logger.Info($"[MenuNarration] Parallax slider -> {parallax}%");
+                    ScreenReaderService.Announce($"Background parallax {parallax} percent", force: true);
+                    _state.LastParallax = parallax;
+                    handled = true;
+                }
+
+                _state.LastParallax = parallax;
                 break;
+            }
             case 2:
-                label = $"Sound volume {Math.Round(Main.soundVolume * 100f)} percent";
-                value = Main.soundVolume;
-                lastValue = ref _lastSoundVolume;
-                break;
+            case 3:
             case 4:
-                label = $"Ambient volume {Math.Round(Main.ambientVolume * 100f)} percent";
-                value = Main.ambientVolume;
-                lastValue = ref _lastAmbientVolume;
-                break;
-            default:
-                return false;
+                _state.LastSpecialFeature = special;
+                return handled;
         }
 
-        if (string.IsNullOrEmpty(label))
+        _state.LastSpecialFeature = special;
+        return handled;
+    }
+
+    private bool TryHandleSettingsSlider()
+    {
+        if (!Main.gameMenu)
         {
             return false;
         }
 
-        bool sliderChanged = sliderId != _lastSliderId;
-        bool valueChanged = Math.Abs(value - lastValue) >= 0.01f;
+        int currentMode = Main.menuMode;
+        if (!IsSettingsMenuMode(currentMode))
+        {
+            return false;
+        }
+
+        bool audioMenu = currentMode == 26;
+        int sliderIndex = IngameOptions.rightLock >= 0 ? IngameOptions.rightLock : IngameOptions.rightHover;
+        if (sliderIndex < 0)
+        {
+            ResetSliderTracking();
+            if (audioMenu)
+            {
+                _state.ForceNextFocus = true;
+            }
+            return false;
+        }
+
+        int special = UILinkPointNavigator.Shortcuts.OPTIONS_BUTTON_SPECIALFEATURE;
+        int categoryId = InGameNarrationSystem.IngameOptionsLabelTracker.GetCurrentCategory();
+        if (categoryId != _state.LastCategoryId)
+        {
+            ResetSliderTracking();
+            _state.LastCategoryId = categoryId;
+        }
+        string sliderLabel = GetSliderLabel(sliderIndex);
+        MenuSliderKind kind = DetectSliderKind(sliderIndex, sliderLabel, special, categoryId, currentMode);
+        if (audioMenu)
+        {
+            if (special is 2 or 3 or 4)
+            {
+                kind = special switch
+                {
+                    2 => MenuSliderKind.Music,
+                    3 => MenuSliderKind.Sound,
+                    4 => MenuSliderKind.Ambient,
+                    _ => kind,
+                };
+            }
+
+            if (kind == MenuSliderKind.Unknown)
+            {
+                kind = sliderIndex switch
+                {
+                    3 => MenuSliderKind.Music,
+                    2 => MenuSliderKind.Sound,
+                    4 => MenuSliderKind.Ambient,
+                    0 => MenuSliderKind.Music,
+                    1 => MenuSliderKind.Sound,
+                    5 => MenuSliderKind.Ambient,
+                    _ => MenuSliderKind.Unknown,
+                };
+            }
+        }
+
+        if (audioMenu && IsBackLabel(sliderLabel))
+        {
+            LogAudioMenuDebug(sliderIndex, sliderLabel, kind, percent: 0f, categoryId, special, note: "back label detected");
+            ResetSliderTracking();
+            return false;
+        }
+
+        if (kind == MenuSliderKind.Unknown)
+        {
+            LogAudioMenuDebug(sliderIndex, sliderLabel, kind, percent: 0f, categoryId, special, note: "unknown kind");
+            ResetSliderTracking();
+            return false;
+        }
+
+        if (string.IsNullOrWhiteSpace(sliderLabel))
+        {
+            if (audioMenu)
+            {
+                sliderLabel = kind switch
+                {
+                    MenuSliderKind.Music => "Music",
+                    MenuSliderKind.Sound => "Sound",
+                    MenuSliderKind.Ambient => "Ambient",
+                    _ => sliderLabel,
+                };
+            }
+        }
+
+        if (string.IsNullOrWhiteSpace(sliderLabel))
+        {
+            sliderLabel = GetDefaultSliderLabel(kind);
+        }
+
+        if (audioMenu)
+        {
+            // Normalize audio labels to avoid stale or mismatched text after returning from gameplay.
+            sliderLabel = GetDefaultSliderLabel(kind);
+        }
+
+        float percent = ReadSliderPercent(kind);
+        ref float lastValue = ref GetLastSliderValue(kind);
+
+        bool sliderChanged = sliderIndex != _state.LastSliderId || kind != _state.LastSliderKind;
+        bool valueChanged = Math.Abs(percent - lastValue) >= 1f;
         if (!sliderChanged && !valueChanged)
         {
             return true;
         }
 
-        _lastSliderId = sliderId;
-        lastValue = value;
-        ScreenReaderMod.Instance?.Logger.Info($"[MenuNarration] Volume slider {sliderId} -> {label}");
-        ScreenReaderService.Announce(label, force: true);
+        if (audioMenu)
+        {
+            LogAudioMenuDebug(sliderIndex, sliderLabel, kind, percent, categoryId, special, note: sliderChanged ? "audio slider focus changed" : "audio slider value changed");
+        }
+
+        string announcement = BuildSliderAnnouncement(sliderLabel, kind, percent, includeLabel: sliderChanged);
+        _state.LastSliderId = sliderIndex;
+        _state.LastSliderKind = kind;
+        lastValue = percent;
+
+        ScreenReaderMod.Instance?.Logger.Info($"[MenuNarration] Slider {sliderIndex} ({kind}) -> {announcement}");
+        ScreenReaderService.Announce(announcement, force: true);
         return true;
+    }
+
+    private static bool IsSettingsMenuMode(int menuMode)
+    {
+        return menuMode is 26 or 112 or 1112 or 1111 or 2008 or 111 or 1125 or 1127 or 10017;
+    }
+
+    private string GetSliderLabel(int sliderIndex)
+    {
+        if (InGameNarrationSystem.IngameOptionsLabelTracker.TryGetCurrentOptionLabel(sliderIndex, out string label) &&
+            !string.IsNullOrWhiteSpace(label))
+        {
+            return TextSanitizer.Clean(label);
+        }
+
+        return string.Empty;
+    }
+
+    private static MenuSliderKind DetectSliderKind(int sliderIndex, string label, int specialFeature, int categoryId, int menuMode)
+    {
+        string sanitized = TextSanitizer.Clean(label);
+        string lower = sanitized.ToLowerInvariant();
+
+        if (lower.Contains("back", StringComparison.Ordinal))
+        {
+            return MenuSliderKind.Unknown;
+        }
+
+        MenuSliderKind kind = MenuSliderKind.Unknown;
+        if (lower.Contains("music", StringComparison.Ordinal))
+        {
+            kind = MenuSliderKind.Music;
+        }
+        else if (lower.Contains("sound", StringComparison.Ordinal))
+        {
+            kind = MenuSliderKind.Sound;
+        }
+        else if (lower.Contains("ambient", StringComparison.Ordinal) ||
+            lower.Contains("ambience", StringComparison.Ordinal))
+        {
+            kind = MenuSliderKind.Ambient;
+        }
+        else if (lower.Contains("zoom", StringComparison.Ordinal))
+        {
+            kind = MenuSliderKind.Zoom;
+        }
+        else if (lower.Contains("ui scale", StringComparison.Ordinal) ||
+            lower.Contains("ui-scale", StringComparison.Ordinal) ||
+            lower.Contains("interface scale", StringComparison.Ordinal))
+        {
+            kind = MenuSliderKind.InterfaceScale;
+        }
+
+        if (menuMode == 26)
+        {
+            MenuSliderKind indexed = sliderIndex switch
+            {
+                0 => MenuSliderKind.Music,
+                1 => MenuSliderKind.Sound,
+                2 => MenuSliderKind.Ambient,
+                3 => MenuSliderKind.Music,
+                4 => MenuSliderKind.Sound,
+                5 => MenuSliderKind.Ambient,
+                _ => MenuSliderKind.Unknown,
+            };
+
+            if (indexed != MenuSliderKind.Unknown)
+            {
+                return indexed;
+            }
+        }
+
+        if (kind != MenuSliderKind.Unknown)
+        {
+            return kind;
+        }
+
+        switch (specialFeature)
+        {
+            case 2:
+                return MenuSliderKind.Music;
+            case 3:
+                return MenuSliderKind.Sound;
+            case 4:
+                return MenuSliderKind.Ambient;
+        }
+
+        // Fall back to category-based detection when labels are just percentages.
+        if (categoryId == 2)
+        {
+            return MenuSliderKind.Zoom;
+        }
+
+        if (categoryId == 1)
+        {
+            return MenuSliderKind.InterfaceScale;
+        }
+
+        if (categoryId == 3)
+        {
+            return sliderIndex switch
+            {
+                0 => MenuSliderKind.Music,
+                1 => MenuSliderKind.Sound,
+                2 => MenuSliderKind.Ambient,
+                _ => MenuSliderKind.Unknown,
+            };
+        }
+
+        return MenuSliderKind.Unknown;
+    }
+
+    private static float ReadSliderPercent(MenuSliderKind kind)
+    {
+        return kind switch
+        {
+            MenuSliderKind.Music => MathF.Round(Math.Clamp(Main.musicVolume, 0f, 1f) * 100f),
+            MenuSliderKind.Sound => MathF.Round(Math.Clamp(Main.soundVolume, 0f, 1f) * 100f),
+            MenuSliderKind.Ambient => MathF.Round(Math.Clamp(Main.ambientVolume, 0f, 1f) * 100f),
+            MenuSliderKind.Zoom => MathF.Round(Math.Clamp(Main.GameZoomTarget, 0.01f, 4f) * 100f),
+            MenuSliderKind.InterfaceScale => MathF.Round(Math.Clamp(Main.UIScaleWanted > 0f ? Main.UIScaleWanted : Main.UIScale, 0.1f, 4f) * 100f),
+            _ => 0f,
+        };
+    }
+
+    private ref float GetLastSliderValue(MenuSliderKind kind)
+    {
+        switch (kind)
+        {
+            case MenuSliderKind.Sound:
+                return ref _state.LastSoundVolume;
+            case MenuSliderKind.Ambient:
+                return ref _state.LastAmbientVolume;
+            case MenuSliderKind.Zoom:
+                return ref _state.LastZoom;
+            case MenuSliderKind.InterfaceScale:
+                return ref _state.LastInterfaceScale;
+            case MenuSliderKind.Music:
+            default:
+                return ref _state.LastMusicVolume;
+        }
+    }
+
+    private static bool IsBackLabel(string label)
+    {
+        string cleaned = TextSanitizer.Clean(label);
+        if (string.IsNullOrWhiteSpace(cleaned))
+        {
+            return false;
+        }
+
+        string backLabel = TextSanitizer.Clean(Language.GetTextValue("UI.Back"));
+        if (!string.IsNullOrWhiteSpace(backLabel) && string.Equals(cleaned, backLabel, StringComparison.OrdinalIgnoreCase))
+        {
+            return true;
+        }
+
+        string langBack = TextSanitizer.Clean(Lang.menu[5].Value);
+        if (!string.IsNullOrWhiteSpace(langBack) && string.Equals(cleaned, langBack, StringComparison.OrdinalIgnoreCase))
+        {
+            return true;
+        }
+
+        return cleaned.Contains("back", StringComparison.OrdinalIgnoreCase) ||
+            cleaned.Contains("close", StringComparison.OrdinalIgnoreCase);
+    }
+
+    private static void LogAudioMenuDebug(int sliderIndex, string sliderLabel, MenuSliderKind kind, float percent, int categoryId, int special, string note)
+    {
+        try
+        {
+            string label = TextSanitizer.Clean(sliderLabel);
+            string snapshot = $"[MenuNarration][AudioDebug] idx={sliderIndex} label='{label}' kind={kind} percent={percent:0} category={categoryId} special={special} rightHover={IngameOptions.rightHover} rightLock={IngameOptions.rightLock} menuItems={MenuNarrationCatalog.DescribeMenuMode(Main.menuMode)} note={note}";
+            ScreenReaderMod.Instance?.Logger.Info(snapshot);
+            MenuNarrationCatalog.LogMenuSnapshot(Main.menuMode, allowRepeat: true);
+        }
+        catch
+        {
+            // best-effort debug logging
+        }
+    }
+
+    private static string BuildSliderAnnouncement(string rawLabel, MenuSliderKind kind, float percent, bool includeLabel)
+    {
+        string baseLabel = ExtractBaseLabel(rawLabel, kind);
+        if (includeLabel)
+        {
+            return $"{baseLabel} {percent:0} percent";
+        }
+
+        return $"{percent:0} percent";
+    }
+
+    private static string ExtractBaseLabel(string rawLabel, MenuSliderKind kind)
+    {
+        string sanitized = TextSanitizer.Clean(rawLabel);
+        if (!string.IsNullOrWhiteSpace(sanitized))
+        {
+            int percentIndex = sanitized.IndexOf('%');
+            if (percentIndex >= 0)
+            {
+                sanitized = sanitized[..percentIndex];
+            }
+
+            int percentWord = sanitized.IndexOf("percent", StringComparison.OrdinalIgnoreCase);
+            if (percentWord >= 0)
+            {
+                sanitized = sanitized[..percentWord];
+            }
+
+            sanitized = sanitized.Trim().TrimEnd(':').Trim();
+            sanitized = TrimTrailingNumber(sanitized);
+        }
+
+        if (!string.IsNullOrWhiteSpace(sanitized))
+        {
+            return sanitized;
+        }
+
+        return GetDefaultSliderLabel(kind);
+    }
+
+    private static string GetDefaultSliderLabel(MenuSliderKind kind)
+    {
+        return kind switch
+        {
+            MenuSliderKind.Music => "Music volume",
+            MenuSliderKind.Sound => "Sound volume",
+            MenuSliderKind.Ambient => "Ambient volume",
+            MenuSliderKind.Zoom => "Zoom",
+            MenuSliderKind.InterfaceScale => "Interface scale",
+            _ => "Slider",
+        };
+    }
+
+    private static string TrimTrailingNumber(string value)
+    {
+        int end = value.Length;
+        while (end > 0 && (char.IsWhiteSpace(value[end - 1]) || char.IsDigit(value[end - 1]) || value[end - 1] == ':' || value[end - 1] == '.'))
+        {
+            end--;
+        }
+
+        if (end < value.Length)
+        {
+            return value[..end].TrimEnd();
+        }
+
+        return value;
     }
 
     private bool TryHandleFocus(Main main, int currentMode, bool force)
     {
         if (!_focusResolver.TryGetFocus(main, out MenuFocus focus))
         {
-            if (_focusFailureCount++ < 5)
+            if (_state.FocusFailureCount++ < 5)
             {
-                ScreenReaderMod.Instance?.Logger.Debug($"[MenuNarration] Unable to determine focus for menu mode {currentMode} (attempt {_focusFailureCount}).");
+                ScreenReaderMod.Instance?.Logger.Debug($"[MenuNarration] Unable to determine focus for menu mode {currentMode} (attempt {_state.FocusFailureCount}).");
             }
 
             return false;
         }
 
-        _focusFailureCount = 0;
+        _state.FocusFailureCount = 0;
 
-        bool focusChanged = !_lastFocus.HasValue || _lastFocus.Value.Index != focus.Index;
-        bool shouldAnnounce = force || focusChanged || _forceNextFocus;
+        UIState? uiState = Main.MenuUI?.CurrentState;
+        if (uiState is not null && !_state.SawHoverThisMode && DateTime.UtcNow - _state.ModeEnteredAt < TimeSpan.FromMilliseconds(250))
+        {
+            return false;
+        }
 
         string optionLabel = MenuNarrationCatalog.DescribeMenuItem(currentMode, focus.Index);
+        bool hasDeletionAnnouncement = MenuNarrationCatalog.TryBuildDeletionAnnouncement(currentMode, focus.Index, out string combinedLabel);
+        string announcement = hasDeletionAnnouncement ? combinedLabel : optionLabel;
+
+        bool focusChanged = !_state.LastFocus.HasValue || _state.LastFocus.Value.Index != focus.Index;
+        bool announcementChanged = !focusChanged &&
+            _state.LastFocus.HasValue &&
+            _state.LastFocus.Value.Index == focus.Index &&
+            !string.IsNullOrWhiteSpace(_state.LastFocusAnnouncement) &&
+            !string.IsNullOrWhiteSpace(announcement) &&
+            !string.Equals(announcement, _state.LastFocusAnnouncement, StringComparison.OrdinalIgnoreCase);
+        bool shouldAnnounce = force || focusChanged || _state.ForceNextFocus || announcementChanged;
+
         if (shouldAnnounce)
         {
+            DateTime now = DateTime.UtcNow;
+            bool matchesRecentHover = !string.IsNullOrWhiteSpace(_state.LastHoverAnnouncement) &&
+                string.Equals(optionLabel, _state.LastHoverAnnouncement, StringComparison.OrdinalIgnoreCase) &&
+                now - _state.LastHoverAnnouncedAt < TimeSpan.FromMilliseconds(900);
+            bool matchesLastFocus = !string.IsNullOrWhiteSpace(_state.LastFocusAnnouncement) &&
+                string.Equals(announcement, _state.LastFocusAnnouncement, StringComparison.OrdinalIgnoreCase);
+            bool repeatedRecently = matchesLastFocus && now - _state.LastFocusAnnouncedAt < TimeSpan.FromMilliseconds(900);
+
+            bool shouldThrottleBack = currentMode == 26 && IsBackLabel(announcement) && repeatedRecently;
+
+            if (!force && !announcementChanged && (matchesRecentHover || repeatedRecently || shouldThrottleBack))
+            {
+                _state.ForceNextFocus = false;
+                _state.LastFocus = focus;
+                return true;
+            }
+
             if (!string.IsNullOrEmpty(optionLabel))
             {
                 ScreenReaderMod.Instance?.Logger.Info($"[MenuNarration] Focus {focus.Index} via {focus.Source} -> {optionLabel}");
-                bool forceSpeech = force || _forceNextFocus;
-                if (MenuNarrationCatalog.TryBuildDeletionAnnouncement(currentMode, focus.Index, out string combinedLabel))
-                {
-                    ScreenReaderService.Announce(combinedLabel, forceSpeech);
-                }
-                else
-                {
-                    ScreenReaderService.Announce(optionLabel, forceSpeech);
-                }
+                bool forceSpeech = force || _state.ForceNextFocus || announcementChanged;
+                ScreenReaderService.Announce(announcement, forceSpeech);
+                _state.LastFocusAnnouncement = announcement;
+                _state.LastFocusAnnouncedAt = now;
 
-                _forceNextFocus = false;
+                _state.ForceNextFocus = false;
             }
             else
             {
@@ -231,19 +649,19 @@ internal sealed class MenuNarrationController
                 MenuNarrationCatalog.LogMenuSnapshot(currentMode, allowRepeat: true);
             }
         }
-        else if (_lastFocus.HasValue && !_lastFocus.Value.Source.Equals(focus.Source, StringComparison.Ordinal))
+        else if (_state.LastFocus.HasValue && !_state.LastFocus.Value.Source.Equals(focus.Source, StringComparison.Ordinal))
         {
             ScreenReaderMod.Instance?.Logger.Debug($"[MenuNarration] Focus source switched to {focus.Source} for index {focus.Index}.");
         }
 
-        _lastFocus = focus;
-        _announcedFallback = false;
+        _state.LastFocus = focus;
+        _state.AnnouncedFallback = false;
         return true;
     }
 
     private void AnnounceFallback(int currentMode)
     {
-        if (_announcedFallback)
+        if (_state.AnnouncedFallback)
         {
             return;
         }
@@ -254,22 +672,172 @@ internal sealed class MenuNarrationController
             return;
         }
 
+        DateTime now = DateTime.UtcNow;
+        bool sameAsLastFocus = !string.IsNullOrWhiteSpace(_state.LastFocusAnnouncement) &&
+            string.Equals(fallback, _state.LastFocusAnnouncement, StringComparison.OrdinalIgnoreCase) &&
+            now - _state.LastFocusAnnouncedAt < TimeSpan.FromSeconds(1);
+        if (sameAsLastFocus)
+        {
+            _state.AnnouncedFallback = true;
+            _state.ForceNextFocus = true;
+            return;
+        }
+
         ScreenReaderMod.Instance?.Logger.Info($"[MenuNarration] Fallback focus -> {fallback}");
         ScreenReaderService.Announce(fallback, force: true);
-        _announcedFallback = true;
-        _forceNextFocus = true;
+        _state.AnnouncedFallback = true;
+        _state.ForceNextFocus = true;
     }
 
     private void ResetState()
     {
         _focusResolver.Reset();
         _uiSelectionTracker.Reset();
-        _lastMenuMode = -1;
-        _lastFocus = null;
-        _announcedFallback = false;
-        _focusFailureCount = 0;
-        _forceNextFocus = false;
         _modConfigNarrator.Reset();
-        ResetSliderTracking();
+        _state.ResetAll();
+        _lastWorldCreationSnapshot = default;
+    }
+
+    private bool TryHandleWorldCreationSnapshot()
+    {
+        UIElement? hovered = null;
+        if (_uiSelectionTracker.TryGetHoverLabel(Main.MenuUI, out MenuUiLabel hover) &&
+            MenuUiSelectionTracker.IsWorldCreationElement(hover.Element))
+        {
+            hovered = hover.Element;
+        }
+
+        if (!MenuUiSelectionTracker.TryBuildWorldCreationSnapshot(Main.MenuUI?.CurrentState, hovered, out MenuUiSelectionTracker.WorldCreationSnapshot snapshot))
+        {
+            _lastWorldCreationSnapshot = default;
+            return false;
+        }
+
+        if (snapshot.IsEmpty)
+        {
+            _lastWorldCreationSnapshot = snapshot;
+            return false;
+        }
+
+        var changes = new List<(string Text, bool Focused)>(5);
+
+        static void AddSelectionChange(MenuUiSelectionTracker.WorldCreationSelection current, MenuUiSelectionTracker.WorldCreationSelection previous, List<(string Text, bool Focused)> buffer, bool isFocused, bool wasFocused)
+        {
+            if (!isFocused && !previous.IsEmpty)
+            {
+                return;
+            }
+
+            if (current.IsEmpty)
+            {
+                return;
+            }
+
+            bool unchanged = !previous.IsEmpty &&
+                string.Equals(current.Option ?? string.Empty, previous.Option ?? string.Empty, StringComparison.OrdinalIgnoreCase) &&
+                current.Index == previous.Index &&
+                current.Total == previous.Total &&
+                current.Selected == previous.Selected;
+            bool focusChanged = isFocused != wasFocused;
+            if (unchanged && !focusChanged)
+            {
+                return;
+            }
+
+            bool includeGroup = previous.IsEmpty ||
+                (isFocused && !wasFocused) ||
+                !string.Equals(current.Group ?? string.Empty, previous.Group ?? string.Empty, StringComparison.OrdinalIgnoreCase);
+
+            string option = string.IsNullOrWhiteSpace(current.Option) ? current.Group ?? string.Empty : current.Option ?? string.Empty;
+            string group = current.Group ?? string.Empty;
+            string description;
+            if (includeGroup)
+            {
+                if (string.IsNullOrWhiteSpace(group))
+                {
+                    description = current.Describe(includeGroup: true);
+                }
+                else
+                {
+                    description = current.Selected
+                        ? TextSanitizer.JoinWithComma(group, $"Selected {option}")
+                        : TextSanitizer.JoinWithComma(group, option);
+                }
+            }
+            else
+            {
+                description = TextSanitizer.Clean(option ?? string.Empty);
+                if (current.Selected)
+                {
+                    description = TextSanitizer.JoinWithComma("Selected", description);
+                }
+            }
+
+            if (string.IsNullOrWhiteSpace(description))
+            {
+                return;
+            }
+
+            buffer.Add((description, isFocused));
+        }
+
+        static void AddInputChange(MenuUiSelectionTracker.WorldCreationInput current, MenuUiSelectionTracker.WorldCreationInput previous, List<(string Text, bool Focused)> buffer, bool isFocused, bool wasFocused)
+        {
+            if (!isFocused && !previous.IsEmpty)
+            {
+                return;
+            }
+
+            if (current.IsEmpty)
+            {
+                return;
+            }
+
+            bool unchanged = !previous.IsEmpty &&
+                string.Equals(current.Value ?? string.Empty, previous.Value ?? string.Empty, StringComparison.OrdinalIgnoreCase) &&
+                string.Equals(current.Prefix ?? string.Empty, previous.Prefix ?? string.Empty, StringComparison.OrdinalIgnoreCase);
+            bool focusChanged = isFocused != wasFocused;
+            if (unchanged && !focusChanged)
+            {
+                return;
+            }
+
+            bool includePrefix = previous.IsEmpty || (isFocused && !wasFocused);
+            string description = current.Describe(includePrefix);
+            if (!includePrefix && !string.IsNullOrWhiteSpace(current.Value))
+            {
+                description = TextSanitizer.Clean(current.Value);
+            }
+
+            if (string.IsNullOrWhiteSpace(description))
+            {
+                return;
+            }
+
+            buffer.Add((description, isFocused));
+        }
+
+        AddSelectionChange(snapshot.Size, _lastWorldCreationSnapshot.Size, changes, snapshot.SizeFocused, _lastWorldCreationSnapshot.SizeFocused);
+        AddSelectionChange(snapshot.Difficulty, _lastWorldCreationSnapshot.Difficulty, changes, snapshot.DifficultyFocused, _lastWorldCreationSnapshot.DifficultyFocused);
+        AddSelectionChange(snapshot.Evil, _lastWorldCreationSnapshot.Evil, changes, snapshot.EvilFocused, _lastWorldCreationSnapshot.EvilFocused);
+        AddInputChange(snapshot.Name, _lastWorldCreationSnapshot.Name, changes, snapshot.NameFocused, _lastWorldCreationSnapshot.NameFocused);
+        AddInputChange(snapshot.Seed, _lastWorldCreationSnapshot.Seed, changes, snapshot.SeedFocused, _lastWorldCreationSnapshot.SeedFocused);
+
+        _lastWorldCreationSnapshot = snapshot;
+
+        if (changes.Count == 0)
+        {
+            return false;
+        }
+
+        (string Text, bool Focused) announcement = changes.Find(change => change.Focused);
+        if (string.IsNullOrWhiteSpace(announcement.Text))
+        {
+            announcement = changes[0];
+        }
+
+        ScreenReaderMod.Instance?.Logger.Info($"[MenuNarration] World creation -> {announcement.Text}");
+        ScreenReaderService.Announce(announcement.Text, force: true);
+        return true;
     }
 }

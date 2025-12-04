@@ -12,12 +12,12 @@ public sealed partial class InGameNarrationSystem
     private static class FootstepToneProvider
     {
         private const int SampleRate = 44100;
-        private const float DurationSeconds = 0.16f;
+        private const float DurationSeconds = 0.08f;
 
         private static readonly Dictionary<int, SoundEffect?> ToneCache = new();
         private static readonly List<SoundEffectInstance> ActiveInstances = new();
 
-        public static void Play(float frequencyHz, float volume)
+        public static void Play(float frequencyHz, float volume, float pan = 0f)
         {
             if (frequencyHz <= 0f || volume <= 0f || Main.soundVolume <= 0f)
             {
@@ -30,7 +30,7 @@ public sealed partial class InGameNarrationSystem
             SoundEffectInstance instance = tone.CreateInstance();
             instance.IsLooped = false;
             instance.Volume = MathHelper.Clamp(volume, 0f, 1f) * Main.soundVolume;
-            instance.Pan = 0f;
+            instance.Pan = MathHelper.Clamp(pan, -1f, 1f);
             instance.Play();
             ActiveInstances.Add(instance);
         }

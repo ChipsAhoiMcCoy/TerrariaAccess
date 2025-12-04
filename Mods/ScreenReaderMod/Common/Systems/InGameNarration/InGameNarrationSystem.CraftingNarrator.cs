@@ -323,6 +323,12 @@ public sealed partial class InGameNarrationSystem
 
         public void Update(Player player)
         {
+            if (Main.ingameOptionsWindow)
+            {
+                Reset();
+                return;
+            }
+
             if (!InventoryNarrator.IsInventoryUiOpen(player))
             {
                 Reset();
@@ -486,10 +492,6 @@ public sealed partial class InGameNarrationSystem
             }
 
             string label = ComposeItemLabel(result);
-            if (result.stack > 1)
-            {
-                label = $"{result.stack} {label}";
-            }
 
             string? details = InventoryNarrator.BuildTooltipDetails(
                 result,
@@ -592,6 +594,11 @@ public sealed partial class InGameNarrationSystem
         {
             ResetFocus();
             _missingRequirementRecipes.Clear();
+        }
+
+        public void ForceReset()
+        {
+            Reset();
         }
 
         private void ResetFocus()

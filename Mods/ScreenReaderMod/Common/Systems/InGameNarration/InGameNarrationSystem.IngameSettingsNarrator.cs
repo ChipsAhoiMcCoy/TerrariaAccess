@@ -136,12 +136,30 @@ public sealed partial class InGameNarrationSystem
         private int _lastCategory = int.MinValue;
         private int _lastRightHover = int.MinValue;
         private int _lastRightLock = int.MinValue;
+        private string? _lastOptionDescription;
         private int _lastSpecialFeature = int.MinValue;
         private string? _lastCategoryLabel;
         private float _lastMusicVolume = -1f;
         private float _lastSoundVolume = -1f;
         private float _lastAmbientVolume = -1f;
+        private float _lastZoomPercent = -1f;
+        private float _lastUiScalePercent = -1f;
         private int _lastParallax = int.MinValue;
+        private bool _forceCategoryAnnouncement;
+        private string? _lastTickKey;
+        private uint _lastTickFrame;
+
+        public void OnMenuOpened()
+        {
+            Reset();
+            _forceCategoryAnnouncement = true;
+        }
+
+        public void OnMenuClosed()
+        {
+            Reset();
+            _forceCategoryAnnouncement = false;
+        }
 
         public void PrimeReflection()
         {
@@ -150,12 +168,6 @@ public sealed partial class InGameNarrationSystem
 
         public void Update()
         {
-            if (!Main.ingameOptionsWindow)
-            {
-                Reset();
-                return;
-            }
-
             EnsureReflection();
 
             int leftHover = ReadInt(_leftHoverField);
@@ -172,6 +184,7 @@ public sealed partial class InGameNarrationSystem
                 string? label = GetLeftCategoryLabel(leftHover, allowMouseTextFallback: true);
                 if (!string.IsNullOrWhiteSpace(label))
                 {
+                    PlayTickIfNew($"left-{leftHover}");
                     ScreenReaderService.Announce(label);
                 }
 
@@ -190,11 +203,13 @@ public sealed partial class InGameNarrationSystem
                     categoryChanged = !string.Equals(categoryLabel, _lastCategoryLabel, StringComparison.Ordinal);
                 }
 
-                if (categoryChanged)
+                if (categoryChanged || _forceCategoryAnnouncement)
                 {
+                    PlayTickIfNew($"cat-{categoryId}");
                     ScreenReaderService.Announce(categoryLabel);
                     _lastCategory = categoryId;
                     _lastCategoryLabel = categoryLabel;
+                    _forceCategoryAnnouncement = false;
                 }
             }
 
@@ -203,70 +218,94 @@ public sealed partial class InGameNarrationSystem
                 rightHover = rightLock;
             }
 
-            if (categoryId >= 0 &&
+            bool optionIndicesChanged = rightHover != _lastRightHover || categoryId != _lastRightLock;
+            bool optionActive = categoryId >= 0 &&
                 rightHover >= 0 &&
-                !IngameOptionsLabelTracker.IsOptionSkipped(rightHover) &&
-                (rightHover != _lastRightHover || categoryId != _lastRightLock))
+                !IngameOptionsLabelTracker.IsOptionSkipped(rightHover);
+            bool specialActive = special == 1;
+            bool handledAudioSlider = optionActive &&
+                TryHandleAudioSlider(categoryId, rightHover, special, categoryLabel, optionIndicesChanged);
+
+            if (optionActive && !handledAudioSlider)
             {
-                string? description = DescribeOption(categoryId, rightHover, categoryLabel);
-                if (!string.IsNullOrWhiteSpace(description))
+                string? description = null;
+                bool shouldAnnounceOption = optionIndicesChanged;
+
+                if (special is 10 or 11)
                 {
+                    description = DescribeZoomOrUiScale(special, optionIndicesChanged);
+                    shouldAnnounceOption = !string.IsNullOrWhiteSpace(description);
+                }
+                else if (!shouldAnnounceOption && !specialActive && !string.IsNullOrWhiteSpace(_lastOptionDescription))
+                {
+                    description = DescribeOption(categoryId, rightHover, categoryLabel, optionIndicesChanged);
+                    shouldAnnounceOption = !string.IsNullOrWhiteSpace(description) &&
+                        !string.Equals(description, _lastOptionDescription, StringComparison.OrdinalIgnoreCase);
+                }
+                else if (shouldAnnounceOption)
+                {
+                    description = DescribeOption(categoryId, rightHover, categoryLabel, optionIndicesChanged);
+                }
+
+                if (shouldAnnounceOption && !string.IsNullOrWhiteSpace(description))
+                {
+                    PlayTickIfNew($"opt-{categoryId}-{rightHover}");
                     ScreenReaderService.Announce(description);
+                    _lastOptionDescription = description;
+                }
+                else if (optionIndicesChanged)
+                {
+                    _lastOptionDescription = description;
                 }
 
                 _lastRightHover = rightHover;
                 _lastRightLock = categoryId;
             }
+            else if (!optionActive)
+            {
+                _lastOptionDescription = null;
+                if (optionIndicesChanged)
+                {
+                    _lastRightHover = rightHover;
+                    _lastRightLock = categoryId;
+                }
+            }
 
-            AnnounceSpecialFeature(special);
-            _lastSpecialFeature = special;
+            if (!handledAudioSlider)
+            {
+                AnnounceSpecialFeature(special);
+            }
+
+            if (special is 10 or 11 && !string.IsNullOrWhiteSpace(_lastOptionDescription))
+            {
+                return;
+            }
         }
 
         private void AnnounceSpecialFeature(int specialFeature)
         {
             switch (specialFeature)
             {
+                case 2:
+                case 3:
+                case 4:
+                    _lastSpecialFeature = specialFeature;
+                    return;
                 case 1:
                 {
                     int parallax = Utils.Clamp(Main.bgScroll, 0, 100);
-                    if (parallax != _lastParallax)
+                    bool changed = parallax != _lastParallax || _lastSpecialFeature != specialFeature;
+                    if (changed)
                     {
                         ScreenReaderService.Announce($"Background parallax {parallax} percent");
                         _lastParallax = parallax;
                     }
-                    break;
-                }
-                case 2:
-                {
-                    float value = MathF.Round(Main.musicVolume * 100f);
-                    if (Math.Abs(value - _lastMusicVolume) >= 1f || _lastSpecialFeature != specialFeature)
-                    {
-                        ScreenReaderService.Announce($"Music volume {value:0}%");
-                        _lastMusicVolume = value;
-                    }
-                    break;
-                }
-                case 3:
-                {
-                    float value = MathF.Round(Main.soundVolume * 100f);
-                    if (Math.Abs(value - _lastSoundVolume) >= 1f || _lastSpecialFeature != specialFeature)
-                    {
-                        ScreenReaderService.Announce($"Sound volume {value:0}%");
-                        _lastSoundVolume = value;
-                    }
-                    break;
-                }
-                case 4:
-                {
-                    float value = MathF.Round(Main.ambientVolume * 100f);
-                    if (Math.Abs(value - _lastAmbientVolume) >= 1f || _lastSpecialFeature != specialFeature)
-                    {
-                        ScreenReaderService.Announce($"Ambient volume {value:0}%");
-                        _lastAmbientVolume = value;
-                    }
-                    break;
+                    _lastSpecialFeature = specialFeature;
+                    return;
                 }
             }
+
+            _lastSpecialFeature = specialFeature;
         }
 
         private void LogStateChanges(int leftHover, int rightHover, int category, int special)
@@ -646,7 +685,7 @@ public sealed partial class InGameNarrationSystem
             return rawCategory;
         }
 
-        private string? DescribeOption(int category, int option, string? categoryLabel)
+        private string? DescribeOption(int category, int option, string? categoryLabel, bool optionIndicesChanged)
         {
             if (category < 0 || option < 0)
             {
@@ -655,16 +694,322 @@ public sealed partial class InGameNarrationSystem
 
             if (IngameOptionsLabelTracker.TryGetOptionLabel(category, option, out string label) && !string.IsNullOrWhiteSpace(label))
             {
-                return label;
+                return BuildScaleAwareLabel(label, optionIndicesChanged, category, option, categoryLabel);
             }
 
             string mouseText = ReadString(_mouseOverTextField);
             if (!string.IsNullOrWhiteSpace(mouseText))
             {
-                return TextSanitizer.Clean(mouseText);
+                return BuildScaleAwareLabel(mouseText, optionIndicesChanged, category, option, categoryLabel);
             }
 
-            return DescribeFallback(category, option, categoryLabel);
+            string? fallback = DescribeFallback(category, option, categoryLabel);
+            return BuildScaleAwareLabel(fallback, optionIndicesChanged, category, option, categoryLabel);
+        }
+
+        private string BuildScaleAwareLabel(string? label, bool optionIndicesChanged, int categoryId, int optionIndex, string? categoryLabel)
+        {
+            string sanitized = TextSanitizer.Clean(label ?? string.Empty);
+            if (string.IsNullOrWhiteSpace(sanitized))
+            {
+                return sanitized;
+            }
+
+            string lower = sanitized.ToLowerInvariant();
+            bool isZoom = lower.Contains("zoom", StringComparison.Ordinal);
+            bool isUiScale = lower.Contains("ui scale", StringComparison.Ordinal) ||
+                lower.Contains("ui-scale", StringComparison.Ordinal) ||
+                lower.Contains("interface scale", StringComparison.Ordinal);
+
+            // Some sliders set special feature codes even when labels are just numbers.
+            int special = UILinkPointNavigator.Shortcuts.OPTIONS_BUTTON_SPECIALFEATURE;
+            if (special == 10)
+            {
+                isZoom = true;
+            }
+            else if (special == 11)
+            {
+                isUiScale = true;
+            }
+
+            if (!isZoom && !isUiScale)
+            {
+                // When the label is just a percentage, map known category slots to slider names.
+                bool looksLikePercentOnly = sanitized.All(ch => char.IsDigit(ch) || char.IsWhiteSpace(ch) || ch == '%');
+                if (!looksLikePercentOnly)
+                {
+                    return sanitized;
+                }
+
+                if (TryMapPercentOnlySlider(categoryId, optionIndex, categoryLabel, out string mapped))
+                {
+                    isZoom = mapped.Equals("Zoom", StringComparison.OrdinalIgnoreCase);
+                    isUiScale = mapped.Contains("scale", StringComparison.OrdinalIgnoreCase);
+                    sanitized = mapped;
+                    lower = sanitized.ToLowerInvariant();
+                }
+                else
+                {
+                    return sanitized;
+                }
+            }
+
+            if (isZoom || isUiScale)
+            {
+                string fixedLabel = isZoom ? "Zoom" : "Interface scale";
+                float percent = isZoom
+                    ? MathF.Round(Math.Clamp(Main.GameZoomTarget, 0.01f, 4f) * 100f)
+                    : MathF.Round(Math.Clamp(Main.UIScaleWanted > 0f ? Main.UIScaleWanted : Main.UIScale, 0.1f, 4f) * 100f);
+
+                bool includeLabel = optionIndicesChanged || string.IsNullOrWhiteSpace(_lastOptionDescription);
+                string announcement = includeLabel ? $"{fixedLabel} {percent:0} percent" : $"{percent:0} percent";
+
+                if (includeLabel)
+                {
+                    ScreenReaderMod.Instance?.Logger.Debug($"[IngameSettings] {fixedLabel} label -> '{label ?? "<null>"}' sanitized '{sanitized}' percent {percent:0} includeLabel={includeLabel} special={special}");
+                }
+
+                return announcement;
+            }
+
+            string baseLabel = sanitized;
+            int percentIndex = sanitized.IndexOf('%');
+            if (percentIndex >= 0)
+            {
+                baseLabel = sanitized[..percentIndex].TrimEnd(':', ' ');
+            }
+            else
+            {
+                int percentWord = lower.LastIndexOf("percent", StringComparison.Ordinal);
+                if (percentWord >= 0)
+                {
+                    baseLabel = sanitized[..percentWord].TrimEnd(':', ' ');
+                }
+            }
+
+            float fallbackPercent = MathF.Round(Math.Clamp(Main.UIScaleWanted > 0f ? Main.UIScaleWanted : Main.UIScale, 0.1f, 4f) * 100f);
+            bool includeFallbackLabel = optionIndicesChanged || string.IsNullOrWhiteSpace(_lastOptionDescription);
+            if (!includeFallbackLabel)
+            {
+                return $"{fallbackPercent:0} percent";
+            }
+
+            string prefix = string.IsNullOrWhiteSpace(baseLabel) ? sanitized : baseLabel;
+            return $"{prefix} {fallbackPercent:0} percent";
+        }
+
+        private string DescribeZoomOrUiScale(int specialFeature, bool optionIndicesChanged)
+        {
+            bool isZoom = specialFeature == 10;
+            bool isUiScale = specialFeature == 11;
+            string label = isZoom ? "Zoom" : "Interface scale";
+
+            float percent = isZoom
+                ? MathF.Round(Math.Clamp(Main.GameZoomTarget, 0.01f, 4f) * 100f)
+                : MathF.Round(Math.Clamp(Main.UIScaleWanted > 0f ? Main.UIScaleWanted : Main.UIScale, 0.1f, 4f) * 100f);
+
+            ref float lastValue = ref (isZoom ? ref _lastZoomPercent : ref _lastUiScalePercent);
+            bool sliderChanged = optionIndicesChanged;
+            bool valueChanged = Math.Abs(percent - lastValue) >= 1f;
+
+            if (!sliderChanged && !valueChanged)
+            {
+                return string.Empty;
+            }
+
+            bool includeLabel = sliderChanged || string.IsNullOrWhiteSpace(_lastOptionDescription);
+            lastValue = percent;
+            return includeLabel ? $"{label} {percent:0} percent" : $"{percent:0} percent";
+        }
+
+        private static bool TryMapPercentOnlySlider(int categoryId, int optionIndex, string? categoryLabel, out string label)
+        {
+            string sanitizedCategory = TextSanitizer.Clean(categoryLabel ?? string.Empty);
+            string lowerCategory = sanitizedCategory.ToLowerInvariant();
+
+            bool looksLikeInterface = categoryId == 1 ||
+                string.Equals(sanitizedCategory, TextSanitizer.Clean(Lang.menu[210].Value), StringComparison.OrdinalIgnoreCase) ||
+                lowerCategory.Contains("interface", StringComparison.Ordinal) ||
+                lowerCategory.Contains("ui scale", StringComparison.Ordinal) ||
+                lowerCategory.Contains("ui-scale", StringComparison.Ordinal);
+
+            // Interface/UI category: interface scale is the percent-only slider.
+            if (looksLikeInterface)
+            {
+                label = "Interface scale";
+                return true;
+            }
+
+            bool looksLikeZoom = categoryId == 2 ||
+                string.Equals(sanitizedCategory, TextSanitizer.Clean(Lang.menu[63].Value), StringComparison.OrdinalIgnoreCase) ||
+                lowerCategory.Contains("zoom", StringComparison.Ordinal) ||
+                lowerCategory.Contains("display", StringComparison.Ordinal) ||
+                lowerCategory.Contains("video", StringComparison.Ordinal);
+
+            int special = UILinkPointNavigator.Shortcuts.OPTIONS_BUTTON_SPECIALFEATURE;
+            if (special == 11 && !looksLikeInterface)
+            {
+                looksLikeInterface = true;
+            }
+            else if (special == 10 && !looksLikeZoom)
+            {
+                looksLikeZoom = true;
+            }
+
+            // Video/Display category: zoom is the percent-only slider.
+            if (looksLikeZoom)
+            {
+                label = "Zoom";
+                return true;
+            }
+
+            label = string.Empty;
+            return false;
+        }
+
+        private bool TryHandleAudioSlider(int categoryId, int optionIndex, int specialFeature, string? categoryLabel, bool optionIndicesChanged)
+        {
+            MenuSliderKind kind = specialFeature switch
+            {
+                2 => MenuSliderKind.Music,
+                3 => MenuSliderKind.Sound,
+                4 => MenuSliderKind.Ambient,
+                _ => MenuSliderKind.Unknown,
+            };
+
+            if (kind == MenuSliderKind.Unknown)
+            {
+                return false;
+            }
+
+            string label = ResolveSliderLabel(categoryId, optionIndex, categoryLabel, kind);
+            float percent = ReadAudioSliderPercent(kind);
+            ref float lastValue = ref GetLastAudioSliderValue(kind);
+
+            bool sliderChanged = optionIndicesChanged || _lastSpecialFeature != specialFeature;
+            bool valueChanged = Math.Abs(percent - lastValue) >= 1f;
+
+            _lastSpecialFeature = specialFeature;
+
+            if (!sliderChanged && !valueChanged)
+            {
+                return true;
+            }
+
+            string announcement = BuildSliderAnnouncement(label, kind, percent, includeLabel: sliderChanged);
+            PlayTickIfNew($"opt-{categoryId}-{optionIndex}");
+            ScreenReaderService.Announce(announcement, force: true);
+
+            lastValue = percent;
+            _lastOptionDescription = announcement;
+            _lastRightHover = optionIndex;
+            _lastRightLock = categoryId;
+            return true;
+        }
+
+        private string ResolveSliderLabel(int categoryId, int optionIndex, string? categoryLabel, MenuSliderKind kind)
+        {
+            if (IngameOptionsLabelTracker.TryGetOptionLabel(categoryId, optionIndex, out string label) && !string.IsNullOrWhiteSpace(label))
+            {
+                return label;
+            }
+
+            string? fallback = DescribeFallback(categoryId, optionIndex, categoryLabel);
+            if (!string.IsNullOrWhiteSpace(fallback))
+            {
+                return fallback;
+            }
+
+            return GetDefaultSliderLabel(kind);
+        }
+
+        private static float ReadAudioSliderPercent(MenuSliderKind kind)
+        {
+            return kind switch
+            {
+                MenuSliderKind.Music => MathF.Round(Math.Clamp(Main.musicVolume, 0f, 1f) * 100f),
+                MenuSliderKind.Sound => MathF.Round(Math.Clamp(Main.soundVolume, 0f, 1f) * 100f),
+                MenuSliderKind.Ambient => MathF.Round(Math.Clamp(Main.ambientVolume, 0f, 1f) * 100f),
+                _ => 0f,
+            };
+        }
+
+        private ref float GetLastAudioSliderValue(MenuSliderKind kind)
+        {
+            switch (kind)
+            {
+                case MenuSliderKind.Sound:
+                    return ref _lastSoundVolume;
+                case MenuSliderKind.Ambient:
+                    return ref _lastAmbientVolume;
+                case MenuSliderKind.Music:
+                default:
+                    return ref _lastMusicVolume;
+            }
+        }
+
+        private static string BuildSliderAnnouncement(string rawLabel, MenuSliderKind kind, float percent, bool includeLabel)
+        {
+            string baseLabel = ExtractBaseLabel(rawLabel, kind);
+            return includeLabel ? $"{baseLabel} {percent:0} percent" : $"{percent:0} percent";
+        }
+
+        private static string ExtractBaseLabel(string rawLabel, MenuSliderKind kind)
+        {
+            string sanitized = TextSanitizer.Clean(rawLabel);
+            if (!string.IsNullOrWhiteSpace(sanitized))
+            {
+                int percentIndex = sanitized.IndexOf('%');
+                if (percentIndex >= 0)
+                {
+                    sanitized = sanitized[..percentIndex];
+                }
+
+                int percentWord = sanitized.IndexOf("percent", StringComparison.OrdinalIgnoreCase);
+                if (percentWord >= 0)
+                {
+                    sanitized = sanitized[..percentWord];
+                }
+
+                sanitized = sanitized.Trim().TrimEnd(':').Trim();
+                sanitized = TrimTrailingNumber(sanitized);
+            }
+
+            if (!string.IsNullOrWhiteSpace(sanitized))
+            {
+                return sanitized;
+            }
+
+            return GetDefaultSliderLabel(kind);
+        }
+
+        private static string GetDefaultSliderLabel(MenuSliderKind kind)
+        {
+            return kind switch
+            {
+                MenuSliderKind.Music => "Music volume",
+                MenuSliderKind.Sound => "Sound volume",
+                MenuSliderKind.Ambient => "Ambient volume",
+                MenuSliderKind.Zoom => "Zoom",
+                MenuSliderKind.InterfaceScale => "Interface scale",
+                _ => "Volume",
+            };
+        }
+
+        private static string TrimTrailingNumber(string value)
+        {
+            int end = value.Length;
+            while (end > 0 && (char.IsWhiteSpace(value[end - 1]) || char.IsDigit(value[end - 1]) || value[end - 1] == ':' || value[end - 1] == '.'))
+            {
+                end--;
+            }
+
+            if (end < value.Length)
+            {
+                return value[..end].TrimEnd();
+            }
+
+            return value;
         }
 
         private static string? DescribeFallback(int category, int option, string? categoryLabel)
@@ -897,11 +1242,36 @@ public sealed partial class InGameNarrationSystem
             _lastCategoryLabel = null;
             _lastRightHover = int.MinValue;
             _lastRightLock = int.MinValue;
+            _lastOptionDescription = null;
             _lastSpecialFeature = int.MinValue;
             _lastMusicVolume = -1f;
             _lastSoundVolume = -1f;
             _lastAmbientVolume = -1f;
+            _lastZoomPercent = -1f;
+            _lastUiScalePercent = -1f;
             _lastParallax = int.MinValue;
+            _forceCategoryAnnouncement = false;
+            _lastTickKey = null;
+            _lastTickFrame = 0;
+        }
+
+        private void PlayTickIfNew(string key)
+        {
+            if (string.IsNullOrWhiteSpace(key) || string.Equals(key, _lastTickKey, StringComparison.Ordinal))
+            {
+                return;
+            }
+
+            uint frame = Main.GameUpdateCount;
+            uint age = frame >= _lastTickFrame ? frame - _lastTickFrame : uint.MaxValue - _lastTickFrame + frame + 1;
+            if (age < 5)
+            {
+                return;
+            }
+
+            _lastTickKey = key;
+            _lastTickFrame = frame;
+            SoundEngine.PlaySound(SoundID.MenuTick);
         }
     }
 }
