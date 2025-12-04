@@ -1,23 +1,51 @@
 # Terraria Access
 
-Terraria Access is a tModLoader mod focused on making Terraria playable for blind and low‑vision players. The project adds screen reader integrations and narration systems so that the game’s menus, inventory, and in‑world interactions can be understood through speech output instead of visuals.
+A screen-reader-first tModLoader mod that makes Terraria playable for blind and low-vision players. The mod narrates menus, in-game UI, navigation cues, and world events while layering positional audio to keep you oriented without visuals.
 
-## Key Goals
+## Latest release
+- Download: https://drive.google.com/file/d/1Hm7q4lqIMEQE4_J8KxPZWmIBDCWc_zgr/view
 
-- Provide end-to-end narration coverage for main menus, world and player selection, and in-game UI.
-- Bridge Terraria events to NVDA via `nvdaControllerClient64.dll`, with graceful fallbacks to on-screen chat.
-- Describe traditionally visual-only information—inventory contents, hotbar state, map cues—through concise audio messages.
-- Maintain screen-reader-first workflows while preserving vanilla controls for all players.
+## Requirements
+- tModLoader (Steam install or manual distribution)
+- NVDA with `nvdaControllerClient64.dll` placed next to `tModLoader.exe` (or in `Mods/ScreenReaderMod/Libraries/`)
 
-## Getting Started
+## Install & Play
+1. Install tModLoader and ensure NVDA is running with `nvdaControllerClient64.dll` beside `tModLoader.exe` (or in `Mods/ScreenReaderMod/Libraries/`).
+2. Download the latest `.tmod` release: https://drive.google.com/file/d/1Hm7q4lqIMEQE4_J8KxPZWmIBDCWc_zgr/view
+3. Drop `ScreenReaderMod.tmod` into `%USERPROFILE%\Documents\My Games\Terraria\tModLoader\Mods`. Alternatively, run `pwsh -NoProfile -ExecutionPolicy Bypass -File Tools/build.ps1` to build and deploy it; the script resolves your tModLoader install and copies the artifact unless `-SkipDeploy` is used.
+4. Launch tModLoader, enable **Terraria Access** from the Mods menu, and restart tModLoader to activate hooks.
+5. Bind the mod keybinds under `Settings > Controls > Keybindings > Screen Reader` (defaults listed below).
 
-1. Install tModLoader (Steam or manual distribution) and clone this repository.
-2. Place `nvdaControllerClient64.dll` next to `tModLoader.exe` (or inside `Mods/ScreenReaderMod/Libraries/`) and launch NVDA.
-3. Run `Tools/build-and-copy.ps1` from PowerShell to build and copy the mod into your Terraria Mods directory.
-4. Enable **Terraria Access** from the in-game Mods menu and restart tModLoader to activate the narration hooks.
+## Feature highlights
+- **Menu narration:** Title, player/world creation & deletion, settings (audio/video/interface/gameplay/cursor/effects/resolution), multiplayer/host & play, join by IP, tModLoader settings, mod browser/workshop, and mod configuration screens.
+- **In-game narration:** Inventory/storage/shop slots (including prices and sell values), crafting/guide/reforge tooltips, hotbar selection, smart cursor targets, NPC dialogue, in-game settings, controls, and lock-on targets.
+- **Navigation & awareness:** Named waypoints with positional tones, exploration/gathering tracker for nearby interactables, biome announcements, hostile NPC “static” cues, treasure bag beacons, and footstep tones.
+- **Build Mode:** Mark a rectangle, then clear or place tiles/walls across the selection using the held tool, with range extension to the current viewport and completion summaries.
+- **Speech pipeline:** NVDA-driven speech with repeat suppression and a speech-interrupt toggle; world announcements use a SAPI fallback while respecting mute/interrupt state.
 
-## Contributing
+See `Docs/features.md` for deeper coverage of each system.
 
-Contributions are welcome—especially around expanding menu coverage, adding new narration domains, and improving accessibility docs. Please open an issue describing the scenario you are addressing, then submit a pull request targeting `main`.
+## Keybinds (defaults)
+| Action | Default | Notes |
+| --- | --- | --- |
+| Speech Interrupt | `F2` | Cancel current speech and toggle interrupt on/off. |
+| Guidance Category Next/Previous | `]` / `[` | Cycle between None, Exploration, Interactable, NPC, Player, and Waypoint tracking modes. |
+| Guidance Entry Next/Previous | `PageDown` / `PageUp` | Cycle entries within the active guidance category. |
+| Create / Delete Waypoint | `\` / `Delete` | Create a waypoint at your position; delete the selected waypoint. |
+| Guidance Teleport | `P` | Teleport to the active guidance target when a safe landing spot exists. |
+| Build Mode Toggle / Place Corner | Unbound | Set your own bindings; when active, use the place key (or Quick Mount/mouse left) to mark corners. |
 
-For build instructions, repo guidelines, and current accessibility notes, see the files under `AGENTS.md` and `Docs/`.
+Configure bindings under `Settings > Controls > Keybindings > Screen Reader` to match your controller or keyboard preferences.
+
+## Building from source
+Run the repo-root command (from WSL or PowerShell):
+
+```bash
+pwsh -NoProfile -ExecutionPolicy Bypass -File Tools/build.ps1
+```
+
+The script builds the mod and copies `ScreenReaderMod.tmod` into your local tModLoader Mods folder. Pass `-SkipDeploy` if you only want the `.tmod` artifact. Build logs include `[Narration]` and `[NVDA]` lines for debugging.
+
+## Troubleshooting & docs
+- Check `tModLoader-Logs/client.log` for `[Narration]`, `[WorldNarration]`, `[MenuNarration]`, and `[NVDA]` entries when validating speech output.
+- Additional docs live in `Docs/`, including `Docs/accessibility-notes.md`, `Docs/features.md`, `Docs/world-interactable-tracking.md`, and `Docs/tmodloader-setup.md`.
