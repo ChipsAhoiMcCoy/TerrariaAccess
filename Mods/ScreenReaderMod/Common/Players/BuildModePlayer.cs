@@ -34,10 +34,6 @@ public sealed class BuildModePlayer : ModPlayer
     private Point? _secondCorner;
     private Point _lastAnnouncedCursor;
     private int _cursorAnnounceCooldown;
-    private bool _lastMouseLeft;
-    private bool _lastQuickMount;
-    private bool _lastGamepadStart;
-    private bool _lastGamepadA;
     private SelectionAction _activeAction;
     private int _activeItemType;
     private int _tilesCleared;
@@ -64,8 +60,6 @@ public sealed class BuildModePlayer : ModPlayer
             RestorePlacementRangeIfNeeded();
             return;
         }
-
-        _rangeManager.ExpandPlacementRangeToViewport(Player);
     }
 
     public override void PreUpdate()
@@ -77,16 +71,12 @@ public sealed class BuildModePlayer : ModPlayer
         }
 
         GuardBuildModeInput();
-        _rangeManager.ExpandPlacementRangeToViewport(Player);
     }
 
     public override void ProcessTriggers(TriggersSet triggersSet)
     {
-        bool startPressed = PlayerInput.UsingGamepad && IsGamepadStartPressed();
-        bool startJustPressed = startPressed && !_lastGamepadStart;
-        _lastGamepadStart = startPressed;
-
-        if (startJustPressed || (BuildModeKeybinds.Toggle?.JustPressed ?? false))
+        bool togglePressed = BuildModeKeybinds.Toggle?.JustPressed ?? false;
+        if (togglePressed)
         {
             ToggleBuildMode();
         }
@@ -103,7 +93,7 @@ public sealed class BuildModePlayer : ModPlayer
             return;
         }
 
-        if (!TryCaptureCursorTile(out Point tile))
+        if (!TryCaptureCursorTileInRange(out Point tile))
         {
             ScreenReaderService.Announce(BuildModeNarrationCatalog.CursorOutOfBounds());
             return;
@@ -205,10 +195,6 @@ public sealed class BuildModePlayer : ModPlayer
         ResetSelection();
         _cursorAnnounceCooldown = 0;
         _lastAnnouncedCursor = Point.Zero;
-        _lastMouseLeft = false;
-        _lastQuickMount = false;
-        _lastGamepadStart = false;
-        _lastGamepadA = false;
         ResetActiveAction();
         _hurtGraceTicks = 0;
     }
@@ -245,12 +231,6 @@ public sealed class BuildModePlayer : ModPlayer
     public override void OnHurt(Player.HurtInfo info)
     {
         _hurtGraceTicks = HurtInputGraceTicks;
-    }
-
-    private void SuppressQuickMount(TriggersSet triggersSet)
-    {
-        triggersSet.QuickMount = false;
-        Player.controlMount = false;
     }
 
     private void EnsureActiveAction(Rectangle selection, SelectionAction action, ref Item held)
@@ -537,49 +517,13 @@ public sealed class BuildModePlayer : ModPlayer
 
     private bool CaptureCornerPlacementInput(TriggersSet triggersSet)
     {
-        bool placePressed = BuildModeKeybinds.Place?.JustPressed ?? false;
-        bool usingGamepad = PlayerInput.UsingGamepad;
-        bool gamepadAPressed = usingGamepad && IsGamepadAButtonPressed();
-        bool gamepadAJustPressed = gamepadAPressed && !_lastGamepadA;
-        _lastGamepadA = gamepadAPressed;
-
-        bool quickMountPressed = triggersSet.QuickMount;
-        bool quickMountJustPressed = quickMountPressed && !_lastQuickMount;
-        _lastQuickMount = quickMountPressed;
-
-        if (quickMountPressed)
-        {
-            placePressed |= quickMountJustPressed;
-            SuppressQuickMount(triggersSet);
-        }
-
-        if (gamepadAJustPressed)
-        {
-            placePressed = true;
-        }
-
-        if (!placePressed && !usingGamepad)
-        {
-            bool mouseLeft = triggersSet.MouseLeft;
-            placePressed = mouseLeft && !_lastMouseLeft;
-            _lastMouseLeft = mouseLeft;
-        }
-        else
-        {
-            _lastMouseLeft = triggersSet.MouseLeft;
-        }
-
-        return placePressed;
+        return BuildModeKeybinds.Place?.JustPressed ?? false;
     }
 
     private void TrackMouseForCornerPlacement(TriggersSet triggersSet)
     {
-        if (!PlayerInput.UsingGamepad)
-        {
-            _lastMouseLeft = triggersSet.MouseLeft;
-        }
-
-        _lastQuickMount = triggersSet.QuickMount;
+        // Intentionally left blank; only tracking via keybind states now.
+        _ = triggersSet;
     }
 
     private void HandleCornerPlacement(Point tile)
@@ -625,6 +569,40 @@ public sealed class BuildModePlayer : ModPlayer
         return false;
     }
 
+    private bool TryCaptureCursorTileInRange(out Point tile)
+    {
+        if (!TryCaptureCursorTile(out tile))
+        {
+            return false;
+        }
+
+        if (IsWithinPlacementRange(tile))
+        {
+            return true;
+        }
+
+        // Allow tiles that are still within the player's normal reachable screen area (e.g., bow holdout range).
+        Vector2 cursor = Main.MouseWorld;
+        Player.LimitPointToPlayerReachableArea(ref cursor);
+        int clampedTileX = (int)(cursor.X / 16f);
+        int clampedTileY = (int)(cursor.Y / 16f);
+
+        bool withinReachableArea = clampedTileX == tile.X && clampedTileY == tile.Y;
+        if (withinReachableArea)
+        {
+            return true;
+        }
+
+        tile = Point.Zero;
+        return false;
+    }
+
+    private bool IsWithinPlacementRange(Point tile)
+    {
+        TileReachCheckSettings settings = TileReachCheckSettings.Simple;
+        return Player.InInteractionRange(tile.X, tile.Y, settings);
+    }
+
     private Rectangle GetSelection()
     {
         if (!HasSelection)
@@ -650,7 +628,7 @@ public sealed class BuildModePlayer : ModPlayer
             return;
         }
 
-        if (!TryCaptureCursorTile(out Point tile))
+        if (!TryCaptureCursorTileInRange(out Point tile))
         {
             _cursorAnnounceCooldown = 0;
             return;
@@ -874,32 +852,6 @@ public sealed class BuildModePlayer : ModPlayer
                 state.DPad.Down == ButtonState.Pressed ||
                 state.DPad.Left == ButtonState.Pressed ||
                 state.DPad.Right == ButtonState.Pressed;
-        }
-        catch
-        {
-            return false;
-        }
-    }
-
-    private static bool IsGamepadStartPressed()
-    {
-        try
-        {
-            GamePadState state = GamePad.GetState(PlayerIndex.One);
-            return state.IsConnected && state.Buttons.Start == ButtonState.Pressed;
-        }
-        catch
-        {
-            return false;
-        }
-    }
-
-    private static bool IsGamepadAButtonPressed()
-    {
-        try
-        {
-            GamePadState state = GamePad.GetState(PlayerIndex.One);
-            return state.IsConnected && state.Buttons.A == ButtonState.Pressed;
         }
         catch
         {

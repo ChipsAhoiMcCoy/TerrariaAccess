@@ -30,7 +30,7 @@ internal static class WorldAnnouncementService
             sanitized,
             force: force,
             category: ScreenReaderService.AnnouncementCategory.World,
-            allowWhenMuted: force,
+            allowWhenMuted: true,
             channel: SpeechChannel.World);
     }
 }

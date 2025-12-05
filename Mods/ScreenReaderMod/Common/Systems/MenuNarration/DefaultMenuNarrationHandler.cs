@@ -4,6 +4,7 @@ using System.Collections.Generic;
 using ScreenReaderMod.Common.Systems;
 using ScreenReaderMod.Common.Utilities;
 using Terraria;
+using Terraria.ID;
 using Terraria.GameContent.UI;
 using Terraria.Localization;
 using Terraria.UI;
@@ -83,7 +84,7 @@ internal sealed class DefaultMenuNarrationHandler : IMenuNarrationHandler
 
         if (!TryHandleFocus(context, currentMode, force: false, now, events))
         {
-            AnnounceFallback(currentMode, now, events);
+            AnnounceFallback(context, now, events);
         }
 
         return events;
@@ -95,12 +96,9 @@ internal sealed class DefaultMenuNarrationHandler : IMenuNarrationHandler
         bool modeRepeat = !string.IsNullOrWhiteSpace(_state.LastModeAnnouncement) &&
             string.Equals(modeLabel, _state.LastModeAnnouncement, StringComparison.OrdinalIgnoreCase) &&
             timestamp - _state.LastModeAnnouncedAt < TimeSpan.FromSeconds(1);
-        if (!modeRepeat)
-        {
-            events.Add(new MenuNarrationEvent($"{modeLabel}.", true, MenuNarrationEventKind.ModeChanged));
-            _state.LastModeAnnouncement = modeLabel;
-            _state.LastModeAnnouncedAt = timestamp;
-        }
+        // Suppress explicit menu title announcements; focus/hover events will provide context.
+        _state.LastModeAnnouncement = modeLabel;
+        _state.LastModeAnnouncedAt = timestamp;
 
         MenuNarrationCatalog.LogMenuSnapshot(currentMode);
 
@@ -127,7 +125,7 @@ internal sealed class DefaultMenuNarrationHandler : IMenuNarrationHandler
 
         if (!TryHandleFocus(context, currentMode, force: true, timestamp, events))
         {
-            AnnounceFallback(currentMode, timestamp, events);
+            AnnounceFallback(context, timestamp, events);
         }
     }
 
@@ -146,6 +144,12 @@ internal sealed class DefaultMenuNarrationHandler : IMenuNarrationHandler
         string cleaned = TextSanitizer.Clean(hover.Text);
         if (string.IsNullOrWhiteSpace(cleaned))
         {
+            return false;
+        }
+
+        if (!IsAllowedHover(context.MenuMode, cleaned))
+        {
+            ScreenReaderMod.Instance?.Logger.Info($"[MenuNarration] UI hover suppressed -> {cleaned}");
             return false;
         }
 
@@ -183,9 +187,11 @@ internal sealed class DefaultMenuNarrationHandler : IMenuNarrationHandler
         if (!hasSliderIndex && !hasSpecialSlider)
         {
             ResetSliderTracking();
+
             if (audioMenu)
             {
-                _state.ForceNextFocus = true;
+                // Wait for the slider links to appear before narrating to avoid duplicate preamble lines.
+                return true;
             }
 
             return false;
@@ -295,6 +301,93 @@ internal sealed class DefaultMenuNarrationHandler : IMenuNarrationHandler
         ScreenReaderMod.Instance?.Logger.Info($"[MenuNarration] Slider {sliderId} ({kind}) -> {announcement}");
         events.Add(new MenuNarrationEvent(announcement, true, MenuNarrationEventKind.Slider));
         return true;
+    }
+
+    private bool IsAllowedHover(int menuMode, string cleanedLabel)
+    {
+        if (string.IsNullOrWhiteSpace(cleanedLabel))
+        {
+            return false;
+        }
+
+        string lower = cleanedLabel.ToLowerInvariant();
+
+        if (menuMode == MenuID.Title)
+        {
+            // Only allow known main menu entries; suppress stray tooltips like Steam join messages or migration prompts.
+            string[] allowed =
+            {
+                TextSanitizer.Clean(Lang.menu[12].Value), // Single Player
+                TextSanitizer.Clean(Lang.menu[13].Value), // Multiplayer
+                TextSanitizer.Clean(Lang.menu[131].Value), // Achievements
+                TextSanitizer.Clean(Language.GetTextValue("UI.Workshop")),
+                TextSanitizer.Clean(Lang.menu[14].Value), // Settings
+                TextSanitizer.Clean(Language.GetTextValue("UI.Credits")),
+                TextSanitizer.Clean(Lang.menu[15].Value), // Exit
+            };
+
+            foreach (string allowedLabel in allowed)
+            {
+                if (!string.IsNullOrWhiteSpace(allowedLabel) &&
+                    string.Equals(cleanedLabel, allowedLabel, StringComparison.OrdinalIgnoreCase))
+                {
+                    return true;
+                }
+            }
+
+            return false;
+        }
+
+        if (IsSettingsMenuMode(menuMode))
+        {
+            // Filter out header-like audio text and menu titles.
+            if (lower.Contains("volume") || lower.Contains("audio") || lower.Contains("sound"))
+            {
+                return false;
+            }
+        }
+
+        if (menuMode == 10017 && lower.Contains("tmodloader"))
+        {
+            return false;
+        }
+
+        string modeLabel = MenuNarrationCatalog.DescribeMenuMode(menuMode);
+        if (!string.IsNullOrWhiteSpace(modeLabel) &&
+            string.Equals(cleanedLabel, TextSanitizer.Clean(modeLabel), StringComparison.OrdinalIgnoreCase))
+        {
+            return false;
+        }
+
+        return true;
+    }
+
+    private bool ShouldSuppressHover(int menuMode, string cleanedLabel)
+    {
+        if (string.IsNullOrWhiteSpace(cleanedLabel))
+        {
+            return true;
+        }
+
+        string modeLabel = MenuNarrationCatalog.DescribeMenuMode(menuMode);
+        if (!string.IsNullOrWhiteSpace(modeLabel) &&
+            string.Equals(cleanedLabel, TextSanitizer.Clean(modeLabel), StringComparison.OrdinalIgnoreCase))
+        {
+            return true;
+        }
+
+        string lower = cleanedLabel.ToLowerInvariant();
+        if (IsSettingsMenuMode(menuMode) && (lower.Contains("volume") || lower.Contains("audio") || lower.Contains("sound")))
+        {
+            return true;
+        }
+
+        if (menuMode == 10017 && lower.Contains("tmodloader"))
+        {
+            return true;
+        }
+
+        return false;
     }
 
     private static bool IsSettingsMenuMode(int menuMode)
@@ -563,8 +656,20 @@ internal sealed class DefaultMenuNarrationHandler : IMenuNarrationHandler
         return true;
     }
 
-    private void AnnounceFallback(int currentMode, DateTime timestamp, List<MenuNarrationEvent> events)
+    private void AnnounceFallback(MenuNarrationContext context, DateTime timestamp, List<MenuNarrationEvent> events)
     {
+        int currentMode = context.MenuMode;
+
+        if (IsSettingsMenuMode(currentMode) || currentMode == MenuID.Title)
+        {
+            return;
+        }
+
+        if (context.UiState is not null && !_state.SawHoverThisMode)
+        {
+            return;
+        }
+
         if (_state.AnnouncedFallback)
         {
             return;

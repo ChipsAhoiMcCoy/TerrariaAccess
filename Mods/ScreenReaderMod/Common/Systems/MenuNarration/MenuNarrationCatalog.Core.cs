@@ -39,6 +39,7 @@ internal static partial class MenuNarrationCatalog
 
     private static readonly Dictionary<int, Func<int, string>> ModeResolvers = new()
     {
+        [888] = DescribeMainMenuItem,
         [MenuID.Title] = DescribeMainMenuItem,
         [MenuID.CharacterDeletion] = DescribePlayerDeletionConfirmation,
         [MenuID.CharacterDeletionConfirmation] = DescribePlayerDeletionConfirmation,
@@ -161,7 +162,8 @@ internal static partial class MenuNarrationCatalog
         }
 
         string[] items = GetMenuItemArray();
-        bool withinMenuItems = items.Length > 0 && focusedIndex < items.Length;
+        bool hasMenuItems = items.Length > 0;
+        bool withinMenuItems = hasMenuItems && focusedIndex < items.Length;
         if (withinMenuItems)
         {
             string option = items[focusedIndex];
@@ -174,6 +176,11 @@ internal static partial class MenuNarrationCatalog
             {
                 return string.Empty;
             }
+        }
+
+        if (!hasMenuItems && ShouldDeferLangMenuFallback(menuMode))
+        {
+            return string.Empty;
         }
 
         string label = TryGetFromLangMenu(focusedIndex);
@@ -234,6 +241,12 @@ internal static partial class MenuNarrationCatalog
     private static int ReadInt(Lazy<FieldInfo?> fieldHandle, int fallback)
     {
         return TryReadStatic(fieldHandle, out int value) ? value : fallback;
+    }
+
+    private static bool ShouldDeferLangMenuFallback(int menuMode)
+    {
+        // Some modes intentionally expose no menuItems (e.g., world loading screen = 10); skip Lang.menu fallback there.
+        return menuMode is 1 or 2 or 10 or 888;
     }
 
     private static string TryGetFromLangMenu(int focusedIndex)

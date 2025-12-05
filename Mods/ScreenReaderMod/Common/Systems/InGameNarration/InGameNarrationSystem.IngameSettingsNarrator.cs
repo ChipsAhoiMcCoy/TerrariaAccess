@@ -181,13 +181,6 @@ public sealed partial class InGameNarrationSystem
 
             if (leftHover >= 0 && leftHover != _lastLeftHover)
             {
-                string? label = GetLeftCategoryLabel(leftHover, allowMouseTextFallback: true);
-                if (!string.IsNullOrWhiteSpace(label))
-                {
-                    PlayTickIfNew($"left-{leftHover}");
-                    ScreenReaderService.Announce(label);
-                }
-
                 _lastLeftHover = leftHover;
             }
 
@@ -205,8 +198,15 @@ public sealed partial class InGameNarrationSystem
 
                 if (categoryChanged || _forceCategoryAnnouncement)
                 {
-                    PlayTickIfNew($"cat-{categoryId}");
-                    ScreenReaderService.Announce(categoryLabel);
+                    bool noOptionFocused = rightHover < 0 && rightLock < 0;
+                    if (noOptionFocused)
+                    {
+                        // Announce the category once when focus is on the left column so users hear context
+                        // before moving into the right-hand options.
+                        PlayTickIfNew($"cat-{categoryId}");
+                        ScreenReaderService.Announce(categoryLabel, force: true);
+                    }
+
                     _lastCategory = categoryId;
                     _lastCategoryLabel = categoryLabel;
                     _forceCategoryAnnouncement = false;

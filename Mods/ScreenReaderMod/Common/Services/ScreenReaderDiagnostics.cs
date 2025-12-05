@@ -14,6 +14,8 @@ internal static class ScreenReaderDiagnostics
     private const string TraceEnvVariable = "SCREENREADERMOD_TRACE";
     private const string SpeechLogEnvVariable = "SCREENREADERMOD_SPEECH_LOG_ONLY";
 
+    // Default trace to on so chat debugging works without setting env vars.
+    private const bool DefaultTraceEnabled = true;
     private static bool? _traceEnabled;
     private static bool? _speechLogOnlyEnabled;
     private static bool _langSnapshotPrinted;
@@ -48,7 +50,7 @@ internal static class ScreenReaderDiagnostics
         }
 
         string? value = Environment.GetEnvironmentVariable(TraceEnvVariable);
-        _traceEnabled = ParseFlag(value);
+        _traceEnabled = value is null ? DefaultTraceEnabled : ParseFlag(value);
 
         return _traceEnabled.Value;
     }

@@ -280,7 +280,8 @@ public sealed partial class InGameNarrationSystem
             bool suppressedWall = descriptor.IsWall && !ShouldAnnounceWall(player);
             if (suppressedWall)
             {
-                descriptor = descriptor with { TileType = -1, Name = "Empty", Category = AnnouncementCategory.Tile, IsWall = false, IsAir = false };
+                ResetSmartCursorRepeatTracking();
+                return null;
             }
 
             if (!suppressedWall && descriptor.IsAir)
