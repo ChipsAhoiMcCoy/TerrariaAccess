@@ -1,0 +1,94 @@
+
+{
+  "Mods": {
+    "ScreenReaderMod": {
+      "HostMenu": {
+        "LobbyLabel": "Steam 大厅",
+        "FriendsLabel": "好友可加入",
+        "FriendsOfFriendsLabel": "好友的好友可加入",
+        "ConsoleLabel": "显示服务器控制台",
+        "RequiresLobby": "需要开启大厅以设置好友访问权限",
+        "RequiresFriends": "允许好友加入后才能开启此选项"
+      },
+      "IngameOptions": {
+        "ModConfiguration": "模组设置",
+        "CloseMenu": "关闭菜单",
+        "SaveAndExit": "保存并退出"
+      },
+      "ModConfigMenu": {
+        "ListIntro": "模组设置列表。",
+        "SelectedMod": "已选择模组：{0}",
+        "ConfigIntro": "{1} 的 {0}",
+        "ConfigIntroNoMod": "{0} 设置。",
+        "ConfigFallback": "设置"
+      },
+      "CursorLiquids": {
+        "Water": "水",
+        "Lava": "岩浆",
+        "Honey": "蜂蜜"
+      },
+      "ControlsMenu": {
+        "Opened": "控制设置菜单。",
+        "RebindingPrompt": "按下要绑定的按键或按钮。"
+      },
+      "WorldAnnouncements": {
+        "BloodMoonStart": "血月升起了。",
+        "BloodMoonEnd": "血月已结束。",
+        "GoblinArmyApproaching": "哥布林部队正在接近。",
+        "GoblinArmyArrived": "哥布林部队已抵达！",
+        "GoblinArmyDefeated": "哥布林部队已被击败。",
+        "GoblinArmyRetreated": "哥布林部队已经撤退。",
+        "PirateArmyApproaching": "海盗入侵正在逼近。",
+        "PirateArmyArrived": "海盗已经入侵！",
+        "PirateArmyDefeated": "海盗已被击败。",
+        "PirateArmyRetreated": "海盗已经撤退。",
+        "FrostLegionApproaching": "霜月军团正在逼近。",
+        "FrostLegionArrived": "霜月军团已抵达！",
+        "FrostLegionDefeated": "霜月军团已被击败。",
+        "FrostLegionRetreated": "霜月军团已经撤退。",
+        "MartianMadnessApproaching": "火星人正在逼近！",
+        "MartianMadnessArrived": "火星人已经登陆！",
+        "MartianMadnessDefeated": "火星暴乱已被击退。",
+        "MartianMadnessRetreated": "火星人已经撤退。",
+        "CelestialInvasionApproaching": "无尽厄兆正在逼近。",
+        "CelestialInvasionArrived": "天界四柱已降临。",
+        "CelestialInvasionDefeated": "天界入侵已被击退。",
+        "CelestialInvasionRetreated": "天界入侵已经撤离。",
+        "SolarEclipseStart": "日食开始了。",
+        "SolarEclipseEnd": "日食已结束。",
+        "PumpkinMoonStart": "南瓜月升起了。",
+        "PumpkinMoonEnd": "南瓜月已结束。",
+        "FrostMoonStart": "霜月升起了。",
+        "FrostMoonEnd": "霜月已结束。",
+        "RainStart": "开始下雨了。",
+        "RainEnd": "雨停了。",
+        "SandstormStart": "沙尘暴开始了。",
+        "SandstormEnd": "沙尘暴已结束。",
+        "SlimeRainStart": "史莱姆从天而降！",
+        "SlimeRainEnd": "史莱姆雨已停止。",
+        "LanternNightStart": "灯笼夜开始了。",
+        "LanternNightEnd": "灯笼夜结束了。",
+        "PartyStart": "派对开始了！",
+        "PartyEnd": "派对结束了。",
+        "OldOnesArmyStart": "远古军团正在推进。",
+        "OldOnesArmyEnd": "远古军团已被击败。",
+        "WorldLoaded": "世界已加载。",
+        "NpcArrived": "{0} 已到来。"
+      },
+      "Keybinds": {
+        "WaypointNext.DisplayName": "下一个路标",
+        "WaypointPrevious.DisplayName": "上一个路标",
+        "WaypointCreate.DisplayName": "创建路标"
+      }
+    }
+  },
+  "Keybinds": {
+    "Next Waypoint.DisplayName": "下一个路标",
+    "Previous Waypoint.DisplayName": "上一个路标",
+    "Create Waypoint.DisplayName": "创建路标",
+    "WaypointNext.DisplayName": "下一个路标",
+    "WaypointPrevious.DisplayName": "上一个路标",
+    "WaypointCreate.DisplayName": "创建路标",
+    "WaypointDelete.DisplayName": "删除路标"
+  }
+}
