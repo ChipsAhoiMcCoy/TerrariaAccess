@@ -221,10 +221,25 @@ public sealed partial class InGameNarrationSystem
                 return;
             }
 
-            // Chat already carries most world-event broadcasts. Keep announcements only for events that lack vanilla chat.
+            EnsureTownNpcSnapshot();
+            AnnounceTownNpcArrivals();
+            UpdatePlayerAnnouncements();
+
+            foreach (InvasionMonitor monitor in _invasionMonitors)
+            {
+                monitor.Update();
+            }
+
             AnnounceSimpleEvent(ref _wasRain, Main.raining, "Mods.ScreenReaderMod.WorldAnnouncements.RainStart", "It has started raining.", "Mods.ScreenReaderMod.WorldAnnouncements.RainEnd", "The rain has stopped.");
             AnnounceSimpleEvent(ref _wasSandstorm, Sandstorm.Happening, "Mods.ScreenReaderMod.WorldAnnouncements.SandstormStart", "A sandstorm has begun.", "Mods.ScreenReaderMod.WorldAnnouncements.SandstormEnd", "The sandstorm has ended.");
             AnnounceSimpleEvent(ref _wasLanternNight, LanternNight.LanternsUp, "Mods.ScreenReaderMod.WorldAnnouncements.LanternNightStart", "Lantern Night has begun.", "Mods.ScreenReaderMod.WorldAnnouncements.LanternNightEnd", "Lantern Night has ended.");
+            AnnounceSimpleEvent(ref _wasBloodMoon, Main.bloodMoon, "Mods.ScreenReaderMod.WorldAnnouncements.BloodMoonStart", "The Blood Moon is rising.", "Mods.ScreenReaderMod.WorldAnnouncements.BloodMoonEnd", "The Blood Moon has ended.");
+            AnnounceSimpleEvent(ref _wasEclipse, Main.eclipse, "Mods.ScreenReaderMod.WorldAnnouncements.SolarEclipseStart", "A solar eclipse has begun.", "Mods.ScreenReaderMod.WorldAnnouncements.SolarEclipseEnd", "The solar eclipse has ended.");
+            AnnounceSimpleEvent(ref _wasPumpkinMoon, Main.pumpkinMoon, "Mods.ScreenReaderMod.WorldAnnouncements.PumpkinMoonStart", "The Pumpkin Moon is rising.", "Mods.ScreenReaderMod.WorldAnnouncements.PumpkinMoonEnd", "The Pumpkin Moon has ended.");
+            AnnounceSimpleEvent(ref _wasFrostMoon, Main.snowMoon, "Mods.ScreenReaderMod.WorldAnnouncements.FrostMoonStart", "The Frost Moon is rising.", "Mods.ScreenReaderMod.WorldAnnouncements.FrostMoonEnd", "The Frost Moon has ended.");
+            AnnounceSimpleEvent(ref _wasSlimeRain, Main.slimeRain, "Mods.ScreenReaderMod.WorldAnnouncements.SlimeRainStart", "Slime is falling from the sky!", "Mods.ScreenReaderMod.WorldAnnouncements.SlimeRainEnd", "The slime rain has ended.");
+            AnnounceSimpleEvent(ref _wasParty, BirthdayParty.PartyIsUp, "Mods.ScreenReaderMod.WorldAnnouncements.PartyStart", "It's a party!", "Mods.ScreenReaderMod.WorldAnnouncements.PartyEnd", "The party is over.");
+            AnnounceSimpleEvent(ref _wasDd2Event, DD2Event.Ongoing, "Mods.ScreenReaderMod.WorldAnnouncements.OldOnesArmyStart", "The Old One's Army is advancing.", "Mods.ScreenReaderMod.WorldAnnouncements.OldOnesArmyEnd", "The Old One's Army has been defeated.");
         }
 
         private void ResetPlayerTracking()

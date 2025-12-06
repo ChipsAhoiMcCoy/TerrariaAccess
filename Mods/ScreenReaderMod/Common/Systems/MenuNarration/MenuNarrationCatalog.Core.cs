@@ -21,9 +21,10 @@ internal static partial class MenuNarrationCatalog
         [0] = "Main menu",
         [1] = "Player selection",
         [2] = "Player selection",
+        [10] = "World loading",
         [11] = "Settings",
+        [14] = "Server status",
         [12] = "Join by IP",
-        [14] = "Settings",
         [17] = "Controls",
         [18] = "Credits",
         [26] = "Audio settings",
@@ -52,10 +53,12 @@ internal static partial class MenuNarrationCatalog
         [1125] = DescribeSettingsCursorMenu,
         [1127] = DescribeSettingsGameplayMenu,
         [12] = DescribeMultiplayerMenu,
+        [14] = DescribeConnectionStatusMenu,
         [MenuID.WorldDeletionConfirmation] = DescribeWorldDeletionConfirmation,
         [1212] = static index => DescribeLanguageMenu(index, includeBackOption: false),
         [1213] = static index => DescribeLanguageMenu(index, includeBackOption: true),
         [889] = DescribeHostAndPlayServerMenu,
+        [10] = DescribeConnectionStatusMenu,
         [10017] = DescribeTmlSettingsMenu,
     };
 
@@ -246,7 +249,7 @@ internal static partial class MenuNarrationCatalog
     private static bool ShouldDeferLangMenuFallback(int menuMode)
     {
         // Some modes intentionally expose no menuItems (e.g., world loading screen = 10); skip Lang.menu fallback there.
-        return menuMode is 1 or 2 or 10 or 888;
+        return menuMode is 1 or 2 or 10 or 14 or 888;
     }
 
     private static string TryGetFromLangMenu(int focusedIndex)

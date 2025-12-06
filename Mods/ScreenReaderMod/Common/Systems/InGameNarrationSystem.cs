@@ -68,6 +68,17 @@ public sealed partial class InGameNarrationSystem : ModSystem
     private static readonly bool SchedulerTraceOnly = NarrationSchedulerSettings.IsTraceOnlyEnabled();
     private const float ScreenEdgePaddingPixels = 48f;
     private static readonly TimeSpan ChatRepeatWindow = TimeSpan.FromMilliseconds(750);
+    private static readonly TimeSpan PickupRepeatWindow = TimeSpan.FromSeconds(1.5);
+    private static readonly string[] BlockedStatusPhrasesWhileInWorld =
+    {
+        "receiving tile data",
+        "saving map data",
+        "saving world data",
+        "saving modded world data",
+        "validating world save",
+        "backing up player",
+        "backing up world",
+    };
     private static readonly string[] BlockedStatusPhrases =
     {
         "please start a new instance of terraria to join",
@@ -80,6 +91,7 @@ public sealed partial class InGameNarrationSystem : ModSystem
     private bool _wasIngameOptionsOpen;
     private string? _lastStatusAnnouncement;
     private NarrationInstrumentation? _instrumentation;
+    private readonly Dictionary<int, DateTime> _lastPickupAnnouncedAt = new();
 
     internal static CursorDescriptorService CursorDescriptors => _sharedCursorDescriptorService ??= new CursorDescriptorService();
 
@@ -305,6 +317,7 @@ public sealed partial class InGameNarrationSystem : ModSystem
         _lastChatAnnouncement = null;
         _lastChatAnnouncedAt = DateTime.MinValue;
         _inventoryStacksByType.Clear();
+        _lastPickupAnnouncedAt.Clear();
         _inventoryInitialized = false;
         InventoryNarrator.ResetStaticCaches();
     }
@@ -352,11 +365,6 @@ public sealed partial class InGameNarrationSystem : ModSystem
     private void AnnounceStatusTextIfNeeded()
     {
         RuntimeContextSnapshot runtime = RuntimeContext.GetSnapshot();
-        if (runtime.WorldActive)
-        {
-            return;
-        }
-
         string raw = Main.statusText ?? string.Empty;
         string sanitized = TextSanitizer.Clean(raw);
         if (string.IsNullOrWhiteSpace(sanitized))
@@ -366,6 +374,17 @@ public sealed partial class InGameNarrationSystem : ModSystem
         }
 
         string lower = sanitized.ToLowerInvariant();
+        if (runtime.WorldActive)
+        {
+            foreach (string phrase in BlockedStatusPhrasesWhileInWorld)
+            {
+                if (lower.Contains(phrase))
+                {
+                    return;
+                }
+            }
+        }
+
         foreach (string phrase in BlockedStatusPhrases)
         {
             if (lower.Contains(phrase))
@@ -1019,6 +1038,14 @@ public sealed partial class InGameNarrationSystem : ModSystem
                 continue;
             }
 
+            DateTime now = DateTime.UtcNow;
+            if (_lastPickupAnnouncedAt.TryGetValue(itemType, out DateTime lastAnnounced) &&
+                now - lastAnnounced < PickupRepeatWindow)
+            {
+                _lastPickupAnnouncedAt[itemType] = now;
+                continue;
+            }
+
             Item? template = FindInventoryItem(player, itemType);
             if (template is null)
             {
@@ -1033,6 +1060,7 @@ public sealed partial class InGameNarrationSystem : ModSystem
             ScreenReaderService.Announce(
                 $"Picked up {label}",
                 category: ScreenReaderService.AnnouncementCategory.Pickup);
+            _lastPickupAnnouncedAt[itemType] = now;
         }
 
         _inventoryStacksByType.Clear();

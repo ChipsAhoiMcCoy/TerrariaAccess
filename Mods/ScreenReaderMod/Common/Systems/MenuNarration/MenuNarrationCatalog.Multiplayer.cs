@@ -125,4 +125,17 @@ internal static partial class MenuNarrationCatalog
         return OptionOrEmpty(entries, index);
     }
 
+    private static string DescribeConnectionStatusMenu(int index)
+    {
+        // Connection/host status screens expose no menuItems; narrate the live status text instead of Lang.menu fallbacks.
+        string status = TextSanitizer.Clean(Main.statusText ?? string.Empty);
+        if (!string.IsNullOrWhiteSpace(status))
+        {
+            return status;
+        }
+
+        // Repeat the status for any focus slot; if none is available, stay silent instead of announcing incorrect labels.
+        return string.Empty;
+    }
+
 }

@@ -219,6 +219,11 @@ public sealed partial class InGameNarrationSystem
             _lastTileAnnouncementKey = announcementKey;
             _lastTileAnnouncementName = descriptor.Name;
 
+            if (smartCursorActive)
+            {
+                return;
+            }
+
             string message = string.IsNullOrWhiteSpace(coordinates) ? descriptor.Name : $"{descriptor.Name}, {coordinates}";
             AnnouncementCategory category = descriptor.Category;
             AnnounceCursorMessage(message, force: true, category: category);
