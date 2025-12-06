@@ -447,56 +447,56 @@ public sealed partial class GuidanceSystem : ModSystem
 
     private static void TeleportToTrackingTarget(Player player)
     {
-        if (!TryResolveTeleportTarget(player, out Vector2 targetPosition, out string label))
+        if (!TryResolveTeleportTarget(player, out TeleportTarget target))
         {
             ScreenReaderService.Announce("No active guidance target to teleport to.");
             return;
         }
 
-        if (!TeleportSafety.TryFindSafeDestination(player, targetPosition, out Vector2 destination, out string failureReason))
+        if (!TeleportSafety.TryFindSafeDestination(player, target.Anchor, out Vector2 destination, out string failureReason))
         {
-            string displayLabel = string.IsNullOrWhiteSpace(label) ? "the target" : label;
+            string displayLabel = string.IsNullOrWhiteSpace(target.Label) ? "the target" : target.Label;
             string detail = string.IsNullOrWhiteSpace(failureReason) ? string.Empty : $" {failureReason}";
             ScreenReaderService.Announce($"Unable to find a safe teleport location near {displayLabel}.{detail}");
-            global::ScreenReaderMod.ScreenReaderMod.Instance?.Logger.Info($"[GuidanceTeleport] failed near \"{displayLabel}\" ({NarrationStringCatalog.Coordinates(targetPosition)}) reason=\"{failureReason}\"");
+            global::ScreenReaderMod.ScreenReaderMod.Instance?.Logger.Info($"[GuidanceTeleport] failed near \"{displayLabel}\" ({NarrationStringCatalog.Coordinates(target.Anchor)}) reason=\"{failureReason}\"");
             return;
         }
 
-        player.Teleport(destination, TeleportationStyleID.RodOfDiscord);
+        player.RemoveAllGrapplingHooks();
+        player.Teleport(destination, target.Style);
         player.velocity = Vector2.Zero;
         player.fallStart = (int)(player.position.Y / 16f);
 
         if (Main.netMode == NetmodeID.MultiplayerClient)
         {
-            NetMessage.SendData(MessageID.TeleportEntity, -1, -1, null, player.whoAmI, destination.X, destination.Y, TeleportationStyleID.RodOfDiscord);
+            NetMessage.SendData(MessageID.TeleportEntity, -1, -1, null, player.whoAmI, destination.X, destination.Y, target.Style);
         }
 
         _arrivalAnnounced = false;
         RescheduleGuidancePing(player);
         EmitCurrentGuidancePing(player);
 
-        string announcement = string.IsNullOrWhiteSpace(label)
+        string announcement = string.IsNullOrWhiteSpace(target.Label)
             ? "Teleported to guidance target."
-            : $"Teleported to {label}.";
+            : $"Teleported to {target.Label}.";
         ScreenReaderService.Announce(announcement);
     }
 
-    private static bool TryResolveTeleportTarget(Player player, out Vector2 worldPosition, out string label)
+    private static bool TryResolveTeleportTarget(Player player, out TeleportTarget target)
     {
-        if (TryGetCurrentTrackingTarget(player, out worldPosition, out label))
+        if (TryGetCurrentTrackingTarget(player, out Vector2 worldPosition, out string label))
         {
+            target = new TeleportTarget(worldPosition, label, ResolveTeleportStyleForSelection());
             return true;
         }
 
         if (_selectionMode == SelectionMode.Exploration && TryGetSelectedExploration(out ExplorationTargetRegistry.ExplorationTarget exploration))
         {
-            worldPosition = exploration.WorldPosition;
-            label = exploration.Label;
+            target = new TeleportTarget(exploration.WorldPosition, exploration.Label, TeleportationStyleID.RodOfDiscord);
             return true;
         }
 
-        worldPosition = default;
-        label = string.Empty;
+        target = default;
         return false;
     }
 
@@ -515,6 +515,8 @@ public sealed partial class GuidanceSystem : ModSystem
         SelectionMode.Player,
         SelectionMode.Waypoint
     };
+
+    private readonly record struct TeleportTarget(Vector2 Anchor, string Label, int Style);
 
     private static bool IsCategoryAvailable(SelectionMode category, Player player)
     {
@@ -1310,7 +1312,7 @@ public sealed partial class GuidanceSystem : ModSystem
                 label = SanitizeLabel(exploration.Label);
                 return true;
             case SelectionMode.Npc when TryGetSelectedNpc(player, out NPC npc, out NpcGuidanceEntry entry):
-                worldPosition = npc.Center;
+                worldPosition = npc.Bottom;
                 label = SanitizeLabel(entry.DisplayName);
                 return true;
             case SelectionMode.Interactable when TryGetSelectedInteractable(player, out InteractableGuidanceEntry interactable):
@@ -1318,7 +1320,7 @@ public sealed partial class GuidanceSystem : ModSystem
                 label = SanitizeLabel(interactable.DisplayName);
                 return true;
             case SelectionMode.Player when TryGetSelectedPlayer(player, out Player targetPlayer, out PlayerGuidanceEntry playerEntry):
-                worldPosition = targetPlayer.Center;
+                worldPosition = targetPlayer.Bottom;
                 label = SanitizeLabel(playerEntry.DisplayName);
                 return true;
             default:
@@ -1326,6 +1328,13 @@ public sealed partial class GuidanceSystem : ModSystem
                 label = string.Empty;
                 return false;
         }
+    }
+
+    private static int ResolveTeleportStyleForSelection()
+    {
+        return _selectionMode == SelectionMode.Player
+            ? TeleportationStyleID.TeleportationPotion
+            : TeleportationStyleID.RodOfDiscord;
     }
 
 }

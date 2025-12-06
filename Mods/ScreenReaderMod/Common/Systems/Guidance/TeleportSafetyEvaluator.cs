@@ -1,5 +1,6 @@
 #nullable enable
 using System;
+using System.Collections.Generic;
 using Microsoft.Xna.Framework;
 using Terraria;
 
@@ -40,15 +41,14 @@ internal sealed class TeleportSafetyEvaluator
                         continue;
                     }
 
-                    Vector2 ringOffset = new(dx * 16f, dy * 16f);
-                    Vector2 candidateBase = baseTopLeft + ringOffset;
+                    Vector2 candidateBase = baseTopLeft + new Vector2(dx * 16f, dy * 16f);
                     if (!IsWithinWorld(candidateBase, width, height))
                     {
                         outOfBounds++;
                         continue;
                     }
 
-                    for (int vertical = -_verticalSearchTiles; vertical <= _verticalSearchTiles; vertical++)
+                    foreach (int vertical in EnumerateVerticalOffsets())
                     {
                         Vector2 candidate = candidateBase + new Vector2(0f, vertical * 16f);
                         if (!IsWithinWorld(candidate, width, height))
@@ -82,6 +82,17 @@ internal sealed class TeleportSafetyEvaluator
 
         failureReason = blocked > 0 ? "All nearby positions are blocked." : "No valid teleport locations were found.";
         return false;
+    }
+
+    private IEnumerable<int> EnumerateVerticalOffsets()
+    {
+        yield return 0;
+
+        for (int step = 1; step <= _verticalSearchTiles; step++)
+        {
+            yield return step;   // prefer landing slightly below the target if there's space (ground bias)
+            yield return -step;  // then search upward
+        }
     }
 
     private static bool IsWithinWorld(Vector2 topLeft, int width, int height)
