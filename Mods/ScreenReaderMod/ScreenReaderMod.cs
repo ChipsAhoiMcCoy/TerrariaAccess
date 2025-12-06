@@ -18,12 +18,14 @@ public class ScreenReaderMod : Mod
         WorldAnnouncementService.Initialize();
         GuidanceKeybinds.EnsureInitialized(this);
         SpeechInterruptKeybinds.EnsureInitialized(this);
+        StatusCheckKeybinds.EnsureInitialized(this);
         BuildModeKeybinds.EnsureInitialized(this);
     }
 
     public override void Unload()
     {
         BuildModeKeybinds.Unload();
+        StatusCheckKeybinds.Unload();
         SpeechInterruptKeybinds.Unload();
         GuidanceKeybinds.Unload();
         WorldAnnouncementService.Unload();

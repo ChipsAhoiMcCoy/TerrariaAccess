@@ -745,6 +745,16 @@ public sealed partial class InGameNarrationSystem
     private sealed class OreInteractableSource : TileInteractableSource
     {
         private const int OreFrameSizePixels = 18;
+        private static readonly int[] GemTileTypes =
+        {
+            TileID.Amethyst,
+            TileID.Topaz,
+            TileID.Sapphire,
+            TileID.Emerald,
+            TileID.Ruby,
+            TileID.Diamond,
+            TileID.AmberStoneBlock
+        };
 
         public OreInteractableSource(float scanRadiusTiles)
             : base(scanRadiusTiles, CreateDefinition())
@@ -777,7 +787,7 @@ public sealed partial class InGameNarrationSystem
                     }
 
                     Tile tile = Main.tile[x, y];
-                    if (!tile.HasTile || !IsOre(tile.TileType))
+                    if (!tile.HasTile || !IsOreOrGem(tile.TileType))
                     {
                         continue;
                     }
@@ -820,8 +830,9 @@ public sealed partial class InGameNarrationSystem
 
                     Vector2 worldPosition = new((bestAnchor.X + 0.5f) * 16f, (bestAnchor.Y + 0.5f) * 16f);
                     int localId = HashCode.Combine(oreType, bestAnchor.X, bestAnchor.Y);
-                    string oreLabel = ResolveOreLabel(bestAnchor.X, bestAnchor.Y);
-                    buffer.Add(new Candidate(new TrackedInteractableKey(SourceId, localId), worldPosition, InteractableCueProfile.Ore, oreLabel));
+                    string oreLabel = ResolveOreLabel(bestAnchor.X, bestAnchor.Y, oreType);
+                    InteractableCueProfile profile = IsGem(oreType) ? InteractableCueProfile.Gem : InteractableCueProfile.Ore;
+                    buffer.Add(new Candidate(new TrackedInteractableKey(SourceId, localId), worldPosition, profile, oreLabel));
                 }
             }
         }
@@ -831,6 +842,8 @@ public sealed partial class InGameNarrationSystem
             int[] oreTiles = Enumerable
                 .Range(0, TileID.Sets.Ore.Length)
                 .Where(id => TileID.Sets.Ore[id])
+                .Concat(GemTileTypes)
+                .Distinct()
                 .ToArray();
 
             return new TileInteractableDefinition(
@@ -842,16 +855,26 @@ public sealed partial class InGameNarrationSystem
                 profile: InteractableCueProfile.Ore);
         }
 
-        private static bool IsOre(int tileType) => tileType >= 0 && tileType < TileID.Sets.Ore.Length && TileID.Sets.Ore[tileType];
+        private static bool IsOreOrGem(int tileType)
+        {
+            if (tileType >= 0 && tileType < TileID.Sets.Ore.Length && TileID.Sets.Ore[tileType])
+            {
+                return true;
+            }
 
-        private string ResolveOreLabel(int tileX, int tileY)
+            return Array.IndexOf(GemTileTypes, tileType) >= 0;
+        }
+
+        private static bool IsGem(int tileType) => Array.IndexOf(GemTileTypes, tileType) >= 0;
+
+        private string ResolveOreLabel(int tileX, int tileY, int tileType)
         {
             if (CursorDescriptors.TryDescribe(tileX, tileY, out CursorDescriptorService.CursorDescriptor descriptor) && !string.IsNullOrWhiteSpace(descriptor.Name))
             {
                 return descriptor.Name;
             }
 
-            return "Ore";
+            return IsGem(tileType) ? "Gem" : "Ore";
         }
 
         private static IEnumerable<Point> GetNeighbors(Point point, int minX, int maxX, int minY, int maxY)
@@ -1223,5 +1246,21 @@ public sealed partial class InGameNarrationSystem
             delayResponseExponent: 0.68f,
             arrivalLabel: string.Empty,
             soundStyle: SoundID.Tink);
+
+        public static InteractableCueProfile Gem { get; } = new(
+            id: "gem",
+            fundamentalFrequency: 660f,
+            partialMultipliers: new[] { 1.3f, 1.6f },
+            envelope: SynthesizedSoundFactory.ToneEnvelopes.WorldCue,
+            durationSeconds: 0.22f,
+            baseGain: 0.38f,
+            minVolume: 0.24f,
+            maxVolume: 0.86f,
+            maxAudibleDistanceTiles: 92f,
+            minIntervalFrames: 10,
+            maxIntervalFrames: 48,
+            delayResponseExponent: 0.68f,
+            arrivalLabel: string.Empty,
+            soundStyle: SoundID.Shatter);
     }
 }

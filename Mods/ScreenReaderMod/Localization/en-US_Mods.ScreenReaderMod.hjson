@@ -119,6 +119,7 @@ Mods: {
 			WaypointPrevious.DisplayName: Previous Waypoint
 			WaypointCreate.DisplayName: Create Waypoint
 			GuidanceTeleport.DisplayName: Teleport to Guidance Target
+			StatusCheck.DisplayName: Status Checker
 		}
 	}
 }
@@ -139,4 +140,5 @@ Keybinds: {
 	GuidanceTeleport.DisplayName: Teleport to Guidance Target
 	BuildModeToggle.DisplayName: Toggle Build Mode
 	BuildModePlace.DisplayName: Set Build Point
+	StatusCheck.DisplayName: Status Checker
 }
