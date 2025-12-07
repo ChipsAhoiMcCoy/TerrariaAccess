@@ -67,8 +67,6 @@ public sealed partial class InGameNarrationSystem
                 return;
             }
 
-            ApplyLockOnFilter(listener);
-
             _candidates.Sort(static (left, right) =>
             {
                 if (left.IsBoss != right.IsBoss)
@@ -136,6 +134,11 @@ public sealed partial class InGameNarrationSystem
                     continue;
                 }
 
+                if (LockOnHelper.CanUseLockonSystem() && !IsLockOnEligibleForSound(npc, listenerCenter))
+                {
+                    continue;
+                }
+
                 bool isBoss = npc.boss || NPCID.Sets.ShouldBeCountedAsBoss[npc.type];
                 float maxDistance = isBoss ? BossRangeTiles : StandardRangeTiles;
                 float distanceTiles = Vector2.Distance(listenerCenter, npc.Center) / 16f;
@@ -178,41 +181,39 @@ public sealed partial class InGameNarrationSystem
             return true;
         }
 
-        private void ApplyLockOnFilter(Player listener)
+        private static bool IsLockOnEligibleForSound(NPC npc, Vector2 listenerCenter)
         {
-            if (!LockOnHelper.Enabled || _candidates.Count == 0)
+            // Mirror the vanilla lock-on eligibility checks: target validity, range, on-screen window, and minimal lighting.
+            if (npc is null || !npc.active || npc.dontTakeDamage || npc.friendly || npc.isLikeATownNPC || npc.life < 1 || npc.immortal)
             {
-                return;
+                return false;
             }
 
-            NPC? lockTarget = LockOnHelper.AimedTarget;
-            if (lockTarget is null || !lockTarget.active)
+            if (npc.aiStyle == 25 && npc.ai.Length > 0 && npc.ai[0] == 0f)
             {
-                return;
+                return false;
             }
 
-            int targetId = lockTarget.whoAmI;
-            int existingIndex = _candidates.FindIndex(c => c.NpcId == targetId);
-            if (existingIndex < 0)
+            const float LockOnRangePixels = 2000f;
+            float distance = Vector2.Distance(listenerCenter, npc.Center);
+            if (distance > LockOnRangePixels)
             {
-                return;
+                return false;
             }
 
-            HostileCandidate candidate = _candidates[existingIndex];
-            if (!IsEligibleHostile(lockTarget, listener))
+            Rectangle screenRect = Utils.CenteredRectangle(Main.player[Main.myPlayer].Center, new Vector2(1920f, 1200f));
+            if (!screenRect.Intersects(npc.Hitbox))
             {
-                return;
+                return false;
             }
 
-            float maxDistance = lockTarget.boss || NPCID.Sets.ShouldBeCountedAsBoss[lockTarget.type] ? BossRangeTiles : StandardRangeTiles;
-            float distanceTiles = Vector2.Distance(listener.Center, lockTarget.Center) / 16f;
-            if (distanceTiles > maxDistance || !IsWorldPositionApproximatelyOnScreen(lockTarget.Center))
+            float lightLevel = Lighting.GetSubLight(npc.Center).Length() / 3f;
+            if (lightLevel < 0.03f)
             {
-                return;
+                return false;
             }
 
-            _candidates.Clear();
-            _candidates.Add(candidate);
+            return true;
         }
 
         private void EmitIfDue(Vector2 listenerCenter, HostileCandidate candidate, bool isPrimaryCue)
