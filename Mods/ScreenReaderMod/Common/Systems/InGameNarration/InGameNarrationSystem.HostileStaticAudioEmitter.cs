@@ -26,7 +26,7 @@ public sealed partial class InGameNarrationSystem
         private const float VolumeScale = 0.85f;
         private const float VolumeDistanceReferenceTiles = 90f;
         private const float BossVolumeBonus = 0.12f;
-        private const float HostileToneDurationSeconds = 0.24f;
+        private const float HostileToneDurationSeconds = 0.13f;
         private const float HostileToneGain = 0.42f;
         private static readonly float[] HostileTonePartials = { 1.24f, 1.5f };
         private static readonly ToneEnvelope HostileToneEnvelope = new(attackFraction: 0.12f, releaseFraction: 0.55f, applyHannWindow: true);

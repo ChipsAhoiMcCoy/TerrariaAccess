@@ -18,9 +18,9 @@ public sealed partial class InGameNarrationSystem
     private sealed class WorldInteractableTracker
     {
         private const int ScanIntervalTicks = 18;
-        private const int MaxConcurrentCues = 6;
         private const float SecondaryCueVolumeScale = 0.25f;
         private const float SelectedTargetMatchToleranceTiles = 6f;
+        private const float MinimumVisibilityBrightness = 0.18f;
 
         private static readonly Dictionary<string, SoundEffect> ToneCache = new();
 
@@ -28,13 +28,16 @@ public sealed partial class InGameNarrationSystem
         private readonly List<Candidate> _candidateBuffer = new();
         private readonly List<Candidate> _trackedCandidates = new();
         private readonly List<CandidateDistance> _distanceScratch = new();
-        private readonly Dictionary<TrackedInteractableKey, int> _nextPingFrameByKey = new();
+        private readonly List<CandidateDistance> _sweepOrder = new();
+        private readonly List<TrackedInteractableKey> _currentSweepKeys = new();
         private readonly HashSet<TrackedInteractableKey> _visibleThisFrame = new();
         private readonly List<TrackedInteractableKey> _staleKeys = new();
         private readonly HashSet<TrackedInteractableKey> _arrivedKeys = new();
         private readonly List<SoundEffectInstance> _liveInstances = new();
 
         private int _ticksUntilNextScan;
+        private int _nextSweepFrame;
+        private int _sweepCursor;
         private bool _isEnabled;
 
         public WorldInteractableTracker()
@@ -112,13 +115,16 @@ public sealed partial class InGameNarrationSystem
             if (Main.dedServ || Main.soundVolume <= 0f)
             {
                 StopAllInstances();
-                _nextPingFrameByKey.Clear();
+                _sweepOrder.Clear();
+                _currentSweepKeys.Clear();
                 _candidateBuffer.Clear();
                 _trackedCandidates.Clear();
                 _visibleThisFrame.Clear();
                 _distanceScratch.Clear();
                 _staleKeys.Clear();
                 _arrivedKeys.Clear();
+                _nextSweepFrame = 0;
+                _sweepCursor = 0;
                 ExplorationTargetRegistry.UpdateTargets(Array.Empty<ExplorationTargetRegistry.ExplorationTarget>());
                 _ticksUntilNextScan = 0;
                 _isEnabled = false;
@@ -132,13 +138,16 @@ public sealed partial class InGameNarrationSystem
                 if (_isEnabled)
                 {
                     StopAllInstances();
-                    _nextPingFrameByKey.Clear();
+                    _sweepOrder.Clear();
+                    _currentSweepKeys.Clear();
                     _candidateBuffer.Clear();
                     _trackedCandidates.Clear();
                     _distanceScratch.Clear();
                     _visibleThisFrame.Clear();
                     _staleKeys.Clear();
                     _arrivedKeys.Clear();
+                    _nextSweepFrame = 0;
+                    _sweepCursor = 0;
                     ExplorationTargetRegistry.UpdateTargets(Array.Empty<ExplorationTargetRegistry.ExplorationTarget>());
                 }
 
@@ -161,6 +170,10 @@ public sealed partial class InGameNarrationSystem
 
             if (_trackedCandidates.Count == 0)
             {
+                _sweepOrder.Clear();
+                _currentSweepKeys.Clear();
+                _nextSweepFrame = 0;
+                _sweepCursor = 0;
                 ExplorationTargetRegistry.UpdateTargets(Array.Empty<ExplorationTargetRegistry.ExplorationTarget>());
                 TrimInactiveKeys();
                 CleanupFinishedInstances();
@@ -177,6 +190,11 @@ public sealed partial class InGameNarrationSystem
                     continue;
                 }
 
+                if (!IsTileLit(candidate.WorldPosition, MinimumVisibilityBrightness))
+                {
+                    continue;
+                }
+
                 float distanceTiles = Vector2.Distance(candidate.WorldPosition, playerCenter) / 16f;
                 if (distanceTiles > candidate.Profile.MaxAudibleDistanceTiles)
                 {
@@ -188,6 +206,10 @@ public sealed partial class InGameNarrationSystem
 
             if (_distanceScratch.Count == 0)
             {
+                _sweepOrder.Clear();
+                _currentSweepKeys.Clear();
+                _nextSweepFrame = 0;
+                _sweepCursor = 0;
                 TrimInactiveKeys();
                 CleanupFinishedInstances();
                 ExplorationTargetRegistry.UpdateTargets(Array.Empty<ExplorationTargetRegistry.ExplorationTarget>());
@@ -226,23 +248,55 @@ public sealed partial class InGameNarrationSystem
 
             _visibleThisFrame.Clear();
 
-            int limit = Math.Min(MaxConcurrentCues, _distanceScratch.Count);
-            TrackedInteractableKey primaryKey = default;
-            bool hasPrimary = false;
-            if (limit > 0)
+            int limit = _distanceScratch.Count;
+            if (limit <= 0)
             {
-                primaryKey = _distanceScratch[0].Candidate.Key;
-                hasPrimary = true;
+                _sweepOrder.Clear();
+                _currentSweepKeys.Clear();
+                _nextSweepFrame = 0;
+                _sweepCursor = 0;
+                TrimInactiveKeys();
+                CleanupFinishedInstances();
+                return;
             }
 
-            for (int i = 0; i < limit; i++)
+            _sweepOrder.Clear();
+            _sweepOrder.AddRange(_distanceScratch);
+            _sweepOrder.Sort(static (left, right) =>
             {
-                CandidateDistance entry = _distanceScratch[i];
+                int compareX = left.Candidate.WorldPosition.X.CompareTo(right.Candidate.WorldPosition.X);
+                if (compareX != 0)
+                {
+                    return compareX;
+                }
+
+                int compareY = left.Candidate.WorldPosition.Y.CompareTo(right.Candidate.WorldPosition.Y);
+                if (compareY != 0)
+                {
+                    return compareY;
+                }
+
+                return left.DistanceTiles.CompareTo(right.DistanceTiles);
+            });
+
+            if (_sweepOrder.Count > limit)
+            {
+                _sweepOrder.RemoveRange(limit, _sweepOrder.Count - limit);
+            }
+
+            bool orderChanged = SyncSweepOrder();
+            foreach (CandidateDistance entry in _sweepOrder)
+            {
                 _visibleThisFrame.Add(entry.Candidate.Key);
                 UpdateArrivalState(entry);
-                bool isPrimaryCue = hasPrimary && entry.Candidate.Key.Equals(primaryKey);
-                EmitIfDue(playerCenter, entry, isPrimaryCue);
             }
+
+            if (orderChanged)
+            {
+                _nextSweepFrame = 0;
+            }
+
+            EmitNextSweepCue(playerCenter);
 
             TrimInactiveKeys();
             CleanupFinishedInstances();
@@ -254,7 +308,10 @@ public sealed partial class InGameNarrationSystem
             _candidateBuffer.Clear();
             _trackedCandidates.Clear();
             _distanceScratch.Clear();
-            _nextPingFrameByKey.Clear();
+            _sweepOrder.Clear();
+            _currentSweepKeys.Clear();
+            _nextSweepFrame = 0;
+            _sweepCursor = 0;
             _visibleThisFrame.Clear();
             _staleKeys.Clear();
             _arrivedKeys.Clear();
@@ -289,6 +346,19 @@ public sealed partial class InGameNarrationSystem
             _trackedCandidates.AddRange(_candidateBuffer);
         }
 
+        private static bool IsTileLit(Vector2 worldPosition, float minimumBrightness)
+        {
+            int tileX = (int)(worldPosition.X / 16f);
+            int tileY = (int)(worldPosition.Y / 16f);
+            if (tileX < 0 || tileX >= Main.maxTilesX || tileY < 0 || tileY >= Main.maxTilesY)
+            {
+                return false;
+            }
+
+            float brightness = Lighting.Brightness(tileX, tileY);
+            return brightness >= minimumBrightness;
+        }
+
         private void PrepareSources(Player player)
         {
             foreach (WorldInteractableSource source in _sources)
@@ -297,25 +367,68 @@ public sealed partial class InGameNarrationSystem
             }
         }
 
-        private void EmitIfDue(Vector2 playerCenter, CandidateDistance entry, bool isPrimaryCue)
+        private void EmitNextSweepCue(Vector2 playerCenter)
         {
-            TrackedInteractableKey key = entry.Candidate.Key;
-
-            if (!_nextPingFrameByKey.TryGetValue(key, out int scheduledFrame) ||
-                Main.GameUpdateCount >= (uint)Math.Max(0, scheduledFrame))
+            if (_sweepOrder.Count == 0)
             {
-                PlayCue(playerCenter, entry, isPrimaryCue);
-
-                int delay = entry.Candidate.Profile.ComputeDelayFrames(entry.DistanceTiles);
-                int nextFrame = delay <= 0 ? 0 : ScheduleNextFrame(delay);
-                _nextPingFrameByKey[key] = nextFrame;
+                return;
             }
+
+            if (_sweepCursor >= _sweepOrder.Count)
+            {
+                _sweepCursor = 0;
+            }
+
+            if (Main.GameUpdateCount < (uint)Math.Max(0, _nextSweepFrame))
+            {
+                return;
+            }
+
+            CandidateDistance entry = _sweepOrder[_sweepCursor];
+            PlayCue(playerCenter, entry, isPrimaryCue: true);
+
+            int delay = entry.Candidate.Profile.ComputeDelayFrames(entry.DistanceTiles);
+            _nextSweepFrame = delay <= 0 ? 0 : ScheduleNextFrame(delay);
+            _sweepCursor = (_sweepCursor + 1) % _sweepOrder.Count;
+        }
+
+        private bool SyncSweepOrder()
+        {
+            bool changed = _sweepOrder.Count != _currentSweepKeys.Count;
+            if (!changed)
+            {
+                for (int i = 0; i < _sweepOrder.Count; i++)
+                {
+                    if (!_sweepOrder[i].Candidate.Key.Equals(_currentSweepKeys[i]))
+                    {
+                        changed = true;
+                        break;
+                    }
+                }
+            }
+
+            if (changed)
+            {
+                _currentSweepKeys.Clear();
+                foreach (CandidateDistance entry in _sweepOrder)
+                {
+                    _currentSweepKeys.Add(entry.Candidate.Key);
+                }
+
+                _sweepCursor = 0;
+            }
+            else if (_sweepCursor >= _sweepOrder.Count)
+            {
+                _sweepCursor = 0;
+            }
+
+            return changed;
         }
 
         private void TrimInactiveKeys()
         {
             _staleKeys.Clear();
-            foreach (TrackedInteractableKey key in _nextPingFrameByKey.Keys)
+            foreach (TrackedInteractableKey key in _arrivedKeys)
             {
                 if (!_visibleThisFrame.Contains(key))
                 {
@@ -325,8 +438,14 @@ public sealed partial class InGameNarrationSystem
 
             foreach (TrackedInteractableKey key in _staleKeys)
             {
-                _nextPingFrameByKey.Remove(key);
                 _arrivedKeys.Remove(key);
+            }
+
+            if (_visibleThisFrame.Count == 0)
+            {
+                _currentSweepKeys.Clear();
+                _nextSweepFrame = 0;
+                _sweepCursor = 0;
             }
 
             _visibleThisFrame.Clear();
@@ -1027,6 +1146,7 @@ public sealed partial class InGameNarrationSystem
         private const float DefaultPanScale = 520f;
         private const float DefaultPitchScale = 320f;
         private const float MinDelayResponseExponent = 0.05f;
+        private const int SweepIntervalFrames = 10;
 
         private InteractableCueProfile(
             string id,
@@ -1095,20 +1215,8 @@ public sealed partial class InGameNarrationSystem
 
         public int ComputeDelayFrames(float distanceTiles)
         {
-            if (MaxAudibleDistanceTiles <= 0f)
-            {
-                return MinIntervalFrames;
-            }
-
-            float normalized = Math.Clamp(distanceTiles / MaxAudibleDistanceTiles, 0f, 1f);
-            if (DelayResponseExponent != 1f)
-            {
-                float closeness = 1f - normalized;
-                float shapedCloseness = MathF.Pow(Math.Clamp(closeness, 0f, 1f), DelayResponseExponent);
-                normalized = 1f - shapedCloseness;
-            }
-            float frames = MathHelper.Lerp(MinIntervalFrames, MaxIntervalFrames, normalized);
-            return Math.Max(1, (int)MathF.Round(frames));
+            _ = distanceTiles;
+            return Math.Max(1, MinIntervalFrames);
         }
 
         public static InteractableCueProfile Chest { get; } = new(
@@ -1121,7 +1229,7 @@ public sealed partial class InGameNarrationSystem
             minVolume: 0.2f,
             maxVolume: 0.8f,
             maxAudibleDistanceTiles: 85f,
-            minIntervalFrames: 10,
+            minIntervalFrames: SweepIntervalFrames,
             maxIntervalFrames: 52,
             delayResponseExponent: 0.7f,
             arrivalLabel: "a chest");
@@ -1136,7 +1244,7 @@ public sealed partial class InGameNarrationSystem
             minVolume: 0.22f,
             maxVolume: 0.94f,
             maxAudibleDistanceTiles: 90f,
-            minIntervalFrames: 8,
+            minIntervalFrames: SweepIntervalFrames,
             maxIntervalFrames: 52,
             delayResponseExponent: 0.7f,
             arrivalLabel: "a heart crystal");
@@ -1151,7 +1259,7 @@ public sealed partial class InGameNarrationSystem
             minVolume: 0.2f,
             maxVolume: 0.7f,
             maxAudibleDistanceTiles: 85f,
-            minIntervalFrames: 12,
+            minIntervalFrames: SweepIntervalFrames,
             maxIntervalFrames: 56,
             delayResponseExponent: 0.7f,
             arrivalLabel: "a demon altar");
@@ -1166,7 +1274,7 @@ public sealed partial class InGameNarrationSystem
             minVolume: 0.24f,
             maxVolume: 0.74f,
             maxAudibleDistanceTiles: 85f,
-            minIntervalFrames: 12,
+            minIntervalFrames: SweepIntervalFrames,
             maxIntervalFrames: 56,
             delayResponseExponent: 0.7f,
             arrivalLabel: "a crimson altar");
@@ -1181,7 +1289,7 @@ public sealed partial class InGameNarrationSystem
             minVolume: 0.2f,
             maxVolume: 0.7f,
             maxAudibleDistanceTiles: 80f,
-            minIntervalFrames: 10,
+            minIntervalFrames: SweepIntervalFrames,
             maxIntervalFrames: 54,
             delayResponseExponent: 0.7f,
             arrivalLabel: "a shadow orb");
@@ -1196,7 +1304,7 @@ public sealed partial class InGameNarrationSystem
             minVolume: 0.22f,
             maxVolume: 0.72f,
             maxAudibleDistanceTiles: 80f,
-            minIntervalFrames: 10,
+            minIntervalFrames: SweepIntervalFrames,
             maxIntervalFrames: 54,
             delayResponseExponent: 0.7f,
             arrivalLabel: "a crimson heart");
@@ -1211,7 +1319,7 @@ public sealed partial class InGameNarrationSystem
             minVolume: 0.25f,
             maxVolume: 0.82f,
             maxAudibleDistanceTiles: 70f,
-            minIntervalFrames: 8,
+            minIntervalFrames: SweepIntervalFrames,
             maxIntervalFrames: 50,
             delayResponseExponent: 0.7f,
             arrivalLabel: "a bee larva");
@@ -1226,7 +1334,7 @@ public sealed partial class InGameNarrationSystem
             minVolume: 0.24f,
             maxVolume: 0.78f,
             maxAudibleDistanceTiles: 95f,
-            minIntervalFrames: 8,
+            minIntervalFrames: SweepIntervalFrames,
             maxIntervalFrames: 46,
             delayResponseExponent: 0.7f,
             arrivalLabel: "a fallen star");
@@ -1241,7 +1349,7 @@ public sealed partial class InGameNarrationSystem
             minVolume: 0.24f,
             maxVolume: 0.82f,
             maxAudibleDistanceTiles: 92f,
-            minIntervalFrames: 10,
+            minIntervalFrames: SweepIntervalFrames,
             maxIntervalFrames: 48,
             delayResponseExponent: 0.68f,
             arrivalLabel: string.Empty,
@@ -1257,7 +1365,7 @@ public sealed partial class InGameNarrationSystem
             minVolume: 0.24f,
             maxVolume: 0.86f,
             maxAudibleDistanceTiles: 92f,
-            minIntervalFrames: 10,
+            minIntervalFrames: SweepIntervalFrames,
             maxIntervalFrames: 48,
             delayResponseExponent: 0.68f,
             arrivalLabel: string.Empty,
