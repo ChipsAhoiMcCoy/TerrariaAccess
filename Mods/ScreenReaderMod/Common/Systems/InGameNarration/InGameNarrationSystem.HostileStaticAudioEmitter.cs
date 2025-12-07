@@ -211,7 +211,7 @@ public sealed partial class InGameNarrationSystem
             }
 
             float scaledBase = baseVolume * (isPrimaryCue ? 1f : SecondaryCueVolumeScale);
-            float volume = MathHelper.Clamp(scaledBase, 0f, 1f) * Main.soundVolume;
+            float volume = MathHelper.Clamp(scaledBase, 0f, 1f) * Main.soundVolume * AudioVolumeDefaults.WorldCueVolumeScale;
             if (volume <= 0f)
             {
                 return;

@@ -397,7 +397,7 @@ public sealed partial class InGameNarrationSystem
                 distanceTiles,
                 CursorLoudnessReferenceTiles,
                 minFactor: 0.4f);
-            float volume = loudness * Main.soundVolume;
+            float volume = loudness * Main.soundVolume * AudioVolumeDefaults.WorldCueVolumeScale;
 
             SoundEffectInstance instance = tone.CreateInstance();
             instance.IsLooped = false;

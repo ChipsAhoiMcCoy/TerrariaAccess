@@ -141,7 +141,7 @@ public sealed partial class InGameNarrationSystem
                     distanceTiles,
                     DistanceReferenceTiles,
                     minFactor: 0.4f);
-                float volume = loudness * Main.soundVolume;
+                float volume = loudness * Main.soundVolume * AudioVolumeDefaults.WorldCueVolumeScale;
 
                 instance.Pitch = pitch;
                 instance.Pan = pan;

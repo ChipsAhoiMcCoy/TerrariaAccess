@@ -29,7 +29,7 @@ public sealed partial class InGameNarrationSystem
             SoundEffect tone = EnsureTone(frequencyHz);
             SoundEffectInstance instance = tone.CreateInstance();
             instance.IsLooped = false;
-            instance.Volume = MathHelper.Clamp(volume, 0f, 1f) * Main.soundVolume;
+            instance.Volume = MathHelper.Clamp(volume, 0f, 1f) * Main.soundVolume * AudioVolumeDefaults.WorldCueVolumeScale;
             instance.Pan = MathHelper.Clamp(pan, -1f, 1f);
             instance.Play();
             ActiveInstances.Add(instance);

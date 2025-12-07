@@ -530,7 +530,7 @@ public sealed partial class InGameNarrationSystem
                     profile.MaxAudibleDistanceTiles,
                     minFactor: 0.45f);
                 float soundStyleScaledVolume = MathHelper.Clamp(
-                    soundStyleLoudness * (isPrimaryCue ? 1f : SecondaryCueVolumeScale),
+                    soundStyleLoudness * (isPrimaryCue ? 1f : SecondaryCueVolumeScale) * AudioVolumeDefaults.WorldCueVolumeScale,
                     0f,
                     1f);
                 if (soundStyleScaledVolume <= 0f)
@@ -558,7 +558,7 @@ public sealed partial class InGameNarrationSystem
             }
 
             float scaledVolume = MathHelper.Clamp(
-                volume * (isPrimaryCue ? 1f : SecondaryCueVolumeScale),
+                volume * (isPrimaryCue ? 1f : SecondaryCueVolumeScale) * AudioVolumeDefaults.WorldCueVolumeScale,
                 0f,
                 1f);
             if (scaledVolume <= 0f)
