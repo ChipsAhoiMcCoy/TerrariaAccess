@@ -1,4 +1,5 @@
 #nullable enable
+#if !OSX && !MACOS
 using System;
 using System.Reflection;
 using System.Runtime.InteropServices;
@@ -185,3 +186,4 @@ internal sealed class SapiSpeechProvider : ISpeechProvider
         }
     }
 }
+#endif
