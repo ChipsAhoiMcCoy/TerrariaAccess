@@ -69,6 +69,9 @@ public sealed partial class InGameNarrationSystem : ModSystem
     private const float ScreenEdgePaddingPixels = 48f;
     private static readonly TimeSpan ChatRepeatWindow = TimeSpan.FromMilliseconds(750);
     private static readonly TimeSpan PickupRepeatWindow = TimeSpan.FromSeconds(1.5);
+    private static readonly TimeSpan LowLightAnnouncementCooldown = TimeSpan.FromSeconds(8);
+    private const float LowLightEnterBrightness = 0.22f;
+    private const float LowLightExitBrightness = 0.28f;
     private static readonly string[] BlockedStatusPhrasesWhileInWorld =
     {
         "receiving tile data",
@@ -92,6 +95,8 @@ public sealed partial class InGameNarrationSystem : ModSystem
     private string? _lastStatusAnnouncement;
     private NarrationInstrumentation? _instrumentation;
     private readonly Dictionary<int, DateTime> _lastPickupAnnouncedAt = new();
+    private DateTime _lastLowLightAnnouncementAt = DateTime.MinValue;
+    private bool _inLowLight;
 
     internal static CursorDescriptorService CursorDescriptors => _sharedCursorDescriptorService ??= new CursorDescriptorService();
 
@@ -319,6 +324,8 @@ public sealed partial class InGameNarrationSystem : ModSystem
         _inventoryStacksByType.Clear();
         _lastPickupAnnouncedAt.Clear();
         _inventoryInitialized = false;
+        _inLowLight = false;
+        _lastLowLightAnnouncementAt = DateTime.MinValue;
         InventoryNarrator.ResetStaticCaches();
     }
 
@@ -357,9 +364,46 @@ public sealed partial class InGameNarrationSystem : ModSystem
             return;
         }
 
+        if (!requirePaused)
+        {
+            DetectLowLight(player);
+        }
+
         DetectInventoryGains(player);
         RunNarrationScheduler(runtime, player, isPaused, requirePaused);
         _modConfigMenuNarrator.TryHandleIngameUi(Main.InGameUI, isPaused);
+    }
+
+    private void DetectLowLight(Player player)
+    {
+        Vector2 center = player.Center;
+        int tileX = (int)(center.X / 16f);
+        int tileY = (int)(center.Y / 16f);
+        float brightness = Lighting.Brightness(tileX, tileY);
+
+        if (_inLowLight)
+        {
+            if (brightness >= LowLightExitBrightness)
+            {
+                _inLowLight = false;
+            }
+            return;
+        }
+
+        if (brightness >= LowLightEnterBrightness)
+        {
+            return;
+        }
+
+        DateTime now = DateTime.UtcNow;
+        if (now - _lastLowLightAnnouncementAt < LowLightAnnouncementCooldown)
+        {
+            return;
+        }
+
+        _inLowLight = true;
+        _lastLowLightAnnouncementAt = now;
+        ScreenReaderService.Announce("It is dark");
     }
 
     private void AnnounceStatusTextIfNeeded()
