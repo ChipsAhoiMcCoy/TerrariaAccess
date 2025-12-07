@@ -60,6 +60,8 @@ public sealed class BuildModePlayer : ModPlayer
             RestorePlacementRangeIfNeeded();
             return;
         }
+
+        EnsurePlacementRangeExpanded();
     }
 
     public override void PreUpdate()
@@ -70,6 +72,7 @@ public sealed class BuildModePlayer : ModPlayer
             return;
         }
 
+        EnsurePlacementRangeExpanded();
         GuardBuildModeInput();
     }
 
@@ -79,6 +82,11 @@ public sealed class BuildModePlayer : ModPlayer
         if (togglePressed)
         {
             ToggleBuildMode();
+        }
+
+        if (BuildModeActive)
+        {
+            EnsurePlacementRangeExpanded();
         }
 
         if (!BuildModeActive)
@@ -857,6 +865,11 @@ public sealed class BuildModePlayer : ModPlayer
         {
             return false;
         }
+    }
+
+    private void EnsurePlacementRangeExpanded()
+    {
+        _rangeManager.ExpandPlacementRangeToViewport(Player);
     }
 
     private void RestorePlacementRangeIfNeeded()
