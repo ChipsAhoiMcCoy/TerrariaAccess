@@ -6,6 +6,7 @@ using Microsoft.Xna.Framework.Audio;
 using ScreenReaderMod.Common.Services;
 using Terraria;
 using Terraria.ID;
+using Terraria.GameInput;
 
 namespace ScreenReaderMod.Common.Systems;
 
@@ -65,6 +66,8 @@ public sealed partial class InGameNarrationSystem
                 CleanupFinishedInstances();
                 return;
             }
+
+            ApplyLockOnFilter(listener);
 
             _candidates.Sort(static (left, right) =>
             {
@@ -173,6 +176,43 @@ public sealed partial class InGameNarrationSystem
             }
 
             return true;
+        }
+
+        private void ApplyLockOnFilter(Player listener)
+        {
+            if (!LockOnHelper.Enabled || _candidates.Count == 0)
+            {
+                return;
+            }
+
+            NPC? lockTarget = LockOnHelper.AimedTarget;
+            if (lockTarget is null || !lockTarget.active)
+            {
+                return;
+            }
+
+            int targetId = lockTarget.whoAmI;
+            int existingIndex = _candidates.FindIndex(c => c.NpcId == targetId);
+            if (existingIndex < 0)
+            {
+                return;
+            }
+
+            HostileCandidate candidate = _candidates[existingIndex];
+            if (!IsEligibleHostile(lockTarget, listener))
+            {
+                return;
+            }
+
+            float maxDistance = lockTarget.boss || NPCID.Sets.ShouldBeCountedAsBoss[lockTarget.type] ? BossRangeTiles : StandardRangeTiles;
+            float distanceTiles = Vector2.Distance(listener.Center, lockTarget.Center) / 16f;
+            if (distanceTiles > maxDistance || !IsWorldPositionApproximatelyOnScreen(lockTarget.Center))
+            {
+                return;
+            }
+
+            _candidates.Clear();
+            _candidates.Add(candidate);
         }
 
         private void EmitIfDue(Vector2 listenerCenter, HostileCandidate candidate, bool isPrimaryCue)
