@@ -1,6 +1,7 @@
 #nullable enable
 using System;
 using System.Collections.Generic;
+using System.Runtime.InteropServices;
 
 namespace ScreenReaderMod.Common.Services;
 
@@ -84,7 +85,34 @@ public static class ScreenReaderService
 
     private static SpeechController BuildController()
     {
-        var controller = new SpeechController(new NvdaSpeechProvider(), new SapiSpeechProvider());
+        ISpeechProvider primary;
+        ISpeechProvider? worldAnnouncement = null;
+
+#if WINDOWS
+        primary = new NvdaSpeechProvider();
+        worldAnnouncement = new SapiSpeechProvider();
+#elif OSX || MACOS
+        primary = new AvFoundationSpeechProvider(1);
+        worldAnnouncement = new AvFoundationSpeechProvider(2); 
+#else
+        // Runtime detection for when no compile-time flag is set
+        if (RuntimeInformation.IsOSPlatform(OSPlatform.OSX))
+        {
+            primary = new AvFoundationSpeechProvider(1);
+            worldAnnouncement = new AvFoundationSpeechProvider(2);
+        }
+        else if (RuntimeInformation.IsOSPlatform(OSPlatform.Windows))
+        {
+            primary = new NvdaSpeechProvider();
+            worldAnnouncement = new SapiSpeechProvider();
+        }
+        else
+        {
+            primary = new DummySpeechProvider();
+        }
+#endif
+
+        var controller = new SpeechController(primary, worldAnnouncement);
         controller.SetCategoryWindow(AnnouncementCategory.World, TimeSpan.FromSeconds(2));
         controller.SetCategoryWindow(AnnouncementCategory.Tile, TimeSpan.FromMilliseconds(150));
         controller.SetCategoryWindow(AnnouncementCategory.Wall, TimeSpan.FromMilliseconds(150));
