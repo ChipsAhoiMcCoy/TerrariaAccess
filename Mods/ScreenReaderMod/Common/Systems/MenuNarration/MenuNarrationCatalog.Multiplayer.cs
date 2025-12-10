@@ -125,16 +125,67 @@ internal static partial class MenuNarrationCatalog
         return OptionOrEmpty(entries, index);
     }
 
+    private static string DescribeServerIpMenu(int index)
+    {
+        string prompt = LocalizationHelper.GetTextOrFallback("Mods.ScreenReaderMod.JoinMenu.ServerIpPrompt", "Enter server IP or host name");
+        string input = TextSanitizer.Clean(Netplay.ServerIPText ?? string.Empty);
+        return index switch
+        {
+            0 => string.IsNullOrWhiteSpace(input) ? prompt : TextSanitizer.JoinWithComma(prompt, input),
+            1 => DescribeJoinAccept(),
+            2 => DescribeJoinBack(),
+            _ => prompt,
+        };
+    }
+
+    private static string DescribeServerPortMenu(int index)
+    {
+        string prompt = LocalizationHelper.GetTextOrFallback("Mods.ScreenReaderMod.JoinMenu.ServerPortPrompt", "Enter server port");
+        string port = Netplay.ListenPort > 0 ? Netplay.ListenPort.ToString() : string.Empty;
+        return index switch
+        {
+            0 => string.IsNullOrWhiteSpace(port) ? prompt : TextSanitizer.JoinWithComma(prompt, port),
+            1 => DescribeJoinAccept(),
+            2 => DescribeJoinBack(),
+            _ => prompt,
+        };
+    }
+
+    private static string DescribeServerPasswordMenu(int index)
+    {
+        string prompt = LocalizationHelper.GetTextOrFallback("Mods.ScreenReaderMod.JoinMenu.ServerPasswordPrompt", "Enter server password");
+        string password = Netplay.ServerPassword ?? string.Empty;
+        string lengthFormat = LocalizationHelper.GetTextOrFallback("Mods.ScreenReaderMod.JoinMenu.PasswordLength", "{0} characters entered");
+        string summary = string.IsNullOrWhiteSpace(password) ? string.Empty : string.Format(lengthFormat, password.Length);
+
+        return index switch
+        {
+            0 => string.IsNullOrWhiteSpace(summary) ? prompt : TextSanitizer.JoinWithComma(prompt, summary),
+            1 => DescribeJoinAccept(),
+            2 => DescribeJoinBack(),
+            _ => prompt,
+        };
+    }
+
+    private static string DescribeJoinAccept()
+    {
+        return LocalizationHelper.GetTextOrFallback("Mods.ScreenReaderMod.JoinMenu.Accept", "Accept");
+    }
+
+    private static string DescribeJoinBack()
+    {
+        return LocalizationHelper.GetTextOrFallback("Mods.ScreenReaderMod.JoinMenu.Back", "Back");
+    }
+
     private static string DescribeConnectionStatusMenu(int index)
     {
-        // Connection/host status screens expose no menuItems; narrate the live status text instead of Lang.menu fallbacks.
         string status = TextSanitizer.Clean(Main.statusText ?? string.Empty);
         if (!string.IsNullOrWhiteSpace(status))
         {
             return status;
         }
 
-        // Repeat the status for any focus slot; if none is available, stay silent instead of announcing incorrect labels.
+        // No reliable status string; stay silent to avoid misleading labels (e.g., "Starting server" while joining).
         return string.Empty;
     }
 

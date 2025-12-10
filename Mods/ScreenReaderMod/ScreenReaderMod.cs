@@ -1,4 +1,5 @@
 #nullable enable
+using System.IO;
 using ScreenReaderMod.Common.Services;
 using ScreenReaderMod.Common.Systems.Guidance;
 using ScreenReaderMod.Common.Systems.BuildMode;
@@ -31,5 +32,10 @@ public class ScreenReaderMod : Mod
         WorldAnnouncementService.Unload();
         ScreenReaderService.Unload();
         Instance = null;
+    }
+
+    public override void HandlePacket(BinaryReader reader, int whoAmI)
+    {
+        GuidanceSystem.HandlePacket(reader, whoAmI);
     }
 }

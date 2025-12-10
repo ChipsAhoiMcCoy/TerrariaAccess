@@ -45,13 +45,14 @@ public sealed partial class InGameNarrationSystem : ModSystem
     private readonly InventoryNarrator _inventoryNarrator;
     private readonly NpcDialogueNarrator _npcDialogueNarrator;
     private readonly IngameSettingsNarrator _ingameSettingsNarrator;
-    private readonly WorldEventNarrator _worldEventNarrator;
     private readonly ControlsMenuNarrator _controlsMenuNarrator;
     private readonly ModConfigMenuNarrator _modConfigMenuNarrator;
     private readonly FootstepAudioEmitter _footstepAudioEmitter;
+    private readonly ClimbAudioEmitter _climbAudioEmitter;
     private readonly BiomeAnnouncementEmitter _biomeAnnouncementEmitter;
     private readonly WorldPositionalAudioService _worldPositionalAudioService;
     private readonly LockOnNarrator _lockOnNarrator;
+    private readonly ChatInputNarrator _chatInputNarrator;
     private readonly CursorDescriptorService _cursorDescriptorService;
     private static CursorDescriptorService? _sharedCursorDescriptorService;
     private readonly INarrationScheduler _narrationScheduler;
@@ -61,10 +62,10 @@ public sealed partial class InGameNarrationSystem : ModSystem
     private readonly INarrationService _cursorNarrationService;
     private readonly INarrationService _npcDialogueNarrationService;
     private readonly INarrationService _settingsControlsNarrationService;
-    private readonly INarrationService _worldEventsNarrationService;
     private readonly INarrationService _lockOnNarrationService;
     private readonly INarrationService _worldAudioNarrationService;
     private readonly INarrationService _interactableTrackerNarrationService;
+    private readonly INarrationService _chatInputNarrationService;
     private static readonly bool SchedulerTraceOnly = NarrationSchedulerSettings.IsTraceOnlyEnabled();
     private const float ScreenEdgePaddingPixels = 48f;
     private static readonly TimeSpan ChatRepeatWindow = TimeSpan.FromMilliseconds(750);
@@ -113,17 +114,19 @@ public sealed partial class InGameNarrationSystem : ModSystem
         _inventoryNarrator = new InventoryNarrator();
         _npcDialogueNarrator = new NpcDialogueNarrator();
         _ingameSettingsNarrator = new IngameSettingsNarrator();
-        _worldEventNarrator = new WorldEventNarrator();
         _controlsMenuNarrator = new ControlsMenuNarrator();
         _modConfigMenuNarrator = new ModConfigMenuNarrator();
         _footstepAudioEmitter = new FootstepAudioEmitter();
+        _climbAudioEmitter = new ClimbAudioEmitter();
         _biomeAnnouncementEmitter = new BiomeAnnouncementEmitter();
         _worldPositionalAudioService = new WorldPositionalAudioService(
             _treasureBagBeaconEmitter,
             _hostileStaticAudioEmitter,
             _footstepAudioEmitter,
+            _climbAudioEmitter,
             _biomeAnnouncementEmitter);
         _lockOnNarrator = new LockOnNarrator();
+        _chatInputNarrator = new ChatInputNarrator();
         _narrationScheduler = new NarrationScheduler();
         _sharedCursorDescriptorService = _cursorDescriptorService;
 
@@ -150,7 +153,6 @@ public sealed partial class InGameNarrationSystem : ModSystem
             });
         _npcDialogueNarrationService = new DelegatedNarrationService("NpcDialogue", ctx => _npcDialogueNarrator.Update(ctx));
         _settingsControlsNarrationService = new DelegatedNarrationService("SettingsAndControls", ctx => _controlsMenuNarrator.Update(ctx.IsPaused));
-        _worldEventsNarrationService = new DelegatedNarrationService("WorldEvents", _ => _worldEventNarrator.Update());
         _lockOnNarrationService = new DelegatedNarrationService("LockOn", _ => _lockOnNarrator.Update());
         _worldAudioNarrationService = new DelegatedNarrationService(
             "WorldAudio",
@@ -162,6 +164,9 @@ public sealed partial class InGameNarrationSystem : ModSystem
         _interactableTrackerNarrationService = new DelegatedNarrationService(
             "InteractableTracker",
             ctx => _worldInteractableTracker.Update(ctx.Player, GuidanceSystem.IsExplorationTrackingEnabled));
+        _chatInputNarrationService = new DelegatedNarrationService(
+            "ChatInput",
+            ctx => _chatInputNarrator.Update(ctx));
     }
 
     public override void Load()
@@ -189,7 +194,6 @@ public sealed partial class InGameNarrationSystem : ModSystem
 
     public override void OnWorldLoad()
     {
-        _worldEventNarrator.InitializeFromWorld();
     }
 
     public override void OnWorldUnload()
@@ -208,6 +212,7 @@ public sealed partial class InGameNarrationSystem : ModSystem
         On_ItemSlot.MouseHover_refItem_int += HandleItemSlotHoverRef;
         On_Main.DrawNPCChatButtons += CaptureNpcChatButtons;
         On_Main.NewText_string_byte_byte_byte += HandleNewText;
+        On_Main.NewText_object_Nullable1 += HandleNewTextObject;
         On_Main.NewTextMultiline += HandleNewTextMultiline;
         On_Main.MouseText_string_string_int_byte_int_int_int_int_int_bool += CaptureMouseText;
         On_ChestUI.RenameChest += HandleChestRename;
@@ -267,13 +272,6 @@ public sealed partial class InGameNarrationSystem : ModSystem
                 Category = ScreenReaderService.AnnouncementCategory.World,
             }));
         _narrationScheduler.Register(new NarrationServiceRegistration(
-            _worldEventsNarrationService,
-            new NarrationServiceGating
-            {
-                SkipWhenPaused = true,
-                Category = ScreenReaderService.AnnouncementCategory.World,
-            }));
-        _narrationScheduler.Register(new NarrationServiceRegistration(
             _worldAudioNarrationService,
             new NarrationServiceGating
             {
@@ -287,6 +285,13 @@ public sealed partial class InGameNarrationSystem : ModSystem
                 SkipWhenPaused = true,
                 Category = ScreenReaderService.AnnouncementCategory.World,
             }));
+        _narrationScheduler.Register(new NarrationServiceRegistration(
+            _chatInputNarrationService,
+            new NarrationServiceGating
+            {
+                SkipWhenPaused = true,
+                Category = ScreenReaderService.AnnouncementCategory.Default,
+            }));
     }
 
     private void UnregisterHooks()
@@ -295,6 +300,7 @@ public sealed partial class InGameNarrationSystem : ModSystem
         On_ItemSlot.MouseHover_refItem_int -= HandleItemSlotHoverRef;
         On_Main.DrawNPCChatButtons -= CaptureNpcChatButtons;
         On_Main.NewText_string_byte_byte_byte -= HandleNewText;
+        On_Main.NewText_object_Nullable1 -= HandleNewTextObject;
         On_Main.NewTextMultiline -= HandleNewTextMultiline;
         On_Main.MouseText_string_string_int_byte_int_int_int_int_int_bool -= CaptureMouseText;
         On_ChestUI.RenameChest -= HandleChestRename;
@@ -316,9 +322,10 @@ public sealed partial class InGameNarrationSystem : ModSystem
 
     private void ResetPerWorldResources()
     {
-        _worldEventNarrator.Reset();
         _worldPositionalAudioService.Reset();
         _worldInteractableTracker.Reset();
+        _chatInputNarrator.Reset();
+        ChatHistoryService.Reset();
         _lastChatAnnouncement = null;
         _lastChatAnnouncedAt = DateTime.MinValue;
         _inventoryStacksByType.Clear();
@@ -775,10 +782,40 @@ public sealed partial class InGameNarrationSystem : ModSystem
         TryAnnounceHousingQuery(newText, new Color(r, g, b));
     }
 
+    private static void HandleNewTextObject(On_Main.orig_NewText_object_Nullable1 orig, object newText, Color? color)
+    {
+        orig(newText, color);
+
+        if (newText is string)
+        {
+            // The string overload already announces; avoid duplicates if it routes through this method.
+            return;
+        }
+
+        string message = newText?.ToString() ?? string.Empty;
+        Color resolvedColor = color ?? new Color(255, 255, 255);
+        TryAnnounceWorldText(message);
+        TryAnnounceHousingQuery(message, resolvedColor);
+    }
+
     private static void HandleNewTextMultiline(On_Main.orig_NewTextMultiline orig, string text, bool force, Color c, int WidthLimit)
     {
         orig(text, force, c, WidthLimit);
-        TryAnnounceChatMultiline(text, c);
+        if (TryAnnounceChatMultiline(text, c))
+        {
+            return;
+        }
+
+        string sanitized = TextSanitizer.Clean(text);
+        if (string.IsNullOrWhiteSpace(sanitized))
+        {
+            return;
+        }
+
+        string historyEntry = FormatChatHistoryEntry(sanitized);
+        ChatHistoryService.Record(historyEntry);
+        AnnounceChatLine(sanitized);
+        TryAnnounceHousingQuery(sanitized, c);
     }
 
     private static void HandleBroadcastChatMessage(On_ChatHelper.orig_BroadcastChatMessage orig, NetworkText text, Color color, int excludedPlayer)
@@ -816,7 +853,9 @@ public sealed partial class InGameNarrationSystem : ModSystem
             return;
         }
 
-        WorldAnnouncementService.Announce(sanitized);
+        string historyEntry = FormatChatHistoryEntry(sanitized);
+        ChatHistoryService.Record(historyEntry);
+        AnnounceChatLine(sanitized);
     }
 
     private static void TryAnnounceChatMessage(byte messageAuthor, NetworkText text, Color color)
@@ -835,6 +874,9 @@ public sealed partial class InGameNarrationSystem : ModSystem
         }
 
         string? playerName = ResolvePlayerName(messageAuthor);
+        string historyEntry = FormatChatHistoryEntry(sanitizedMessage, playerName);
+        ChatHistoryService.Record(historyEntry);
+
         string announcement = string.IsNullOrWhiteSpace(playerName)
             ? sanitizedMessage
             : $"{playerName}: {sanitizedMessage}";
@@ -860,32 +902,38 @@ public sealed partial class InGameNarrationSystem : ModSystem
         return string.IsNullOrWhiteSpace(sanitized) ? null : sanitized;
     }
 
-    private static void TryAnnounceChatMultiline(string? rawText, Color color)
+    private static bool TryAnnounceChatMultiline(string? rawText, Color color)
     {
         if (string.IsNullOrWhiteSpace(rawText))
         {
-            return;
+            return false;
         }
 
         string sanitized = TextSanitizer.Clean(rawText);
         if (string.IsNullOrWhiteSpace(sanitized))
         {
-            return;
+            return false;
         }
 
+        string historyEntry = FormatChatHistoryEntry(sanitized);
         if (TryFormatNameTagChat(sanitized, out string? announcement, out string? playerName))
         {
+            ChatHistoryService.Record(historyEntry);
             if (!string.IsNullOrWhiteSpace(announcement))
             {
                 TryAnnounceChatCore(announcement, sanitized, null, playerName, "NewTextMultilineNameTag", color);
             }
-            return;
+            return true;
         }
 
         if (CursorDescriptorService.IsLikelyPlayerChat(sanitized))
         {
+            ChatHistoryService.Record(historyEntry);
             TryAnnounceChatCore(sanitized, sanitized, null, null, "NewTextMultilineLikelyChat", color);
+            return true;
         }
+
+        return false;
     }
 
     private static bool TryFormatNameTagChat(string sanitized, out string? announcement, out string? playerName)
@@ -916,22 +964,25 @@ public sealed partial class InGameNarrationSystem : ModSystem
         return true;
     }
 
-    private static void TryAnnounceChatCore(string announcement, string raw, byte? author, string? resolvedName, string stage, Color color)
+    private static string FormatChatHistoryEntry(string sanitized, string? resolvedPlayerName = null)
     {
-        DateTime now = DateTime.UtcNow;
-        if (!string.IsNullOrWhiteSpace(_lastChatAnnouncement) &&
-            string.Equals(_lastChatAnnouncement, announcement, StringComparison.OrdinalIgnoreCase) &&
-            now - _lastChatAnnouncedAt < ChatRepeatWindow)
+        if (!string.IsNullOrWhiteSpace(resolvedPlayerName))
         {
-            LogChatDebug("SkipRepeat", author ?? byte.MaxValue, NetworkText.FromLiteral(raw), announcement, color, resolvedName);
-            return;
+            return $"{resolvedPlayerName}: {sanitized}";
         }
 
-        _lastChatAnnouncement = announcement;
-        _lastChatAnnouncedAt = now;
+        if (TryFormatNameTagChat(sanitized, out string? announcement, out _))
+        {
+            return announcement ?? sanitized;
+        }
 
+        return sanitized;
+    }
+
+    private static void TryAnnounceChatCore(string announcement, string raw, byte? author, string? resolvedName, string stage, Color color)
+    {
         LogChatDebug(stage, author ?? byte.MaxValue, NetworkText.FromLiteral(raw), announcement, color, resolvedName);
-        WorldAnnouncementService.Announce(announcement);
+        AnnounceChatLine(announcement);
     }
 
     private static void LogChatDebug(string stage, byte author, NetworkText text, object? extra, Color color, string? resolvedName = null)
@@ -1026,6 +1077,20 @@ public sealed partial class InGameNarrationSystem : ModSystem
         }
     }
 
+    private static void AnnounceChatLine(string announcement)
+    {
+        DateTime now = DateTime.UtcNow;
+        if (!string.IsNullOrWhiteSpace(_lastChatAnnouncement) &&
+            string.Equals(_lastChatAnnouncement, announcement, StringComparison.OrdinalIgnoreCase) &&
+            now - _lastChatAnnouncedAt < ChatRepeatWindow)
+        {
+            return;
+        }
+
+        _lastChatAnnouncement = announcement;
+        _lastChatAnnouncedAt = now;
+        WorldAnnouncementService.Announce(announcement);
+    }
 
 
 
@@ -1135,5 +1200,3 @@ public sealed partial class InGameNarrationSystem : ModSystem
         InventoryNarrator.RecordMouseTextSnapshot(string.IsNullOrWhiteSpace(cursorText) ? buffTooltip : cursorText);
     }
 }
-
-

@@ -8,6 +8,8 @@ using Terraria.ID;
 using Terraria.Localization;
 using Terraria.ModLoader;
 using Terraria.UI;
+using Terraria.GameContent.UI.States;
+using Terraria.GameContent.UI.Elements;
 using ScreenReaderMod.Common.Utilities;
 
 namespace ScreenReaderMod.Common.Systems;
@@ -24,7 +26,10 @@ internal static partial class MenuNarrationCatalog
         [10] = "World loading",
         [11] = "Settings",
         [14] = "Server status",
-        [12] = "Join by IP",
+        [12] = "Multiplayer",
+        [MenuID.ServerIP] = "Server address",
+        [MenuID.ServerPort] = "Server port",
+        [MenuID.ServerPasswordRequested] = "Server password",
         [17] = "Controls",
         [18] = "Credits",
         [26] = "Audio settings",
@@ -54,6 +59,9 @@ internal static partial class MenuNarrationCatalog
         [1127] = DescribeSettingsGameplayMenu,
         [12] = DescribeMultiplayerMenu,
         [14] = DescribeConnectionStatusMenu,
+        [MenuID.ServerIP] = DescribeServerIpMenu,
+        [MenuID.ServerPort] = DescribeServerPortMenu,
+        [MenuID.ServerPasswordRequested] = DescribeServerPasswordMenu,
         [MenuID.WorldDeletionConfirmation] = DescribeWorldDeletionConfirmation,
         [1212] = static index => DescribeLanguageMenu(index, includeBackOption: false),
         [1213] = static index => DescribeLanguageMenu(index, includeBackOption: true),
@@ -114,6 +122,11 @@ internal static partial class MenuNarrationCatalog
             return false;
         }
 
+        if (uiState is UIVirtualKeyboard keyboard && TryDescribeVirtualKeyboard(keyboard, out label))
+        {
+            return true;
+        }
+
         string typeName = uiState.GetType().FullName ?? string.Empty;
         if (typeName.Contains("UICharacterSelect", StringComparison.Ordinal))
         {
@@ -138,6 +151,30 @@ internal static partial class MenuNarrationCatalog
         {
             label = "Controls menu";
             return true;
+        }
+
+        return false;
+    }
+
+    private static bool TryDescribeVirtualKeyboard(UIVirtualKeyboard keyboard, out string label)
+    {
+        label = string.Empty;
+        try
+        {
+            FieldInfo? field = typeof(UIVirtualKeyboard).GetField("_labelText", BindingFlags.NonPublic | BindingFlags.Instance);
+            if (field?.GetValue(keyboard) is UITextPanel<string> panel)
+            {
+                string text = panel.Text?.Trim() ?? string.Empty;
+                if (!string.IsNullOrWhiteSpace(text))
+                {
+                    label = TextSanitizer.Clean(text);
+                    return true;
+                }
+            }
+        }
+        catch
+        {
+            // ignore reflection failures
         }
 
         return false;

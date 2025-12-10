@@ -13,6 +13,7 @@ public sealed partial class InGameNarrationSystem
         private readonly TreasureBagBeaconEmitter _treasureBagBeaconEmitter;
         private readonly HostileStaticAudioEmitter _hostileStaticAudioEmitter;
         private readonly FootstepAudioEmitter _footstepAudioEmitter;
+        private readonly ClimbAudioEmitter _climbAudioEmitter;
         private readonly BiomeAnnouncementEmitter _biomeAnnouncementEmitter;
         private readonly CadenceGate _cadenceGate = new();
 
@@ -20,11 +21,13 @@ public sealed partial class InGameNarrationSystem
             TreasureBagBeaconEmitter treasureBagBeaconEmitter,
             HostileStaticAudioEmitter hostileStaticAudioEmitter,
             FootstepAudioEmitter footstepAudioEmitter,
+            ClimbAudioEmitter climbAudioEmitter,
             BiomeAnnouncementEmitter biomeAnnouncementEmitter)
         {
             _treasureBagBeaconEmitter = treasureBagBeaconEmitter;
             _hostileStaticAudioEmitter = hostileStaticAudioEmitter;
             _footstepAudioEmitter = footstepAudioEmitter;
+            _climbAudioEmitter = climbAudioEmitter;
             _biomeAnnouncementEmitter = biomeAnnouncementEmitter;
         }
 
@@ -40,6 +43,7 @@ public sealed partial class InGameNarrationSystem
             Run("hostile-static", 1, () => _hostileStaticAudioEmitter.Update(player));
             Run("treasure-bag", 2, () => _treasureBagBeaconEmitter.Update(player));
             Run("footstep", 1, () => _footstepAudioEmitter.Update(player));
+            Run("climb", 1, () => _climbAudioEmitter.Update(player));
             Run("biome", 12, () => _biomeAnnouncementEmitter.Update(player));
         }
 
@@ -48,6 +52,7 @@ public sealed partial class InGameNarrationSystem
             _treasureBagBeaconEmitter.Reset();
             _hostileStaticAudioEmitter.Reset();
             _footstepAudioEmitter.Reset();
+            _climbAudioEmitter.Reset();
             _biomeAnnouncementEmitter.Reset();
             _cadenceGate.Reset();
         }

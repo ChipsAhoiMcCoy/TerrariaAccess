@@ -12,6 +12,12 @@ public sealed partial class GuidanceSystem
 {
     private static void EmitCurrentGuidancePing(Player player)
     {
+        if (!IsPingEnabledForCurrentSelection())
+        {
+            _nextPingUpdateFrame = -1;
+            return;
+        }
+
         if (TryGetCurrentTrackingTarget(player, out Vector2 targetPosition, out _))
         {
             EmitPing(player, targetPosition);
@@ -20,6 +26,13 @@ public sealed partial class GuidanceSystem
 
     private static void RescheduleGuidancePing(Player player)
     {
+        if (!IsPingEnabledForCurrentSelection())
+        {
+            _nextPingUpdateFrame = -1;
+            _arrivalAnnounced = false;
+            return;
+        }
+
         if (!TryGetCurrentTrackingTarget(player, out Vector2 targetPosition, out _))
         {
             _nextPingUpdateFrame = -1;
@@ -160,8 +173,7 @@ public sealed partial class GuidanceSystem
             return -1;
         }
 
-        float frames = MathHelper.Clamp(distanceTiles * PingDelayScale, MinPingDelayFrames, MaxPingDelayFrames);
-        return (int)MathF.Round(frames);
+        return MaxPingDelayFrames;
     }
 
     private static int ComputeNextPingFrameFromDelay(int delayFrames)

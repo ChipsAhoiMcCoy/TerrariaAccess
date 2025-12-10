@@ -15,18 +15,12 @@ public sealed partial class InGameNarrationSystem
     private sealed class HostileStaticAudioEmitter
     {
         private const int ScanIntervalTicks = 4;
-        private const int MaxConcurrentCues = 3;
-        private const float SecondaryCueVolumeScale = 0.25f;
         private const float StandardRangeTiles = 52f;
         private const float BossRangeTiles = 160f;
         private const float PanScalePixels = 520f;
         private const float PitchScalePixels = 320f;
         private const int MinIntervalFrames = 7;
         private const int MaxIntervalFrames = 32;
-        private const float VolumeMin = 0.18f;
-        private const float VolumeScale = 0.85f;
-        private const float VolumeDistanceReferenceTiles = 90f;
-        private const float BossVolumeBonus = 0.12f;
         private const float HostileToneDurationSeconds = 0.13f;
         private const float HostileToneGain = 0.42f;
         private static readonly float[] HostileTonePartials = { 1.24f, 1.5f };
@@ -34,10 +28,9 @@ public sealed partial class InGameNarrationSystem
 
         private static SoundEffect? s_hostileTone;
 
-        private readonly List<HostileCandidate> _candidates = new();
-        private readonly Dictionary<int, long> _nextPingFrame = new();
-        private readonly HashSet<int> _visibleNpcIds = new();
-        private readonly List<int> _staleNpcIds = new();
+        private HostileCandidate? _primaryCandidate;
+        private int _activeNpcId = -1;
+        private long _nextPingFrame;
         private readonly List<SoundEffectInstance> _liveInstances = new();
 
         private int _ticksUntilNextScan;
@@ -50,9 +43,15 @@ public sealed partial class InGameNarrationSystem
                 return;
             }
 
+            if (!LockOnHelper.CanUseLockonSystem())
+            {
+                Reset();
+                return;
+            }
+
             if (_ticksUntilNextScan <= 0)
             {
-                RebuildCandidates(listener);
+                _primaryCandidate = FindPrimaryCandidate(listener);
                 _ticksUntilNextScan = ScanIntervalTicks;
             }
             else
@@ -60,58 +59,29 @@ public sealed partial class InGameNarrationSystem
                 _ticksUntilNextScan--;
             }
 
-            if (_candidates.Count == 0)
+            if (!_primaryCandidate.HasValue)
             {
-                TrimInactiveEntries();
                 CleanupFinishedInstances();
                 return;
             }
 
-            _candidates.Sort(static (left, right) =>
+            HostileCandidate candidate = _primaryCandidate.Value;
+            if (_activeNpcId != candidate.NpcId)
             {
-                if (left.IsBoss != right.IsBoss)
-                {
-                    return left.IsBoss ? -1 : 1;
-                }
-
-                return left.DistanceTiles.CompareTo(right.DistanceTiles);
-            });
-
-            _visibleNpcIds.Clear();
-            Vector2 playerCenter = listener.Center;
-            int limit = Math.Min(MaxConcurrentCues, _candidates.Count);
-
-            int primaryNpcId = -1;
-            float closestDistance = float.MaxValue;
-            for (int i = 0; i < limit; i++)
-            {
-                HostileCandidate candidate = _candidates[i];
-                if (candidate.DistanceTiles < closestDistance)
-                {
-                    closestDistance = candidate.DistanceTiles;
-                    primaryNpcId = candidate.NpcId;
-                }
+                _activeNpcId = candidate.NpcId;
+                _nextPingFrame = 0;
             }
 
-            for (int i = 0; i < limit; i++)
-            {
-                HostileCandidate candidate = _candidates[i];
-                _visibleNpcIds.Add(candidate.NpcId);
-                bool isPrimaryCue = candidate.NpcId == primaryNpcId;
-                EmitIfDue(playerCenter, candidate, isPrimaryCue);
-            }
-
-            TrimInactiveEntries();
+            EmitIfDue(listener.Center, candidate);
             CleanupFinishedInstances();
         }
 
         public void Reset()
         {
             _ticksUntilNextScan = 0;
-            _candidates.Clear();
-            _nextPingFrame.Clear();
-            _visibleNpcIds.Clear();
-            _staleNpcIds.Clear();
+            _primaryCandidate = null;
+            _activeNpcId = -1;
+            _nextPingFrame = 0;
             StopAllInstances();
         }
 
@@ -121,9 +91,9 @@ public sealed partial class InGameNarrationSystem
             s_hostileTone = null;
         }
 
-        private void RebuildCandidates(Player listener)
+        private HostileCandidate? FindPrimaryCandidate(Player listener)
         {
-            _candidates.Clear();
+            HostileCandidate? best = null;
             Vector2 listenerCenter = listener.Center;
 
             for (int i = 0; i < Main.maxNPCs; i++)
@@ -152,13 +122,20 @@ public sealed partial class InGameNarrationSystem
                     continue;
                 }
 
-                _candidates.Add(new HostileCandidate(
+                HostileCandidate candidate = new(
                     npc.whoAmI,
                     npc.Center,
                     distanceTiles,
                     maxDistance,
-                    isBoss));
+                    isBoss);
+
+                if (best is null || IsBetterCandidate(candidate, best.Value))
+                {
+                    best = candidate;
+                }
             }
+
+            return best;
         }
 
         private static bool IsEligibleHostile(NPC npc, Player listener)
@@ -216,22 +193,31 @@ public sealed partial class InGameNarrationSystem
             return true;
         }
 
-        private void EmitIfDue(Vector2 listenerCenter, HostileCandidate candidate, bool isPrimaryCue)
+        private static bool IsBetterCandidate(HostileCandidate candidate, HostileCandidate current)
+        {
+            if (candidate.IsBoss != current.IsBoss)
+            {
+                return candidate.IsBoss;
+            }
+
+            return candidate.DistanceTiles < current.DistanceTiles;
+        }
+
+        private void EmitIfDue(Vector2 listenerCenter, HostileCandidate candidate)
         {
             long currentFrame = (long)Main.GameUpdateCount;
-            long scheduled = _nextPingFrame.TryGetValue(candidate.NpcId, out long nextFrame) ? nextFrame : 0;
-            if (currentFrame < scheduled)
+            if (currentFrame < _nextPingFrame)
             {
                 return;
             }
 
-            PlayStaticCue(listenerCenter, candidate, isPrimaryCue);
+            PlayStaticCue(listenerCenter, candidate);
 
             int delay = ComputeDelayFrames(candidate);
-            _nextPingFrame[candidate.NpcId] = currentFrame + Math.Max(1, delay);
+            _nextPingFrame = currentFrame + Math.Max(1, delay);
         }
 
-        private void PlayStaticCue(Vector2 listenerCenter, HostileCandidate candidate, bool isPrimaryCue)
+        private void PlayStaticCue(Vector2 listenerCenter, HostileCandidate candidate)
         {
             SoundEffect tone = EnsureHostileTone();
             if (tone.IsDisposed)
@@ -243,16 +229,7 @@ public sealed partial class InGameNarrationSystem
             float pan = MathHelper.Clamp(offset.X / PanScalePixels, -1f, 1f);
             float pitch = MathHelper.Clamp(-offset.Y / PitchScalePixels, -0.8f, 0.8f);
 
-            float distanceReference = Math.Max(1f, VolumeDistanceReferenceTiles);
-            float distanceFactor = 1f / (1f + (candidate.DistanceTiles / distanceReference));
-            float baseVolume = MathHelper.Clamp(VolumeMin + distanceFactor * VolumeScale, 0f, 1f);
-            if (candidate.IsBoss)
-            {
-                baseVolume = MathHelper.Clamp(baseVolume + BossVolumeBonus, 0f, 1f);
-            }
-
-            float scaledBase = baseVolume * (isPrimaryCue ? 1f : SecondaryCueVolumeScale);
-            float volume = MathHelper.Clamp(scaledBase, 0f, 1f) * Main.soundVolume * AudioVolumeDefaults.WorldCueVolumeScale;
+            float volume = MathHelper.Clamp(1f, 0f, 1f) * Main.soundVolume * AudioVolumeDefaults.WorldCueVolumeScale;
             if (volume <= 0f)
             {
                 return;
@@ -288,31 +265,6 @@ public sealed partial class InGameNarrationSystem
             }
 
             return Math.Max(1, (int)MathF.Round(frames));
-        }
-
-        private void TrimInactiveEntries()
-        {
-            if (_nextPingFrame.Count == 0)
-            {
-                return;
-            }
-
-            _staleNpcIds.Clear();
-            foreach ((int npcId, _) in _nextPingFrame)
-            {
-                if (!_visibleNpcIds.Contains(npcId))
-                {
-                    _staleNpcIds.Add(npcId);
-                }
-            }
-
-            foreach (int npcId in _staleNpcIds)
-            {
-                _nextPingFrame.Remove(npcId);
-            }
-
-            _visibleNpcIds.Clear();
-            _staleNpcIds.Clear();
         }
 
         private void CleanupFinishedInstances()

@@ -9,7 +9,11 @@ namespace ScreenReaderMod.Common.Systems;
 
 public sealed partial class GuidanceSystem
 {
+    private readonly record struct ProximityTargetKey(SelectionMode Mode, int Index);
+
     private static readonly List<Waypoint> Waypoints = new();
+
+    internal static bool HasWaypointState => Waypoints.Count > 0 || _selectionMode != SelectionMode.None;
 
     private enum SelectionMode
     {
@@ -27,8 +31,11 @@ public sealed partial class GuidanceSystem
     private static int _selectedPlayerIndex = -1;
     private static int _selectedInteractableIndex = -1;
     private static int _selectedExplorationIndex = -1;
+    private static ExplorationTargetRegistry.ExplorationTarget? _lastExplorationSelection;
     private static SelectionMode _categoryAnnouncementMode = SelectionMode.None;
     private static bool _categoryAnnouncementPending;
+    private static ProximityTargetKey _activeProximityTarget = new(SelectionMode.None, -1);
+    private static int _lastProximityStepIndex = int.MaxValue;
 
     private static bool _namingActive;
 
@@ -39,6 +46,8 @@ public sealed partial class GuidanceSystem
     private static UIVirtualKeyboard? _activeKeyboard;
     private static InputSnapshot? _inputSnapshot;
     private static readonly bool LogGuidancePings = false;
+    private static uint _lastTargetRefreshFrame;
+    private static int _lastTargetRefreshPlayerIndex = -1;
 
     private sealed class InputSnapshot
     {
@@ -80,9 +89,13 @@ public sealed partial class GuidanceSystem
         _selectedPlayerIndex = -1;
         _selectedInteractableIndex = -1;
         _selectedExplorationIndex = -1;
+        _lastExplorationSelection = null;
         _selectionMode = SelectionMode.None;
+        ResetProximityProgress();
         ClearCategoryAnnouncement();
         _nextPingUpdateFrame = -1;
         _arrivalAnnounced = false;
+        _lastTargetRefreshFrame = 0;
+        _lastTargetRefreshPlayerIndex = -1;
     }
 }

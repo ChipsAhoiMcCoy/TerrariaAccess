@@ -9,6 +9,13 @@ Mods: {
 			RequiresFriends: Allow friends to join before enabling this option
 		}
 
+		JoinMenu: {
+			ServerIpPrompt: Enter server IP or host name
+			ServerPortPrompt: Enter server port
+			ServerPasswordPrompt: Enter server password
+			PasswordLength: "{0} characters entered"
+		}
+
 		IngameOptions: {
 			ModConfiguration: Mod Configuration
 			CloseMenu: Close Menu

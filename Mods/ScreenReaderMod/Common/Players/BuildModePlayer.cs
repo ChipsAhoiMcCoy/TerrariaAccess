@@ -584,31 +584,7 @@ public sealed class BuildModePlayer : ModPlayer
             return false;
         }
 
-        if (IsWithinPlacementRange(tile))
-        {
-            return true;
-        }
-
-        // Allow tiles that are still within the player's normal reachable screen area (e.g., bow holdout range).
-        Vector2 cursor = Main.MouseWorld;
-        Player.LimitPointToPlayerReachableArea(ref cursor);
-        int clampedTileX = (int)(cursor.X / 16f);
-        int clampedTileY = (int)(cursor.Y / 16f);
-
-        bool withinReachableArea = clampedTileX == tile.X && clampedTileY == tile.Y;
-        if (withinReachableArea)
-        {
-            return true;
-        }
-
-        tile = Point.Zero;
-        return false;
-    }
-
-    private bool IsWithinPlacementRange(Point tile)
-    {
-        TileReachCheckSettings settings = TileReachCheckSettings.Simple;
-        return Player.InInteractionRange(tile.X, tile.Y, settings);
+        return true;
     }
 
     private Rectangle GetSelection()
@@ -869,12 +845,23 @@ public sealed class BuildModePlayer : ModPlayer
 
     private void EnsurePlacementRangeExpanded()
     {
+        if (IsSmartCursorActive())
+        {
+            RestorePlacementRangeIfNeeded();
+            return;
+        }
+
         _rangeManager.ExpandPlacementRangeToViewport(Player);
     }
 
     private void RestorePlacementRangeIfNeeded()
     {
         _rangeManager.RestorePlacementRange(Player);
+    }
+
+    private static bool IsSmartCursorActive()
+    {
+        return Main.SmartCursorIsUsed || Main.SmartCursorWanted;
     }
 
     private bool IsPlayerMoving()
