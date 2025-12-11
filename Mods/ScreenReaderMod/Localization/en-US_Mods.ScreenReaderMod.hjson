@@ -138,6 +138,7 @@ Mods: {
 			ControllerInventorySectionNext.DisplayName: Inventory Section Next
 			ControllerInventorySectionPrevious.DisplayName: Inventory Section Previous
 			ControllerInventoryQuickUse.DisplayName: Inventory Quick Use
+			ControllerInventoryHousingQuery.DisplayName: Inventory Housing Query
 			ControllerLockOn.DisplayName: Lock On Target
 			ControllerRightStickUp.DisplayName: Right Stick Up
 			ControllerRightStickDown.DisplayName: Right Stick Down
@@ -172,6 +173,7 @@ Keybinds: {
 	ControllerInventorySectionNext.DisplayName: Controller Inventory Section Next
 	ControllerInventorySectionPrevious.DisplayName: Controller Inventory Section Previous
 	ControllerInventoryQuickUse.DisplayName: Controller Inventory Quick Use
+	ControllerInventoryHousingQuery.DisplayName: Controller Inventory Housing Query
 	ControllerLockOn.DisplayName: Controller Lock On Target
 	ControllerRightStickUp.DisplayName: Controller Right Stick Up
 	ControllerRightStickDown.DisplayName: Controller Right Stick Down

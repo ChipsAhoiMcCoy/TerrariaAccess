@@ -329,6 +329,7 @@ public sealed class KeyboardInputParitySystem : ModSystem
     InjectVirtualTrigger(ControllerParityKeybinds.InventorySectionPrevious, TriggerNames.HotbarMinus);
     InjectVirtualTrigger(ControllerParityKeybinds.InventorySectionNext, TriggerNames.HotbarPlus);
     InjectVirtualTrigger(ControllerParityKeybinds.InventoryQuickUse, TriggerNames.QuickMount);
+    InjectVirtualTrigger(ControllerParityKeybinds.InventoryHousingQuery, TriggerNames.Grapple);
   }
 
   private static void ApplyGlobalVirtualTriggers()
