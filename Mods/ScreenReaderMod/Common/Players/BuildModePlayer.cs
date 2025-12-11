@@ -47,6 +47,7 @@ public sealed class BuildModePlayer : ModPlayer
     private bool _wasUseHeld;
     private int _hurtGraceTicks;
     private SelectionIterator _selectionIterator;
+    private readonly List<ContextualHotkey> _hotkeys = new();
     private readonly BuildModeRangeManager _rangeManager = new();
 
     private bool BuildModeActive => _state != BuildModeState.Inactive;
@@ -84,30 +85,21 @@ public sealed class BuildModePlayer : ModPlayer
             ToggleBuildMode();
         }
 
+        EnsureHotkeysInitialized();
+
         if (BuildModeActive)
         {
             EnsurePlacementRangeExpanded();
+            if (ContextualInputRouter.TryHandle(_hotkeys, triggersSet))
+            {
+                return;
+            }
         }
 
         if (!BuildModeActive)
         {
             TrackMouseForCornerPlacement(triggersSet);
-            return;
         }
-
-        bool placePressed = CaptureCornerPlacementInput(triggersSet);
-        if (!placePressed)
-        {
-            return;
-        }
-
-        if (!TryCaptureCursorTileInRange(out Point tile))
-        {
-            ScreenReaderService.Announce(BuildModeNarrationCatalog.CursorOutOfBounds());
-            return;
-        }
-
-        HandleCornerPlacement(tile);
     }
 
     public override void PostUpdate()
@@ -523,11 +515,6 @@ public sealed class BuildModePlayer : ModPlayer
         return Player.controlUseItem || Player.controlUseTile || Main.mouseLeft || Main.mouseRight;
     }
 
-    private bool CaptureCornerPlacementInput(TriggersSet triggersSet)
-    {
-        return BuildModeKeybinds.Place?.JustPressed ?? false;
-    }
-
     private void TrackMouseForCornerPlacement(TriggersSet triggersSet)
     {
         // Intentionally left blank; only tracking via keybind states now.
@@ -805,6 +792,44 @@ public sealed class BuildModePlayer : ModPlayer
         Player.controlUseTile = false;
         Player.releaseUseItem = true;
         Player.releaseUseTile = true;
+    }
+
+    private void EnsureHotkeysInitialized()
+    {
+        if (_hotkeys.Count > 0)
+        {
+            return;
+        }
+
+        _hotkeys.Add(new ContextualHotkey(
+            "BuildModePlace",
+            Condition: () => BuildModeActive,
+            Chords: new[]
+            {
+                InputChord.FromKeybind(BuildModeKeybinds.Place, "BuildModePlace"),
+                InputChord.FromTrigger(
+                    "QuickMount",
+                    static _ => PlayerInput.Triggers.JustPressed.QuickMount,
+                    static triggers =>
+                    {
+                        triggers.QuickMount = false;
+                        PlayerInput.Triggers.Current.QuickMount = false;
+                        PlayerInput.Triggers.JustPressed.QuickMount = false;
+                    })
+            },
+            OnTriggered: HandleCornerPlacementInput,
+            Priority: 10));
+    }
+
+    private void HandleCornerPlacementInput()
+    {
+        if (!TryCaptureCursorTileInRange(out Point tile))
+        {
+            ScreenReaderService.Announce(BuildModeNarrationCatalog.CursorOutOfBounds());
+            return;
+        }
+
+        HandleCornerPlacement(tile);
     }
 
     private void GuardBuildModeInput()
