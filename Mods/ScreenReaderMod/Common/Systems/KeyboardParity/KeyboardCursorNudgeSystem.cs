@@ -1,7 +1,6 @@
 #nullable enable
 using System;
 using Microsoft.Xna.Framework;
-using Microsoft.Xna.Framework.Input;
 using Terraria;
 using Terraria.DataStructures;
 using Terraria.GameInput;
@@ -28,7 +27,7 @@ public sealed class KeyboardCursorNudgeSystem : ModSystem
             return;
         }
 
-        Vector2 nudges = CollectArrowNudges(Main.keyState);
+        Vector2 nudges = CollectArrowNudges();
         if (nudges == Vector2.Zero)
         {
             return;
@@ -77,14 +76,14 @@ public sealed class KeyboardCursorNudgeSystem : ModSystem
         return true;
     }
 
-    private Vector2 CollectArrowNudges(KeyboardState state)
+    private Vector2 CollectArrowNudges()
     {
         Vector2 nudges = Vector2.Zero;
 
-        nudges += EvaluateDirection(state.IsKeyDown(Keys.Up), -Vector2.UnitY, 0);
-        nudges += EvaluateDirection(state.IsKeyDown(Keys.Right), Vector2.UnitX, 1);
-        nudges += EvaluateDirection(state.IsKeyDown(Keys.Down), Vector2.UnitY, 2);
-        nudges += EvaluateDirection(state.IsKeyDown(Keys.Left), -Vector2.UnitX, 3);
+        nudges += EvaluateDirection(IsPressed(KeyboardCursorNudgeKeybinds.Up), -Vector2.UnitY, 0);
+        nudges += EvaluateDirection(IsPressed(KeyboardCursorNudgeKeybinds.Right), Vector2.UnitX, 1);
+        nudges += EvaluateDirection(IsPressed(KeyboardCursorNudgeKeybinds.Down), Vector2.UnitY, 2);
+        nudges += EvaluateDirection(IsPressed(KeyboardCursorNudgeKeybinds.Left), -Vector2.UnitX, 3);
 
         return nudges;
     }
@@ -127,6 +126,11 @@ public sealed class KeyboardCursorNudgeSystem : ModSystem
 
         int useTime = CombinedHooks.TotalUseTime(heldItem.useTime, player, heldItem);
         return Math.Max(1, useTime);
+    }
+
+    private static bool IsPressed(ModKeybind? keybind)
+    {
+        return keybind?.Current ?? false;
     }
 
     private static void ApplyDpadStyleSnap(Vector2 nudges)

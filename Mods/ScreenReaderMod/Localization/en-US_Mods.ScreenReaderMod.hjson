@@ -137,6 +137,16 @@ Mods: {
 			ControllerInventorySmartSelect.DisplayName: Inventory Smart Select
 			ControllerInventorySectionNext.DisplayName: Inventory Section Next
 			ControllerInventorySectionPrevious.DisplayName: Inventory Section Previous
+			ControllerInventoryQuickUse.DisplayName: Inventory Quick Use
+			ControllerLockOn.DisplayName: Lock On Target
+			ControllerRightStickUp.DisplayName: Right Stick Up
+			ControllerRightStickDown.DisplayName: Right Stick Down
+			ControllerRightStickLeft.DisplayName: Right Stick Left
+			ControllerRightStickRight.DisplayName: Right Stick Right
+			KeyboardCursorNudgeUp.DisplayName: Cursor Nudge Up
+			KeyboardCursorNudgeDown.DisplayName: Cursor Nudge Down
+			KeyboardCursorNudgeLeft.DisplayName: Cursor Nudge Left
+			KeyboardCursorNudgeRight.DisplayName: Cursor Nudge Right
 			StatusCheck.DisplayName: Status Checker
 		}
 	}
@@ -161,5 +171,15 @@ Keybinds: {
 	ControllerInventorySmartSelect.DisplayName: Controller Inventory Smart Select
 	ControllerInventorySectionNext.DisplayName: Controller Inventory Section Next
 	ControllerInventorySectionPrevious.DisplayName: Controller Inventory Section Previous
+	ControllerInventoryQuickUse.DisplayName: Controller Inventory Quick Use
+	ControllerLockOn.DisplayName: Controller Lock On Target
+	ControllerRightStickUp.DisplayName: Controller Right Stick Up
+	ControllerRightStickDown.DisplayName: Controller Right Stick Down
+	ControllerRightStickLeft.DisplayName: Controller Right Stick Left
+	ControllerRightStickRight.DisplayName: Controller Right Stick Right
+	KeyboardCursorNudgeUp.DisplayName: Keyboard Cursor Nudge Up
+	KeyboardCursorNudgeDown.DisplayName: Keyboard Cursor Nudge Down
+	KeyboardCursorNudgeLeft.DisplayName: Keyboard Cursor Nudge Left
+	KeyboardCursorNudgeRight.DisplayName: Keyboard Cursor Nudge Right
 	StatusCheck.DisplayName: Status Checker
 }

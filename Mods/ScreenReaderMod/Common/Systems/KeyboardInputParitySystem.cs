@@ -268,7 +268,8 @@ public sealed class KeyboardInputParitySystem : ModSystem
 
     bool needsUiMode = NeedsGamepadUiMode();
     ForceGamepadUiModeIfNeeded(needsUiMode);
-    ApplyVirtualTriggers(needsUiMode);
+    ApplyGlobalVirtualTriggers();
+    ApplyInventoryVirtualTriggers(needsUiMode);
   }
 
   private static bool ShouldEmulateGamepad()
@@ -312,9 +313,14 @@ public sealed class KeyboardInputParitySystem : ModSystem
     }
   }
 
-  private static void ApplyVirtualTriggers(bool inventoryUiActive)
+  private static void ApplyInventoryVirtualTriggers(bool inventoryUiActive)
   {
-    if (!inventoryUiActive || !KeyboardParityFeatureState.Enabled)
+    if (!inventoryUiActive || !KeyboardParityFeatureState.Enabled || IsTextInputActive())
+    {
+      return;
+    }
+
+    if (!Main.playerInventory)
     {
       return;
     }
@@ -322,6 +328,23 @@ public sealed class KeyboardInputParitySystem : ModSystem
     InjectVirtualTrigger(ControllerParityKeybinds.InventorySmartSelect, TriggerNames.SmartSelect);
     InjectVirtualTrigger(ControllerParityKeybinds.InventorySectionPrevious, TriggerNames.HotbarMinus);
     InjectVirtualTrigger(ControllerParityKeybinds.InventorySectionNext, TriggerNames.HotbarPlus);
+    InjectVirtualTrigger(ControllerParityKeybinds.InventoryQuickUse, TriggerNames.QuickMount);
+  }
+
+  private static void ApplyGlobalVirtualTriggers()
+  {
+    if (!KeyboardParityFeatureState.Enabled || Main.gameMenu || IsTextInputActive())
+    {
+      return;
+    }
+
+    Player player = Main.LocalPlayer;
+    if (player is null || !player.active || player.dead || player.ghost)
+    {
+      return;
+    }
+
+    InjectVirtualTrigger(ControllerParityKeybinds.LockOn, TriggerNames.LockOn);
   }
 
   private static void InjectVirtualTrigger(ModKeybind? keybind, string triggerName)
@@ -408,7 +431,7 @@ public sealed class KeyboardInputParitySystem : ModSystem
 
     KeyboardState state = Main.keyState;
     bool movementOverride = TryReadStick(state, Keys.W, Keys.S, Keys.A, Keys.D, out Vector2 movement);
-    bool aimOverride = TryReadStick(state, Keys.O, Keys.L, Keys.K, Keys.OemSemicolon, out Vector2 aim);
+    bool aimOverride = TryReadStick(ControllerParityKeybinds.RightStickUp, ControllerParityKeybinds.RightStickDown, ControllerParityKeybinds.RightStickLeft, ControllerParityKeybinds.RightStickRight, out Vector2 aim);
 
     if (movementOverride)
     {
@@ -449,6 +472,41 @@ public sealed class KeyboardInputParitySystem : ModSystem
     }
 
     if (state.IsKeyDown(right))
+    {
+      x += 1f;
+    }
+
+    result = new Vector2(x, y);
+    if (result == Vector2.Zero)
+    {
+      return false;
+    }
+
+    result.Normalize();
+    return true;
+  }
+
+  private static bool TryReadStick(ModKeybind? up, ModKeybind? down, ModKeybind? left, ModKeybind? right, out Vector2 result)
+  {
+    float x = 0f;
+    float y = 0f;
+
+    if (up?.Current == true)
+    {
+      y -= 1f;
+    }
+
+    if (down?.Current == true)
+    {
+      y += 1f;
+    }
+
+    if (left?.Current == true)
+    {
+      x -= 1f;
+    }
+
+    if (right?.Current == true)
     {
       x += 1f;
     }

@@ -10,6 +10,12 @@ internal static class ControllerParityKeybinds
     internal static ModKeybind? InventorySmartSelect { get; private set; }
     internal static ModKeybind? InventorySectionNext { get; private set; }
     internal static ModKeybind? InventorySectionPrevious { get; private set; }
+    internal static ModKeybind? InventoryQuickUse { get; private set; }
+    internal static ModKeybind? LockOn { get; private set; }
+    internal static ModKeybind? RightStickUp { get; private set; }
+    internal static ModKeybind? RightStickDown { get; private set; }
+    internal static ModKeybind? RightStickLeft { get; private set; }
+    internal static ModKeybind? RightStickRight { get; private set; }
 
     private static bool _initialized;
 
@@ -20,9 +26,15 @@ internal static class ControllerParityKeybinds
             return;
         }
 
-        InventorySmartSelect = KeybindLoader.RegisterKeybind(mod, "ControllerInventorySmartSelect", Keys.None);
-        InventorySectionNext = KeybindLoader.RegisterKeybind(mod, "ControllerInventorySectionNext", Keys.None);
-        InventorySectionPrevious = KeybindLoader.RegisterKeybind(mod, "ControllerInventorySectionPrevious", Keys.None);
+        InventorySmartSelect = KeybindLoader.RegisterKeybind(mod, "ControllerInventorySmartSelect", Keys.F);
+        InventorySectionNext = KeybindLoader.RegisterKeybind(mod, "ControllerInventorySectionNext", Keys.E);
+        InventorySectionPrevious = KeybindLoader.RegisterKeybind(mod, "ControllerInventorySectionPrevious", Keys.Q);
+        InventoryQuickUse = KeybindLoader.RegisterKeybind(mod, "ControllerInventoryQuickUse", Keys.J);
+        LockOn = KeybindLoader.RegisterKeybind(mod, "ControllerLockOn", Keys.Tab);
+        RightStickUp = KeybindLoader.RegisterKeybind(mod, "ControllerRightStickUp", Keys.O);
+        RightStickDown = KeybindLoader.RegisterKeybind(mod, "ControllerRightStickDown", Keys.L);
+        RightStickLeft = KeybindLoader.RegisterKeybind(mod, "ControllerRightStickLeft", Keys.K);
+        RightStickRight = KeybindLoader.RegisterKeybind(mod, "ControllerRightStickRight", Keys.OemSemicolon);
         _initialized = true;
     }
 
@@ -32,5 +44,11 @@ internal static class ControllerParityKeybinds
         InventorySmartSelect = null;
         InventorySectionNext = null;
         InventorySectionPrevious = null;
+        InventoryQuickUse = null;
+        LockOn = null;
+        RightStickUp = null;
+        RightStickDown = null;
+        RightStickLeft = null;
+        RightStickRight = null;
     }
 }

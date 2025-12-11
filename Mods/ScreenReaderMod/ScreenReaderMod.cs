@@ -23,10 +23,12 @@ public class ScreenReaderMod : Mod
         SpeechInterruptKeybinds.EnsureInitialized(this);
         StatusCheckKeybinds.EnsureInitialized(this);
         BuildModeKeybinds.EnsureInitialized(this);
+        KeyboardCursorNudgeKeybinds.EnsureInitialized(this);
     }
 
     public override void Unload()
     {
+        KeyboardCursorNudgeKeybinds.Unload();
         ControllerParityKeybinds.Unload();
         BuildModeKeybinds.Unload();
         StatusCheckKeybinds.Unload();
