@@ -17,6 +17,8 @@ public sealed class KeyboardCursorNudgeSystem : ModSystem
     private const int DefaultRepeatDelayFrames = 6;
     private const float TileSizePixels = 16f;
 
+    private static uint _lastArrowHeldFrame = uint.MaxValue;
+
     private readonly int[] _directionCooldowns = new int[4];
 
     public override void PostUpdateInput()
@@ -24,7 +26,13 @@ public sealed class KeyboardCursorNudgeSystem : ModSystem
         if (!ShouldProcess())
         {
             ResetCooldowns();
+            _lastArrowHeldFrame = uint.MaxValue;
             return;
+        }
+
+        if (AreArrowKeysHeld())
+        {
+            RegisterArrowHeldFrame();
         }
 
         Vector2 nudges = CollectArrowNudges();
@@ -160,6 +168,24 @@ public sealed class KeyboardCursorNudgeSystem : ModSystem
         Main.mouseX = clampedX;
         Main.mouseY = clampedY;
         PlayerInput.SettingsForUI.SetCursorMode(CursorMode.Gamepad);
+    }
+
+    internal static bool WasArrowHeldThisFrame()
+    {
+        return _lastArrowHeldFrame == Main.GameUpdateCount;
+    }
+
+    private static bool AreArrowKeysHeld()
+    {
+        return IsPressed(KeyboardCursorNudgeKeybinds.Up)
+            || IsPressed(KeyboardCursorNudgeKeybinds.Down)
+            || IsPressed(KeyboardCursorNudgeKeybinds.Left)
+            || IsPressed(KeyboardCursorNudgeKeybinds.Right);
+    }
+
+    private static void RegisterArrowHeldFrame()
+    {
+        _lastArrowHeldFrame = Main.GameUpdateCount;
     }
 
     private static Point ClampToPlacementReach(Point tileTarget)
