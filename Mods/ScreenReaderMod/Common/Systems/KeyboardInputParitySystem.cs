@@ -67,7 +67,8 @@ public sealed class KeyboardInputParitySystem : ModSystem
     _gamepadInputIlHook = TryCreateIlHook(_gamepadInputMethod, InjectVirtualSticksIntoGamepadInput, "PlayerInput.GamePadInput");
 
     KeyboardParityFeatureState.StateChanged += OnFeatureToggleStateChanged;
-    KeyboardParityFeatureState.SetEnabled(false);
+    // Force parity on at startup so the game always sees a controller and the virtual sticks/keybinds stay active.
+    KeyboardParityFeatureState.SetEnabled(true);
   }
 
   public override void Unload()
@@ -366,6 +367,23 @@ public sealed class KeyboardInputParitySystem : ModSystem
     try
     {
       var cursor = new ILCursor(il);
+      int connectionFlagIndex = -1;
+      if (cursor.TryGotoNext(
+            MoveType.After,
+            instr => instr.MatchLdsfld(typeof(Main), nameof(Main.SettingBlockGamepadsEntirely)),
+            instr => instr.MatchBrfalse(out _),
+            instr => instr.MatchLdcI4(0),
+            instr => instr.MatchRet(),
+            instr => instr.MatchLdloc(out connectionFlagIndex)))
+      {
+        cursor.EmitDelegate<Func<bool, bool>>(connected => connected || ShouldEmulateGamepad());
+      }
+      else
+      {
+        global::ScreenReaderMod.ScreenReaderMod.Instance?.Logger.Warn("[KeyboardInputParity] Unable to force controller connection; GamePadInput may short-circuit.");
+      }
+
+      cursor = new ILCursor(il);
       if (cursor.TryGotoNext(MoveType.After, instr => instr.MatchStsfld(typeof(PlayerInput), nameof(PlayerInput.GamepadThumbstickRight))))
       {
         cursor.EmitDelegate(InjectVirtualSticksFromKeyboard);
