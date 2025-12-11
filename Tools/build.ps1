@@ -1,5 +1,7 @@
 Param(
-    [switch]$SkipDeploy
+    [switch]$SkipDeploy,
+    [switch]$NarrationLint,
+    [string]$ClientLogPath
 )
 
 Set-StrictMode -Version Latest
@@ -131,6 +133,123 @@ function Locate-BuiltMod([string]$ModFileName) {
     throw "Unable to locate built mod artifact. Checked:`n - " + ($candidates -join "`n - ")
 }
 
+function Resolve-ClientLogPath([string]$TmlPath, [string]$OverridePath) {
+    if (-not [string]::IsNullOrWhiteSpace($OverridePath)) {
+        if (-not (Test-Path $OverridePath)) {
+            throw "Client log override $OverridePath does not exist."
+        }
+
+        return (Resolve-Path $OverridePath).Path
+    }
+
+    $candidates = New-Object System.Collections.Generic.List[string]
+
+    if (-not [string]::IsNullOrWhiteSpace($TmlPath)) {
+        $candidates.Add((Join-Path $TmlPath "tModLoader-Logs\client.log"))
+        $candidates.Add((Join-Path $TmlPath "Logs\client.log"))
+
+        $tmlLogs = Join-Path $TmlPath "tModLoader-Logs"
+        if (Test-Path $tmlLogs) {
+            $logFiles = Get-ChildItem -Path $tmlLogs -Filter client.log -Recurse -ErrorAction SilentlyContinue | Select-Object -ExpandProperty FullName
+            foreach ($log in $logFiles) {
+                $candidates.Add($log)
+            }
+        }
+    }
+
+    $documentsPath = [Environment]::GetFolderPath("MyDocuments")
+    if (-not [string]::IsNullOrWhiteSpace($documentsPath)) {
+        $candidates.Add((Join-Path $documentsPath "My Games\Terraria\tModLoader-Logs\client.log"))
+        $candidates.Add((Join-Path $documentsPath "My Games\Terraria\tModLoader\Logs\client.log"))
+    }
+
+    $wslProbe = & wsl.exe -e sh -c 'for p in ~/.local/share/Terraria/tModLoader-Logs/client.log ~/.local/share/Terraria/ModLoader/Logs/client.log; do if [ -f "$p" ]; then wslpath -w "$p"; fi; done | head -n1' 2>$null
+    $wslExit = $LASTEXITCODE
+    if ($wslExit -eq 0 -and -not [string]::IsNullOrWhiteSpace($wslProbe)) {
+        $candidates.Add($wslProbe.Trim())
+    }
+
+    $existing = @(
+        $candidates |
+        Where-Object { -not [string]::IsNullOrWhiteSpace($_) -and (Test-Path $_) } |
+        Sort-Object -Unique |
+        ForEach-Object { Get-Item $_ }
+    )
+
+    if ($existing.Count -eq 0) {
+        throw "Unable to locate client.log. Checked:`n - " + ($candidates -join "`n - ")
+    }
+
+    return ($existing | Sort-Object LastWriteTime -Descending | Select-Object -First 1).FullName
+}
+
+function Invoke-NarrationLint([string]$LogPath) {
+    if (-not (Test-Path $LogPath)) {
+        throw "Client log not found at $LogPath"
+    }
+
+    Write-Info "Running narration lint against $LogPath"
+
+    $rules = @(
+        @{
+            Name = "NvdaFailure"
+            Pattern = "\[NVDA\].*(failed|unable|disable|not running|returned code|error)"
+            Severity = "Error"
+            Description = "NVDA reported a failure or was disabled."
+        },
+        @{
+            Name = "MenuNarrationGap"
+            Pattern = "\[MenuNarration\].*(Missing|missing|returned empty)"
+            Severity = "Warning"
+            Description = "Menu narration reported a missing label or empty menu list."
+        },
+        @{
+            Name = "SpeechSuppressed"
+            Pattern = "\[Diagnostics\]\[Speech\].*suppressed"
+            Severity = "Warning"
+            Description = "Speech requests were suppressed."
+        }
+    )
+
+    $issues = New-Object System.Collections.Generic.List[psobject]
+    $logLines = Get-Content -Path $LogPath -ErrorAction Stop
+
+    foreach ($rule in $rules) {
+        $matches = $logLines | Select-String -Pattern $rule.Pattern -CaseSensitive:$false
+        foreach ($match in $matches) {
+            $issues.Add([PSCustomObject]@{
+                Rule = $rule.Name
+                Severity = $rule.Severity
+                Description = $rule.Description
+                Line = $match.Line.Trim()
+            })
+        }
+    }
+
+    if ($issues.Count -eq 0) {
+        $lastWrite = (Get-Item $LogPath).LastWriteTime
+        Write-Success "Narration lint passed. No NVDA failures or menu narration gaps found in $(Split-Path $LogPath -Leaf) (updated $lastWrite)."
+        return
+    }
+
+    $errors = @($issues | Where-Object { $_.Severity -eq "Error" })
+    $warnings = @($issues | Where-Object { $_.Severity -eq "Warning" })
+
+    foreach ($issue in $issues) {
+        if ($issue.Severity -eq "Error") {
+            Write-Failure "$($issue.Rule): $($issue.Description) -> $($issue.Line)"
+        } else {
+            Write-Info "WARN [$($issue.Rule)]: $($issue.Description) -> $($issue.Line)"
+        }
+    }
+
+    if ($errors.Count -gt 0) {
+        throw "Narration lint detected $($errors.Count) error(s) and $($warnings.Count) warning(s). See $LogPath."
+    }
+
+    Write-Info "Narration lint completed with $($warnings.Count) warning(s); see $LogPath for details."
+}
+
 $scriptRoot = Split-Path -Parent $MyInvocation.MyCommand.Path
 $repoRoot = (Resolve-Path (Join-Path $scriptRoot "..")).Path
 $modSourcePath = (Resolve-Path (Join-Path $repoRoot "Mods\ScreenReaderMod")).Path
@@ -159,4 +278,15 @@ if (-not $SkipDeploy) {
     Write-Success "Build artifact copied to repo Mods directory and ModSources mirrored."
 } else {
     Write-Info "SkipDeploy flag specified; skipping artifact copy and ModSources sync."
+}
+
+if ($NarrationLint) {
+    try {
+        $logPath = Resolve-ClientLogPath -TmlPath $tmlPath -OverridePath $ClientLogPath
+        Invoke-NarrationLint -LogPath $logPath
+    }
+    catch {
+        Write-Failure $_
+        exit 1
+    }
 }

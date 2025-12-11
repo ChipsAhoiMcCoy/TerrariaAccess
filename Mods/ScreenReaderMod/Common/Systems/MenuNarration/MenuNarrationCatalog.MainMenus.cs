@@ -69,20 +69,7 @@ internal static partial class MenuNarrationCatalog
 
     private static string DescribeSettingsMenu(int index)
     {
-        string[] entries =
-        {
-            TextSanitizer.Clean(Lang.menu[114].Value),
-            TextSanitizer.Clean(Lang.menu[210].Value),
-            TextSanitizer.Clean(Lang.menu[63].Value),
-            TextSanitizer.Clean(Lang.menu[65].Value),
-            TextSanitizer.Clean(Lang.menu[218].Value),
-            TextSanitizer.Clean(Lang.menu[219].Value),
-            TextSanitizer.Clean(Lang.menu[103].Value),
-            TextSanitizer.Clean(Language.GetTextValue("tModLoader.tModLoaderSettings")),
-            TextSanitizer.Clean(Lang.menu[5].Value),
-        };
-
-        return OptionOrEmpty(entries, index);
+        return TryDescribeFromTable(11, index, out string label) ? label : string.Empty;
     }
 
     private static string DescribePlayerDeletionConfirmation(int index)

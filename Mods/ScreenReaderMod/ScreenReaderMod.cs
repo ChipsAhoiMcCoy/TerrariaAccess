@@ -1,4 +1,5 @@
 #nullable enable
+using System.IO;
 using ScreenReaderMod.Common.Services;
 using ScreenReaderMod.Common.Systems;
 using ScreenReaderMod.Common.Systems.BuildMode;
@@ -20,6 +21,7 @@ public class ScreenReaderMod : Mod
         GuidanceKeybinds.EnsureInitialized(this);
         ControllerParityKeybinds.EnsureInitialized(this);
         SpeechInterruptKeybinds.EnsureInitialized(this);
+        StatusCheckKeybinds.EnsureInitialized(this);
         BuildModeKeybinds.EnsureInitialized(this);
     }
 
@@ -27,10 +29,16 @@ public class ScreenReaderMod : Mod
     {
         ControllerParityKeybinds.Unload();
         BuildModeKeybinds.Unload();
+        StatusCheckKeybinds.Unload();
         SpeechInterruptKeybinds.Unload();
         GuidanceKeybinds.Unload();
         WorldAnnouncementService.Unload();
         ScreenReaderService.Unload();
         Instance = null;
+    }
+
+    public override void HandlePacket(BinaryReader reader, int whoAmI)
+    {
+        GuidanceSystem.HandlePacket(reader, whoAmI);
     }
 }

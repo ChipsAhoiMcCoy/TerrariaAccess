@@ -9,7 +9,9 @@ namespace ScreenReaderMod.Common.Systems;
 /// </summary>
 internal static class ExplorationTargetRegistry
 {
-    internal readonly record struct ExplorationTarget(string Label, Vector2 WorldPosition, float DistanceTiles);
+    internal readonly record struct ExplorationTargetKey(int SourceId, int LocalId);
+
+    internal readonly record struct ExplorationTarget(ExplorationTargetKey Key, string Label, Vector2 WorldPosition, float DistanceTiles);
 
     private static readonly List<ExplorationTarget> Targets = new();
     private static ExplorationTarget? _selectedTarget;

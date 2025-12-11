@@ -39,6 +39,7 @@ public sealed partial class InGameNarrationSystem
         private int _lastPrefix = -1;
         private int _lastStack = -1;
         private static string? _pendingAnnouncement;
+        private static string? _pendingAnnouncementKey;
         private static int _pendingAnnouncementTicks;
         private const int PendingAnnouncementTimeoutTicks = 1;
         private static bool _externalSuppressed;
@@ -70,15 +71,17 @@ public sealed partial class InGameNarrationSystem
             _lastStack = held.stack;
 
             string description = DescribeHeldItem(selectedSlot, held);
+            string key = BuildHotbarKey(selectedSlot, held);
             if (!string.IsNullOrWhiteSpace(description))
             {
                 bool smartCursorActive = Main.SmartCursorIsUsed || Main.SmartCursorWanted;
                 if (smartCursorActive)
                 {
-                    QueuePendingAnnouncement(description);
+                    QueuePendingAnnouncement(description, key);
                 }
                 else
                 {
+                    NarrationInstrumentationContext.SetPendingKey(key);
                     ScreenReaderService.Announce(description);
                 }
             }
@@ -122,7 +125,7 @@ public sealed partial class InGameNarrationSystem
                 return $"Empty, slot {slot + 1}";
             }
 
-            string label = ComposeItemLabel(item);
+            string label = NarrationTextFormatter.ComposeItemLabel(item);
             return $"{label}, slot {slot + 1}";
         }
 
@@ -137,34 +140,38 @@ public sealed partial class InGameNarrationSystem
 
             if (_pendingAnnouncementTicks == 0 && _pendingAnnouncement is not null)
             {
+                NarrationInstrumentationContext.SetPendingKey(_pendingAnnouncementKey);
                 ScreenReaderService.Announce(_pendingAnnouncement, force: true);
-                _pendingAnnouncement = null;
+                ClearPendingAnnouncement();
             }
         }
 
-        private static void QueuePendingAnnouncement(string description)
+        private static void QueuePendingAnnouncement(string description, string key)
         {
             _pendingAnnouncement = description;
+            _pendingAnnouncementKey = key;
             _pendingAnnouncementTicks = PendingAnnouncementTimeoutTicks;
         }
 
         private static void ClearPendingAnnouncement()
         {
             _pendingAnnouncement = null;
+            _pendingAnnouncementKey = null;
             _pendingAnnouncementTicks = 0;
         }
 
-        internal static bool TryDequeuePendingAnnouncement(out string announcement)
+        internal static bool TryDequeuePendingAnnouncement(out string announcement, out string? key)
         {
             if (_pendingAnnouncement is null)
             {
                 announcement = string.Empty;
+                key = null;
                 return false;
             }
 
             announcement = _pendingAnnouncement;
-            _pendingAnnouncement = null;
-            _pendingAnnouncementTicks = 0;
+            key = _pendingAnnouncementKey;
+            ClearPendingAnnouncement();
             return true;
         }
 
@@ -175,6 +182,11 @@ public sealed partial class InGameNarrationSystem
             {
                 ClearPendingAnnouncement();
             }
+        }
+
+        private static string BuildHotbarKey(int slot, Item item)
+        {
+            return $"hotbar:{slot + 1}:{item.type}:{item.prefix}:{item.stack}:{(item.favorited ? 1 : 0)}";
         }
     }
 }

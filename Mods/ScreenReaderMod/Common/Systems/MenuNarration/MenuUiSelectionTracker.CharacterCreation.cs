@@ -155,6 +155,16 @@ internal sealed partial class MenuUiSelectionTracker
         return string.Empty;
     }
 
+    private static bool IsCharacterCreationElement(UIElement element)
+    {
+        if (UiCharacterCreationType is null)
+        {
+            return false;
+        }
+
+        return FindAncestor(element, static type => UiCharacterCreationType.IsAssignableFrom(type)) is not null;
+    }
+
     private static string DescribeCharacterCreationImageButton(UIElement root, UIElement element)
     {
         if (CharacterCreationColorPickersField?.GetValue(root) is Array pickerArray)

@@ -25,8 +25,7 @@ internal sealed class MenuNarrationState
     internal float LastAmbientVolume = -1f;
     internal float LastZoom = -1f;
     internal float LastInterfaceScale = -1f;
-    internal int LastSpecialFeature = -1;
-    internal int LastParallax = -1;
+    internal float LastParallax = -1f;
     internal int LastCategoryId = -1;
 
     internal void ResetForMode(int mode)
@@ -63,8 +62,7 @@ internal sealed class MenuNarrationState
         LastAmbientVolume = -1f;
         LastZoom = -1f;
         LastInterfaceScale = -1f;
-        LastSpecialFeature = -1;
-        LastParallax = -1;
+        LastParallax = -1f;
         LastCategoryId = -1;
     }
 }
@@ -77,4 +75,5 @@ internal enum MenuSliderKind
     Ambient = 3,
     Zoom = 4,
     InterfaceScale = 5,
+    Parallax = 6,
 }

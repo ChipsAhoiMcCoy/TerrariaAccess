@@ -8,20 +8,28 @@ using Terraria.ID;
 using Terraria.Localization;
 using Terraria.ModLoader;
 using Terraria.UI;
+using Terraria.GameContent.UI.States;
+using Terraria.GameContent.UI.Elements;
 using ScreenReaderMod.Common.Utilities;
 
 namespace ScreenReaderMod.Common.Systems;
 
 internal static partial class MenuNarrationCatalog
 {
+    private static readonly Dictionary<int, MenuOption[]> MenuOptionTables = BuildMenuOptionTables();
+
     private static readonly Dictionary<int, string> MenuModeNames = new()
     {
         [0] = "Main menu",
         [1] = "Player selection",
         [2] = "Player selection",
+        [10] = "World loading",
         [11] = "Settings",
-        [12] = "Join by IP",
-        [14] = "Settings",
+        [14] = "Server status",
+        [12] = "Multiplayer",
+        [MenuID.ServerIP] = "Server address",
+        [MenuID.ServerPort] = "Server port",
+        [MenuID.ServerPasswordRequested] = "Server password",
         [17] = "Controls",
         [18] = "Credits",
         [26] = "Audio settings",
@@ -37,10 +45,10 @@ internal static partial class MenuNarrationCatalog
 
     private static readonly Dictionary<int, Func<int, string>> ModeResolvers = new()
     {
+        [888] = DescribeMainMenuItem,
         [MenuID.Title] = DescribeMainMenuItem,
         [MenuID.CharacterDeletion] = DescribePlayerDeletionConfirmation,
         [MenuID.CharacterDeletionConfirmation] = DescribePlayerDeletionConfirmation,
-        [11] = DescribeSettingsMenu,
         [26] = DescribeSettingsAudioMenu,
         [112] = DescribeSettingsGeneralMenu,
         [1112] = DescribeSettingsInterfaceMenu,
@@ -50,10 +58,15 @@ internal static partial class MenuNarrationCatalog
         [1125] = DescribeSettingsCursorMenu,
         [1127] = DescribeSettingsGameplayMenu,
         [12] = DescribeMultiplayerMenu,
+        [14] = DescribeConnectionStatusMenu,
+        [MenuID.ServerIP] = DescribeServerIpMenu,
+        [MenuID.ServerPort] = DescribeServerPortMenu,
+        [MenuID.ServerPasswordRequested] = DescribeServerPasswordMenu,
         [MenuID.WorldDeletionConfirmation] = DescribeWorldDeletionConfirmation,
         [1212] = static index => DescribeLanguageMenu(index, includeBackOption: false),
         [1213] = static index => DescribeLanguageMenu(index, includeBackOption: true),
         [889] = DescribeHostAndPlayServerMenu,
+        [10] = DescribeConnectionStatusMenu,
         [10017] = DescribeTmlSettingsMenu,
     };
 
@@ -109,6 +122,11 @@ internal static partial class MenuNarrationCatalog
             return false;
         }
 
+        if (uiState is UIVirtualKeyboard keyboard && TryDescribeVirtualKeyboard(keyboard, out label))
+        {
+            return true;
+        }
+
         string typeName = uiState.GetType().FullName ?? string.Empty;
         if (typeName.Contains("UICharacterSelect", StringComparison.Ordinal))
         {
@@ -138,11 +156,40 @@ internal static partial class MenuNarrationCatalog
         return false;
     }
 
+    private static bool TryDescribeVirtualKeyboard(UIVirtualKeyboard keyboard, out string label)
+    {
+        label = string.Empty;
+        try
+        {
+            FieldInfo? field = typeof(UIVirtualKeyboard).GetField("_labelText", BindingFlags.NonPublic | BindingFlags.Instance);
+            if (field?.GetValue(keyboard) is UITextPanel<string> panel)
+            {
+                string text = panel.Text?.Trim() ?? string.Empty;
+                if (!string.IsNullOrWhiteSpace(text))
+                {
+                    label = TextSanitizer.Clean(text);
+                    return true;
+                }
+            }
+        }
+        catch
+        {
+            // ignore reflection failures
+        }
+
+        return false;
+    }
+
     public static string DescribeMenuItem(int menuMode, int focusedIndex)
     {
         if (focusedIndex < 0)
         {
             return string.Empty;
+        }
+
+        if (TryDescribeFromTable(menuMode, focusedIndex, out string tableLabel))
+        {
+            return tableLabel;
         }
 
         if (ModeResolvers.TryGetValue(menuMode, out Func<int, string>? resolver))
@@ -155,7 +202,8 @@ internal static partial class MenuNarrationCatalog
         }
 
         string[] items = GetMenuItemArray();
-        bool withinMenuItems = items.Length > 0 && focusedIndex < items.Length;
+        bool hasMenuItems = items.Length > 0;
+        bool withinMenuItems = hasMenuItems && focusedIndex < items.Length;
         if (withinMenuItems)
         {
             string option = items[focusedIndex];
@@ -170,6 +218,11 @@ internal static partial class MenuNarrationCatalog
             }
         }
 
+        if (!hasMenuItems && ShouldDeferLangMenuFallback(menuMode))
+        {
+            return string.Empty;
+        }
+
         string label = TryGetFromLangMenu(focusedIndex);
         if (!string.IsNullOrEmpty(label))
         {
@@ -177,6 +230,28 @@ internal static partial class MenuNarrationCatalog
         }
 
         return $"Option {focusedIndex + 1}";
+    }
+
+    private static bool TryDescribeFromTable(int menuMode, int focusedIndex, out string label)
+    {
+        label = string.Empty;
+
+        if (!MenuOptionTables.TryGetValue(menuMode, out MenuOption[]? options) ||
+            options is null ||
+            focusedIndex < 0 ||
+            focusedIndex >= options.Length)
+        {
+            return false;
+        }
+
+        string resolved = TextSanitizer.Clean(options[focusedIndex].Resolve());
+        if (string.IsNullOrWhiteSpace(resolved) && !options[focusedIndex].AllowEmpty)
+        {
+            return false;
+        }
+
+        label = resolved;
+        return !string.IsNullOrWhiteSpace(label);
     }
 
     private static bool TryReadStatic<T>(Lazy<FieldInfo?> fieldHandle, out T value) where T : struct
@@ -206,6 +281,12 @@ internal static partial class MenuNarrationCatalog
     private static int ReadInt(Lazy<FieldInfo?> fieldHandle, int fallback)
     {
         return TryReadStatic(fieldHandle, out int value) ? value : fallback;
+    }
+
+    private static bool ShouldDeferLangMenuFallback(int menuMode)
+    {
+        // Some modes intentionally expose no menuItems (e.g., world loading screen = 10); skip Lang.menu fallback there.
+        return menuMode is 1 or 2 or 10 or 14 or 888;
     }
 
     private static string TryGetFromLangMenu(int focusedIndex)
@@ -345,5 +426,55 @@ internal static partial class MenuNarrationCatalog
         return (uint)index < (uint)entries.Count ? entries[index] : string.Empty;
     }
 
+    private static Dictionary<int, MenuOption[]> BuildMenuOptionTables()
+    {
+        return new Dictionary<int, MenuOption[]>
+        {
+            [11] = new[]
+            {
+                MenuOption.FromLangMenu(114),
+                MenuOption.FromLangMenu(210),
+                MenuOption.FromLangMenu(63),
+                MenuOption.FromLangMenu(65),
+                MenuOption.FromLangMenu(218),
+                MenuOption.FromLangMenu(219),
+                MenuOption.FromLangMenu(103),
+                MenuOption.FromLocalizationKey("tModLoader.tModLoaderSettings"),
+                MenuOption.FromLangMenu(5),
+            },
+        };
+    }
 
+    private readonly record struct MenuOption(Func<string> Resolver, bool AllowEmpty = false)
+    {
+        public string Resolve()
+        {
+            try
+            {
+                return Resolver();
+            }
+            catch
+            {
+                return string.Empty;
+            }
+        }
+
+        public static MenuOption FromLangMenu(int index, bool allowEmpty = false)
+        {
+            return new MenuOption(() =>
+            {
+                if (index < 0 || index >= Lang.menu.Length)
+                {
+                    return string.Empty;
+                }
+
+                return Lang.menu[index].Value;
+            }, allowEmpty);
+        }
+
+        public static MenuOption FromLocalizationKey(string key, bool allowEmpty = false)
+        {
+            return new MenuOption(() => Language.GetTextValue(key), allowEmpty);
+        }
+    }
 }

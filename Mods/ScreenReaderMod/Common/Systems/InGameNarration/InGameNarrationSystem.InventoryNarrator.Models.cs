@@ -1,5 +1,6 @@
 #nullable enable
 using System;
+using System.Globalization;
 using Terraria;
 
 namespace ScreenReaderMod.Common.Systems;
@@ -125,18 +126,28 @@ public sealed partial class InGameNarrationSystem
 
         private sealed class NarrationHistory
         {
-            private readonly NarrationCue?[] _lastCues = new NarrationCue?[(int)NarrationKind.Count];
+            private readonly HistoryEntry?[] _lastCues = new HistoryEntry?[(int)NarrationKind.Count];
 
             public bool TryStore(in NarrationCue cue)
             {
+                if (NarrationHistorySettings.IsDisabled)
+                {
+                    _lastCues[(int)cue.Kind] = new HistoryEntry(cue, Main.GameUpdateCount);
+                    return true;
+                }
+
                 int index = (int)cue.Kind;
-                NarrationCue? previous = _lastCues[index];
-                if (previous.HasValue && previous.Value.Equals(cue))
+                HistoryEntry? previous = _lastCues[index];
+                uint now = Main.GameUpdateCount;
+
+                if (previous.HasValue &&
+                    previous.Value.Cue.Equals(cue) &&
+                    !NarrationHistorySettings.HasExpired(previous.Value.Frame, now))
                 {
                     return false;
                 }
 
-                _lastCues[index] = cue;
+                _lastCues[index] = new HistoryEntry(cue, now);
                 return true;
             }
 
@@ -147,12 +158,63 @@ public sealed partial class InGameNarrationSystem
 
             public void ResetAll()
             {
-                for (int i = 0; i < _lastCues.Length; i++)
-                {
-                    _lastCues[i] = null;
-                }
+                Array.Clear(_lastCues, 0, _lastCues.Length);
             }
         }
+
+        private static class NarrationHistorySettings
+        {
+            private const string DisabledEnvVar = "SRM_NARRATION_HISTORY_DISABLED";
+            private const string MaxAgeEnvVar = "SRM_NARRATION_HISTORY_MAX_AGE";
+
+            public static readonly bool IsDisabled = ParseBool(DisabledEnvVar);
+            public static readonly uint MaxAgeFrames = ParseUInt(MaxAgeEnvVar);
+
+            public static bool HasExpired(uint storedFrame, uint currentFrame)
+            {
+                if (MaxAgeFrames == 0)
+                {
+                    return false;
+                }
+
+                uint age = currentFrame >= storedFrame
+                    ? currentFrame - storedFrame
+                    : uint.MaxValue - storedFrame + currentFrame + 1;
+
+                return age >= MaxAgeFrames;
+            }
+
+            private static bool ParseBool(string envVar)
+            {
+                string? value = Environment.GetEnvironmentVariable(envVar);
+                if (string.IsNullOrWhiteSpace(value))
+                {
+                    return false;
+                }
+
+                return value.Equals("1", StringComparison.OrdinalIgnoreCase) ||
+                       value.Equals("true", StringComparison.OrdinalIgnoreCase) ||
+                       value.Equals("yes", StringComparison.OrdinalIgnoreCase);
+            }
+
+            private static uint ParseUInt(string envVar)
+            {
+                string? value = Environment.GetEnvironmentVariable(envVar);
+                if (string.IsNullOrWhiteSpace(value))
+                {
+                    return 0;
+                }
+
+                if (uint.TryParse(value.Trim(), NumberStyles.Integer, CultureInfo.InvariantCulture, out uint parsed))
+                {
+                    return parsed;
+                }
+
+                return 0;
+            }
+        }
+
+        private readonly record struct HistoryEntry(NarrationCue Cue, uint Frame);
 
         private readonly record struct HoverTarget(
             Item Item,

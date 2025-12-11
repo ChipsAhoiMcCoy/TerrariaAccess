@@ -11,7 +11,8 @@ public sealed partial class InGameNarrationSystem
 {
     private sealed class BiomeAnnouncementEmitter
     {
-        private const int StableFramesRequired = 30;
+        // Require fewer stable frames so biome announcements fire faster while still debouncing edge tiles.
+        private const int StableFramesRequired = 1;
 
         private readonly BiomeDefinition[] _orderedBiomes =
         {
@@ -111,7 +112,7 @@ public sealed partial class InGameNarrationSystem
                 "Entered {0}.");
 
             string message = string.Format(CultureInfo.CurrentCulture, template, name);
-            WorldAnnouncementService.Announce(message, force: true);
+            WorldAnnouncementService.Announce(message);
         }
 
         private sealed record BiomeDefinition(string Key, string FallbackName, Func<Player, bool> Predicate);

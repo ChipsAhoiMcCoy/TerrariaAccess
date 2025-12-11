@@ -14,10 +14,10 @@ public sealed partial class InGameNarrationSystem
         private const int SampleRate = 44100;
         private const float DurationSeconds = 0.08f;
 
-        private static readonly Dictionary<int, SoundEffect?> ToneCache = new();
+        private static readonly Dictionary<(int CacheKey, bool Triangle), SoundEffect?> ToneCache = new();
         private static readonly List<SoundEffectInstance> ActiveInstances = new();
 
-        public static void Play(float frequencyHz, float volume, float pan = 0f)
+        public static void Play(float frequencyHz, float volume, bool useTriangleWave = false, float pan = 0f)
         {
             if (frequencyHz <= 0f || volume <= 0f || Main.soundVolume <= 0f)
             {
@@ -26,10 +26,10 @@ public sealed partial class InGameNarrationSystem
 
             CleanupFinishedInstances();
 
-            SoundEffect tone = EnsureTone(frequencyHz);
+            SoundEffect tone = EnsureTone(frequencyHz, useTriangleWave);
             SoundEffectInstance instance = tone.CreateInstance();
             instance.IsLooped = false;
-            instance.Volume = MathHelper.Clamp(volume, 0f, 1f) * Main.soundVolume;
+            instance.Volume = MathHelper.Clamp(volume, 0f, 1f) * Main.soundVolume * AudioVolumeDefaults.WorldCueVolumeScale;
             instance.Pan = MathHelper.Clamp(pan, -1f, 1f);
             instance.Play();
             ActiveInstances.Add(instance);
@@ -53,7 +53,7 @@ public sealed partial class InGameNarrationSystem
 
             ActiveInstances.Clear();
 
-            foreach (KeyValuePair<int, SoundEffect?> kvp in ToneCache)
+            foreach (KeyValuePair<(int CacheKey, bool Triangle), SoundEffect?> kvp in ToneCache)
             {
                 kvp.Value?.Dispose();
             }
@@ -61,21 +61,61 @@ public sealed partial class InGameNarrationSystem
             ToneCache.Clear();
         }
 
-        private static SoundEffect EnsureTone(float frequencyHz)
+        private static SoundEffect EnsureTone(float frequencyHz, bool useTriangleWave)
         {
             int cacheKey = Math.Clamp((int)MathF.Round(frequencyHz), 50, 2000);
-            if (ToneCache.TryGetValue(cacheKey, out SoundEffect? cached) && cached is { IsDisposed: false })
+            var key = (cacheKey, useTriangleWave);
+            if (ToneCache.TryGetValue(key, out SoundEffect? cached) && cached is { IsDisposed: false })
             {
                 return cached;
             }
 
             cached?.Dispose();
-            SoundEffect created = CreateTone(MathF.Max(40f, frequencyHz));
-            ToneCache[cacheKey] = created;
+            SoundEffect created = CreateTone(MathF.Max(40f, frequencyHz), useTriangleWave);
+            ToneCache[key] = created;
             return created;
         }
 
-        private static SoundEffect CreateTone(float frequencyHz)
+        public static SoundEffectInstance? PlayLoopingTriangle(float frequencyHz, float volume, float pan = 0f)
+        {
+            if (frequencyHz <= 0f || volume <= 0f || Main.soundVolume <= 0f)
+            {
+                return null;
+            }
+
+            CleanupFinishedInstances();
+
+            SoundEffect tone = EnsureTone(frequencyHz, useTriangleWave: true);
+            SoundEffectInstance instance = tone.CreateInstance();
+            instance.IsLooped = true;
+            instance.Volume = MathHelper.Clamp(volume, 0f, 1f) * Main.soundVolume * AudioVolumeDefaults.WorldCueVolumeScale;
+            instance.Pan = MathHelper.Clamp(pan, -1f, 1f);
+            instance.Play();
+            ActiveInstances.Add(instance);
+            return instance;
+        }
+
+        public static void StopInstance(SoundEffectInstance instance)
+        {
+            if (instance is null)
+            {
+                return;
+            }
+
+            try
+            {
+                instance.Stop();
+            }
+            catch
+            {
+                // ignore audio backend failures
+            }
+
+            instance.Dispose();
+            ActiveInstances.Remove(instance);
+        }
+
+        private static SoundEffect CreateTone(float frequencyHz, bool useTriangleWave)
         {
             int sampleCount = Math.Max(1, (int)(SampleRate * DurationSeconds));
             byte[] buffer = new byte[sampleCount * sizeof(short)];
@@ -86,7 +126,8 @@ public sealed partial class InGameNarrationSystem
                 float envelope = GetEnvelope(t);
 
                 float basePhase = MathHelper.TwoPi * frequencyHz * t;
-                float sample = MathF.Sin(basePhase) * envelope;
+                float waveform = useTriangleWave ? GetTriangleWave(basePhase) : MathF.Sin(basePhase);
+                float sample = waveform * envelope;
                 short quantized = (short)MathHelper.Clamp(sample * short.MaxValue, short.MinValue, short.MaxValue);
 
                 int index = i * 2;
@@ -108,6 +149,17 @@ public sealed partial class InGameNarrationSystem
 
             float normalized = MathHelper.Clamp((time - attack) / Math.Max(decay, 0.0001f), 0f, 1f);
             return MathF.Exp(-4.5f * normalized);
+        }
+
+        private static float GetTriangleWave(float phase)
+        {
+            float normalized = (phase / MathHelper.TwoPi) % 1f;
+            if (normalized < 0f)
+            {
+                normalized += 1f;
+            }
+
+            return 4f * MathF.Abs(normalized - 0.5f) - 1f;
         }
 
         private static void CleanupFinishedInstances()

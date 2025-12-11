@@ -6,35 +6,19 @@ namespace ScreenReaderMod.Common.Services;
 
 internal static class WorldAnnouncementService
 {
-    private static readonly TimeSpan RepeatWindow = TimeSpan.FromSeconds(2);
-    private static readonly object SyncRoot = new();
-
-    private static string? _lastMessage;
+    private static readonly TimeSpan RecentWindow = TimeSpan.FromSeconds(2);
+    private static string? _lastAnnouncement;
     private static DateTime _lastAnnouncedAt = DateTime.MinValue;
 
     public static void Initialize()
     {
-        lock (SyncRoot)
-        {
-            _lastMessage = null;
-            _lastAnnouncedAt = DateTime.MinValue;
-        }
-
-        SapiSpeechProvider.Initialize();
     }
 
     public static void Unload()
     {
-        lock (SyncRoot)
-        {
-            _lastMessage = null;
-            _lastAnnouncedAt = DateTime.MinValue;
-        }
-
-        SapiSpeechProvider.Shutdown();
     }
 
-    public static void Announce(string? message, bool force = false)
+    public static void Announce(string? message, bool force = true)
     {
         if (string.IsNullOrWhiteSpace(message))
         {
@@ -47,30 +31,38 @@ internal static class WorldAnnouncementService
             return;
         }
 
-        if (!force && !ScreenReaderService.SpeechEnabled)
+        _lastAnnouncement = sanitized;
+        _lastAnnouncedAt = DateTime.UtcNow;
+
+        ScreenReaderService.Announce(
+            sanitized,
+            force: force,
+            category: ScreenReaderService.AnnouncementCategory.World,
+            allowWhenMuted: true,
+            channel: SpeechChannel.World,
+            requestInterrupt: false);
+    }
+
+    public static bool WasRecentlyAnnounced(string? message, TimeSpan? window = null)
+    {
+        if (string.IsNullOrWhiteSpace(message))
         {
-            return;
+            return false;
         }
 
-        DateTime now = DateTime.UtcNow;
-
-        lock (SyncRoot)
+        string sanitized = TextSanitizer.Clean(message);
+        if (string.IsNullOrWhiteSpace(sanitized))
         {
-            if (!force && string.Equals(sanitized, _lastMessage, StringComparison.OrdinalIgnoreCase) && now - _lastAnnouncedAt < RepeatWindow)
-            {
-                return;
-            }
-
-            _lastMessage = sanitized;
-            _lastAnnouncedAt = now;
+            return false;
         }
 
-        if (ScreenReaderService.SpeechInterruptEnabled)
+        if (string.IsNullOrWhiteSpace(_lastAnnouncement))
         {
-            ScreenReaderService.Interrupt();
+            return false;
         }
 
-        SapiSpeechProvider.Speak(sanitized);
-        ScreenReaderMod.Instance?.Logger.Info($"[WorldNarration] {sanitized}");
+        TimeSpan threshold = window ?? RecentWindow;
+        return string.Equals(_lastAnnouncement, sanitized, StringComparison.OrdinalIgnoreCase) &&
+               DateTime.UtcNow - _lastAnnouncedAt < threshold;
     }
 }

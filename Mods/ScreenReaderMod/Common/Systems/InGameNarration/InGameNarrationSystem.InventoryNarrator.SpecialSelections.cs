@@ -34,11 +34,7 @@ public sealed partial class InGameNarrationSystem
 
             PlayTickIfNew($"special-{currentPoint}");
             _currentFocus = null;
-            _pendingFocus = null;
-            if (currentPoint >= 0)
-            {
-                LinkPointFocusCache.Remove(currentPoint);
-            }
+            _focusTracker.ClearSpecialLinkPoint(currentPoint);
 
             ResetHoverSlotsAndTooltips();
             _narrationHistory.Reset(NarrationKind.SpecialSelection);

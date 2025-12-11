@@ -34,6 +34,9 @@ public sealed partial class InGameNarrationSystem
 {
     private sealed class IngameSettingsNarrator
     {
+        private const int NoFocusAnnouncementDelayTicks = 12;
+        private const int NoFocusRepeatIntervalTicks = 90;
+
         private static readonly string[] DefaultCategoryLabels =
         {
             TextSanitizer.Clean(Lang.menu[114].Value),
@@ -130,6 +133,7 @@ public sealed partial class InGameNarrationSystem
         private static bool _loggedFieldCatalog;
 
         private int _lastLeftHover = int.MinValue;
+        private int _lastSelectedLeftIndex = int.MinValue;
         private int _lastLoggedLeftHover = int.MinValue;
         private int _lastLoggedRightHover = int.MinValue;
         private int _lastLoggedCategory = int.MinValue;
@@ -148,6 +152,7 @@ public sealed partial class InGameNarrationSystem
         private bool _forceCategoryAnnouncement;
         private string? _lastTickKey;
         private uint _lastTickFrame;
+        private int _noFocusFrameCount;
 
         public void OnMenuOpened()
         {
@@ -181,13 +186,6 @@ public sealed partial class InGameNarrationSystem
 
             if (leftHover >= 0 && leftHover != _lastLeftHover)
             {
-                string? label = GetLeftCategoryLabel(leftHover, allowMouseTextFallback: true);
-                if (!string.IsNullOrWhiteSpace(label))
-                {
-                    PlayTickIfNew($"left-{leftHover}");
-                    ScreenReaderService.Announce(label);
-                }
-
                 _lastLeftHover = leftHover;
             }
 
@@ -205,17 +203,46 @@ public sealed partial class InGameNarrationSystem
 
                 if (categoryChanged || _forceCategoryAnnouncement)
                 {
-                    PlayTickIfNew($"cat-{categoryId}");
-                    ScreenReaderService.Announce(categoryLabel);
+                    bool noOptionFocused = rightHover < 0 && rightLock < 0;
+                    if (noOptionFocused)
+                    {
+                        // Announce the category once when focus is on the left column so users hear context
+                        // before moving into the right-hand options.
+                        PlayTickIfNew($"cat-{categoryId}");
+                        ScreenReaderService.Announce(categoryLabel, force: true);
+                    }
+
                     _lastCategory = categoryId;
                     _lastCategoryLabel = categoryLabel;
                     _forceCategoryAnnouncement = false;
                 }
             }
+            _lastSelectedLeftIndex = selectedLeftIndex;
 
             if (rightHover < 0)
             {
                 rightHover = rightLock;
+            }
+
+            bool hasFocus = selectedLeftIndex >= 0 || rightHover >= 0 || rightLock >= 0;
+            if (hasFocus)
+            {
+                _noFocusFrameCount = 0;
+            }
+            else
+            {
+                _noFocusFrameCount++;
+                bool readyToAnnounce = _noFocusFrameCount == NoFocusAnnouncementDelayTicks ||
+                    (_noFocusFrameCount > NoFocusAnnouncementDelayTicks &&
+                        (_noFocusFrameCount - NoFocusAnnouncementDelayTicks) % NoFocusRepeatIntervalTicks == 0);
+
+                if (readyToAnnounce)
+                {
+                    string fallbackLabel = string.IsNullOrWhiteSpace(categoryLabel) ? "Settings" : categoryLabel;
+                    string announcement = $"{fallbackLabel} (no option selected)";
+                    PlayTickIfNew($"cat-stale-{categoryId}");
+                    ScreenReaderService.Announce(announcement, force: true);
+                }
             }
 
             bool optionIndicesChanged = rightHover != _lastRightHover || categoryId != _lastRightLock;
@@ -644,14 +671,19 @@ public sealed partial class InGameNarrationSystem
 
         private string? GetCategoryLabelById(int categoryId, int selectedLeftIndex, int leftHover)
         {
-            if (categoryId >= 0 && IngameOptionsLabelTracker.TryGetCategoryLabel(categoryId, out string label) && !string.IsNullOrWhiteSpace(label))
-            {
-                return label;
-            }
-
-            if (selectedLeftIndex >= 0 && IngameOptionsLabelTracker.TryGetLeftLabel(selectedLeftIndex, out string leftLabel) && !string.IsNullOrWhiteSpace(leftLabel))
+            // Priority: live left label -> mapped category label -> fallback tables -> left hover text
+            if (selectedLeftIndex >= 0 &&
+                IngameOptionsLabelTracker.TryGetLeftLabel(selectedLeftIndex, out string leftLabel) &&
+                !string.IsNullOrWhiteSpace(leftLabel))
             {
                 return leftLabel;
+            }
+
+            if (categoryId >= 0 &&
+                IngameOptionsLabelTracker.TryGetCategoryLabel(categoryId, out string label) &&
+                !string.IsNullOrWhiteSpace(label))
+            {
+                return label;
             }
 
             if (categoryId >= 0 &&
@@ -661,28 +693,30 @@ public sealed partial class InGameNarrationSystem
                 return fallbackLabel;
             }
 
-            if (selectedLeftIndex >= 0)
+            if (selectedLeftIndex < 0)
             {
-                bool allowMouseFallback = leftHover == selectedLeftIndex;
-                return GetLeftCategoryLabel(selectedLeftIndex, allowMouseTextFallback: allowMouseFallback);
+                return null;
             }
 
-            return null;
+            bool allowMouseFallback = leftHover == selectedLeftIndex;
+            return GetLeftCategoryLabel(selectedLeftIndex, allowMouseTextFallback: allowMouseFallback);
         }
 
         private int ResolveCategoryId(int rawCategory, int selectedLeftIndex)
         {
+            if (selectedLeftIndex >= 0 &&
+                IngameOptionsLabelTracker.TryMapLeftToCategory(selectedLeftIndex, out int mappedCategory))
+            {
+                return mappedCategory;
+            }
+
             if (rawCategory >= 0)
             {
                 return rawCategory;
             }
 
-            if (selectedLeftIndex >= 0 && IngameOptionsLabelTracker.TryMapLeftToCategory(selectedLeftIndex, out int mapped))
-            {
-                return mapped;
-            }
-
-            return rawCategory;
+            // Fall back to the left index so we still treat wrap-around as a category change.
+            return selectedLeftIndex;
         }
 
         private string? DescribeOption(int category, int option, string? categoryLabel, bool optionIndicesChanged)
@@ -920,7 +954,7 @@ public sealed partial class InGameNarrationSystem
                 return fallback;
             }
 
-            return GetDefaultSliderLabel(kind);
+            return SliderNarrationHelper.GetDefaultSliderLabel(kind);
         }
 
         private static float ReadAudioSliderPercent(MenuSliderKind kind)
@@ -950,66 +984,7 @@ public sealed partial class InGameNarrationSystem
 
         private static string BuildSliderAnnouncement(string rawLabel, MenuSliderKind kind, float percent, bool includeLabel)
         {
-            string baseLabel = ExtractBaseLabel(rawLabel, kind);
-            return includeLabel ? $"{baseLabel} {percent:0} percent" : $"{percent:0} percent";
-        }
-
-        private static string ExtractBaseLabel(string rawLabel, MenuSliderKind kind)
-        {
-            string sanitized = TextSanitizer.Clean(rawLabel);
-            if (!string.IsNullOrWhiteSpace(sanitized))
-            {
-                int percentIndex = sanitized.IndexOf('%');
-                if (percentIndex >= 0)
-                {
-                    sanitized = sanitized[..percentIndex];
-                }
-
-                int percentWord = sanitized.IndexOf("percent", StringComparison.OrdinalIgnoreCase);
-                if (percentWord >= 0)
-                {
-                    sanitized = sanitized[..percentWord];
-                }
-
-                sanitized = sanitized.Trim().TrimEnd(':').Trim();
-                sanitized = TrimTrailingNumber(sanitized);
-            }
-
-            if (!string.IsNullOrWhiteSpace(sanitized))
-            {
-                return sanitized;
-            }
-
-            return GetDefaultSliderLabel(kind);
-        }
-
-        private static string GetDefaultSliderLabel(MenuSliderKind kind)
-        {
-            return kind switch
-            {
-                MenuSliderKind.Music => "Music volume",
-                MenuSliderKind.Sound => "Sound volume",
-                MenuSliderKind.Ambient => "Ambient volume",
-                MenuSliderKind.Zoom => "Zoom",
-                MenuSliderKind.InterfaceScale => "Interface scale",
-                _ => "Volume",
-            };
-        }
-
-        private static string TrimTrailingNumber(string value)
-        {
-            int end = value.Length;
-            while (end > 0 && (char.IsWhiteSpace(value[end - 1]) || char.IsDigit(value[end - 1]) || value[end - 1] == ':' || value[end - 1] == '.'))
-            {
-                end--;
-            }
-
-            if (end < value.Length)
-            {
-                return value[..end].TrimEnd();
-            }
-
-            return value;
+            return SliderNarrationHelper.BuildSliderAnnouncement(rawLabel, kind, percent, includeLabel);
         }
 
         private static string? DescribeFallback(int category, int option, string? categoryLabel)
@@ -1235,6 +1210,7 @@ public sealed partial class InGameNarrationSystem
         private void Reset()
         {
             _lastLeftHover = int.MinValue;
+            _lastSelectedLeftIndex = int.MinValue;
             _lastLoggedLeftHover = int.MinValue;
             _lastLoggedRightHover = int.MinValue;
             _lastLoggedCategory = int.MinValue;
@@ -1253,6 +1229,7 @@ public sealed partial class InGameNarrationSystem
             _forceCategoryAnnouncement = false;
             _lastTickKey = null;
             _lastTickFrame = 0;
+            _noFocusFrameCount = 0;
         }
 
         private void PlayTickIfNew(string key)

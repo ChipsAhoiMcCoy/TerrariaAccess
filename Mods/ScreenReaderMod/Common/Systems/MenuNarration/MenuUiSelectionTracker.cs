@@ -22,6 +22,45 @@ internal sealed partial class MenuUiSelectionTracker
     private static readonly FieldInfo? LastHoverField = typeof(UserInterface).GetField("_lastElementHover", BindingFlags.NonPublic | BindingFlags.Instance);
     private static readonly Dictionary<Type, LabelAccessors> LabelAccessorCache = new();
     private const BindingFlags CharacterBindingFlags = BindingFlags.Instance | BindingFlags.Public | BindingFlags.NonPublic;
+    private static readonly List<LabelResolver> LabelResolvers = new()
+    {
+        new(
+            static element => IsCharacterCreationElement(element),
+            static element => DescribeCharacterCreationElement(element)),
+        new(
+            static element => IsWorldCreationElement(element),
+            static element => DescribeWorldCreationElement(element)),
+        new(
+            static element => HasFullName(element, "Terraria.GameContent.UI.Elements.UICharacterListItem"),
+            static element => DescribePlayerListItem(element)),
+        new(
+            static element => HasFullName(element, "Terraria.GameContent.UI.Elements.UIWorldListItem"),
+            static element => DescribeWorldListItem(element)),
+        new(
+            static element => HasFullName(element, "Terraria.GameContent.UI.Elements.UIKeybindingSimpleListItem"),
+            static element => DescribeKeybindingSimpleItem(element)),
+        new(
+            static element => HasFullName(element, "Terraria.GameContent.UI.Elements.UIKeybindingListItem"),
+            static element => DescribeKeybindingListItem(element)),
+        new(
+            static element => HasFullName(element, "Terraria.GameContent.UI.Elements.UIKeybindingSliderItem"),
+            static element => DescribeKeybindingSliderItem(element)),
+        new(
+            static element => HasFullName(element, "Terraria.GameContent.UI.Elements.UIKeybindingToggleListItem"),
+            static element => DescribeKeybindingToggleItem(element)),
+        new(
+            static element => HasFullName(element, "Terraria.GameContent.UI.Elements.UIImageButton"),
+            static element => DescribeImageButton(element)),
+        new(
+            static element => HasNamespacePrefix(element, "Terraria.ModLoader.UI.ModBrowser.UIBrowserFilterToggle"),
+            static element => DescribeBrowserFilterToggle(element)),
+        new(
+            static element => NameContains(element, "UIHoverImage", StringComparison.OrdinalIgnoreCase),
+            static element => DescribeModBrowserButton(element)),
+        new(
+            static element => HasFullName(element, "Terraria.ModLoader.UI.UICycleImage"),
+            static element => DescribeTagFilterToggle(element)),
+    };
 
     private UIElement? _lastElement;
     private string? _lastLabel;
@@ -165,94 +204,84 @@ internal sealed partial class MenuUiSelectionTracker
         return resolved;
     }
 
+    private static bool HasFullName(UIElement element, string fullName)
+    {
+        return string.Equals(element.GetType().FullName, fullName, StringComparison.Ordinal);
+    }
+
+    private static bool HasNamespacePrefix(UIElement element, string prefix)
+    {
+        string? name = element.GetType().FullName;
+        return name is not null && name.StartsWith(prefix, StringComparison.Ordinal);
+    }
+
+    private static bool NameContains(UIElement element, string substring, StringComparison comparison)
+    {
+        string? name = element.GetType().FullName;
+        return name?.IndexOf(substring, comparison) >= 0;
+    }
+
+    private static string DescribePlayerListItem(UIElement element)
+    {
+        DumpElementMetadata(element.GetType(), element);
+        if (TryGetData(element, out PlayerFileData? playerData) && playerData is not null)
+        {
+            return DescribePlayer(playerData);
+        }
+
+        return string.Empty;
+    }
+
+    private static string DescribeWorldListItem(UIElement element)
+    {
+        DumpElementMetadata(element.GetType(), element);
+        if (TryGetData(element, out WorldFileData? worldData) && worldData is not null)
+        {
+            return DescribeWorld(worldData);
+        }
+
+        return string.Empty;
+    }
+
     private static string ExtractSpecializedLabel(Type type, UIElement element)
     {
         ResetWorldCreationContextIfNeeded(element);
 
-        string characterCreationLabel = DescribeCharacterCreationElement(element);
-        if (!string.IsNullOrWhiteSpace(characterCreationLabel))
+        foreach (LabelResolver resolver in LabelResolvers)
         {
-            return characterCreationLabel;
-        }
+            if (!resolver.Matches(element))
+            {
+                continue;
+            }
 
-        string worldCreationLabel = DescribeWorldCreationElement(element);
-        if (!string.IsNullOrWhiteSpace(worldCreationLabel))
-        {
-            return worldCreationLabel;
+            string resolved = resolver.Format(element);
+            if (!string.IsNullOrWhiteSpace(resolved))
+            {
+                return resolved;
+            }
         }
 
         string? fullName = type.FullName;
-        switch (fullName)
+        if (HasNamespacePrefix(element, "Terraria.ModLoader.UI.ModBrowser.UIModDownloadItem"))
         {
-            case "Terraria.GameContent.UI.Elements.UICharacterListItem":
-                DumpElementMetadata(type, element);
-                if (TryGetData(element, out PlayerFileData? playerData) && playerData is not null)
-                {
-                    return DescribePlayer(playerData);
-                }
-                break;
-            case "Terraria.GameContent.UI.Elements.UIWorldListItem":
-                DumpElementMetadata(type, element);
-                if (TryGetData(element, out WorldFileData? worldData) && worldData is not null)
-                {
-                    return DescribeWorld(worldData);
-                }
-                break;
-            case "Terraria.GameContent.UI.Elements.UIKeybindingSimpleListItem":
-                return DescribeKeybindingSimpleItem(element);
-            case "Terraria.GameContent.UI.Elements.UIKeybindingListItem":
-                return DescribeKeybindingListItem(element);
-            case "Terraria.GameContent.UI.Elements.UIKeybindingSliderItem":
-                return DescribeKeybindingSliderItem(element);
-            case "Terraria.GameContent.UI.Elements.UIKeybindingToggleListItem":
-                return DescribeKeybindingToggleItem(element);
-            case "Terraria.GameContent.UI.Elements.UIImageButton":
-                return DescribeImageButton(element);
-            case "Terraria.ModLoader.UI.ModBrowser.UIModDownloadItem":
-                return DescribeModDownloadItem(element);
-            case string name when name.StartsWith("Terraria.ModLoader.UI.ModBrowser.UIBrowserFilterToggle", StringComparison.Ordinal):
-                return DescribeBrowserFilterToggle(element);
-            case string name when name.Contains("UIHoverImage", StringComparison.OrdinalIgnoreCase):
-                {
-                    string label = DescribeModBrowserButton(element);
-                    if (!string.IsNullOrWhiteSpace(label))
-                    {
-                        return label;
-                    }
-                    break;
-                }
-            case "Terraria.ModLoader.UI.UICycleImage":
-            {
-                string tagLabel = DescribeTagFilterToggle(element);
-                if (!string.IsNullOrWhiteSpace(tagLabel))
-                {
-                    return tagLabel;
-                }
-                break;
-            }
-            default:
-                if (fullName?.EndsWith("UICharacterListItem", StringComparison.Ordinal) == true)
-                {
-                    DumpElementMetadata(type, element);
-                    if (TryGetData(element, out PlayerFileData? fallbackPlayer) && fallbackPlayer is not null)
-                    {
-                        return DescribePlayer(fallbackPlayer);
-                    }
-                }
-                else if (fullName?.EndsWith("UIWorldListItem", StringComparison.Ordinal) == true)
-                {
-                    DumpElementMetadata(type, element);
-                    if (TryGetData(element, out WorldFileData? fallbackWorld) && fallbackWorld is not null)
-                    {
-                        return DescribeWorld(fallbackWorld);
-                    }
-                }
-                break;
+            return DescribeModDownloadItem(element);
         }
 
-        if (typeof(UIState).IsAssignableFrom(type.BaseType ?? typeof(object)))
+        if (fullName?.EndsWith("UICharacterListItem", StringComparison.Ordinal) == true)
         {
-            return string.Empty;
+            DumpElementMetadata(type, element);
+            if (TryGetData(element, out PlayerFileData? fallbackPlayer) && fallbackPlayer is not null)
+            {
+                return DescribePlayer(fallbackPlayer);
+            }
+        }
+        else if (fullName?.EndsWith("UIWorldListItem", StringComparison.Ordinal) == true)
+        {
+            DumpElementMetadata(type, element);
+            if (TryGetData(element, out WorldFileData? fallbackWorld) && fallbackWorld is not null)
+            {
+                return DescribeWorld(fallbackWorld);
+            }
         }
 
         return string.Empty;
@@ -904,6 +933,10 @@ internal sealed record LabelAccessors
 }
 
 internal readonly record struct MenuUiLabel(UIElement Element, string Text, bool IsNew);
+
+internal readonly record struct LabelResolver(
+    Func<UIElement, bool> Matches,
+    Func<UIElement, string> Format);
 
 internal static class LabelAccessorFactory
 {

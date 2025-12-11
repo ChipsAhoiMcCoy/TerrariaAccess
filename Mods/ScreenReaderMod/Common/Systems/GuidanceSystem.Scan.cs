@@ -231,27 +231,105 @@ public sealed partial class GuidanceSystem
     {
         IReadOnlyList<ExplorationTargetRegistry.ExplorationTarget> snapshot = ExplorationTargetRegistry.GetSnapshot();
         int preservedIndex = _selectedExplorationIndex;
+        ExplorationTargetRegistry.ExplorationTarget? retainedSelection = _lastExplorationSelection;
 
         NearbyExplorationTargets.Clear();
         if (snapshot.Count > 0)
         {
             NearbyExplorationTargets.AddRange(snapshot);
-            NearbyExplorationTargets.Sort(static (left, right) => left.DistanceTiles.CompareTo(right.DistanceTiles));
+            NearbyExplorationTargets.Sort(static (left, right) =>
+            {
+                int compareDistance = left.DistanceTiles.CompareTo(right.DistanceTiles);
+                if (compareDistance != 0)
+                {
+                    return compareDistance;
+                }
+
+                int compareLabel = string.Compare(
+                    SanitizeLabel(left.Label),
+                    SanitizeLabel(right.Label),
+                    StringComparison.OrdinalIgnoreCase);
+                if (compareLabel != 0)
+                {
+                    return compareLabel;
+                }
+
+                int compareX = left.WorldPosition.X.CompareTo(right.WorldPosition.X);
+                if (compareX != 0)
+                {
+                    return compareX;
+                }
+
+                return left.WorldPosition.Y.CompareTo(right.WorldPosition.Y);
+            });
         }
 
         if (NearbyExplorationTargets.Count == 0)
         {
             _selectedExplorationIndex = -1;
+            _lastExplorationSelection = null;
+            ExplorationTargetRegistry.SetSelectedTarget(null);
+            return;
+        }
+
+        if (retainedSelection.HasValue)
+        {
+            ExplorationTargetRegistry.ExplorationTarget target = retainedSelection.Value;
+            int bestMatchIndex = NearbyExplorationTargets.FindIndex(candidate => candidate.Key.Equals(target.Key));
+            float bestMatchDistance = float.MaxValue;
+            if (bestMatchIndex < 0)
+            {
+                // Prefer the closest matching entry so nearby identical labels don't collapse into the first match.
+                for (int i = 0; i < NearbyExplorationTargets.Count; i++)
+                {
+                    ExplorationTargetRegistry.ExplorationTarget candidate = NearbyExplorationTargets[i];
+                    if (!IsExplorationTargetMatch(candidate, target))
+                    {
+                        continue;
+                    }
+
+                    float distance = Vector2.Distance(candidate.WorldPosition, target.WorldPosition);
+                    if (distance < bestMatchDistance)
+                    {
+                        bestMatchDistance = distance;
+                        bestMatchIndex = i;
+                    }
+                }
+            }
+
+            if (bestMatchIndex >= 0)
+            {
+                _selectedExplorationIndex = bestMatchIndex;
+                _lastExplorationSelection = NearbyExplorationTargets[_selectedExplorationIndex];
+                ExplorationTargetRegistry.SetSelectedTarget(_lastExplorationSelection);
+                return;
+            }
+
+            _selectedExplorationIndex = -1;
+            _lastExplorationSelection = null;
+            ExplorationTargetRegistry.SetSelectedTarget(null);
             return;
         }
 
         if (preservedIndex >= 0 && preservedIndex < NearbyExplorationTargets.Count)
         {
             _selectedExplorationIndex = preservedIndex;
+            _lastExplorationSelection = NearbyExplorationTargets[_selectedExplorationIndex];
+            ExplorationTargetRegistry.SetSelectedTarget(_lastExplorationSelection);
             return;
         }
 
         _selectedExplorationIndex = Math.Clamp(_selectedExplorationIndex, -1, NearbyExplorationTargets.Count - 1);
+        if (_selectedExplorationIndex >= 0)
+        {
+            _lastExplorationSelection = NearbyExplorationTargets[_selectedExplorationIndex];
+            ExplorationTargetRegistry.SetSelectedTarget(_lastExplorationSelection);
+        }
+        else
+        {
+            _lastExplorationSelection = null;
+            ExplorationTargetRegistry.SetSelectedTarget(null);
+        }
     }
 
     private static void RefreshInteractableEntries(Player player)

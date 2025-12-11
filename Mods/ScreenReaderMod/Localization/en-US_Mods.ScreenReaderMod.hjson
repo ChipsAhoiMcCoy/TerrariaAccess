@@ -9,6 +9,13 @@ Mods: {
 			RequiresFriends: Allow friends to join before enabling this option
 		}
 
+		JoinMenu: {
+			ServerIpPrompt: Enter server IP or host name
+			ServerPortPrompt: Enter server port
+			ServerPasswordPrompt: Enter server password
+			PasswordLength: "{0} characters entered"
+		}
+
 		IngameOptions: {
 			ModConfiguration: Mod Configuration
 			CloseMenu: Close Menu
@@ -130,22 +137,29 @@ Mods: {
 			ControllerInventorySmartSelect.DisplayName: Inventory Smart Select
 			ControllerInventorySectionNext.DisplayName: Inventory Section Next
 			ControllerInventorySectionPrevious.DisplayName: Inventory Section Previous
+			StatusCheck.DisplayName: Status Checker
 		}
 	}
 }
 
 Keybinds: {
-	GuidanceCategoryNext.DisplayName: Guidance Category Next
-	GuidanceCategoryPrevious.DisplayName: Guidance Category Previous
-	GuidanceEntryNext.DisplayName: Guidance Entry Next
-	GuidanceEntryPrevious.DisplayName: Guidance Entry Previous
+	"Next Waypoint.DisplayName": Next  Waypoint
+	"Previous Waypoint.DisplayName": Previous  Waypoint
+	"Create Waypoint.DisplayName": Create  Waypoint
+	WaypointNext.DisplayName: Waypoint Next
+	WaypointPrevious.DisplayName: Waypoint Previous
 	WaypointCreate.DisplayName: Waypoint Create
 	WaypointDelete.DisplayName: Waypoint Delete
-	GuidanceTeleport.DisplayName: Guidance Teleport
+	SpeechInterrupt.DisplayName: Toggle Speech Interrupt
+	GuidanceCategoryNext.DisplayName: Next Guidance Category
+	GuidanceCategoryPrevious.DisplayName: Previous Guidance Category
+	GuidanceEntryNext.DisplayName: Next Guidance Entry
+	GuidanceEntryPrevious.DisplayName: Previous Guidance Entry
+	GuidanceTeleport.DisplayName: Teleport to Guidance Target
+	BuildModeToggle.DisplayName: Toggle Build Mode
+	BuildModePlace.DisplayName: Set Build Point
 	ControllerInventorySmartSelect.DisplayName: Controller Inventory Smart Select
 	ControllerInventorySectionNext.DisplayName: Controller Inventory Section Next
 	ControllerInventorySectionPrevious.DisplayName: Controller Inventory Section Previous
-	SpeechInterrupt.DisplayName: Speech Interrupt
-	BuildModeToggle.DisplayName: Build Mode Toggle
-	BuildModePlace.DisplayName: Build Mode Place
+	StatusCheck.DisplayName: Status Checker
 }

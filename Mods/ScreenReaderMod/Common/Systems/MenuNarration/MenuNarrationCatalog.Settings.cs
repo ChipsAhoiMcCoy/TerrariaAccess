@@ -44,6 +44,19 @@ internal static partial class MenuNarrationCatalog
             string option = menuItems[index];
             if (!string.IsNullOrWhiteSpace(option))
             {
+                string cleaned = TextSanitizer.Clean(option);
+                if (cleaned.ToLowerInvariant().Contains("volume"))
+                {
+                    LogAudioDebug($"menuItems header filtered idx={index} -> {cleaned}");
+                    return GetFallbackAudioOption(index, backLabel);
+                }
+
+                if (LooksLikeAudioHeader(cleaned))
+                {
+                    LogAudioDebug($"menuItems header filtered idx={index} -> {cleaned}");
+                    return GetFallbackAudioOption(index, backLabel);
+                }
+
                 LogAudioDebug($"menuItems label idx={index} -> {option}");
                 return NormalizeBackLabel(option, backLabel);
             }
@@ -57,6 +70,17 @@ internal static partial class MenuNarrationCatalog
 
         LogAudioDebug($"fallback idx={index}");
         return GetFallbackAudioOption(index, backLabel);
+    }
+
+    private static bool LooksLikeAudioHeader(string value)
+    {
+        if (string.IsNullOrWhiteSpace(value))
+        {
+            return false;
+        }
+
+        string lower = value.ToLowerInvariant();
+        return lower.Contains("volume") || lower.Contains("audio") || lower.Contains("sound");
     }
 
     private static string NormalizeBackLabel(string rawLabel, string backLabel)
