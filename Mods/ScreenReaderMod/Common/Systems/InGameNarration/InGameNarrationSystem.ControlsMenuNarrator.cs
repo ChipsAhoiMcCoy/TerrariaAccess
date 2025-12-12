@@ -59,6 +59,8 @@ public sealed partial class InGameNarrationSystem
             (ButtonBorderMenuField, ControlsButtonKind.Menu),
         };
 
+        private const int ControlsTabCount = 4;
+
         private UIState? _lastState;
         private string? _lastAnnouncement;
         private bool _announcedEntry;
@@ -66,12 +68,8 @@ public sealed partial class InGameNarrationSystem
 
         public void Update(bool requiresPause)
         {
-            if (!requiresPause)
-            {
-                Reset();
-                return;
-            }
-
+            // Note: requiresPause is ignored - we check if the Controls menu is open directly.
+            // This allows the Controls menu to be narrated in multiplayer where pause isn't possible.
             if (!TryGetControlsState(out UIManageControls? maybeState))
             {
                 Reset();
@@ -223,22 +221,22 @@ public sealed partial class InGameNarrationSystem
             string fallback = GetButtonFallback(kind);
             string label = LocalizationHelper.GetTextOrFallback(labelKey, fallback);
 
+            var parts = new List<string>(3);
+
             if (IsButtonSelected(state, kind))
             {
-                string suffix = LocalizationHelper.GetTextOrFallback("Mods.ScreenReaderMod.ControlsMenu.SelectedSuffix", "Selected");
-                if (!string.IsNullOrWhiteSpace(suffix))
-                {
-                    label = $"{label} ({suffix})";
-                }
+                parts.Add("Selected");
             }
+
+            parts.Add(label);
 
             int tabIndex = GetTabIndex(kind);
             if (tabIndex > 0)
             {
-                label = $"{label} (Tab {tabIndex})";
+                parts.Add($"{tabIndex} of {ControlsTabCount}");
             }
 
-            description = label;
+            description = TextSanitizer.JoinWithComma(parts.ToArray());
             return true;
         }
 

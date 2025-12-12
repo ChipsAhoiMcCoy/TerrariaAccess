@@ -49,7 +49,6 @@ public sealed class BuildModePlayer : ModPlayer
     private SelectionIterator _selectionIterator;
     private readonly List<ContextualHotkey> _hotkeys = new();
     private readonly BuildModeRangeManager _rangeManager = new();
-    private bool _suppressGrappleThisFrame;
 
     private bool BuildModeActive => _state != BuildModeState.Inactive;
     private bool HasSelection => _state == BuildModeState.Executing && _firstCorner.HasValue && _secondCorner.HasValue;
@@ -57,8 +56,6 @@ public sealed class BuildModePlayer : ModPlayer
 
     public override void ResetEffects()
     {
-        _suppressGrappleThisFrame = false;
-
         if (!BuildModeActive)
         {
             RestorePlacementRangeIfNeeded();
@@ -864,7 +861,6 @@ public sealed class BuildModePlayer : ModPlayer
         {
             PlayerInput.Triggers.Current.QuickMount = false;
             PlayerInput.Triggers.JustPressed.QuickMount = false;
-            _suppressGrappleThisFrame = true;
         }
     }
 
