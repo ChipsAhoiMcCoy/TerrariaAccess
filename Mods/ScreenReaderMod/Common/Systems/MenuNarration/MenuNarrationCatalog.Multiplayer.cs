@@ -127,32 +127,97 @@ internal static partial class MenuNarrationCatalog
 
     private static string DescribeServerIpMenu(int index)
     {
+        // Menu mode 13 has different layouts depending on input mode:
+        //
+        // Gamepad mode (ShowGamepadHints = true):
+        // Index 0: "Enter Server IP Address:" (opens virtual keyboard)
+        // Indices 1-7: Recent servers (7 entries)
+        // Index 8: "Back"
+        //
+        // Non-gamepad mode:
+        // Index 0: "Enter Server IP Address:" (disabled label)
+        // Index 1: Input field text (disabled)
+        // Indices 2-8: Recent servers (7 entries)
+        // Index 9: "Accept"
+        // Index 10: "Back"
+
+        bool gamepadMode = Terraria.GameInput.PlayerInput.SettingsForUI.ShowGamepadHints;
         string prompt = LocalizationHelper.GetTextOrFallback("Mods.ScreenReaderMod.JoinMenu.ServerIpPrompt", "Enter server IP or host name");
-        string input = TextSanitizer.Clean(Netplay.ServerIPText ?? string.Empty);
-        return index switch
+        string currentIp = TextSanitizer.Clean(Main.getIP ?? string.Empty);
+
+        if (gamepadMode)
         {
-            0 => string.IsNullOrWhiteSpace(input) ? prompt : TextSanitizer.JoinWithComma(prompt, input),
-            1 => DescribeJoinAccept(),
-            2 => DescribeJoinBack(),
-            _ => prompt,
-        };
+            return index switch
+            {
+                0 => string.IsNullOrWhiteSpace(currentIp) ? prompt : TextSanitizer.JoinWithComma(prompt, currentIp),
+                >= 1 and <= 7 => DescribeRecentServer(index - 1),
+                8 => DescribeJoinBack(),
+                _ => string.Empty,
+            };
+        }
+        else
+        {
+            return index switch
+            {
+                0 => string.IsNullOrWhiteSpace(currentIp) ? prompt : TextSanitizer.JoinWithComma(prompt, currentIp),
+                1 => string.Empty, // Input field - let game handle it
+                >= 2 and <= 8 => DescribeRecentServer(index - 2),
+                9 => DescribeJoinAccept(),
+                10 => DescribeJoinBack(),
+                _ => string.Empty,
+            };
+        }
+    }
+
+    private static string DescribeRecentServer(int recentIndex)
+    {
+        // Access Main.recentWorld, Main.recentIP, Main.recentPort arrays
+        if (recentIndex < 0 || recentIndex >= Main.recentWorld.Length)
+            return string.Empty;
+
+        string worldName = Main.recentWorld[recentIndex];
+        if (string.IsNullOrWhiteSpace(worldName))
+            return string.Empty;
+
+        string ip = Main.recentIP[recentIndex];
+        int port = Main.recentPort[recentIndex];
+
+        string serverFormat = LocalizationHelper.GetTextOrFallback(
+            "Mods.ScreenReaderMod.JoinMenu.RecentServer",
+            "Recent server: {0}, address {1}, port {2}");
+
+        return string.Format(serverFormat,
+            TextSanitizer.Clean(worldName),
+            TextSanitizer.Clean(ip),
+            port);
     }
 
     private static string DescribeServerPortMenu(int index)
     {
+        // Menu mode 131 layout (non-gamepad):
+        // Index 0: "Enter Server Port:" (disabled label)
+        // Index 1: Input field text (disabled)
+        // Index 2: "Accept"
+        // Index 3: "Back"
         string prompt = LocalizationHelper.GetTextOrFallback("Mods.ScreenReaderMod.JoinMenu.ServerPortPrompt", "Enter server port");
         string port = Netplay.ListenPort > 0 ? Netplay.ListenPort.ToString() : string.Empty;
         return index switch
         {
             0 => string.IsNullOrWhiteSpace(port) ? prompt : TextSanitizer.JoinWithComma(prompt, port),
-            1 => DescribeJoinAccept(),
-            2 => DescribeJoinBack(),
-            _ => prompt,
+            2 => DescribeJoinAccept(),
+            3 => DescribeJoinBack(),
+            // Index 1 is input field - return empty to use default game label
+            _ => string.Empty,
         };
     }
 
     private static string DescribeServerPasswordMenu(int index)
     {
+        // Menu mode 31 layout (non-gamepad):
+        // Index 0: "Server Requires Password:" (disabled label)
+        // Index 1: Input field text (disabled, masked)
+        // Index 2: "Accept"
+        // Index 3: "Back"
         string prompt = LocalizationHelper.GetTextOrFallback("Mods.ScreenReaderMod.JoinMenu.ServerPasswordPrompt", "Enter server password");
         string password = Netplay.ServerPassword ?? string.Empty;
         string lengthFormat = LocalizationHelper.GetTextOrFallback("Mods.ScreenReaderMod.JoinMenu.PasswordLength", "{0} characters entered");
@@ -161,9 +226,10 @@ internal static partial class MenuNarrationCatalog
         return index switch
         {
             0 => string.IsNullOrWhiteSpace(summary) ? prompt : TextSanitizer.JoinWithComma(prompt, summary),
-            1 => DescribeJoinAccept(),
-            2 => DescribeJoinBack(),
-            _ => prompt,
+            2 => DescribeJoinAccept(),
+            3 => DescribeJoinBack(),
+            // Index 1 is input field - return empty to use default game label
+            _ => string.Empty,
         };
     }
 
@@ -190,3 +256,4 @@ internal static partial class MenuNarrationCatalog
     }
 
 }
+

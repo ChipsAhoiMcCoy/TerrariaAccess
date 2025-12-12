@@ -286,7 +286,10 @@ internal static partial class MenuNarrationCatalog
     private static bool ShouldDeferLangMenuFallback(int menuMode)
     {
         // Some modes intentionally expose no menuItems (e.g., world loading screen = 10); skip Lang.menu fallback there.
-        return menuMode is 1 or 2 or 10 or 14 or 888;
+        return menuMode is 1 or 2 or 10 or 14 or 888
+            or MenuID.ServerIP      // 13
+            or MenuID.ServerPort    // 131
+            or MenuID.ServerPasswordRequested;  // 31
     }
 
     private static string TryGetFromLangMenu(int focusedIndex)
