@@ -49,6 +49,7 @@ public sealed class BuildModePlayer : ModPlayer
     private SelectionIterator _selectionIterator;
     private readonly List<ContextualHotkey> _hotkeys = new();
     private readonly BuildModeRangeManager _rangeManager = new();
+    private bool _suppressGrappleThisFrame;
 
     private bool BuildModeActive => _state != BuildModeState.Inactive;
     private bool HasSelection => _state == BuildModeState.Executing && _firstCorner.HasValue && _secondCorner.HasValue;
@@ -56,6 +57,8 @@ public sealed class BuildModePlayer : ModPlayer
 
     public override void ResetEffects()
     {
+        _suppressGrappleThisFrame = false;
+
         if (!BuildModeActive)
         {
             RestorePlacementRangeIfNeeded();
@@ -74,6 +77,7 @@ public sealed class BuildModePlayer : ModPlayer
         }
 
         EnsurePlacementRangeExpanded();
+        SuppressGrappleAndMountControls();
         GuardBuildModeInput();
     }
 
@@ -847,10 +851,42 @@ public sealed class BuildModePlayer : ModPlayer
         SuppressVanillaUseWhileActing();
     }
 
+    private void SuppressGrappleAndMountControls()
+    {
+        // Suppress grappling hook and mount controls while build mode is active.
+        // This prevents the A button (QuickMount) from triggering grapple teleportation
+        // or mount activation when the user intends to set build mode points.
+        Player.controlHook = false;
+        Player.controlMount = false;
+
+        // Also suppress via triggers to catch any remaining paths
+        if (PlayerInput.Triggers.Current.QuickMount)
+        {
+            PlayerInput.Triggers.Current.QuickMount = false;
+            PlayerInput.Triggers.JustPressed.QuickMount = false;
+            _suppressGrappleThisFrame = true;
+        }
+    }
+
     private static bool IsGamepadDpadPressed()
     {
         try
         {
+            TriggersSet triggers = PlayerInput.Triggers.Current;
+            if (triggers?.KeyStatus is Dictionary<string, bool> keyStatus &&
+                (keyStatus.TryGetValue("DpadUp", out bool up) && up ||
+                 keyStatus.TryGetValue("DpadDown", out bool down) && down ||
+                 keyStatus.TryGetValue("DpadLeft", out bool left) && left ||
+                 keyStatus.TryGetValue("DpadRight", out bool right) && right))
+            {
+                return true;
+            }
+
+            if (!PlayerInput.UsingGamepad)
+            {
+                return false;
+            }
+
             GamePadState state = GamePad.GetState(PlayerIndex.One);
             if (!state.IsConnected)
             {
