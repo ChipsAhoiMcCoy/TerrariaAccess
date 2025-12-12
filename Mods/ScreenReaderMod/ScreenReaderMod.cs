@@ -1,9 +1,10 @@
 #nullable enable
 using System.IO;
 using ScreenReaderMod.Common.Services;
-using ScreenReaderMod.Common.Systems.Guidance;
-using ScreenReaderMod.Common.Systems.BuildMode;
 using ScreenReaderMod.Common.Systems;
+using ScreenReaderMod.Common.Systems.BuildMode;
+using ScreenReaderMod.Common.Systems.Guidance;
+using ScreenReaderMod.Common.Systems.KeyboardParity;
 using Terraria.ModLoader;
 
 namespace ScreenReaderMod;
@@ -18,13 +19,17 @@ public class ScreenReaderMod : Mod
         ScreenReaderService.Initialize();
         WorldAnnouncementService.Initialize();
         GuidanceKeybinds.EnsureInitialized(this);
+        ControllerParityKeybinds.EnsureInitialized(this);
         SpeechInterruptKeybinds.EnsureInitialized(this);
         StatusCheckKeybinds.EnsureInitialized(this);
         BuildModeKeybinds.EnsureInitialized(this);
+        KeyboardCursorNudgeKeybinds.EnsureInitialized(this);
     }
 
     public override void Unload()
     {
+        KeyboardCursorNudgeKeybinds.Unload();
+        ControllerParityKeybinds.Unload();
         BuildModeKeybinds.Unload();
         StatusCheckKeybinds.Unload();
         SpeechInterruptKeybinds.Unload();
