@@ -261,7 +261,6 @@ public sealed partial class InGameNarrationSystem : ModSystem
             _settingsControlsNarrationService,
             new NarrationServiceGating
             {
-                RequiresPaused = true,
                 Category = ScreenReaderService.AnnouncementCategory.Default,
             }));
         _narrationScheduler.Register(new NarrationServiceRegistration(
@@ -1200,3 +1199,4 @@ public sealed partial class InGameNarrationSystem : ModSystem
         InventoryNarrator.RecordMouseTextSnapshot(string.IsNullOrWhiteSpace(cursorText) ? buffTooltip : cursorText);
     }
 }
+

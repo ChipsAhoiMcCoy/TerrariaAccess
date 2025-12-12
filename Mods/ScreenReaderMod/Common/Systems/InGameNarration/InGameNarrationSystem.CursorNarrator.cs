@@ -490,6 +490,21 @@ public sealed partial class InGameNarrationSystem
 
             try
             {
+                TriggersSet triggers = PlayerInput.Triggers.Current;
+                if (triggers?.KeyStatus is Dictionary<string, bool> keyStatus &&
+                    (keyStatus.TryGetValue("DpadUp", out bool up) && up ||
+                     keyStatus.TryGetValue("DpadDown", out bool down) && down ||
+                     keyStatus.TryGetValue("DpadLeft", out bool left) && left ||
+                     keyStatus.TryGetValue("DpadRight", out bool right) && right))
+                {
+                    return true;
+                }
+
+                if (!PlayerInput.UsingGamepad)
+                {
+                    return false;
+                }
+
                 GamePadState state = GamePad.GetState(PlayerIndex.One);
                 if (!state.IsConnected)
                 {
