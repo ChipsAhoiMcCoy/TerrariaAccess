@@ -93,6 +93,18 @@ The mod lives in `Mods/ScreenReaderMod/` with this structure:
 
 **Interactables:** Register sources via `WorldInteractableTracker.RegisterSource`. Use `TileInteractableDefinition` with `InteractableCueProfile` for new tile types, or subclass `WorldInteractableSource` for custom scans.
 
+## Decompiled Source References
+
+Decompiled source code for investigating Terraria and tModLoader internals:
+
+- **tModLoader:** `C:\Program Files (x86)\Steam\steamapps\common\tModLoader\TModLoaderDecompiled\`
+- **Terraria (vanilla):** `C:\Program Files (x86)\Steam\steamapps\common\Terraria\Decompilations\Terraria-2025-11-17\`
+
+To re-decompile tModLoader after an update:
+```bash
+pwsh -NoProfile -ExecutionPolicy Bypass -File Tools/decompile-tmodloader.ps1
+```
+
 ## Key Files
 
 - `ScreenReaderMod.cs` - mod entry point
