@@ -23,11 +23,20 @@ Mods: {
 		}
 
 		ModConfigMenu: {
-			ListIntro: Mod configuration list.
+			ListIntro: Mod configuration list. Use Up and Down to navigate mods, Enter to select.
 			SelectedMod: Selected mod: {0}
 			ConfigIntro: "{0} from {1}"
 			ConfigIntroNoMod: "{0} configuration."
 			ConfigFallback: Configuration
+			NavHint: Use Up and Down to navigate options.
+			ValueChanged: "{0}: {1}"
+			BooleanOn: On
+			BooleanOff: Off
+		}
+
+		Controls: {
+			ToggleOn: On
+			ToggleOff: Off
 		}
 
 		CursorLiquids: {

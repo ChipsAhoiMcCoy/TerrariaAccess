@@ -14,8 +14,8 @@ internal static class ScreenReaderDiagnostics
     private const string TraceEnvVariable = "SCREENREADERMOD_TRACE";
     private const string SpeechLogEnvVariable = "SCREENREADERMOD_SPEECH_LOG_ONLY";
 
-    // Default trace to on so chat debugging works without setting env vars.
-    private const bool DefaultTraceEnabled = true;
+    // Trace is opt-in to avoid bloating client.log for end users.
+    private const bool DefaultTraceEnabled = false;
     private static bool? _traceEnabled;
     private static bool? _speechLogOnlyEnabled;
     private static bool _langSnapshotPrinted;

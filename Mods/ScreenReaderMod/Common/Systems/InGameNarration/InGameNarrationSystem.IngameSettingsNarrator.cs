@@ -36,6 +36,7 @@ public sealed partial class InGameNarrationSystem
     {
         private const int NoFocusAnnouncementDelayTicks = 12;
         private const int NoFocusRepeatIntervalTicks = 90;
+        private const int MenuOpenSettleDelayTicks = 6;
 
         private static readonly string[] DefaultCategoryLabels =
         {
@@ -153,11 +154,13 @@ public sealed partial class InGameNarrationSystem
         private string? _lastTickKey;
         private uint _lastTickFrame;
         private int _noFocusFrameCount;
+        private int _menuOpenSettleFrames;
 
         public void OnMenuOpened()
         {
             Reset();
             _forceCategoryAnnouncement = true;
+            _menuOpenSettleFrames = MenuOpenSettleDelayTicks;
         }
 
         public void OnMenuClosed()
@@ -204,10 +207,10 @@ public sealed partial class InGameNarrationSystem
                 if (categoryChanged || _forceCategoryAnnouncement)
                 {
                     bool noOptionFocused = rightHover < 0 && rightLock < 0;
-                    if (noOptionFocused)
+                    // Always announce category on menu open (_forceCategoryAnnouncement),
+                    // or when navigating between categories with no option focused.
+                    if (noOptionFocused || _forceCategoryAnnouncement)
                     {
-                        // Announce the category once when focus is on the left column so users hear context
-                        // before moving into the right-hand options.
                         PlayTickIfNew($"cat-{categoryId}");
                         ScreenReaderService.Announce(categoryLabel, force: true);
                     }
@@ -218,6 +221,14 @@ public sealed partial class InGameNarrationSystem
                 }
             }
             _lastSelectedLeftIndex = selectedLeftIndex;
+
+            // Allow UI to settle after menu opens before processing option announcements.
+            // The game's focus can briefly jump to random options during the first few frames.
+            if (_menuOpenSettleFrames > 0)
+            {
+                _menuOpenSettleFrames--;
+                return;
+            }
 
             if (rightHover < 0)
             {
@@ -1230,6 +1241,7 @@ public sealed partial class InGameNarrationSystem
             _lastTickKey = null;
             _lastTickFrame = 0;
             _noFocusFrameCount = 0;
+            _menuOpenSettleFrames = 0;
         }
 
         private void PlayTickIfNew(string key)

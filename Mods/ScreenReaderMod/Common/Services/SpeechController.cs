@@ -283,10 +283,15 @@ internal sealed class SpeechController
 
     private void LogNarration(SpeechRequest request, ISpeechProvider provider, bool logOnly)
     {
+        if (!ScreenReaderDiagnostics.IsTraceEnabled())
+        {
+            return;
+        }
+
         string prefix = request.Channel == SpeechChannel.World ? "[WorldNarration]" : "[Narration]";
         ScreenReaderMod.Instance?.Logger.Info($"{prefix} {request.Text}");
 
-        if (logOnly && !ScreenReaderDiagnostics.IsTraceEnabled())
+        if (logOnly)
         {
             ScreenReaderMod.Instance?.Logger.Info($"[Narration] Log-only mode active. Provider={provider.Name} Channel={request.Channel}");
         }
