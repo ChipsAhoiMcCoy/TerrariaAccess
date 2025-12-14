@@ -270,6 +270,7 @@ public sealed class KeyboardInputParitySystem : ModSystem
     ForceGamepadUiModeIfNeeded(needsUiMode);
     ApplyGlobalVirtualTriggers();
     ApplyInventoryVirtualTriggers(needsUiMode);
+    ApplyMenuNavigationVirtualTriggers(needsUiMode);
   }
 
   private static bool ShouldEmulateGamepad()
@@ -348,9 +349,82 @@ public sealed class KeyboardInputParitySystem : ModSystem
     InjectVirtualTrigger(ControllerParityKeybinds.LockOn, TriggerNames.LockOn);
   }
 
+  private static void ApplyMenuNavigationVirtualTriggers(bool uiModeActive)
+  {
+    if (!KeyboardParityFeatureState.Enabled || !uiModeActive || IsTextInputActive())
+    {
+      return;
+    }
+
+    if (PlayerInput.CurrentInputMode != InputMode.XBoxGamepadUI)
+    {
+      return;
+    }
+
+    if (!IsModConfigUiActive())
+    {
+      return;
+    }
+
+    KeyboardState state = Main.keyState;
+    bool up = state.IsKeyDown(Keys.W);
+    bool down = state.IsKeyDown(Keys.S);
+    bool left = state.IsKeyDown(Keys.A);
+    bool right = state.IsKeyDown(Keys.D);
+
+    Vector2 leftStick = PlayerInput.GamepadThumbstickLeft;
+    const float stickThreshold = 0.55f;
+    bool stickUp = leftStick.Y < -stickThreshold;
+    bool stickDown = leftStick.Y > stickThreshold;
+
+    InjectVirtualTrigger(TriggerNames.MenuUp, up || stickUp);
+    InjectVirtualTrigger(TriggerNames.MenuDown, down || stickDown);
+    InjectVirtualTrigger(TriggerNames.MenuLeft, left);
+    InjectVirtualTrigger(TriggerNames.MenuRight, right);
+  }
+
+  private static bool IsModConfigUiActive()
+  {
+    return IsModConfigUiState(Main.MenuUI?.CurrentState) || IsModConfigUiState(Main.InGameUI?.CurrentState);
+  }
+
+  private static bool IsModConfigUiState(UIState? state)
+  {
+    string? fullName = state?.GetType().FullName;
+    if (string.IsNullOrWhiteSpace(fullName))
+    {
+      return false;
+    }
+
+    return fullName.Contains("Terraria.ModLoader.Config.UI.UIModConfig", StringComparison.Ordinal) ||
+           fullName.Contains("Terraria.ModLoader.Config.UI.UIModConfigList", StringComparison.Ordinal);
+  }
+
   private static void InjectVirtualTrigger(ModKeybind? keybind, string triggerName)
   {
     if (keybind is null || !keybind.Current)
+    {
+      return;
+    }
+
+    TriggersPack pack = PlayerInput.Triggers;
+    if (pack.Current.KeyStatus.TryGetValue(triggerName, out bool alreadyActive) && alreadyActive)
+    {
+      return;
+    }
+
+    bool wasHeldLastFrame = pack.Old.KeyStatus.TryGetValue(triggerName, out bool wasHeld) && wasHeld;
+    SetTriggerState(pack, triggerName, InputMode.Keyboard);
+    if (!wasHeldLastFrame)
+    {
+      pack.JustPressed.KeyStatus[triggerName] = true;
+      pack.JustPressed.LatestInputMode[triggerName] = InputMode.Keyboard;
+    }
+  }
+
+  private static void InjectVirtualTrigger(string triggerName, bool isHeld)
+  {
+    if (!isHeld)
     {
       return;
     }
