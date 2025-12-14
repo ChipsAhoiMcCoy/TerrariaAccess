@@ -44,6 +44,7 @@ public sealed partial class InGameNarrationSystem
         private int _lastTileY = int.MinValue;
         private bool _lastSmartCursorActive;
         private bool _wasHoveringPlayer;
+        private PlayerBodyPart? _lastHoveredBodyPart;
         private int _originTileX = int.MinValue;
         private int _originTileY = int.MinValue;
         private static SoundEffect? _cursorTone;
@@ -51,6 +52,13 @@ public sealed partial class InGameNarrationSystem
         private static bool _suppressNextAnnouncement;
         private string? _lastTileAnnouncementName;
         private int _lastTileAnnouncementKey = int.MinValue;
+
+        private enum PlayerBodyPart
+        {
+            Head,
+            Torso,
+            Legs
+        }
 
         public CursorNarrator(CursorDescriptorService descriptorService)
         {
@@ -154,9 +162,13 @@ public sealed partial class InGameNarrationSystem
 
             if (hoveringPlayer)
             {
-                if (!wasHoveringPlayer || tileChanged)
+                PlayerBodyPart bodyPart = GetHoveredBodyPart(player, cursorWorld);
+                bool bodyPartChanged = bodyPart != _lastHoveredBodyPart;
+
+                if (!wasHoveringPlayer || bodyPartChanged)
                 {
-                    AnnouncePlayer(player);
+                    AnnouncePlayer(player, bodyPart);
+                    _lastHoveredBodyPart = bodyPart;
                 }
 
                 _wasHoveringPlayer = true;
@@ -164,6 +176,7 @@ public sealed partial class InGameNarrationSystem
             }
 
             _wasHoveringPlayer = false;
+            _lastHoveredBodyPart = null;
 
             bool shouldAnnounceTile = tileChanged || wasHoveringPlayer;
             if (!shouldAnnounceTile)
@@ -246,6 +259,7 @@ public sealed partial class InGameNarrationSystem
             _lastTileX = int.MinValue;
             _lastTileY = int.MinValue;
             _wasHoveringPlayer = false;
+            _lastHoveredBodyPart = null;
             _originTileX = int.MinValue;
             _originTileY = int.MinValue;
             _lastTileAnnouncementName = null;
@@ -259,9 +273,40 @@ public sealed partial class InGameNarrationSystem
             return bounds.Contains((int)cursorWorld.X, (int)cursorWorld.Y);
         }
 
-        private void AnnouncePlayer(Player _)
+        private static PlayerBodyPart GetHoveredBodyPart(Player player, Vector2 cursorWorld)
         {
-            ScreenReaderService.Announce("You", force: true);
+            Rectangle bounds = player.getRect();
+            bounds.Inflate(4, 4);
+
+            float relativeY = cursorWorld.Y - bounds.Top;
+            float third = bounds.Height / 3f;
+
+            if (relativeY < third)
+            {
+                return PlayerBodyPart.Head;
+            }
+            else if (relativeY < third * 2)
+            {
+                return PlayerBodyPart.Torso;
+            }
+            else
+            {
+                return PlayerBodyPart.Legs;
+            }
+        }
+
+        private static void AnnouncePlayer(Player player, PlayerBodyPart bodyPart)
+        {
+            string partName = bodyPart switch
+            {
+                PlayerBodyPart.Head => "Head",
+                PlayerBodyPart.Torso => "Torso",
+                PlayerBodyPart.Legs => "Legs",
+                _ => "Body"
+            };
+
+            string announcement = $"{player.name}'s {partName}";
+            ScreenReaderService.Announce(announcement, force: true);
         }
 
         public static void SuppressNextAnnouncement()

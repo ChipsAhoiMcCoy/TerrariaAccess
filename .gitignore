@@ -36,3 +36,6 @@ tModLoader.zip
 
 # Ignore tooling dumps of decompiled Terraria code
 Tools/Decompiled/
+
+# Ignore local Claude Code settings
+.claude/
