@@ -8,7 +8,6 @@ using System.Text;
 using Microsoft.Xna.Framework;
 using Microsoft.Xna.Framework.Audio;
 using Microsoft.Xna.Framework.Graphics;
-using Terraria.Chat;
 using ScreenReaderMod.Common.Services;
 using ScreenReaderMod.Common.Systems.MenuNarration;
 using ScreenReaderMod.Common.Utilities;
@@ -219,9 +218,6 @@ public sealed partial class InGameNarrationSystem : ModSystem
         On_IngameOptions.Draw += HandleIngameOptionsDraw;
         On_IngameOptions.DrawLeftSide += CaptureIngameOptionsLeft;
         On_IngameOptions.DrawRightSide += CaptureIngameOptionsRight;
-        On_ChatHelper.BroadcastChatMessageAs += HandleBroadcastChatMessageAs;
-        On_ChatHelper.SendChatMessageToClientAs += HandleSendChatMessageToClientAs;
-        On_ChatHelper.BroadcastChatMessage += HandleBroadcastChatMessage;
     }
 
     private void ConfigureNarrationScheduler()
@@ -306,9 +302,6 @@ public sealed partial class InGameNarrationSystem : ModSystem
         On_IngameOptions.Draw -= HandleIngameOptionsDraw;
         On_IngameOptions.DrawLeftSide -= CaptureIngameOptionsLeft;
         On_IngameOptions.DrawRightSide -= CaptureIngameOptionsRight;
-        On_ChatHelper.BroadcastChatMessageAs -= HandleBroadcastChatMessageAs;
-        On_ChatHelper.SendChatMessageToClientAs -= HandleSendChatMessageToClientAs;
-        On_ChatHelper.BroadcastChatMessage -= HandleBroadcastChatMessage;
     }
 
     private void ResetSharedResources()
@@ -817,28 +810,6 @@ public sealed partial class InGameNarrationSystem : ModSystem
         TryAnnounceHousingQuery(sanitized, c);
     }
 
-    private static void HandleBroadcastChatMessage(On_ChatHelper.orig_BroadcastChatMessage orig, NetworkText text, Color color, int excludedPlayer)
-    {
-        orig(text, color, excludedPlayer);
-        string message = text.ToString();
-        TryAnnounceWorldText(message);
-        TryAnnounceHousingQuery(message, color);
-    }
-
-    private static void HandleBroadcastChatMessageAs(On_ChatHelper.orig_BroadcastChatMessageAs orig, byte messageAuthor, NetworkText text, Color color, int excludedPlayer)
-    {
-        orig(messageAuthor, text, color, excludedPlayer);
-        LogChatDebug("BroadcastChatMessageAs", messageAuthor, text, excludedPlayer, color);
-        TryAnnounceChatMessage(messageAuthor, text, color);
-    }
-
-    private static void HandleSendChatMessageToClientAs(On_ChatHelper.orig_SendChatMessageToClientAs orig, byte messageAuthor, NetworkText text, Color color, int playerId)
-    {
-        orig(messageAuthor, text, color, playerId);
-        LogChatDebug("SendChatMessageToClientAs", messageAuthor, text, playerId, color);
-        TryAnnounceChatMessage(messageAuthor, text, color);
-    }
-
     private static void TryAnnounceWorldText(string? text)
     {
         if (string.IsNullOrWhiteSpace(text))
@@ -857,55 +828,19 @@ public sealed partial class InGameNarrationSystem : ModSystem
         AnnounceChatLine(sanitized);
     }
 
-    private static void TryAnnounceChatMessage(byte messageAuthor, NetworkText text, Color color)
-    {
-        if (text is null)
-        {
-            return;
-        }
-
-        string raw = text.ToString();
-        string sanitizedMessage = TextSanitizer.Clean(raw);
-        if (string.IsNullOrWhiteSpace(sanitizedMessage))
-        {
-            LogChatDebug("SkipEmptyChat", messageAuthor, text, null, color);
-            return;
-        }
-
-        string? playerName = ResolvePlayerName(messageAuthor);
-        string historyEntry = FormatChatHistoryEntry(sanitizedMessage, playerName);
-        ChatHistoryService.Record(historyEntry);
-
-        string announcement = string.IsNullOrWhiteSpace(playerName)
-            ? sanitizedMessage
-            : $"{playerName}: {sanitizedMessage}";
-
-        TryAnnounceChatCore(announcement, sanitizedMessage, messageAuthor, playerName, "AnnounceChat", color);
-        TryAnnounceHousingQuery(sanitizedMessage, color);
-    }
-
-    private static string? ResolvePlayerName(int playerSlot)
-    {
-        if (playerSlot < 0 || playerSlot >= Main.maxPlayers)
-        {
-            return null;
-        }
-
-        Player? player = Main.player[playerSlot];
-        if (player is null || !player.active)
-        {
-            return null;
-        }
-
-        string sanitized = TextSanitizer.Clean(player.name);
-        return string.IsNullOrWhiteSpace(sanitized) ? null : sanitized;
-    }
-
     private static bool TryAnnounceChatMultiline(string? rawText, Color color)
     {
         if (string.IsNullOrWhiteSpace(rawText))
         {
             return false;
+        }
+
+        if (ChatLineParser.TryParseLeadingNameTagChat(rawText, out string playerName, out string message))
+        {
+            string entry = ChatLineParser.FormatNameMessage(playerName, message);
+            ChatHistoryService.Record(entry);
+            TryAnnounceChatCore(entry, message, null, playerName, "NewTextMultilineNameTag", color);
+            return true;
         }
 
         string sanitized = TextSanitizer.Clean(rawText);
@@ -914,20 +849,9 @@ public sealed partial class InGameNarrationSystem : ModSystem
             return false;
         }
 
-        string historyEntry = FormatChatHistoryEntry(sanitized);
-        if (TryFormatNameTagChat(sanitized, out string? announcement, out string? playerName))
-        {
-            ChatHistoryService.Record(historyEntry);
-            if (!string.IsNullOrWhiteSpace(announcement))
-            {
-                TryAnnounceChatCore(announcement, sanitized, null, playerName, "NewTextMultilineNameTag", color);
-            }
-            return true;
-        }
-
         if (CursorDescriptorService.IsLikelyPlayerChat(sanitized))
         {
-            ChatHistoryService.Record(historyEntry);
+            ChatHistoryService.Record(sanitized);
             TryAnnounceChatCore(sanitized, sanitized, null, null, "NewTextMultilineLikelyChat", color);
             return true;
         }
@@ -935,44 +859,11 @@ public sealed partial class InGameNarrationSystem : ModSystem
         return false;
     }
 
-    private static bool TryFormatNameTagChat(string sanitized, out string? announcement, out string? playerName)
-    {
-        announcement = null;
-        playerName = null;
-
-        if (!sanitized.StartsWith("[n:", StringComparison.OrdinalIgnoreCase))
-        {
-            return false;
-        }
-
-        int closing = sanitized.IndexOf(']');
-        if (closing <= 3 || closing >= sanitized.Length)
-        {
-            return false;
-        }
-
-        string name = sanitized.Substring(3, closing - 3).Trim();
-        string message = sanitized[(closing + 1)..].TrimStart();
-        if (string.IsNullOrWhiteSpace(name) || string.IsNullOrWhiteSpace(message))
-        {
-            return false;
-        }
-
-        announcement = $"{name}: {message}";
-        playerName = name;
-        return true;
-    }
-
     private static string FormatChatHistoryEntry(string sanitized, string? resolvedPlayerName = null)
     {
         if (!string.IsNullOrWhiteSpace(resolvedPlayerName))
         {
             return $"{resolvedPlayerName}: {sanitized}";
-        }
-
-        if (TryFormatNameTagChat(sanitized, out string? announcement, out _))
-        {
-            return announcement ?? sanitized;
         }
 
         return sanitized;
