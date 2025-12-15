@@ -302,13 +302,20 @@ public sealed class KeyboardInputParitySystem : ModSystem
 
   private static void ForceGamepadUiModeIfNeeded(bool needsUiMode)
   {
+    if (IsTextInputActive())
+    {
+      // Drop back to keyboard input while typing so chat/sign text boxes stay usable.
+      PlayerInput.CurrentInputMode = InputMode.Keyboard;
+      return;
+    }
+
     if (needsUiMode)
     {
       PlayerInput.CurrentInputMode = InputMode.XBoxGamepadUI;
       return;
     }
 
-    if (KeyboardParityFeatureState.Enabled && !IsTextInputActive())
+    if (KeyboardParityFeatureState.Enabled)
     {
       PlayerInput.CurrentInputMode = InputMode.XBoxGamepad;
     }
