@@ -14,6 +14,7 @@ using ScreenReaderMod.Common.Utilities;
 using Terraria;
 using Terraria.Audio;
 using Terraria.GameContent;
+using Terraria.GameContent.UI.Chat;
 using Terraria.GameContent.UI.BigProgressBar;
 using Terraria.GameContent.Events;
 using Terraria.GameContent.UI.Elements;
@@ -68,6 +69,7 @@ public sealed partial class InGameNarrationSystem : ModSystem
     private static readonly bool SchedulerTraceOnly = NarrationSchedulerSettings.IsTraceOnlyEnabled();
     private const float ScreenEdgePaddingPixels = 48f;
     private static readonly TimeSpan ChatRepeatWindow = TimeSpan.FromMilliseconds(750);
+    private static readonly TimeSpan PopupRepeatWindow = TimeSpan.FromMilliseconds(750);
     private static readonly TimeSpan PickupRepeatWindow = TimeSpan.FromSeconds(1.5);
     private static readonly TimeSpan LowLightAnnouncementCooldown = TimeSpan.FromSeconds(8);
     private const float LowLightEnterBrightness = 0.22f;
@@ -89,6 +91,11 @@ public sealed partial class InGameNarrationSystem : ModSystem
     };
     private static string? _lastChatAnnouncement;
     private static DateTime _lastChatAnnouncedAt;
+    private static string? _lastPopupAnnouncement;
+    private static DateTime _lastPopupAnnouncedAt;
+    private static string? _lastChatMonitorAnnouncement;
+    private static FieldInfo? _remadeChatMessagesField;
+    private static FieldInfo? _legacyChatLinesField;
     private readonly Dictionary<int, int> _inventoryStacksByType = new();
     private bool _inventoryInitialized;
     private bool _wasIngameOptionsOpen;
@@ -213,6 +220,7 @@ public sealed partial class InGameNarrationSystem : ModSystem
         On_Main.NewText_string_byte_byte_byte += HandleNewText;
         On_Main.NewText_object_Nullable1 += HandleNewTextObject;
         On_Main.NewTextMultiline += HandleNewTextMultiline;
+        On_PopupText.NewText_AdvancedPopupRequest_Vector2 += HandlePopupTextAdvanced;
         On_Main.MouseText_string_string_int_byte_int_int_int_int_int_bool += CaptureMouseText;
         On_ChestUI.RenameChest += HandleChestRename;
         On_IngameOptions.Draw += HandleIngameOptionsDraw;
@@ -297,6 +305,7 @@ public sealed partial class InGameNarrationSystem : ModSystem
         On_Main.NewText_string_byte_byte_byte -= HandleNewText;
         On_Main.NewText_object_Nullable1 -= HandleNewTextObject;
         On_Main.NewTextMultiline -= HandleNewTextMultiline;
+        On_PopupText.NewText_AdvancedPopupRequest_Vector2 -= HandlePopupTextAdvanced;
         On_Main.MouseText_string_string_int_byte_int_int_int_int_int_bool -= CaptureMouseText;
         On_ChestUI.RenameChest -= HandleChestRename;
         On_IngameOptions.Draw -= HandleIngameOptionsDraw;
@@ -320,6 +329,9 @@ public sealed partial class InGameNarrationSystem : ModSystem
         ChatHistoryService.Reset();
         _lastChatAnnouncement = null;
         _lastChatAnnouncedAt = DateTime.MinValue;
+        _lastPopupAnnouncement = null;
+        _lastPopupAnnouncedAt = DateTime.MinValue;
+        _lastChatMonitorAnnouncement = null;
         _inventoryStacksByType.Clear();
         _lastPickupAnnouncedAt.Clear();
         _inventoryInitialized = false;
@@ -331,6 +343,7 @@ public sealed partial class InGameNarrationSystem : ModSystem
     public override void UpdateUI(GameTime gameTime)
     {
         AnnounceStatusTextIfNeeded();
+        TryAnnounceChatMonitorFallback();
         TryUpdateNarrators(requirePaused: true);
     }
 
@@ -810,6 +823,18 @@ public sealed partial class InGameNarrationSystem : ModSystem
         TryAnnounceHousingQuery(sanitized, c);
     }
 
+    private static int HandlePopupTextAdvanced(On_PopupText.orig_NewText_AdvancedPopupRequest_Vector2 orig, AdvancedPopupRequest request, Vector2 position)
+    {
+        int result = orig(request, position);
+        if (result < 0)
+        {
+            return result;
+        }
+
+        TryAnnouncePopupText(request.Text);
+        return result;
+    }
+
     private static void TryAnnounceWorldText(string? text)
     {
         if (string.IsNullOrWhiteSpace(text))
@@ -826,6 +851,135 @@ public sealed partial class InGameNarrationSystem : ModSystem
         string historyEntry = FormatChatHistoryEntry(sanitized);
         ChatHistoryService.Record(historyEntry);
         AnnounceChatLine(sanitized);
+    }
+
+    private static void TryAnnouncePopupText(string? text)
+    {
+        if (string.IsNullOrWhiteSpace(text))
+        {
+            return;
+        }
+
+        string sanitized = TextSanitizer.Clean(text);
+        if (string.IsNullOrWhiteSpace(sanitized))
+        {
+            return;
+        }
+
+        DateTime now = DateTime.UtcNow;
+        if (!string.IsNullOrWhiteSpace(_lastPopupAnnouncement) &&
+            string.Equals(_lastPopupAnnouncement, sanitized, StringComparison.OrdinalIgnoreCase) &&
+            now - _lastPopupAnnouncedAt < PopupRepeatWindow)
+        {
+            return;
+        }
+
+        if (WorldAnnouncementService.WasRecentlyAnnounced(sanitized, PopupRepeatWindow))
+        {
+            return;
+        }
+
+        _lastPopupAnnouncement = sanitized;
+        _lastPopupAnnouncedAt = now;
+        WorldAnnouncementService.Announce(sanitized);
+    }
+
+    private static void TryAnnounceChatMonitorFallback()
+    {
+        string? raw = TryGetLatestChatMonitorMessage();
+        if (string.IsNullOrWhiteSpace(raw))
+        {
+            return;
+        }
+
+        string sanitized;
+        if (ChatLineParser.TryParseLeadingNameTagChat(raw, out string playerName, out string message))
+        {
+            sanitized = ChatLineParser.FormatNameMessage(playerName, message);
+        }
+        else
+        {
+            sanitized = TextSanitizer.Clean(raw);
+        }
+        if (string.IsNullOrWhiteSpace(sanitized))
+        {
+            return;
+        }
+
+        if (!string.IsNullOrWhiteSpace(_lastChatMonitorAnnouncement) &&
+            string.Equals(_lastChatMonitorAnnouncement, sanitized, StringComparison.OrdinalIgnoreCase))
+        {
+            return;
+        }
+
+        if (!string.IsNullOrWhiteSpace(_lastChatAnnouncement) &&
+            string.Equals(_lastChatAnnouncement, sanitized, StringComparison.OrdinalIgnoreCase))
+        {
+            return;
+        }
+
+        if (!string.IsNullOrWhiteSpace(_lastPopupAnnouncement) &&
+            string.Equals(_lastPopupAnnouncement, sanitized, StringComparison.OrdinalIgnoreCase))
+        {
+            return;
+        }
+
+        _lastChatMonitorAnnouncement = sanitized;
+        ChatHistoryService.Record(sanitized);
+        WorldAnnouncementService.Announce(sanitized);
+    }
+
+    private static string? TryGetLatestChatMonitorMessage()
+    {
+        if (Main.chatMonitor is RemadeChatMonitor remade)
+        {
+            _remadeChatMessagesField ??= typeof(RemadeChatMonitor).GetField("_messages", BindingFlags.Instance | BindingFlags.NonPublic);
+            if (_remadeChatMessagesField?.GetValue(remade) is List<ChatMessageContainer> messages && messages.Count > 0)
+            {
+                return messages[0]?.OriginalText;
+            }
+
+            return null;
+        }
+
+        if (Main.chatMonitor is LegacyChatMonitor legacy)
+        {
+            _legacyChatLinesField ??= typeof(LegacyChatMonitor).GetField("chatLine", BindingFlags.Instance | BindingFlags.NonPublic);
+            if (_legacyChatLinesField?.GetValue(legacy) is ChatLine[] lines && lines.Length > 0)
+            {
+                ChatLine line = lines[0];
+                string text = line.originalText ?? string.Empty;
+                if (string.IsNullOrWhiteSpace(text) || text.StartsWith("this is a hack", StringComparison.OrdinalIgnoreCase))
+                {
+                    text = FlattenSnippets(line.parsedText);
+                }
+
+                return text;
+            }
+        }
+
+        return null;
+    }
+
+    private static string FlattenSnippets(TextSnippet[] snippets)
+    {
+        if (snippets == null || snippets.Length == 0)
+        {
+            return string.Empty;
+        }
+
+        var builder = new StringBuilder();
+        foreach (TextSnippet snippet in snippets)
+        {
+            if (snippet == null)
+            {
+                continue;
+            }
+
+            builder.Append(snippet.Text);
+        }
+
+        return builder.ToString();
     }
 
     private static bool TryAnnounceChatMultiline(string? rawText, Color color)
