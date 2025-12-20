@@ -91,7 +91,6 @@ public sealed partial class InGameNarrationSystem : ModSystem
     private static string? _lastChatAnnouncement;
     private static DateTime _lastChatAnnouncedAt;
     private static string? _lastPopupAnnouncement;
-    private static DateTime _lastPopupAnnouncedAt;
     private static string? _lastChatMonitorAnnouncement;
     private static bool[] _popupActiveSnapshot = Array.Empty<bool>();
     private static string?[] _popupTextSnapshot = Array.Empty<string?>();
@@ -331,7 +330,6 @@ public sealed partial class InGameNarrationSystem : ModSystem
         _lastChatAnnouncement = null;
         _lastChatAnnouncedAt = DateTime.MinValue;
         _lastPopupAnnouncement = null;
-        _lastPopupAnnouncedAt = DateTime.MinValue;
         _lastChatMonitorAnnouncement = null;
         _popupActiveSnapshot = Array.Empty<bool>();
         _popupTextSnapshot = Array.Empty<string?>();
@@ -858,41 +856,13 @@ public sealed partial class InGameNarrationSystem : ModSystem
             return;
         }
 
-        string sanitized;
-        if (ChatLineParser.TryParseLeadingNameTagChat(raw, out string playerName, out string message))
-        {
-            sanitized = ChatLineParser.FormatNameMessage(playerName, message);
-        }
-        else
-        {
-            sanitized = TextSanitizer.Clean(raw);
-        }
+        string? sanitized = NormalizeChatMonitorText(raw);
         if (string.IsNullOrWhiteSpace(sanitized))
         {
             return;
         }
 
-        if (!string.IsNullOrWhiteSpace(_lastChatMonitorAnnouncement) &&
-            string.Equals(_lastChatMonitorAnnouncement, sanitized, StringComparison.OrdinalIgnoreCase))
-        {
-            return;
-        }
-
-        if (!string.IsNullOrWhiteSpace(_lastChatAnnouncement) &&
-            string.Equals(_lastChatAnnouncement, sanitized, StringComparison.OrdinalIgnoreCase))
-        {
-            return;
-        }
-
-        if (!string.IsNullOrWhiteSpace(_lastPopupAnnouncement) &&
-            string.Equals(_lastPopupAnnouncement, sanitized, StringComparison.OrdinalIgnoreCase))
-        {
-            return;
-        }
-
-        _lastChatMonitorAnnouncement = sanitized;
-        ChatHistoryService.Record(sanitized);
-        WorldAnnouncementService.Announce(sanitized);
+        TryAnnounceWorldMessage(sanitized, ref _lastChatMonitorAnnouncement, _lastChatAnnouncement, _lastPopupAnnouncement, recordHistory: true);
     }
 
     private static void TryAnnouncePopupTextInstances()
@@ -950,9 +920,7 @@ public sealed partial class InGameNarrationSystem : ModSystem
             string? previousText = _popupTextSnapshot[i];
             if (!wasActive || !string.Equals(previousText, sanitized, StringComparison.OrdinalIgnoreCase))
             {
-                _lastPopupAnnouncement = sanitized;
-                _lastPopupAnnouncedAt = DateTime.UtcNow;
-                WorldAnnouncementService.Announce(sanitized);
+                TryAnnounceWorldMessage(sanitized, ref _lastPopupAnnouncement, _lastChatAnnouncement, _lastChatMonitorAnnouncement, recordHistory: false);
             }
 
             _popupActiveSnapshot[i] = true;
@@ -974,6 +942,66 @@ public sealed partial class InGameNarrationSystem : ModSystem
         }
 
         return text;
+    }
+
+    private static string? NormalizeChatMonitorText(string raw)
+    {
+        if (string.IsNullOrWhiteSpace(raw))
+        {
+            return null;
+        }
+
+        if (ChatLineParser.TryParseLeadingNameTagChat(raw, out string playerName, out string message))
+        {
+            return ChatLineParser.FormatNameMessage(playerName, message);
+        }
+
+        return TextSanitizer.Clean(raw);
+    }
+
+    private static bool TryAnnounceWorldMessage(string sanitized, ref string? lastPrimary, string? lastSecondary, string? lastTertiary, bool recordHistory)
+    {
+        if (string.IsNullOrWhiteSpace(sanitized))
+        {
+            return false;
+        }
+
+        if (MatchesAny(sanitized, lastPrimary, lastSecondary, lastTertiary))
+        {
+            return false;
+        }
+
+        lastPrimary = sanitized;
+        if (recordHistory)
+        {
+            ChatHistoryService.Record(sanitized);
+        }
+
+        WorldAnnouncementService.Announce(sanitized);
+        return true;
+    }
+
+    private static bool MatchesAny(string sanitized, string? first, string? second, string? third)
+    {
+        if (!string.IsNullOrWhiteSpace(first) &&
+            string.Equals(first, sanitized, StringComparison.OrdinalIgnoreCase))
+        {
+            return true;
+        }
+
+        if (!string.IsNullOrWhiteSpace(second) &&
+            string.Equals(second, sanitized, StringComparison.OrdinalIgnoreCase))
+        {
+            return true;
+        }
+
+        if (!string.IsNullOrWhiteSpace(third) &&
+            string.Equals(third, sanitized, StringComparison.OrdinalIgnoreCase))
+        {
+            return true;
+        }
+
+        return false;
     }
 
     private static string? TryGetLatestChatMonitorMessage()
