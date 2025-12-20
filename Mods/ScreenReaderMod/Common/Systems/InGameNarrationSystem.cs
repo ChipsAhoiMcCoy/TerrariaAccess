@@ -69,7 +69,6 @@ public sealed partial class InGameNarrationSystem : ModSystem
     private static readonly bool SchedulerTraceOnly = NarrationSchedulerSettings.IsTraceOnlyEnabled();
     private const float ScreenEdgePaddingPixels = 48f;
     private static readonly TimeSpan ChatRepeatWindow = TimeSpan.FromMilliseconds(750);
-    private static readonly TimeSpan PopupRepeatWindow = TimeSpan.FromMilliseconds(750);
     private static readonly TimeSpan PickupRepeatWindow = TimeSpan.FromSeconds(1.5);
     private static readonly TimeSpan LowLightAnnouncementCooldown = TimeSpan.FromSeconds(8);
     private const float LowLightEnterBrightness = 0.22f;
@@ -94,6 +93,8 @@ public sealed partial class InGameNarrationSystem : ModSystem
     private static string? _lastPopupAnnouncement;
     private static DateTime _lastPopupAnnouncedAt;
     private static string? _lastChatMonitorAnnouncement;
+    private static bool[] _popupActiveSnapshot = Array.Empty<bool>();
+    private static string?[] _popupTextSnapshot = Array.Empty<string?>();
     private static FieldInfo? _remadeChatMessagesField;
     private static FieldInfo? _legacyChatLinesField;
     private readonly Dictionary<int, int> _inventoryStacksByType = new();
@@ -332,6 +333,8 @@ public sealed partial class InGameNarrationSystem : ModSystem
         _lastPopupAnnouncement = null;
         _lastPopupAnnouncedAt = DateTime.MinValue;
         _lastChatMonitorAnnouncement = null;
+        _popupActiveSnapshot = Array.Empty<bool>();
+        _popupTextSnapshot = Array.Empty<string?>();
         _inventoryStacksByType.Clear();
         _lastPickupAnnouncedAt.Clear();
         _inventoryInitialized = false;
@@ -344,6 +347,7 @@ public sealed partial class InGameNarrationSystem : ModSystem
     {
         AnnounceStatusTextIfNeeded();
         TryAnnounceChatMonitorFallback();
+        TryAnnouncePopupTextInstances();
         TryUpdateNarrators(requirePaused: true);
     }
 
@@ -825,14 +829,7 @@ public sealed partial class InGameNarrationSystem : ModSystem
 
     private static int HandlePopupTextAdvanced(On_PopupText.orig_NewText_AdvancedPopupRequest_Vector2 orig, AdvancedPopupRequest request, Vector2 position)
     {
-        int result = orig(request, position);
-        if (result < 0)
-        {
-            return result;
-        }
-
-        TryAnnouncePopupText(request.Text);
-        return result;
+        return orig(request, position);
     }
 
     private static void TryAnnounceWorldText(string? text)
@@ -851,37 +848,6 @@ public sealed partial class InGameNarrationSystem : ModSystem
         string historyEntry = FormatChatHistoryEntry(sanitized);
         ChatHistoryService.Record(historyEntry);
         AnnounceChatLine(sanitized);
-    }
-
-    private static void TryAnnouncePopupText(string? text)
-    {
-        if (string.IsNullOrWhiteSpace(text))
-        {
-            return;
-        }
-
-        string sanitized = TextSanitizer.Clean(text);
-        if (string.IsNullOrWhiteSpace(sanitized))
-        {
-            return;
-        }
-
-        DateTime now = DateTime.UtcNow;
-        if (!string.IsNullOrWhiteSpace(_lastPopupAnnouncement) &&
-            string.Equals(_lastPopupAnnouncement, sanitized, StringComparison.OrdinalIgnoreCase) &&
-            now - _lastPopupAnnouncedAt < PopupRepeatWindow)
-        {
-            return;
-        }
-
-        if (WorldAnnouncementService.WasRecentlyAnnounced(sanitized, PopupRepeatWindow))
-        {
-            return;
-        }
-
-        _lastPopupAnnouncement = sanitized;
-        _lastPopupAnnouncedAt = now;
-        WorldAnnouncementService.Announce(sanitized);
     }
 
     private static void TryAnnounceChatMonitorFallback()
@@ -927,6 +893,87 @@ public sealed partial class InGameNarrationSystem : ModSystem
         _lastChatMonitorAnnouncement = sanitized;
         ChatHistoryService.Record(sanitized);
         WorldAnnouncementService.Announce(sanitized);
+    }
+
+    private static void TryAnnouncePopupTextInstances()
+    {
+        PopupText[] popups = Main.popupText;
+        if (popups is null || popups.Length == 0)
+        {
+            return;
+        }
+
+        if (_popupActiveSnapshot.Length != popups.Length)
+        {
+            _popupActiveSnapshot = new bool[popups.Length];
+            _popupTextSnapshot = new string?[popups.Length];
+        }
+
+        for (int i = 0; i < popups.Length; i++)
+        {
+            PopupText? popup = popups[i];
+            if (popup is null)
+            {
+                _popupActiveSnapshot[i] = false;
+                _popupTextSnapshot[i] = null;
+                continue;
+            }
+
+            if (!popup.active)
+            {
+                _popupActiveSnapshot[i] = false;
+                _popupTextSnapshot[i] = null;
+                continue;
+            }
+
+            if (popup.context == PopupTextContext.RegularItemPickup ||
+                popup.context == PopupTextContext.ItemPickupToVoidContainer)
+            {
+                _popupActiveSnapshot[i] = true;
+                _popupTextSnapshot[i] = null;
+                continue;
+            }
+
+            string announcement = BuildPopupAnnouncement(popup);
+            if (string.IsNullOrWhiteSpace(announcement))
+            {
+                continue;
+            }
+
+            string sanitized = TextSanitizer.Clean(announcement);
+            if (string.IsNullOrWhiteSpace(sanitized))
+            {
+                continue;
+            }
+
+            bool wasActive = _popupActiveSnapshot[i];
+            string? previousText = _popupTextSnapshot[i];
+            if (!wasActive || !string.Equals(previousText, sanitized, StringComparison.OrdinalIgnoreCase))
+            {
+                _lastPopupAnnouncement = sanitized;
+                _lastPopupAnnouncedAt = DateTime.UtcNow;
+                WorldAnnouncementService.Announce(sanitized);
+            }
+
+            _popupActiveSnapshot[i] = true;
+            _popupTextSnapshot[i] = sanitized;
+        }
+    }
+
+    private static string BuildPopupAnnouncement(PopupText popup)
+    {
+        if (string.IsNullOrWhiteSpace(popup.name))
+        {
+            return string.Empty;
+        }
+
+        string text = popup.name;
+        if (popup.stack > 1)
+        {
+            text += $" ({popup.stack})";
+        }
+
+        return text;
     }
 
     private static string? TryGetLatestChatMonitorMessage()
