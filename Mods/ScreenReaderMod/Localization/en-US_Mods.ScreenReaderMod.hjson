@@ -22,6 +22,19 @@ Mods: {
 			SaveAndExit: Save & Exit
 		}
 
+		Configs: {
+			ScreenReaderConfig: {
+				DisplayName: Screen Reader
+
+				AnnounceDamageNumbers: {
+					Label: Announce damage numbers
+					Tooltip: Announces the damage numbers you deal to hostile NPCs.
+				}
+			}
+		}
+
+		Combat.DamageAnnouncement: "{0} damage"
+
 		ModConfigMenu: {
 			ListIntro: Mod configuration list. Use Up and Down to navigate mods, Enter to select.
 			SelectedMod: Selected mod: {0}
@@ -193,4 +206,15 @@ Keybinds: {
 	KeyboardCursorNudgeLeft.DisplayName: Keyboard Cursor Nudge Left
 	KeyboardCursorNudgeRight.DisplayName: Keyboard Cursor Nudge Right
 	StatusCheck.DisplayName: Status Checker
+}
+
+Configs: {
+	ScreenReaderConfig: {
+		DisplayName: Screen Reader Config
+
+		AnnounceDamageNumbers: {
+			Label: Announce Damage Numbers
+			Tooltip: ""
+		}
+	}
 }
