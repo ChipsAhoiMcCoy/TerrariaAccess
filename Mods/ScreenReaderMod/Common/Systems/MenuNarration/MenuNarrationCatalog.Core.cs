@@ -141,15 +141,15 @@ internal static partial class MenuNarrationCatalog
             return true;
         }
 
-        if (typeName.Contains("UIWorkshopHub", StringComparison.Ordinal))
-        {
-            label = "Workshop hub";
-            return true;
-        }
-
         if (typeName.Contains("UIManageControls", StringComparison.Ordinal))
         {
             label = "Controls menu";
+            return true;
+        }
+
+        if (typeName.Contains("UIWorkshopHub", StringComparison.Ordinal))
+        {
+            label = Language.GetTextValue("UI.WorkshopHub");
             return true;
         }
 
