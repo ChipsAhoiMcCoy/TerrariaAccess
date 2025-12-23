@@ -131,9 +131,9 @@ internal sealed class DefaultMenuNarrationHandler : IMenuNarrationHandler
 
     private bool TryHandleUiHover(MenuNarrationContext context, DateTime timestamp, List<MenuNarrationEvent> events)
     {
-        // Suppress hover announcements when Workshop Hub is handling gamepad navigation
+        // Suppress hover announcements when accessibility systems are handling gamepad navigation
         // to avoid conflicting announcements
-        if (WorkshopHubAccessibilitySystem.IsHandlingGamepadInput)
+        if (WorkshopHubAccessibilitySystem.IsHandlingGamepadInput || ManageModsAccessibilitySystem.IsHandlingGamepadInput)
         {
             return false;
         }
@@ -588,8 +588,8 @@ internal sealed class DefaultMenuNarrationHandler : IMenuNarrationHandler
 
     private bool TryHandleFocus(MenuNarrationContext context, int currentMode, bool force, DateTime timestamp, List<MenuNarrationEvent> events)
     {
-        // Suppress focus announcements when Workshop Hub is handling gamepad navigation
-        if (WorkshopHubAccessibilitySystem.IsHandlingGamepadInput)
+        // Suppress focus announcements when accessibility systems are handling gamepad navigation
+        if (WorkshopHubAccessibilitySystem.IsHandlingGamepadInput || ManageModsAccessibilitySystem.IsHandlingGamepadInput)
         {
             return false;
         }
