@@ -136,6 +136,7 @@ internal sealed class DefaultMenuNarrationHandler : IMenuNarrationHandler
         if (WorkshopHubAccessibilitySystem.IsHandlingGamepadInput ||
             ManageModsAccessibilitySystem.IsHandlingGamepadInput ||
             ModInfoAccessibilitySystem.IsHandlingGamepadInput ||
+            DownloadModsAccessibilitySystem.IsHandlingGamepadInput ||
             ModConfigMenuNarrator.IsHandlingGamepadInput)
         {
             return false;
@@ -607,7 +608,10 @@ internal sealed class DefaultMenuNarrationHandler : IMenuNarrationHandler
     private bool TryHandleFocus(MenuNarrationContext context, int currentMode, bool force, DateTime timestamp, List<MenuNarrationEvent> events)
     {
         // Suppress focus announcements when accessibility systems are handling gamepad navigation
-        if (WorkshopHubAccessibilitySystem.IsHandlingGamepadInput || ManageModsAccessibilitySystem.IsHandlingGamepadInput || ModInfoAccessibilitySystem.IsHandlingGamepadInput)
+        if (WorkshopHubAccessibilitySystem.IsHandlingGamepadInput ||
+            ManageModsAccessibilitySystem.IsHandlingGamepadInput ||
+            ModInfoAccessibilitySystem.IsHandlingGamepadInput ||
+            DownloadModsAccessibilitySystem.IsHandlingGamepadInput)
         {
             return false;
         }
