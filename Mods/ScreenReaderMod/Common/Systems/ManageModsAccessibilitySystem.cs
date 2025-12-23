@@ -275,11 +275,8 @@ public sealed class ManageModsAccessibilitySystem : ModSystem
 
         object? currentState = Main.MenuUI?.CurrentState;
 
-        // Debug: log every few frames what state we see
-        if (Main.GameUpdateCount % 120 == 0 && currentState is not null)
-        {
-            Mod.Logger.Debug($"[ManageMods] Current UI state: {currentState.GetType().FullName}, expected: {_uiModsType.FullName}");
-        }
+        // Only log state mismatch once when transitioning away from UIMods, not continuously
+        // This prevents log spam when on other menu screens like UIModConfigList
 
         // Compare by type name since Type objects might differ across assemblies
         bool isUIMods = currentState is not null &&
@@ -480,7 +477,6 @@ public sealed class ManageModsAccessibilitySystem : ModSystem
 
         if (items is not null && items.Count > 0)
         {
-            ScreenReaderMod.Instance?.Logger.Debug($"[ManageMods] Found {items.Count} mod items");
 
             int modIndex = 0;
             foreach (object? item in items)
@@ -553,11 +549,6 @@ public sealed class ManageModsAccessibilitySystem : ModSystem
                 }
             }
 
-            ScreenReaderMod.Instance?.Logger.Debug($"[ManageMods] Created {modBindings.Count} mod bindings with button groups");
-        }
-        else
-        {
-            ScreenReaderMod.Instance?.Logger.Debug("[ManageMods] No mod items found or items is null");
         }
 
         // Create bindings for top row action buttons (Enable All, Disable All, Force Reload)

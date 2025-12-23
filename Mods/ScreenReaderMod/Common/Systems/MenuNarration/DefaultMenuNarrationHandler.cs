@@ -133,7 +133,25 @@ internal sealed class DefaultMenuNarrationHandler : IMenuNarrationHandler
     {
         // Suppress hover announcements when accessibility systems are handling gamepad navigation
         // to avoid conflicting announcements
-        if (WorkshopHubAccessibilitySystem.IsHandlingGamepadInput || ManageModsAccessibilitySystem.IsHandlingGamepadInput)
+        if (WorkshopHubAccessibilitySystem.IsHandlingGamepadInput ||
+            ManageModsAccessibilitySystem.IsHandlingGamepadInput ||
+            ModInfoAccessibilitySystem.IsHandlingGamepadInput ||
+            ModConfigMenuNarrator.IsHandlingGamepadInput)
+        {
+            return false;
+        }
+
+        // Also suppress hovers for mod config menu modes directly - the flag check above
+        // may not catch the initial transition frame before the narrator sets its flag
+        if (context.MenuMode == 10027 || context.MenuMode == 10024) // modConfigListID, modConfigID
+        {
+            return false;
+        }
+
+        // Suppress hovers when the UI state is a mod config screen (menu mode may be 888/FancyUI)
+        string? uiStateName = context.UiState?.GetType().FullName;
+        if (uiStateName == "Terraria.ModLoader.Config.UI.UIModConfigList" ||
+            uiStateName == "Terraria.ModLoader.Config.UI.UIModConfig")
         {
             return false;
         }
@@ -589,7 +607,7 @@ internal sealed class DefaultMenuNarrationHandler : IMenuNarrationHandler
     private bool TryHandleFocus(MenuNarrationContext context, int currentMode, bool force, DateTime timestamp, List<MenuNarrationEvent> events)
     {
         // Suppress focus announcements when accessibility systems are handling gamepad navigation
-        if (WorkshopHubAccessibilitySystem.IsHandlingGamepadInput || ManageModsAccessibilitySystem.IsHandlingGamepadInput)
+        if (WorkshopHubAccessibilitySystem.IsHandlingGamepadInput || ManageModsAccessibilitySystem.IsHandlingGamepadInput || ModInfoAccessibilitySystem.IsHandlingGamepadInput)
         {
             return false;
         }

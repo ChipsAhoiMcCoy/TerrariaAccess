@@ -24,6 +24,12 @@ internal sealed class ModConfigMenuNarrator
 {
     private readonly MenuUiSelectionTracker _uiTracker = new();
 
+    /// <summary>
+    /// Returns true if this narrator is currently handling a mod config screen.
+    /// Used by DefaultMenuNarrationHandler to suppress hover announcements.
+    /// </summary>
+    public static bool IsHandlingGamepadInput { get; private set; }
+
     // Type references for tModLoader config UI
     private static readonly Type? ModConfigListType = Type.GetType("Terraria.ModLoader.Config.UI.UIModConfigList, tModLoader");
     private static readonly Type? ModConfigStateType = Type.GetType("Terraria.ModLoader.Config.UI.UIModConfig, tModLoader");
@@ -107,6 +113,9 @@ internal sealed class ModConfigMenuNarrator
         _modListElements = null;
         _configListElements = null;
         _pendingConfigListNavigation = false;
+
+        // Clear the flag so DefaultMenuNarrationHandler knows we're not handling input
+        IsHandlingGamepadInput = false;
     }
 
     private static void AddEvent(ICollection<MenuNarrationEvent> target, string? text, bool force, MenuNarrationEventKind kind)
@@ -119,13 +128,22 @@ internal sealed class ModConfigMenuNarrator
         target.Add(new MenuNarrationEvent(text, force, kind));
     }
 
+    // Menu mode constants for mod config screens (from Interface.cs)
+    private const int ModConfigListMenuMode = 10027;
+    private const int ModConfigEditMenuMode = 10024;
+
     public bool TryBuildMenuEvents(MenuNarrationContext context, List<MenuNarrationEvent> events)
     {
-        if (context.MenuMode != MenuID.FancyUI)
+        // Accept FancyUI (in-game settings overlay) or the mod config menu modes from main menu
+        bool isValidMenuMode = context.MenuMode == MenuID.FancyUI ||
+                               context.MenuMode == ModConfigListMenuMode ||
+                               context.MenuMode == ModConfigEditMenuMode;
+
+        if (!isValidMenuMode)
         {
             if (_lastState is not null)
             {
-                ScreenReaderMod.Instance?.Logger.Debug("[ModConfig] Menu mode changed from FancyUI, calling Reset()");
+                ScreenReaderMod.Instance?.Logger.Debug("[ModConfig] Menu mode changed, calling Reset()");
             }
             Reset();
             return false;
@@ -195,6 +213,8 @@ internal sealed class ModConfigMenuNarrator
 
         if (ModConfigListType is not null && ModConfigListType.IsAssignableFrom(stateType))
         {
+            // Set flag so DefaultMenuNarrationHandler suppresses hover announcements
+            IsHandlingGamepadInput = enableNavigation && PlayerInput.UsingGamepadUI;
             _stateChanged = PrepareForState(state, alignCursor);
             HandleListState(state, uiContext, announce, enableNavigation);
             _lastState = state;
@@ -203,6 +223,8 @@ internal sealed class ModConfigMenuNarrator
 
         if (ModConfigStateType is not null && ModConfigStateType.IsAssignableFrom(stateType))
         {
+            // Set flag so DefaultMenuNarrationHandler suppresses hover announcements
+            IsHandlingGamepadInput = enableNavigation && PlayerInput.UsingGamepadUI;
             _stateChanged = PrepareForState(state, alignCursor);
             HandleConfigState(state, uiContext, announce, enableNavigation);
             _lastState = state;
@@ -1052,7 +1074,8 @@ internal sealed class ModConfigMenuNarrator
                typeName.Contains("StringInputElement", StringComparison.Ordinal) ||
                typeName.Contains("EnumElement", StringComparison.Ordinal) ||
                typeName.Contains("ColorElement", StringComparison.Ordinal) ||
-               typeName.Contains("ItemDefinitionElement", StringComparison.Ordinal);
+               typeName.Contains("ItemDefinitionElement", StringComparison.Ordinal) ||
+               typeName.Contains("ListElement", StringComparison.Ordinal);
     }
 
     private static bool IsInteractable(UIElement element)
@@ -1239,6 +1262,13 @@ internal sealed class ModConfigMenuNarrator
         Type type = element.GetType();
         string? typeName = type.FullName;
 
+        // Skip header elements - they are non-interactive section titles
+        // and should not be navigated to or announced
+        if (typeName is not null && typeName.Contains("HeaderElement", StringComparison.Ordinal))
+        {
+            return string.Empty;
+        }
+
         // Check if this is an action button (UITextPanel used for Back, Save, etc.)
         if (typeName is not null && typeName.Contains("UITextPanel", StringComparison.Ordinal))
         {
@@ -1405,6 +1435,37 @@ internal sealed class ModConfigMenuNarrator
         if (value is null)
         {
             return string.Empty;
+        }
+
+        // Handle collection types - don't show raw type names like "System.Collections.Generic.List`1[...]"
+        if (value is System.Collections.ICollection collection)
+        {
+            int count = collection.Count;
+            return count == 1
+                ? LocalizationHelper.GetTextOrFallback("Mods.ScreenReaderMod.ModConfigMenu.OneItem", "1 item")
+                : LocalizationHelper.GetTextOrFallback("Mods.ScreenReaderMod.ModConfigMenu.ItemCount", "{0} items").Replace("{0}", count.ToString());
+        }
+
+        // Handle IEnumerable (but not string which is also IEnumerable)
+        if (value is System.Collections.IEnumerable enumerable && value is not string)
+        {
+            // Check if it looks like a collection type name
+            string typeName = value.GetType().Name;
+            if (typeName.Contains("List", StringComparison.Ordinal) ||
+                typeName.Contains("Collection", StringComparison.Ordinal) ||
+                typeName.Contains("Array", StringComparison.Ordinal) ||
+                typeName.Contains("Set", StringComparison.Ordinal))
+            {
+                int count = 0;
+                foreach (object? _ in enumerable)
+                {
+                    count++;
+                    if (count > 100) break; // Limit counting
+                }
+                return count == 1
+                    ? LocalizationHelper.GetTextOrFallback("Mods.ScreenReaderMod.ModConfigMenu.OneItem", "1 item")
+                    : LocalizationHelper.GetTextOrFallback("Mods.ScreenReaderMod.ModConfigMenu.ItemCount", "{0} items").Replace("{0}", count.ToString());
+            }
         }
 
         return value switch
