@@ -18,6 +18,13 @@ public sealed partial class InGameNarrationSystem
     {
         private const float MinLandingDisplacement = 6f;
 
+        // Edge echo configuration
+        private const int EdgeScanRangeTiles = 18;      // How far ahead to scan
+        private const int MinDropHeightTiles = 3;       // Minimum drop to count as edge
+        private const int EchoDelayFrames = 3;          // Frames between footstep and echo
+        private const float EchoPanScalePixels = 320f;  // Pan scaling for positional audio
+        private const float EchoPitchMultiplier = 1.0f; // Echo same pitch as footstep
+
         private Point _lastFootTile = new(-1, -1);
         private float _lastFootX = float.NaN;
         private bool _suppressNextStep = true;
@@ -27,6 +34,14 @@ public sealed partial class InGameNarrationSystem
         private SoundEffectInstance? _harmfulLoopInstance;
         private float _lastHarmfulFrequency;
 
+        // Edge echo state
+        private int _pendingEchoFrame = -1;             // Frame to play echo (-1 = none)
+        private Vector2 _pendingEchoPosition;           // World position of detected edge
+        private bool _pendingEchoIsPlatform;            // Whether edge is platform or ground
+        private int _pendingEchoDirection;              // Direction of pending echo (1 or -1)
+
+        private readonly record struct EdgeScanResult(Vector2 WorldPosition, bool IsPlatform);
+
         public void Update(Player player)
         {
             if (!CanProcess(player))
@@ -35,12 +50,16 @@ public sealed partial class InGameNarrationSystem
                 return;
             }
 
+            // Check for pending edge echoes first
+            TryPlayScheduledEcho(player);
+
             bool grounded = IsGrounded(player);
             if (!grounded)
             {
                 TrackAirborneDisplacement(player);
                 _lastFootX = float.NaN;
                 StopHarmfulTone();
+                ClearPendingEcho();
                 return;
             }
 
@@ -69,6 +88,17 @@ public sealed partial class InGameNarrationSystem
             bool onPlatform = IsPlatform(footTile.X, footTile.Y);
             bool onHarmfulTile = IsHarmfulTile(player, footTile);
             PlayStep(player, onPlatform, onHarmfulTile);
+
+            // Scan for edges ahead and schedule echo if found
+            int moveDirection = Math.Sign(player.velocity.X);
+            if (moveDirection != 0)
+            {
+                EdgeScanResult? edge = ScanForEdge(player, moveDirection);
+                if (edge.HasValue)
+                {
+                    ScheduleEdgeEcho(edge.Value, moveDirection);
+                }
+            }
         }
 
         public void Reset()
@@ -132,6 +162,7 @@ public sealed partial class InGameNarrationSystem
             _airborneStartY = 0f;
             _maxAirborneDisplacement = 0f;
             StopHarmfulTone();
+            ClearPendingEcho();
         }
 
         private void TrackAirborneDisplacement(Player player)
@@ -170,6 +201,113 @@ public sealed partial class InGameNarrationSystem
         {
             Tile tile = Framing.GetTileSafely(tileX, tileY);
             return tile.HasTile && TileID.Sets.Platforms[tile.TileType];
+        }
+
+        private static bool HasSupportingTile(int tileX, int tileY)
+        {
+            Tile tile = Framing.GetTileSafely(tileX, tileY);
+            if (!tile.HasTile || tile.IsActuated)
+            {
+                return false;
+            }
+
+            return Main.tileSolid[tile.TileType] || TileID.Sets.Platforms[tile.TileType];
+        }
+
+        private static int MeasureDropDepth(int tileX, int startY)
+        {
+            int depth = 0;
+            for (int y = startY; y < startY + 10 && y < Main.maxTilesY; y++)
+            {
+                if (HasSupportingTile(tileX, y))
+                {
+                    break;
+                }
+
+                depth++;
+            }
+
+            return depth;
+        }
+
+        private EdgeScanResult? ScanForEdge(Player player, int direction)
+        {
+            if (direction == 0)
+            {
+                return null;
+            }
+
+            Point footTile = GetFootTile(player, out _);
+            int endX = footTile.X + direction * EdgeScanRangeTiles;
+
+            for (int scanX = footTile.X + direction;
+                 direction > 0 ? scanX <= endX : scanX >= endX;
+                 scanX += direction)
+            {
+                if (scanX < 0 || scanX >= Main.maxTilesX)
+                {
+                    break;
+                }
+
+                if (!HasSupportingTile(scanX, footTile.Y))
+                {
+                    int dropDepth = MeasureDropDepth(scanX, footTile.Y);
+                    if (dropDepth >= MinDropHeightTiles)
+                    {
+                        int edgeTileX = scanX - direction;
+                        bool isPlatform = IsPlatform(edgeTileX, footTile.Y);
+                        Vector2 edgePos = new(scanX * 16f + 8f, footTile.Y * 16f + 8f);
+                        return new EdgeScanResult(edgePos, isPlatform);
+                    }
+
+                    break; // Shallow drop, stop scanning
+                }
+            }
+
+            return null;
+        }
+
+        private void ScheduleEdgeEcho(EdgeScanResult edge, int direction)
+        {
+            // If an echo is already pending in this direction, don't reschedule
+            // This prevents the echo from being pushed back indefinitely as the player walks
+            if (_pendingEchoFrame >= 0 && _pendingEchoDirection == direction)
+            {
+                return;
+            }
+
+            _pendingEchoFrame = (int)Main.GameUpdateCount + EchoDelayFrames;
+            _pendingEchoPosition = edge.WorldPosition;
+            _pendingEchoIsPlatform = edge.IsPlatform;
+            _pendingEchoDirection = direction;
+        }
+
+        private void ClearPendingEcho()
+        {
+            _pendingEchoFrame = -1;
+        }
+
+        private void TryPlayScheduledEcho(Player player)
+        {
+            if (_pendingEchoFrame < 0)
+            {
+                return;
+            }
+
+            if ((int)Main.GameUpdateCount < _pendingEchoFrame)
+            {
+                return;
+            }
+
+            Vector2 playerCenter = player.Center;
+            float offsetX = _pendingEchoPosition.X - playerCenter.X;
+            float pan = MathHelper.Clamp(offsetX / EchoPanScalePixels, -1f, 1f);
+
+            ComputeStepAudio(player, _pendingEchoIsPlatform, out float frequency, out float loudness);
+            float echoFrequency = frequency * EchoPitchMultiplier;
+
+            FootstepToneProvider.Play(echoFrequency, loudness, useTriangleWave: false, pan: pan);
+            _pendingEchoFrame = -1;
         }
 
         private static bool IsHarmfulTile(Player player, Point tileCoords)
