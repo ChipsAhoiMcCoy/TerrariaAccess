@@ -271,11 +271,12 @@ public sealed class DownloadModsAccessibilitySystem : ModSystem
 
         try
         {
-            ConfigureGamepadPoints(currentState);
-            HandleManualNavigation(currentState);
-            HandleActionButton(currentState);
-            HandleScrollAnnouncements(currentState);
-            AnnounceCurrentFocus(currentState);
+            // currentState is guaranteed non-null here (checked via isModBrowser above)
+            ConfigureGamepadPoints(currentState!);
+            HandleManualNavigation(currentState!);
+            HandleActionButton(currentState!);
+            HandleScrollAnnouncements(currentState!);
+            AnnounceCurrentFocus(currentState!);
         }
         catch (Exception ex)
         {

@@ -335,7 +335,8 @@ public sealed class ManageModsAccessibilitySystem : ModSystem
         try
         {
             // Check if a confirmation dialog is active
-            bool dialogActive = IsConfirmDialogActive(currentState);
+            // currentState is guaranteed non-null here (checked via isUIMods above)
+            bool dialogActive = IsConfirmDialogActive(currentState!);
 
             if (dialogActive != _isDialogActive)
             {
@@ -346,7 +347,7 @@ public sealed class ManageModsAccessibilitySystem : ModSystem
                     _dialogFocusIndex = 0; // Default to "Yes" button
                     _lastAnnouncedPointId = -1;
                     _lastDialogAnnouncedIndex = -1;
-                    _dialogText = GetDialogText(currentState);
+                    _dialogText = GetDialogText(currentState!);
                     _dialogTextAnnounced = false;
 
                     // Save current focus point so we can restore properly later
@@ -409,18 +410,18 @@ public sealed class ManageModsAccessibilitySystem : ModSystem
                 _aButtonWasPressed = gpState.Buttons.A == ButtonState.Pressed;
 
                 // Handle dialog navigation
-                ConfigureDialogPoints(currentState);
+                ConfigureDialogPoints(currentState!);
                 HandleDialogNavigation();
-                HandleDialogAction(currentState);
+                HandleDialogAction(currentState!);
                 AnnounceDialogFocus();
             }
             else
             {
                 // Handle normal menu navigation
-                ConfigureGamepadPoints(currentState);
-                HandleManualNavigation(currentState);
-                HandleActionButton(currentState);
-                AnnounceCurrentFocus(currentState);
+                ConfigureGamepadPoints(currentState!);
+                HandleManualNavigation(currentState!);
+                HandleActionButton(currentState!);
+                AnnounceCurrentFocus(currentState!);
             }
         }
         catch (Exception ex)
