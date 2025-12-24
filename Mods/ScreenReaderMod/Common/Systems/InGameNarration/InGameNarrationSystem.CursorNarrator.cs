@@ -9,6 +9,7 @@ using Microsoft.Xna.Framework;
 using Microsoft.Xna.Framework.Audio;
 using Microsoft.Xna.Framework.Graphics;
 using Microsoft.Xna.Framework.Input;
+using ScreenReaderMod.Common;
 using ScreenReaderMod.Common.Services;
 using ScreenReaderMod.Common.Systems.MenuNarration;
 using ScreenReaderMod.Common.Utilities;
@@ -424,6 +425,12 @@ public sealed partial class InGameNarrationSystem
 
         private static void PlayCursorCue(Player player, Vector2 tileCenterWorld, bool hasTile)
         {
+            // Check if smart cursor tile sounds are enabled in config
+            if (!(ScreenReaderModConfig.Instance?.SmartCursorTileSounds ?? true))
+            {
+                return;
+            }
+
             CleanupFinishedInstances();
 
             Vector2 offset = tileCenterWorld - player.Center;

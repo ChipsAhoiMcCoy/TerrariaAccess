@@ -1,5 +1,48 @@
 Mods: {
 	ScreenReaderMod: {
+		Configs: {
+			ScreenReaderModConfig: {
+				DisplayName: Screen Reader Mod Settings
+
+				EdgeDetection: {
+					Label: Experimental Edge Detection
+					Tooltip: Experimental feature. Choose how edges (drop-offs) are announced while walking. Echo plays a tone after each footstep when an edge is ahead. Static plays continuous white noise that gets louder as you approach an edge. Off disables edge detection entirely.
+				}
+
+				SmartCursorTileSounds: {
+					Label: Smart Cursor Tile Sounds
+					Tooltip: When enabled, Smart Cursor emits a sound when it focuses a new tile. Disable to silence tile focus sounds.
+				}
+
+				FootstepVolume: {
+					Label: Footstep Volume
+					Tooltip: Adjusts the volume of footstep audio cues including walking sounds and edge detection tones.
+				}
+
+				EnemySoundVolume: {
+					Label: Enemy Sound Volume
+					Tooltip: Adjusts the volume of enemy proximity audio cues that indicate nearby hostile creatures.
+				}
+
+				GuidanceVolume: {
+					Label: Guidance Volume
+					Tooltip: Adjusts the volume of guidance system audio cues used for waypoints, NPCs, and other tracking targets.
+				}
+
+				InteractableCueVolume: {
+					Label: Interactable Cue Volume
+					Tooltip: Adjusts the volume of audio cues for nearby interactable objects like chests, doors, and crafting stations.
+				}
+			}
+
+			EdgeDetectionMode: {
+				Tooltip: ""
+				Echo.Label: Echo
+				Static.Label: Static
+				Off.Label: Off
+			}
+		}
+
 		HostMenu: {
 			LobbyLabel: Steam lobby
 			FriendsLabel: Friends can join
@@ -157,4 +200,59 @@ Keybinds: {
 	BuildModeToggle.DisplayName: Toggle Build Mode
 	BuildModePlace.DisplayName: Set Build Point
 	StatusCheck.DisplayName: Status Checker
+}
+
+Configs: {
+	ScreenReaderModConfig: {
+		DisplayName: Screen Reader Mod Config
+
+		EdgeDetection: {
+			Label: Experimental Edge Detection
+			Tooltip: ""
+		}
+
+		SmartCursorTileSounds: {
+			Label: Smart Cursor Tile Sounds
+			Tooltip: ""
+		}
+
+		FootstepVolume: {
+			Label: Footstep Volume
+			Tooltip: ""
+		}
+
+		EnemySoundVolume: {
+			Label: Enemy Sound Volume
+			Tooltip: ""
+		}
+
+		GuidanceVolume: {
+			Label: Guidance Volume
+			Tooltip: ""
+		}
+
+		InteractableCueVolume: {
+			Label: Interactable Cue Volume
+			Tooltip: ""
+		}
+	}
+
+	EdgeDetectionMode: {
+		Tooltip: ""
+
+		Echo: {
+			Label: Echo
+			Tooltip: ""
+		}
+
+		Static: {
+			Label: Static
+			Tooltip: ""
+		}
+
+		Off: {
+			Label: Off
+			Tooltip: ""
+		}
+	}
 }

@@ -5,6 +5,7 @@ using System.Globalization;
 using System.Linq;
 using System.Reflection;
 using Microsoft.Xna.Framework;
+using Microsoft.Xna.Framework.Input;
 using Terraria;
 using Terraria.Audio;
 using Terraria.GameInput;
@@ -81,6 +82,7 @@ internal sealed class ModConfigMenuNarrator
     private bool _stateChanged;
     private int _suppressHoverFrames; // Frames to suppress hover announcements after keyboard nav
     private int _configElementCount; // Number of config elements (excluding action buttons)
+    private int _skipInputFrames; // Frames to skip input processing after entering a new screen
 
     // Dual-list navigation state for UIModConfigList (mod list on left, config list on right)
     private enum ListFocus { ModList, ConfigList }
@@ -90,6 +92,16 @@ internal sealed class ModConfigMenuNarrator
     private List<UIElement>? _modListElements;
     private List<UIElement>? _configListElements;
     private bool _pendingConfigListNavigation; // Set when a mod is selected, cleared after navigating to config list
+
+    // Slider tracking state - mimics behavior of main menu settings sliders
+    private int _lastSliderElementIndex = -1;
+    private float _lastSliderValue = -1f;
+
+    // Hold-to-repeat state for slider adjustment
+    private int _sliderRepeatDirection; // -1 = left, 0 = none, 1 = right
+    private int _sliderRepeatTimer;
+    private const int SliderRepeatDelay = 25; // Frames before repeat starts (~0.4 sec at 60fps)
+    private const int SliderRepeatRate = 3;   // Frames between repeats (~20 adjustments/sec)
 
     public void Reset()
     {
@@ -104,6 +116,7 @@ internal sealed class ModConfigMenuNarrator
         _lastNavigatedElement = null;
         _stateChanged = false;
         _suppressHoverFrames = 0;
+        _skipInputFrames = 0;
         _uiTracker.Reset();
 
         // Reset dual-list state
@@ -113,6 +126,12 @@ internal sealed class ModConfigMenuNarrator
         _modListElements = null;
         _configListElements = null;
         _pendingConfigListNavigation = false;
+
+        // Reset slider tracking state
+        _lastSliderElementIndex = -1;
+        _lastSliderValue = -1f;
+        _sliderRepeatDirection = 0;
+        _sliderRepeatTimer = 0;
 
         // Clear the flag so DefaultMenuNarrationHandler knows we're not handling input
         IsHandlingGamepadInput = false;
@@ -193,7 +212,11 @@ internal sealed class ModConfigMenuNarrator
             inGameUi,
             alignCursor: true,
             enableNavigation: true,
-            (text, force, kind) => ScreenReaderService.Announce(text, force));
+            (text, force, kind) =>
+            {
+                ScreenReaderMod.Instance?.Logger.Info($"[ModConfig][Speech] Speaking: '{text}' (force={force}, kind={kind})");
+                ScreenReaderService.Announce(text, force);
+            });
     }
 
     private bool TryHandleState(
@@ -356,12 +379,8 @@ internal sealed class ModConfigMenuNarrator
                     _configListIndex = 0;
                     MoveCursorToElement(_configListElements[0]);
 
-                    // Only announce if there are multiple configs to choose from
-                    // If there's only one, user will immediately enter it and hear the first config element
-                    if (_configListElements.Count > 1)
-                    {
-                        AnnounceConfigListElement(0, announce);
-                    }
+                    // Announce the config entry - even single-config mods need feedback
+                    AnnounceConfigListElement(0, announce);
                     return;
                 }
                 else
@@ -571,6 +590,11 @@ internal sealed class ModConfigMenuNarrator
         if (TryInvokeClick(element))
         {
             SoundEngine.PlaySound(SoundID.MenuOpen);
+
+            // Skip input processing for a few frames to prevent the A button from
+            // being detected on the config edit screen immediately after opening
+            _skipInputFrames = 5;
+
             return true;
         }
 
@@ -694,11 +718,19 @@ internal sealed class ModConfigMenuNarrator
             {
                 _currentElementIndex = 0;
 
+                // Move cursor to first element
+                MoveCursorToElement(_navigableElements[0]);
+
                 // Announce first item on entry
                 if (_stateChanged)
                 {
+                    ScreenReaderMod.Instance?.Logger.Debug($"[ModConfig] Announcing first element on entry, index=0, type={_navigableElements[0].GetType().Name}");
                     AnnounceConfigElementAtIndex(_currentElementIndex, announce);
                     _suppressHoverFrames = 30; // Suppress hover to prevent double announcement
+
+                    // Skip input processing for a few frames to prevent the A button
+                    // that was used to enter this screen from triggering actions
+                    _skipInputFrames = 5;
                 }
             }
             else
@@ -710,6 +742,13 @@ internal sealed class ModConfigMenuNarrator
         {
             // Refresh action buttons in case they changed (Save/Revert appear after changes)
             RefreshActionButtons(state);
+        }
+
+        // Skip input processing if we're in the cooldown period after entering the screen
+        if (_skipInputFrames > 0)
+        {
+            _skipInputFrames--;
+            return;
         }
 
         // Handle D-pad navigation
@@ -797,7 +836,72 @@ internal sealed class ModConfigMenuNarrator
         }
 
         TriggersSet justPressed = PlayerInput.Triggers.JustPressed;
+        TriggersSet current = PlayerInput.Triggers.Current;
         int newIndex = _currentElementIndex;
+
+        // Check D-pad and analog stick for left/right (held state for repeat)
+        bool leftHeld = current.MenuLeft;
+        bool rightHeld = current.MenuRight;
+
+        // Also check analog stick
+        GamePadState gpState = GamePad.GetState(PlayerIndex.One);
+        if (gpState.IsConnected)
+        {
+            Vector2 stick = gpState.ThumbSticks.Left;
+            const float threshold = 0.5f;
+
+            if (stick.X < -threshold)
+            {
+                leftHeld = true;
+            }
+            if (stick.X > threshold)
+            {
+                rightHeld = true;
+            }
+        }
+
+        // Handle hold-to-repeat for slider adjustment
+        int currentDirection = leftHeld ? -1 : (rightHeld ? 1 : 0);
+
+        if (currentDirection != 0 && _currentElementIndex >= 0 && _currentElementIndex < _navigableElements.Count)
+        {
+            bool shouldAdjust = false;
+
+            if (currentDirection != _sliderRepeatDirection)
+            {
+                // Direction changed or just started - immediate first adjustment
+                _sliderRepeatDirection = currentDirection;
+                _sliderRepeatTimer = 0;
+                shouldAdjust = true;
+            }
+            else
+            {
+                // Same direction held - check repeat timing
+                _sliderRepeatTimer++;
+
+                if (_sliderRepeatTimer >= SliderRepeatDelay)
+                {
+                    // Past initial delay - repeat at fast rate
+                    int framesSinceDelay = _sliderRepeatTimer - SliderRepeatDelay;
+                    if (framesSinceDelay % SliderRepeatRate == 0)
+                    {
+                        shouldAdjust = true;
+                    }
+                }
+            }
+
+            if (shouldAdjust)
+            {
+                TryAdjustConfigValue(_navigableElements[_currentElementIndex], currentDirection, announce);
+            }
+            return;
+        }
+        else
+        {
+            // No left/right held - reset repeat state
+            _sliderRepeatDirection = 0;
+            _sliderRepeatTimer = 0;
+        }
 
         if (justPressed.MenuUp)
         {
@@ -807,29 +911,15 @@ internal sealed class ModConfigMenuNarrator
         {
             newIndex = _currentElementIndex < _navigableElements.Count - 1 ? _currentElementIndex + 1 : 0;
         }
-        else if (justPressed.MenuLeft)
-        {
-            // For sliders or cycle elements, try to decrease value
-            if (_currentElementIndex >= 0 && _currentElementIndex < _navigableElements.Count)
-            {
-                TryAdjustConfigValue(_navigableElements[_currentElementIndex], -1, announce);
-            }
-            return;
-        }
-        else if (justPressed.MenuRight)
-        {
-            // For sliders or cycle elements, try to increase value
-            if (_currentElementIndex >= 0 && _currentElementIndex < _navigableElements.Count)
-            {
-                TryAdjustConfigValue(_navigableElements[_currentElementIndex], 1, announce);
-            }
-            return;
-        }
 
         if (newIndex != _currentElementIndex && newIndex >= 0 && newIndex < _navigableElements.Count)
         {
             _currentElementIndex = newIndex;
             UIElement element = _navigableElements[newIndex];
+
+            // Reset slider tracking when navigating to a new element
+            _lastSliderElementIndex = -1;
+            _lastSliderValue = -1f;
 
             // Move cursor to the element
             MoveCursorToElement(element);
@@ -837,7 +927,7 @@ internal sealed class ModConfigMenuNarrator
             // Scroll the element into view
             ScrollElementIntoView(configList, element);
 
-            // Announce the element
+            // Announce the element (full label + value)
             AnnounceConfigElementAtIndex(newIndex, announce);
 
             // Suppress hover announcements for a short time to prevent double-speak
@@ -878,6 +968,13 @@ internal sealed class ModConfigMenuNarrator
         }
 
         if (!hover.IsNew)
+        {
+            return;
+        }
+
+        // Skip hover announcements for the element we just navigated to via keyboard/gamepad
+        // This prevents double announcements where we say "Edge Detection: Static" followed by "Edge Detection"
+        if (hover.Element is not null && ReferenceEquals(hover.Element, _lastNavigatedElement))
         {
             return;
         }
@@ -1167,6 +1264,7 @@ internal sealed class ModConfigMenuNarrator
     {
         if (_navigableElements is null || index < 0 || index >= _navigableElements.Count)
         {
+            ScreenReaderMod.Instance?.Logger.Debug($"[ModConfig] AnnounceConfigElementAtIndex early return: elements={_navigableElements?.Count}, index={index}");
             return;
         }
 
@@ -1175,10 +1273,16 @@ internal sealed class ModConfigMenuNarrator
 
         string description = DescribeConfigElement(element);
 
+        ScreenReaderMod.Instance?.Logger.Debug($"[ModConfig] AnnounceConfigElementAtIndex: index={index}, description='{description}'");
+
         if (!string.IsNullOrWhiteSpace(description))
         {
             // Just announce the setting without position info
             announce(description, false, MenuNarrationEventKind.ModConfig);
+        }
+        else
+        {
+            ScreenReaderMod.Instance?.Logger.Debug($"[ModConfig] AnnounceConfigElementAtIndex: description was empty for {element.GetType().Name}");
         }
     }
 
@@ -1292,18 +1396,25 @@ internal sealed class ModConfigMenuNarrator
         string cleanLabel = !string.IsNullOrWhiteSpace(label) ? TextSanitizer.Clean(label) : string.Empty;
         string cleanValue = !string.IsNullOrWhiteSpace(value) ? TextSanitizer.Clean(value) : string.Empty;
 
-        // Check if the label already contains the value (common for sliders/floats)
-        // TextDisplayFunction for sliders typically returns "Label: value" already
+        // Check if we should skip adding the value to avoid duplication
+        // This happens when:
+        // 1. The label already contains the value (common for sliders/floats where TextDisplayFunction returns "Label: value")
+        // 2. The label already has a colon (indicating TextDisplayFunction already formatted with value)
+        // 3. The value looks like it contains the label (extraction got confused)
+        bool labelAlreadyHasValue = cleanLabel.Contains(':');
         bool labelContainsValue = !string.IsNullOrWhiteSpace(cleanValue) &&
                                    !string.IsNullOrWhiteSpace(cleanLabel) &&
                                    cleanLabel.Contains(cleanValue, StringComparison.OrdinalIgnoreCase);
+        bool valueContainsLabel = !string.IsNullOrWhiteSpace(cleanValue) &&
+                                   !string.IsNullOrWhiteSpace(cleanLabel) &&
+                                   cleanValue.Contains(cleanLabel, StringComparison.OrdinalIgnoreCase);
 
         // Build description - don't duplicate value if already in label
         if (!string.IsNullOrWhiteSpace(cleanLabel))
         {
-            if (labelContainsValue || string.IsNullOrWhiteSpace(cleanValue))
+            if (labelAlreadyHasValue || labelContainsValue || valueContainsLabel || string.IsNullOrWhiteSpace(cleanValue))
             {
-                // Label already has the value or no value to add
+                // Label already has the value, or value extraction returned garbage
                 return cleanLabel;
             }
             else
@@ -1663,7 +1774,8 @@ internal sealed class ModConfigMenuNarrator
 
     /// <summary>
     /// Handles the gamepad A button (select) to interact with the currently focused config element.
-    /// For boolean toggles, this toggles the value. For other elements, it invokes the click.
+    /// For boolean toggles, this toggles the value. For enum elements, this cycles to the next value.
+    /// For other elements, it invokes the click.
     /// </summary>
     private void HandleConfigSelectButton(Action<string, bool, MenuNarrationEventKind> announce)
     {
@@ -1686,6 +1798,14 @@ internal sealed class ModConfigMenuNarrator
         if (TryToggleConfigElement(element, announce))
         {
             // Suppress hover announcements after toggle to prevent "Revert Changes" etc.
+            _suppressHoverFrames = 30;
+            return;
+        }
+
+        // Try to cycle if it's an enum element (extends RangeElement with discrete ticks)
+        if (TryCycleEnumElement(element, announce))
+        {
+            // Suppress hover announcements after cycle to prevent "Revert Changes" etc.
             _suppressHoverFrames = 30;
             return;
         }
@@ -1762,6 +1882,230 @@ internal sealed class ModConfigMenuNarrator
         return false;
     }
 
+    /// <summary>
+    /// Attempts to cycle an enum config element to the next value.
+    /// Handles both EnumElement (RangeElement-based with Proportion) and
+    /// EnumElement2 (ConfigElement-based with _getIndex/_setValue).
+    /// </summary>
+    private static bool TryCycleEnumElement(UIElement element, Action<string, bool, MenuNarrationEventKind> announce)
+    {
+        Type type = element.GetType();
+        string? typeName = type.FullName;
+
+        // Check if this is an enum element
+        if (typeName is null || !typeName.Contains("EnumElement", StringComparison.Ordinal))
+        {
+            return false;
+        }
+
+        // Try EnumElement2 first (more common in modern tModLoader)
+        if (TryCycleEnumElement2(element, type, announce))
+        {
+            return true;
+        }
+
+        // Fall back to EnumElement (RangeElement-based)
+        return TryCycleEnumElementViaPropotion(element, type, announce);
+    }
+
+    /// <summary>
+    /// Cycles EnumElement2 which uses _getIndex and _setValue fields.
+    /// Also triggers an auto-save of the config changes for immediate effect.
+    /// </summary>
+    private static bool TryCycleEnumElement2(UIElement element, Type type, Action<string, bool, MenuNarrationEventKind> announce)
+    {
+        const BindingFlags flags = BindingFlags.Instance | BindingFlags.NonPublic;
+
+        try
+        {
+            // Get the private fields for index and value manipulation
+            FieldInfo? getIndexField = type.GetField("_getIndex", flags);
+            FieldInfo? setValueField = type.GetField("_setValue", flags);
+            FieldInfo? maxField = type.GetField("max", flags);
+
+            if (getIndexField is null || setValueField is null || maxField is null)
+            {
+                return false;
+            }
+
+            // Get the delegates and max value
+            object? getIndexDelegate = getIndexField.GetValue(element);
+            object? setValueDelegate = setValueField.GetValue(element);
+            object? maxObj = maxField.GetValue(element);
+
+            if (getIndexDelegate is not Func<int> getIndex ||
+                setValueDelegate is not Action<int> setValue ||
+                maxObj is not int max || max <= 0)
+            {
+                ScreenReaderMod.Instance?.Logger.Debug($"[ModConfig] EnumElement2 delegates not found or invalid: getIndex={getIndexDelegate?.GetType().Name}, setValue={setValueDelegate?.GetType().Name}, max={maxObj}");
+                return false;
+            }
+
+            // Get current index and cycle to next
+            int currentIndex = getIndex();
+            int newIndex = (currentIndex + 1) % max;
+
+            ScreenReaderMod.Instance?.Logger.Debug($"[ModConfig] Cycling EnumElement2: index {currentIndex} -> {newIndex} (max={max})");
+
+            // Set the new value (this calls DefaultSetValue which also calls SetPendingChanges)
+            setValue(newIndex);
+
+            // Trigger UI update by setting UpdateNeeded = true
+            FieldInfo? updateNeededField = type.GetField("UpdateNeeded", flags);
+            PropertyInfo? updateNeededProp = type.GetProperty("UpdateNeeded", flags);
+            if (updateNeededProp is not null && updateNeededProp.CanWrite)
+            {
+                updateNeededProp.SetValue(element, true);
+            }
+            else if (updateNeededField is not null)
+            {
+                updateNeededField.SetValue(element, true);
+            }
+
+            // Auto-save the config changes so they take effect immediately
+            TryAutoSaveConfigChanges();
+
+            SoundEngine.PlaySound(SoundID.MenuTick);
+
+            // Re-announce with new value
+            string description = DescribeConfigElement(element);
+            if (!string.IsNullOrWhiteSpace(description))
+            {
+                announce(description, false, MenuNarrationEventKind.ModConfig);
+            }
+
+            return true;
+        }
+        catch (Exception ex)
+        {
+            ScreenReaderMod.Instance?.Logger.Debug($"[ModConfig] Failed to cycle EnumElement2: {ex.Message}");
+            return false;
+        }
+    }
+
+    /// <summary>
+    /// Attempts to auto-save pending config changes by clicking the save button.
+    /// This ensures that config changes take effect immediately without requiring
+    /// the user to manually navigate to and click the Save button.
+    /// </summary>
+    private static void TryAutoSaveConfigChanges()
+    {
+        try
+        {
+            // Access Interface.modConfig via reflection
+            Type? interfaceType = Type.GetType("Terraria.ModLoader.UI.Interface, tModLoader");
+            if (interfaceType is null)
+            {
+                ScreenReaderMod.Instance?.Logger.Debug("[ModConfig] Could not find Interface type for auto-save");
+                return;
+            }
+
+            FieldInfo? modConfigField = interfaceType.GetField("modConfig", BindingFlags.Static | BindingFlags.NonPublic | BindingFlags.Public);
+            if (modConfigField is null)
+            {
+                ScreenReaderMod.Instance?.Logger.Debug("[ModConfig] Could not find modConfig field for auto-save");
+                return;
+            }
+
+            object? modConfigUI = modConfigField.GetValue(null);
+            if (modConfigUI is null)
+            {
+                ScreenReaderMod.Instance?.Logger.Debug("[ModConfig] modConfig UI is null");
+                return;
+            }
+
+            // Find the saveConfigButton field
+            Type modConfigUIType = modConfigUI.GetType();
+            FieldInfo? saveButtonField = modConfigUIType.GetField("saveConfigButton", BindingFlags.Instance | BindingFlags.NonPublic);
+            if (saveButtonField is null)
+            {
+                ScreenReaderMod.Instance?.Logger.Debug("[ModConfig] Could not find saveConfigButton field");
+                return;
+            }
+
+            object? saveButton = saveButtonField.GetValue(modConfigUI);
+            if (saveButton is not UIElement saveButtonElement)
+            {
+                ScreenReaderMod.Instance?.Logger.Debug("[ModConfig] saveConfigButton is not a UIElement");
+                return;
+            }
+
+            // Invoke the click on the save button
+            CalculatedStyle dims = saveButtonElement.GetDimensions();
+            var mousePosition = new Vector2(dims.X + dims.Width / 2, dims.Y + dims.Height / 2);
+            var evt = new UIMouseEvent(saveButtonElement, mousePosition);
+            saveButtonElement.LeftClick(evt);
+
+            ScreenReaderMod.Instance?.Logger.Debug("[ModConfig] Auto-saved config changes");
+        }
+        catch (Exception ex)
+        {
+            ScreenReaderMod.Instance?.Logger.Debug($"[ModConfig] Auto-save failed: {ex.Message}");
+        }
+    }
+
+    /// <summary>
+    /// Cycles EnumElement which uses Proportion property (RangeElement-based).
+    /// </summary>
+    private static bool TryCycleEnumElementViaPropotion(UIElement element, Type type, Action<string, bool, MenuNarrationEventKind> announce)
+    {
+        ConfigElementAccessors accessors = GetConfigElementAccessors(type);
+
+        // EnumElement uses Proportion property to set the value
+        if (accessors.ProportionProperty is null || !accessors.ProportionProperty.CanRead || !accessors.ProportionProperty.CanWrite)
+        {
+            ScreenReaderMod.Instance?.Logger.Debug("[ModConfig] EnumElement detected but Proportion property not accessible");
+            return false;
+        }
+
+        try
+        {
+            // Get current proportion (0.0 to 1.0)
+            object? proportionObj = accessors.ProportionProperty.GetValue(element);
+            if (proportionObj is not float currentProportion)
+            {
+                ScreenReaderMod.Instance?.Logger.Debug("[ModConfig] EnumElement Proportion is not a float");
+                return false;
+            }
+
+            // Get tick increment (1.0 / (numValues - 1) for enums)
+            float tickIncrement = 0.5f; // Default for 2-value enum
+            if (accessors.TickIncrementProperty?.GetValue(element) is float tick && tick > 0f)
+            {
+                tickIncrement = tick;
+            }
+
+            // Calculate new proportion (cycle forward, wrap around)
+            float newProportion = currentProportion + tickIncrement;
+            if (newProportion > 1.0f + 0.001f)
+            {
+                newProportion = 0f; // Wrap around to first value
+            }
+            newProportion = Math.Clamp(newProportion, 0f, 1f);
+
+            ScreenReaderMod.Instance?.Logger.Debug($"[ModConfig] Cycling enum: {currentProportion:F2} -> {newProportion:F2} (tick={tickIncrement:F2})");
+
+            // Set the new proportion
+            accessors.ProportionProperty.SetValue(element, newProportion);
+
+            SoundEngine.PlaySound(SoundID.MenuTick);
+
+            // Re-announce with new value
+            string description = DescribeConfigElement(element);
+            if (!string.IsNullOrWhiteSpace(description))
+            {
+                announce(description, false, MenuNarrationEventKind.ModConfig);
+            }
+
+            return true;
+        }
+        catch (Exception ex)
+        {
+            ScreenReaderMod.Instance?.Logger.Debug($"[ModConfig] Failed to cycle enum element: {ex.Message}");
+            return false;
+        }
+    }
+
     private bool HandleDpadNavigation(Action<string, bool, MenuNarrationEventKind> announce)
     {
         if (_navigableElements is null || _navigableElements.Count == 0)
@@ -1797,17 +2141,21 @@ internal sealed class ModConfigMenuNarrator
         return false;
     }
 
-    private static void TryAdjustConfigValue(UIElement element, int direction, Action<string, bool, MenuNarrationEventKind> announce)
+    private void TryAdjustConfigValue(UIElement element, int direction, Action<string, bool, MenuNarrationEventKind> announce)
     {
         Type type = element.GetType();
         ConfigElementAccessors accessors = GetConfigElementAccessors(type);
 
         // Try slider adjustment first (RangeElement types have Proportion property)
-        if (TryAdjustSlider(element, accessors, direction))
+        if (TryAdjustSlider(element, accessors, direction, out float newPercent))
         {
-            // Re-announce with new value
-            string newDescription = DescribeConfigElement(element);
-            announce(newDescription, false, MenuNarrationEventKind.ModConfig);
+            // Always only announce the percentage value when adjusting
+            // (the full label was already announced when navigating to this element)
+            string valueOnly = $"{newPercent:0} percent";
+            announce(valueOnly, true, MenuNarrationEventKind.ModConfig);
+
+            _lastSliderElementIndex = _currentElementIndex;
+            _lastSliderValue = newPercent;
             SoundEngine.PlaySound(SoundID.MenuTick);
             return;
         }
@@ -1818,7 +2166,7 @@ internal sealed class ModConfigMenuNarrator
         {
             if (TryInvokeClick(element))
             {
-                // Re-announce with new value
+                // Re-announce with new value (always include label for toggles)
                 string newDescription = DescribeConfigElement(element);
                 announce(newDescription, false, MenuNarrationEventKind.ModConfig);
                 SoundEngine.PlaySound(SoundID.MenuTick);
@@ -1826,8 +2174,10 @@ internal sealed class ModConfigMenuNarrator
         }
     }
 
-    private static bool TryAdjustSlider(UIElement element, ConfigElementAccessors accessors, int direction)
+    private static bool TryAdjustSlider(UIElement element, ConfigElementAccessors accessors, int direction, out float newPercentValue)
     {
+        newPercentValue = 0f;
+
         // Check if this is a slider element (has Proportion and TickIncrement properties)
         if (accessors.ProportionProperty is null || !accessors.ProportionProperty.CanRead || !accessors.ProportionProperty.CanWrite)
         {
@@ -1862,6 +2212,9 @@ internal sealed class ModConfigMenuNarrator
 
             // Set the new proportion
             accessors.ProportionProperty.SetValue(element, newProportion);
+
+            // Calculate and return the new percentage value
+            newPercentValue = MathF.Round(newProportion * 100f);
             return true;
         }
         catch (Exception ex)

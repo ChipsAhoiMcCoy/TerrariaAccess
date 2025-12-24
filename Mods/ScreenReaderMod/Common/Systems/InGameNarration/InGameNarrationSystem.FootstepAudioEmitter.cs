@@ -40,7 +40,15 @@ public sealed partial class InGameNarrationSystem
         private bool _pendingEchoIsPlatform;            // Whether edge is platform or ground
         private int _pendingEchoDirection;              // Direction of pending echo (1 or -1)
 
-        private readonly record struct EdgeScanResult(Vector2 WorldPosition, bool IsPlatform);
+        // Edge static mode state
+        private const float StaticMaxVolume = 0.18f;    // Never louder than footsteps (footsteps are ~0.225-0.4375)
+        private const float StaticMinVolume = 0.02f;    // Very faint when far away
+        private const float StaticMaxDistanceTiles = 18f; // Same as echo scan range
+        private SoundEffectInstance? _edgeStaticInstance;
+        private float _lastEdgeStaticVolume;
+        private float _lastEdgeStaticPan;
+
+        private readonly record struct EdgeScanResult(Vector2 WorldPosition, bool IsPlatform, float DistancePixels);
 
         public void Update(Player player)
         {
@@ -50,8 +58,24 @@ public sealed partial class InGameNarrationSystem
                 return;
             }
 
-            // Check for pending edge echoes first
-            TryPlayScheduledEcho(player);
+            var edgeMode = ScreenReaderModConfig.Instance?.EdgeDetection ?? EdgeDetectionMode.Echo;
+
+            // Handle edge detection based on mode
+            if (edgeMode == EdgeDetectionMode.Off)
+            {
+                StopEdgeStatic();
+                ClearPendingEcho();
+            }
+            else if (edgeMode == EdgeDetectionMode.Echo)
+            {
+                TryPlayScheduledEcho(player);
+                StopEdgeStatic();
+            }
+            else
+            {
+                UpdateEdgeStatic(player);
+                ClearPendingEcho();
+            }
 
             bool grounded = IsGrounded(player);
             if (!grounded)
@@ -60,6 +84,7 @@ public sealed partial class InGameNarrationSystem
                 _lastFootX = float.NaN;
                 StopHarmfulTone();
                 ClearPendingEcho();
+                StopEdgeStatic();
                 return;
             }
 
@@ -89,16 +114,20 @@ public sealed partial class InGameNarrationSystem
             bool onHarmfulTile = IsHarmfulTile(player, footTile);
             PlayStep(player, onPlatform, onHarmfulTile);
 
-            // Scan for edges ahead and schedule echo if found
-            int moveDirection = Math.Sign(player.velocity.X);
-            if (moveDirection != 0)
+            // Scan for edges ahead and schedule echo if found (echo mode only)
+            if (edgeMode == EdgeDetectionMode.Echo)
             {
-                EdgeScanResult? edge = ScanForEdge(player, moveDirection);
-                if (edge.HasValue)
+                int moveDirection = Math.Sign(player.velocity.X);
+                if (moveDirection != 0)
                 {
-                    ScheduleEdgeEcho(edge.Value, moveDirection);
+                    EdgeScanResult? edge = ScanForEdge(player, moveDirection);
+                    if (edge.HasValue)
+                    {
+                        ScheduleEdgeEcho(edge.Value, moveDirection);
+                    }
                 }
             }
+            // Off mode: no edge detection at all (already cleared above)
         }
 
         public void Reset()
@@ -163,6 +192,7 @@ public sealed partial class InGameNarrationSystem
             _maxAirborneDisplacement = 0f;
             StopHarmfulTone();
             ClearPendingEcho();
+            StopEdgeStatic();
         }
 
         private void TrackAirborneDisplacement(Player player)
@@ -237,7 +267,7 @@ public sealed partial class InGameNarrationSystem
                 return null;
             }
 
-            Point footTile = GetFootTile(player, out _);
+            Point footTile = GetFootTile(player, out float footX);
             int endX = footTile.X + direction * EdgeScanRangeTiles;
 
             for (int scanX = footTile.X + direction;
@@ -257,7 +287,8 @@ public sealed partial class InGameNarrationSystem
                         int edgeTileX = scanX - direction;
                         bool isPlatform = IsPlatform(edgeTileX, footTile.Y);
                         Vector2 edgePos = new(scanX * 16f + 8f, footTile.Y * 16f + 8f);
-                        return new EdgeScanResult(edgePos, isPlatform);
+                        float distancePixels = Math.Abs(edgePos.X - footX);
+                        return new EdgeScanResult(edgePos, isPlatform, distancePixels);
                     }
 
                     break; // Shallow drop, stop scanning
@@ -395,6 +426,74 @@ public sealed partial class InGameNarrationSystem
 
             FootstepToneProvider.StopInstance(_harmfulLoopInstance);
             _harmfulLoopInstance = null;
+        }
+
+        private void UpdateEdgeStatic(Player player)
+        {
+            if (!IsGrounded(player))
+            {
+                StopEdgeStatic();
+                return;
+            }
+
+            // Use control inputs for immediate responsiveness (velocity has acceleration lag)
+            int moveDirection = player.controlRight ? 1 : player.controlLeft ? -1 : 0;
+            if (moveDirection == 0)
+            {
+                // Not pressing movement keys - stop edge warning immediately
+                StopEdgeStatic();
+                return;
+            }
+
+            // Scan only in movement direction
+            EdgeScanResult? edge = ScanForEdge(player, moveDirection);
+
+            if (!edge.HasValue)
+            {
+                StopEdgeStatic();
+                return;
+            }
+
+            EdgeScanResult nearestEdge = edge.Value;
+
+            // Compute volume based on distance (closer = louder)
+            // Use quadratic falloff for more dramatic volume increase as player approaches
+            float distanceTiles = nearestEdge.DistancePixels / 16f;
+            float normalizedDistance = MathHelper.Clamp(distanceTiles / StaticMaxDistanceTiles, 0f, 1f);
+            // Quadratic falloff: volume increases more dramatically as player gets close
+            float proximityFactor = (1f - normalizedDistance) * (1f - normalizedDistance);
+            float volume = MathHelper.Lerp(StaticMinVolume, StaticMaxVolume, proximityFactor);
+
+            // Compute pan based on actual world position of edge relative to player
+            Vector2 playerCenter = player.Center;
+            float offsetX = nearestEdge.WorldPosition.X - playerCenter.X;
+            float pan = MathHelper.Clamp(offsetX / EchoPanScalePixels, -1f, 1f);
+
+            // Create or update the static sound
+            if (_edgeStaticInstance is null || _edgeStaticInstance.IsDisposed || _edgeStaticInstance.State == SoundState.Stopped)
+            {
+                _edgeStaticInstance = FootstepToneProvider.PlayLoopingWhiteNoise(volume, pan);
+                _lastEdgeStaticVolume = volume;
+                _lastEdgeStaticPan = pan;
+                return;
+            }
+
+            // Update volume and pan in realtime as player moves
+            _edgeStaticInstance.Volume = MathHelper.Clamp(volume, 0f, 1f) * Main.soundVolume * AudioVolumeDefaults.WorldCueVolumeScale;
+            _edgeStaticInstance.Pan = MathHelper.Clamp(pan, -1f, 1f);
+            _lastEdgeStaticVolume = volume;
+            _lastEdgeStaticPan = pan;
+        }
+
+        private void StopEdgeStatic()
+        {
+            if (_edgeStaticInstance is null)
+            {
+                return;
+            }
+
+            FootstepToneProvider.StopInstance(_edgeStaticInstance);
+            _edgeStaticInstance = null;
         }
     }
 }

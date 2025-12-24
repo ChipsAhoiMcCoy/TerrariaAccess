@@ -3,6 +3,7 @@ using System;
 using System.Collections.Generic;
 using Microsoft.Xna.Framework;
 using Microsoft.Xna.Framework.Audio;
+using ScreenReaderMod.Common;
 using ScreenReaderMod.Common.Services;
 using Terraria;
 
@@ -51,6 +52,12 @@ public sealed partial class GuidanceSystem
             return;
         }
 
+        float configVolume = (ScreenReaderModConfig.Instance?.GuidanceVolume ?? 100) / 100f;
+        if (configVolume <= 0f)
+        {
+            return;
+        }
+
         try
         {
             CleanupFinishedWaypointInstances();
@@ -70,7 +77,7 @@ public sealed partial class GuidanceSystem
             instance.IsLooped = false;
             instance.Pan = sample.Pan;
             instance.Pitch = sample.Pitch;
-            instance.Volume = MathHelper.Clamp(sample.Volume * AudioVolumeDefaults.WorldCueVolumeScale, 0f, 1f);
+            instance.Volume = MathHelper.Clamp(sample.Volume * AudioVolumeDefaults.WorldCueVolumeScale * configVolume, 0f, 1f);
 
             try
             {
