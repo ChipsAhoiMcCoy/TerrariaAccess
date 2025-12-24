@@ -290,6 +290,8 @@ public sealed partial class InGameNarrationSystem
             details = MergeDetails(details, priceDetails);
             string? sellDetails = BuildSellPriceDetails(player, target.Item, target.Identity);
             details = MergeDetails(details, sellDetails);
+            string? reforgeDetails = BuildReforgePriceDetails(player, target.Item, target.Focus);
+            details = MergeDetails(details, reforgeDetails);
 
             string combined = NarrationTextFormatter.CombineItemAnnouncement(message, details);
             int slotSignature = ComputeSlotSignature(target.Focus);
@@ -638,6 +640,11 @@ public sealed partial class InGameNarrationSystem
                 return "Crafting slot";
             }
 
+            if (context == ItemSlot.Context.PrefixItem)
+            {
+                return "Reforge slot";
+            }
+
             return string.Empty;
         }
 
@@ -801,6 +808,68 @@ public sealed partial class InGameNarrationSystem
             }
 
             return totalValue / 5;
+        }
+
+        private static string? BuildReforgePriceDetails(Player player, Item item, SlotFocus? focus)
+        {
+            if (player is null || item is null || item.IsAir)
+            {
+                return null;
+            }
+
+            if (!Main.InReforgeMenu)
+            {
+                return null;
+            }
+
+            if (!focus.HasValue)
+            {
+                return null;
+            }
+
+            int context = Math.Abs(focus.Value.Context);
+            if (context != ItemSlot.Context.PrefixItem)
+            {
+                return null;
+            }
+
+            if (item.maxStack != 1)
+            {
+                return null;
+            }
+
+            long reforgeCost = GetReforgeCost(player, item);
+            if (reforgeCost <= 0)
+            {
+                return null;
+            }
+
+            string coinText = CoinFormatter.ValueToCoinString(reforgeCost);
+            return string.IsNullOrWhiteSpace(coinText) ? null : $"Reforge cost {coinText}";
+        }
+
+        private static long GetReforgeCost(Player player, Item item)
+        {
+            if (player is null || item is null || item.IsAir)
+            {
+                return 0;
+            }
+
+            long cost = item.value;
+            if (cost <= 0)
+            {
+                return 1;
+            }
+
+            if (player.discountAvailable)
+            {
+                cost = (long)(cost * 0.8);
+            }
+
+            cost = (long)(cost * player.currentShoppingSettings.PriceAdjustment);
+            cost /= 3;
+
+            return Math.Max(1, cost);
         }
 
         private static Item? TryResolveShopItem(ItemIdentity identity, SlotFocus? focus, Chest[] shops)

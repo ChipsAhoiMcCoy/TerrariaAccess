@@ -143,7 +143,7 @@ public sealed partial class GuidanceSystem : ModSystem
             UpdateProximityAnnouncement(player, targetPosition, arrivalLabel, distanceTiles);
             if (distanceTiles <= ArrivalTileThreshold)
             {
-                if (!_arrivalAnnounced && !string.IsNullOrWhiteSpace(arrivalLabel))
+                if (!_arrivalAnnounced && !string.IsNullOrWhiteSpace(arrivalLabel) && _selectionMode != SelectionMode.DroppedItem)
                 {
                     ScreenReaderService.Announce($"Arrived at {arrivalLabel}");
                 }
@@ -367,6 +367,7 @@ public sealed partial class GuidanceSystem : ModSystem
         RefreshPlayerEntries(player);
         RefreshInteractableEntries(player);
         RefreshExplorationEntries();
+        RefreshDroppedItemEntries(player);
 
         _lastTargetRefreshFrame = Main.GameUpdateCount;
         _lastTargetRefreshPlayerIndex = player.whoAmI;
@@ -744,7 +745,8 @@ public sealed partial class GuidanceSystem : ModSystem
         SelectionMode.Interactable,
         SelectionMode.Npc,
         SelectionMode.Player,
-        SelectionMode.Waypoint
+        SelectionMode.Waypoint,
+        SelectionMode.DroppedItem
     };
 
     private readonly record struct TeleportTarget(Vector2 Anchor, string Label, int Style);
@@ -916,6 +918,29 @@ public sealed partial class GuidanceSystem : ModSystem
                 AnnounceWaypointSelection(player);
                 EmitCurrentGuidancePing(player);
                 return;
+            case SelectionMode.DroppedItem:
+                _selectionMode = SelectionMode.DroppedItem;
+                ExplorationTargetRegistry.SetSelectedTarget(null);
+                RefreshDroppedItemEntries(player);
+                if (NearbyDroppedItems.Count == 0)
+                {
+                    _selectedDroppedItemIndex = -1;
+                    ClearCategoryAnnouncement();
+                    RescheduleGuidancePing(player);
+                    AnnounceCategorySelection("Dropped items", "No dropped items on screen.");
+                    return;
+                }
+
+                if (_selectedDroppedItemIndex < 0 || _selectedDroppedItemIndex >= NearbyDroppedItems.Count)
+                {
+                    _selectedDroppedItemIndex = 0;
+                }
+
+                BeginCategoryAnnouncement(SelectionMode.DroppedItem);
+                RescheduleGuidancePing(player);
+                AnnounceDroppedItemSelection(player);
+                EmitCurrentGuidancePing(player);
+                return;
         }
     }
 
@@ -1023,6 +1048,21 @@ public sealed partial class GuidanceSystem : ModSystem
                     ExplorationTargetRegistry.SetSelectedTarget(_lastExplorationSelection);
                 }
                 return;
+            case SelectionMode.DroppedItem:
+                RefreshDroppedItemEntries(player);
+                if (!TryAdvanceSelectionIndex(ref _selectedDroppedItemIndex, NearbyDroppedItems.Count, direction))
+                {
+                    _selectedDroppedItemIndex = -1;
+                    ClearCategoryAnnouncement();
+                    RescheduleGuidancePing(player);
+                    AnnounceCategorySelection("Dropped items", "No dropped items on screen.");
+                    return;
+                }
+
+                RescheduleGuidancePing(player);
+                AnnounceDroppedItemSelection(player);
+                EmitCurrentGuidancePing(player);
+                return;
             default:
                 ScreenReaderService.Announce("Select a waypoint, player, NPC, or crafting category to browse entries.");
                 return;
@@ -1100,6 +1140,26 @@ public sealed partial class GuidanceSystem : ModSystem
         int position = _selectedPlayerIndex + 1;
         string announcement = ComposePlayerAnnouncement(entry, player, targetPlayer.Center, position, totalEntries);
         AnnounceSelectedEntry(SelectionMode.Player, "Player guidance", announcement);
+    }
+
+    private static void AnnounceDroppedItemSelection(Player player)
+    {
+        if (_selectionMode != SelectionMode.DroppedItem)
+        {
+            return;
+        }
+
+        if (!TryGetSelectedDroppedItem(player, out DroppedItemGuidanceEntry entry))
+        {
+            ClearCategoryAnnouncement();
+            AnnounceCategorySelection("Dropped items", "No dropped items on screen.");
+            return;
+        }
+
+        int totalEntries = NearbyDroppedItems.Count;
+        int position = _selectedDroppedItemIndex + 1;
+        string announcement = ComposeEntityAnnouncement(entry.DisplayName, player, entry.WorldPosition, position, totalEntries);
+        AnnounceSelectedEntry(SelectionMode.DroppedItem, "Dropped items", announcement);
     }
 
     private static void AnnounceExplorationEntry(Player player, int totalEntries)
@@ -1404,6 +1464,45 @@ public sealed partial class GuidanceSystem : ModSystem
         return true;
     }
 
+    private static bool TryGetSelectedDroppedItem(Player player, out DroppedItemGuidanceEntry entry)
+    {
+        entry = default;
+        if (_selectionMode != SelectionMode.DroppedItem)
+        {
+            return false;
+        }
+
+        EnsureTargetsUpToDate(player);
+        if (_selectedDroppedItemIndex < 0 || _selectedDroppedItemIndex >= NearbyDroppedItems.Count)
+        {
+            _selectedDroppedItemIndex = -1;
+            return false;
+        }
+
+        entry = NearbyDroppedItems[_selectedDroppedItemIndex];
+
+        // Validate the item still exists and is active
+        if (entry.ItemIndex < 0 || entry.ItemIndex >= Main.maxItems)
+        {
+            return false;
+        }
+
+        Item item = Main.item[entry.ItemIndex];
+        if (!item.active || item.stack <= 0)
+        {
+            RefreshDroppedItemEntries(player);
+            if (_selectedDroppedItemIndex < 0 || _selectedDroppedItemIndex >= NearbyDroppedItems.Count)
+            {
+                _selectedDroppedItemIndex = -1;
+                return false;
+            }
+
+            entry = NearbyDroppedItems[_selectedDroppedItemIndex];
+        }
+
+        return true;
+    }
+
     private static string FormatEntryOrdinal(int position, int total)
     {
         if (position <= 0 || total <= 0 || position > total)
@@ -1583,6 +1682,10 @@ public sealed partial class GuidanceSystem : ModSystem
                 worldPosition = targetPlayer.Bottom;
                 label = SanitizeLabel(playerEntry.DisplayName);
                 return true;
+            case SelectionMode.DroppedItem when TryGetSelectedDroppedItem(player, out DroppedItemGuidanceEntry droppedItem):
+                worldPosition = droppedItem.WorldPosition;
+                label = SanitizeLabel(droppedItem.DisplayName);
+                return true;
             default:
                 worldPosition = default;
                 label = string.Empty;
@@ -1672,6 +1775,8 @@ public sealed partial class GuidanceSystem : ModSystem
                 => new ProximityTargetKey(
                     SelectionMode.Exploration,
                     HashCode.Combine(explorationEntry.Key.SourceId, explorationEntry.Key.LocalId)),
+            SelectionMode.DroppedItem when TryGetSelectedDroppedItem(player, out DroppedItemGuidanceEntry droppedItemEntry)
+                => new ProximityTargetKey(SelectionMode.DroppedItem, droppedItemEntry.ItemIndex),
             _ => new ProximityTargetKey(SelectionMode.None, -1)
         };
     }

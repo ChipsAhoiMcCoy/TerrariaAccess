@@ -103,6 +103,24 @@ public sealed partial class GuidanceSystem
     private static readonly List<PlayerGuidanceEntry> NearbyPlayers = new();
     private static readonly List<ExplorationTargetRegistry.ExplorationTarget> NearbyExplorationTargets = new();
 
+    private readonly struct DroppedItemGuidanceEntry
+    {
+        public readonly int ItemIndex;
+        public readonly string DisplayName;
+        public readonly Vector2 WorldPosition;
+        public readonly float DistanceTiles;
+
+        public DroppedItemGuidanceEntry(int itemIndex, string displayName, Vector2 worldPosition, float distanceTiles)
+        {
+            ItemIndex = itemIndex;
+            DisplayName = displayName;
+            WorldPosition = worldPosition;
+            DistanceTiles = distanceTiles;
+        }
+    }
+
+    private static readonly List<DroppedItemGuidanceEntry> NearbyDroppedItems = new();
+
     private static Dictionary<int, List<InteractableDefinition>> BuildInteractableDefinitionMap()
     {
         Dictionary<int, List<InteractableDefinition>> map = new();
@@ -629,5 +647,97 @@ public sealed partial class GuidanceSystem
     private static bool IsWithinWorld(Point point)
     {
         return point.X >= 0 && point.X < Main.maxTilesX && point.Y >= 0 && point.Y < Main.maxTilesY;
+    }
+
+    private const float ScreenEdgePaddingPixels = 48f;
+
+    private static bool IsWorldPositionApproximatelyOnScreen(Vector2 worldPosition, float paddingPixels = ScreenEdgePaddingPixels)
+    {
+        float zoomX = Math.Abs(Main.GameViewMatrix.Zoom.X) < 0.001f ? 1f : Main.GameViewMatrix.Zoom.X;
+        float zoomY = Math.Abs(Main.GameViewMatrix.Zoom.Y) < 0.001f ? zoomX : Main.GameViewMatrix.Zoom.Y;
+        float zoom = Math.Max(0.001f, Math.Min(zoomX, zoomY));
+
+        float viewWidth = Main.screenWidth / zoom;
+        float viewHeight = Main.screenHeight / zoom;
+        Vector2 topLeft = Main.screenPosition;
+
+        float left = topLeft.X - paddingPixels;
+        float top = topLeft.Y - paddingPixels;
+        float right = left + viewWidth + paddingPixels * 2f;
+        float bottom = top + viewHeight + paddingPixels * 2f;
+
+        return worldPosition.X >= left && worldPosition.X <= right &&
+               worldPosition.Y >= top && worldPosition.Y <= bottom;
+    }
+
+    private static void RefreshDroppedItemEntries(Player player)
+    {
+        int preservedItemIndex = -1;
+        if (_selectedDroppedItemIndex >= 0 && _selectedDroppedItemIndex < NearbyDroppedItems.Count)
+        {
+            preservedItemIndex = NearbyDroppedItems[_selectedDroppedItemIndex].ItemIndex;
+        }
+
+        NearbyDroppedItems.Clear();
+        if (player is null || !player.active)
+        {
+            _selectedDroppedItemIndex = -1;
+            return;
+        }
+
+        Vector2 origin = player.Center;
+
+        for (int i = 0; i < Main.maxItems; i++)
+        {
+            Item item = Main.item[i];
+            if (!item.active || item.stack <= 0)
+            {
+                continue;
+            }
+
+            Vector2 itemCenter = item.Center;
+            if (!IsWorldPositionApproximatelyOnScreen(itemCenter))
+            {
+                continue;
+            }
+
+            float distanceTiles = Vector2.Distance(origin, itemCenter) / 16f;
+            string displayName = ResolveDroppedItemDisplayName(item);
+            NearbyDroppedItems.Add(new DroppedItemGuidanceEntry(i, displayName, itemCenter, distanceTiles));
+        }
+
+        NearbyDroppedItems.Sort((left, right) => left.DistanceTiles.CompareTo(right.DistanceTiles));
+
+        if (NearbyDroppedItems.Count == 0)
+        {
+            _selectedDroppedItemIndex = -1;
+            return;
+        }
+
+        if (preservedItemIndex >= 0)
+        {
+            int restoredIndex = NearbyDroppedItems.FindIndex(entry => entry.ItemIndex == preservedItemIndex);
+            if (restoredIndex >= 0)
+            {
+                _selectedDroppedItemIndex = restoredIndex;
+                return;
+            }
+        }
+
+        if (_selectedDroppedItemIndex < 0 || _selectedDroppedItemIndex >= NearbyDroppedItems.Count)
+        {
+            _selectedDroppedItemIndex = 0;
+        }
+    }
+
+    private static string ResolveDroppedItemDisplayName(Item item)
+    {
+        string name = Lang.GetItemNameValue(item.type);
+        if (string.IsNullOrWhiteSpace(name))
+        {
+            name = "Item";
+        }
+
+        return item.stack > 1 ? $"{item.stack} {name}" : name;
     }
 }

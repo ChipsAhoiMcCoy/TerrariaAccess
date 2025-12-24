@@ -255,6 +255,8 @@ public sealed class DownloadModsAccessibilitySystem : ModSystem
             _currentRegion = FocusRegion.ModList;
             _announcedFirstMod = false;
             _previousModCount = 0;
+            _lastScrollAnnouncedModIndex = -1;
+            _lastScrollPosition = -1f;
             Mod.Logger.Info("[DownloadMods] Entered Download Mods menu");
         }
 
@@ -272,6 +274,7 @@ public sealed class DownloadModsAccessibilitySystem : ModSystem
             ConfigureGamepadPoints(currentState);
             HandleManualNavigation(currentState);
             HandleActionButton(currentState);
+            HandleScrollAnnouncements(currentState);
             AnnounceCurrentFocus(currentState);
         }
         catch (Exception ex)
@@ -545,17 +548,10 @@ public sealed class DownloadModsAccessibilitySystem : ModSystem
             linkPoint.Unlink();
         }
 
-        // Connect filter buttons horizontally
+        // Connect filter buttons horizontally (no escape to back button - only mod list can reach back)
         for (int i = 0; i < filterBindings.Count - 1; i++)
         {
             ConnectHorizontal(filterBindings[i], filterBindings[i + 1]);
-        }
-
-        // Connect first filter button Left to Back button (escape route)
-        if (filterBindings.Count > 0 && bottomActionBindings.Count > 0)
-        {
-            UILinkPoint firstFilter = EnsureLinkPoint(filterBindings[0].Id);
-            firstFilter.Left = bottomActionBindings[0].Id; // Back button
         }
 
         // Connect mod items vertically
@@ -564,17 +560,7 @@ public sealed class DownloadModsAccessibilitySystem : ModSystem
             ConnectVertical(modBindings[i], modBindings[i + 1]);
         }
 
-        // Connect mod items horizontally to bottom action buttons (for escaping the list)
-        if (modBindings.Count > 0 && bottomActionBindings.Count > 0)
-        {
-            int backButtonId = bottomActionBindings[0].Id;
-
-            foreach (var mod in modBindings)
-            {
-                UILinkPoint modPoint = EnsureLinkPoint(mod.Id);
-                modPoint.Left = backButtonId;
-            }
-        }
+        // Mod items no longer escape left to back button - use down at bottom instead
 
         // Connect top action buttons horizontally
         for (int i = 0; i < topActionBindings.Count - 1; i++)
@@ -611,13 +597,13 @@ public sealed class DownloadModsAccessibilitySystem : ModSystem
             }
         }
 
-        // Connect last mod item down to top action buttons
-        if (modBindings.Count > 0 && topActionBindings.Count > 0)
+        // Connect last mod item down to bottom action buttons (Back, etc.)
+        if (modBindings.Count > 0 && bottomActionBindings.Count > 0)
         {
             UILinkPoint lastModPoint = EnsureLinkPoint(modBindings[^1].Id);
-            lastModPoint.Down = topActionBindings[topActionBindings.Count / 2].Id;
+            lastModPoint.Down = bottomActionBindings[0].Id;
 
-            foreach (var action in topActionBindings)
+            foreach (var action in bottomActionBindings)
             {
                 UILinkPoint actionPoint = EnsureLinkPoint(action.Id);
                 actionPoint.Up = modBindings[^1].Id;
@@ -688,8 +674,8 @@ public sealed class DownloadModsAccessibilitySystem : ModSystem
             }
         }
 
-        // Handle scrolling when navigating mod list
-        HandleModListScrolling(modList, browser);
+        // Scrolling is handled by right analog stick, not automatic when navigating
+        // HandleModListScrolling(modList, browser);
     }
 
     private static IList? GetReceivedItems(object? modListObj)
@@ -796,6 +782,10 @@ public sealed class DownloadModsAccessibilitySystem : ModSystem
 
     // A button state
     private static bool _aButtonWasPressed;
+
+    // Right analog scroll tracking
+    private static int _lastScrollAnnouncedModIndex = -1;
+    private static float _lastScrollPosition = -1f;
 
     private static void HandleManualNavigation(object browser)
     {
@@ -957,6 +947,119 @@ public sealed class DownloadModsAccessibilitySystem : ModSystem
         }
     }
 
+    private static void HandleScrollAnnouncements(object browser)
+    {
+        // Only handle scroll announcements when in mod list region
+        if (_currentRegion != FocusRegion.ModList)
+        {
+            _lastScrollAnnouncedModIndex = -1;
+            _lastScrollPosition = -1f;
+            return;
+        }
+
+        GamePadState gpState = GamePad.GetState(PlayerIndex.One);
+        if (!gpState.IsConnected)
+        {
+            return;
+        }
+
+        // Check right analog stick vertical movement
+        float rightStickY = gpState.ThumbSticks.Right.Y;
+        const float scrollThreshold = 0.3f;
+
+        if (Math.Abs(rightStickY) < scrollThreshold)
+        {
+            return; // No significant scrolling happening
+        }
+
+        // Get the mod list and scrollbar
+        object? modListObj = _modListField?.GetValue(browser);
+        UIElement? modList = modListObj as UIElement;
+        if (modList is not UIList uiList)
+        {
+            return;
+        }
+
+        FieldInfo? scrollbarField = typeof(UIList).GetField("_scrollbar", BindingFlags.NonPublic | BindingFlags.Instance);
+        UIScrollbar? scrollbar = scrollbarField?.GetValue(uiList) as UIScrollbar;
+        if (scrollbar is null)
+        {
+            return;
+        }
+
+        float currentScroll = scrollbar.ViewPosition;
+
+        // Check if scroll position changed significantly
+        if (Math.Abs(currentScroll - _lastScrollPosition) < 5f && _lastScrollPosition >= 0)
+        {
+            return; // Not enough scroll change
+        }
+
+        _lastScrollPosition = currentScroll;
+
+        // Find the mod item that's currently in the center of the viewport
+        IList? receivedItems = GetReceivedItems(modListObj);
+        if (receivedItems is null || receivedItems.Count == 0)
+        {
+            return;
+        }
+
+        CalculatedStyle listDims = modList.GetInnerDimensions();
+        float viewportCenter = listDims.Y + listDims.Height / 2f;
+
+        int closestModIndex = -1;
+        float closestDistance = float.MaxValue;
+
+        int index = 0;
+        foreach (object? item in receivedItems)
+        {
+            if (item is UIElement modItemElement)
+            {
+                CalculatedStyle itemDims = modItemElement.GetDimensions();
+                float itemCenter = itemDims.Y + itemDims.Height / 2f;
+                float distance = Math.Abs(itemCenter - viewportCenter);
+
+                if (distance < closestDistance)
+                {
+                    closestDistance = distance;
+                    closestModIndex = index;
+                }
+            }
+            index++;
+        }
+
+        // If the centered mod changed, announce it
+        if (closestModIndex >= 0 && closestModIndex != _lastScrollAnnouncedModIndex)
+        {
+            _lastScrollAnnouncedModIndex = closestModIndex;
+
+            // Get the mod item to announce
+            int currentIndex = 0;
+            foreach (object? item in receivedItems)
+            {
+                if (currentIndex == closestModIndex && item is not null)
+                {
+                    string modName = GetModDisplayName(item);
+                    string modStatus = GetModStatus(item);
+                    string announcement = string.IsNullOrEmpty(modStatus)
+                        ? $"{modName}, {closestModIndex + 1} of {receivedItems.Count}"
+                        : $"{modName}, {modStatus}, {closestModIndex + 1} of {receivedItems.Count}";
+
+                    SoundEngine.PlaySound(SoundID.MenuTick);
+                    ScreenReaderService.Announce(announcement, force: true);
+
+                    // Update the D-pad focus to match scroll position
+                    _currentFocusIndex = closestModIndex;
+                    _currentModButtonIndex = 0;
+
+                    ScreenReaderMod.Instance?.Logger.Debug($"[DownloadMods] Scroll announced: {announcement}");
+                    break;
+                }
+                currentIndex++;
+            }
+        }
+    }
+
     private static int? GetCurrentPointId()
     {
         // For mod list, we need to consider the button index
@@ -1002,31 +1105,20 @@ public sealed class DownloadModsAccessibilitySystem : ModSystem
         switch (_currentRegion)
         {
             case FocusRegion.FilterButtons:
+                // Only navigate within filter buttons, don't leave to back button
                 if (_currentFocusIndex > 0)
                 {
                     _currentFocusIndex--;
                     return true;
                 }
-                if (BottomActionBindingsList.Count > 0)
-                {
-                    _currentRegion = FocusRegion.BottomActionButtons;
-                    _currentFocusIndex = 0;
-                    return true;
-                }
                 break;
 
             case FocusRegion.ModList:
+                // Only navigate between buttons within a mod item, don't leave to back button
                 if (_currentModButtonIndex > 0)
                 {
                     _currentModButtonIndex--;
                     ScreenReaderMod.Instance?.Logger.Info($"[DownloadMods] LEFT in mod list -> button index {_currentModButtonIndex}");
-                    return true;
-                }
-                if (BottomActionBindingsList.Count > 0)
-                {
-                    _currentRegion = FocusRegion.BottomActionButtons;
-                    _currentFocusIndex = 0;
-                    ScreenReaderMod.Instance?.Logger.Info("[DownloadMods] LEFT from mod list -> Back button");
                     return true;
                 }
                 break;
@@ -1138,10 +1230,18 @@ public sealed class DownloadModsAccessibilitySystem : ModSystem
                 break;
 
             case FocusRegion.BottomActionButtons:
-                if (TopActionBindingsList.Count > 0)
+                // Go back up to mod list (or filter buttons if no mods)
+                if (ModBindingsList.Count > 0)
                 {
-                    _currentRegion = FocusRegion.TopActionButtons;
-                    _currentFocusIndex = Math.Min(_currentFocusIndex, TopActionBindingsList.Count - 1);
+                    _currentRegion = FocusRegion.ModList;
+                    _currentFocusIndex = ModBindingsList.Count - 1; // Go to last mod
+                    _currentModButtonIndex = 0;
+                    return true;
+                }
+                if (FilterBindings.Count > 0)
+                {
+                    _currentRegion = FocusRegion.FilterButtons;
+                    _currentFocusIndex = FilterBindings.Count / 2;
                     return true;
                 }
                 break;
@@ -1177,10 +1277,11 @@ public sealed class DownloadModsAccessibilitySystem : ModSystem
                     _currentModButtonIndex = 0;
                     return true;
                 }
-                if (TopActionBindingsList.Count > 0)
+                // At bottom of mod list, go directly to bottom action buttons (Back, etc.)
+                if (BottomActionBindingsList.Count > 0)
                 {
-                    _currentRegion = FocusRegion.TopActionButtons;
-                    _currentFocusIndex = TopActionBindingsList.Count / 2;
+                    _currentRegion = FocusRegion.BottomActionButtons;
+                    _currentFocusIndex = 0;
                     _currentModButtonIndex = 0;
                     return true;
                 }
@@ -1500,7 +1601,9 @@ public sealed class DownloadModsAccessibilitySystem : ModSystem
         switch (binding.Type)
         {
             case PointType.FilterButton:
-                return $"Filter: {label}";
+                int filterIndex = _currentFocusIndex + 1;
+                int filterTotal = FilterBindings.Count;
+                return $"Filter: {label}, {filterIndex} of {filterTotal}";
 
             case PointType.ModItem:
                 int modIndex = _currentFocusIndex + 1;

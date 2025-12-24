@@ -259,7 +259,15 @@ public sealed class ManageModsAccessibilitySystem : ModSystem
 
     private void HandleDrawMenu(On_Main.orig_DrawMenu orig, Main self, GameTime gameTime)
     {
-        // Call original first
+        // CRITICAL: Consume mouse input BEFORE native processing if dialog is active
+        // This prevents _blockInput.OnLeftMouseDown from closing the dialog
+        if (_isDialogActive)
+        {
+            Main.mouseLeft = false;
+            Main.mouseLeftRelease = false;
+        }
+
+        // Call original
         orig(self, gameTime);
 
         // Then process menu accessibility
@@ -353,6 +361,10 @@ public sealed class ManageModsAccessibilitySystem : ModSystem
                     GamePadState gpState = GamePad.GetState(PlayerIndex.One);
                     _dialogAWasPressed = gpState.Buttons.A == ButtonState.Pressed;
 
+                    // CRITICAL: Add a cooldown to prevent accidental Yes clicks
+                    // This gives the user time to release and intentionally re-press A
+                    _dialogActionCooldown = 45; // ~0.75 seconds at 60fps
+
                     Mod.Logger.Info("[ManageMods] Confirmation dialog opened");
                 }
                 else
@@ -385,6 +397,12 @@ public sealed class ManageModsAccessibilitySystem : ModSystem
 
             if (_isDialogActive)
             {
+                // CRITICAL: Consume mouse input EVERY FRAME while dialog is active
+                // This prevents native Terraria UI from triggering _blockInput.OnLeftMouseDown
+                // which would close the dialog when the gamepad A button generates mouseLeft
+                Main.mouseLeft = false;
+                Main.mouseLeftRelease = false;
+
                 // Keep main menu button state in sync while dialog is active
                 // This prevents stale state when transitioning back to menu
                 GamePadState gpState = GamePad.GetState(PlayerIndex.One);
@@ -507,9 +525,9 @@ public sealed class ManageModsAccessibilitySystem : ModSystem
                     int? deleteId = null;
                     int? configId = null;
 
-                    // Get More Info button (always present)
+                    // Get More Info button (always present, but verify it's attached to UI)
                     UIElement? moreInfoButton = _moreInfoButtonField?.GetValue(item) as UIElement;
-                    if (moreInfoButton is not null)
+                    if (moreInfoButton?.Parent is not null)
                     {
                         CalculatedStyle moreInfoDims = moreInfoButton.GetDimensions();
                         Vector2 moreInfoCenter = new(moreInfoDims.X + moreInfoDims.Width / 2f, moreInfoDims.Y + moreInfoDims.Height / 2f);
@@ -519,9 +537,9 @@ public sealed class ManageModsAccessibilitySystem : ModSystem
                         moreInfoId = moreInfoBinding.Id;
                     }
 
-                    // Get Delete button (only present when mod not loaded)
+                    // Get Delete button (only present when mod not loaded AND can be deleted)
                     UIElement? deleteButton = _deleteModButtonField?.GetValue(item) as UIElement;
-                    if (deleteButton is not null)
+                    if (deleteButton?.Parent is not null)
                     {
                         CalculatedStyle deleteDims = deleteButton.GetDimensions();
                         Vector2 deleteCenter = new(deleteDims.X + deleteDims.Width / 2f, deleteDims.Y + deleteDims.Height / 2f);
@@ -533,7 +551,7 @@ public sealed class ManageModsAccessibilitySystem : ModSystem
 
                     // Get Config button (only present when mod has config)
                     UIElement? configButton = _configButtonField?.GetValue(item) as UIElement;
-                    if (configButton is not null)
+                    if (configButton?.Parent is not null)
                     {
                         CalculatedStyle configDims = configButton.GetDimensions();
                         Vector2 configCenter = new(configDims.X + configDims.Width / 2f, configDims.Y + configDims.Height / 2f);
@@ -628,36 +646,16 @@ public sealed class ManageModsAccessibilitySystem : ModSystem
             linkPoint.Unlink();
         }
 
-        // Connect filter buttons horizontally
+        // Connect filter buttons horizontally (no escape to back button - only mod list can reach back)
         for (int i = 0; i < filterBindings.Count - 1; i++)
         {
             ConnectHorizontal(filterBindings[i], filterBindings[i + 1]);
-        }
-
-        // Connect first filter button Left to Back button (escape route)
-        if (filterBindings.Count > 0 && bottomActionBindings.Count > 0)
-        {
-            UILinkPoint firstFilter = EnsureLinkPoint(filterBindings[0].Id);
-            firstFilter.Left = bottomActionBindings[0].Id; // Back button
         }
 
         // Connect mod items vertically
         for (int i = 0; i < modBindings.Count - 1; i++)
         {
             ConnectVertical(modBindings[i], modBindings[i + 1]);
-        }
-
-        // Connect mod items horizontally to bottom action buttons (for escaping the list)
-        // Left goes to Back button - this provides an escape route from the mod list
-        if (modBindings.Count > 0 && bottomActionBindings.Count > 0)
-        {
-            int backButtonId = bottomActionBindings[0].Id; // Back button is first
-
-            foreach (var mod in modBindings)
-            {
-                UILinkPoint modPoint = EnsureLinkPoint(mod.Id);
-                modPoint.Left = backButtonId;
-            }
         }
 
         // Connect top action buttons horizontally
@@ -1000,9 +998,55 @@ public sealed class ManageModsAccessibilitySystem : ModSystem
                         // Simulate a click on the button
                         try
                         {
-                            // Use reflection to invoke the OnLeftClick event
-                            var clickEvent = new UIMouseEvent(buttonElement, Main.MouseScreen);
-                            buttonElement.LeftClick(clickEvent);
+                            // Get button center position for accurate click
+                            CalculatedStyle dims = buttonElement.GetDimensions();
+                            Vector2 buttonCenter = new(dims.X + dims.Width / 2f, dims.Y + dims.Height / 2f);
+
+                            // Create mouse event at button's actual position
+                            var clickEvent = new UIMouseEvent(buttonElement, buttonCenter);
+
+                            // For Delete button, invoke the QuickModDelete method directly on the UIModItem
+                            if (binding.Label == "Delete" && _currentFocusIndex >= 0 && _currentFocusIndex < ModItemBindings.Count)
+                            {
+                                var modItemBinding = ModItemBindings[_currentFocusIndex];
+                                object? modItem = modItemBinding.ModItem;
+                                if (modItem is not null && _uiModItemType is not null)
+                                {
+                                    // Find and invoke QuickModDelete method
+                                    var quickModDeleteMethod = _uiModItemType.GetMethod("QuickModDelete", BindingFlags.NonPublic | BindingFlags.Instance);
+                                    if (quickModDeleteMethod is not null)
+                                    {
+                                        ScreenReaderMod.Instance?.Logger.Info($"[ManageMods] Invoking QuickModDelete directly");
+                                        quickModDeleteMethod.Invoke(modItem, new object[] { clickEvent, buttonElement });
+
+                                        // Log state immediately after invoke
+                                        UIElement? blockInputAfter = _blockInputField?.GetValue(mods) as UIElement;
+                                        bool hasBlockInput = blockInputAfter is not null;
+                                        bool isChild = hasBlockInput && (mods as UIElement)?.HasChild(blockInputAfter!) == true;
+                                        ScreenReaderMod.Instance?.Logger.Info($"[ManageMods] After QuickModDelete: blockInput exists={hasBlockInput}, isChild={isChild}");
+
+                                        // CRITICAL: Consume input to prevent native UI from closing the dialog
+                                        // The dialog's _blockInput has OnLeftMouseDown = CloseConfirmDialog, so if
+                                        // native gamepad handling also processes the A button as a click, it will
+                                        // immediately close the dialog we just opened
+                                        Main.mouseLeft = false;
+                                        Main.mouseLeftRelease = false;
+
+                                        // Add cooldown to prevent rapid re-clicking before dialog is detected
+                                        _dialogActionCooldown = 30; // Half second cooldown
+                                    }
+                                    else
+                                    {
+                                        ScreenReaderMod.Instance?.Logger.Warn($"[ManageMods] QuickModDelete method not found");
+                                        buttonElement.LeftClick(clickEvent);
+                                    }
+                                }
+                            }
+                            else
+                            {
+                                // For other buttons, use LeftClick
+                                buttonElement.LeftClick(clickEvent);
+                            }
                         }
                         catch (Exception ex)
                         {
@@ -1209,34 +1253,20 @@ public sealed class ManageModsAccessibilitySystem : ModSystem
         switch (_currentRegion)
         {
             case FocusRegion.FilterButtons:
+                // Only navigate within filter buttons, don't escape to back button
                 if (_currentFocusIndex > 0)
                 {
                     _currentFocusIndex--;
                     return true;
                 }
-                // Wrap to bottom action buttons (escape route)
-                if (BottomActionBindingsList.Count > 0)
-                {
-                    _currentRegion = FocusRegion.BottomActionButtons;
-                    _currentFocusIndex = 0; // Back button
-                    return true;
-                }
                 break;
 
             case FocusRegion.ModList:
-                // LEFT navigates back through mod item buttons first
+                // LEFT only navigates back through mod item buttons, doesn't escape to back button
                 if (_currentModButtonIndex > 0)
                 {
                     _currentModButtonIndex--;
                     ScreenReaderMod.Instance?.Logger.Info($"[ManageMods] LEFT in mod list -> button index {_currentModButtonIndex}");
-                    return true;
-                }
-                // When at button index 0, LEFT goes to bottom action buttons (Back button)
-                if (BottomActionBindingsList.Count > 0)
-                {
-                    _currentRegion = FocusRegion.BottomActionButtons;
-                    _currentFocusIndex = 0; // Back button
-                    ScreenReaderMod.Instance?.Logger.Info("[ManageMods] LEFT from mod list -> Back button");
                     return true;
                 }
                 break;
@@ -1594,7 +1624,9 @@ public sealed class ManageModsAccessibilitySystem : ModSystem
         switch (binding.Type)
         {
             case PointType.FilterButton:
-                return $"Filter: {label}";
+                int filterIndex = _currentFocusIndex + 1;
+                int filterTotal = FilterBindings.Count;
+                return $"Filter: {label}, {filterIndex} of {filterTotal}";
 
             case PointType.ModItem:
                 // Add position in list
@@ -1718,6 +1750,9 @@ public sealed class ManageModsAccessibilitySystem : ModSystem
     {
         if (_blockInputField is null)
         {
+            // Only log once per second to avoid spam
+            if (Main.GameUpdateCount % 60 == 0)
+                ScreenReaderMod.Instance?.Logger.Debug("[ManageMods] Dialog check: _blockInputField is null");
             return false;
         }
 
@@ -1732,12 +1767,21 @@ public sealed class ManageModsAccessibilitySystem : ModSystem
             // Check if blockInput is currently a child of the mods menu
             if (mods is UIElement modsElement)
             {
-                return modsElement.HasChild(blockInput);
+                bool hasChild = modsElement.HasChild(blockInput);
+                if (hasChild)
+                {
+                    ScreenReaderMod.Instance?.Logger.Debug("[ManageMods] Dialog check: _blockInput IS a child - dialog active");
+                }
+                return hasChild;
+            }
+            else
+            {
+                ScreenReaderMod.Instance?.Logger.Debug("[ManageMods] Dialog check: mods is not UIElement");
             }
         }
-        catch
+        catch (Exception ex)
         {
-            // Ignore reflection errors
+            ScreenReaderMod.Instance?.Logger.Warn($"[ManageMods] Dialog check exception: {ex.Message}");
         }
 
         return false;
@@ -1964,7 +2008,7 @@ public sealed class ManageModsAccessibilitySystem : ModSystem
             if (!_dialogTextAnnounced && !string.IsNullOrEmpty(_dialogText))
             {
                 string dialogText = TextSanitizer.Clean(_dialogText);
-                string announcement = $"Confirm: {dialogText}. {buttonLabel}";
+                string announcement = $"{dialogText} {buttonLabel}";
                 ScreenReaderMod.Instance?.Logger.Info($"[ManageMods] Announcing dialog with button: {announcement}");
                 ScreenReaderService.Announce(announcement, force: true);
                 _dialogTextAnnounced = true;

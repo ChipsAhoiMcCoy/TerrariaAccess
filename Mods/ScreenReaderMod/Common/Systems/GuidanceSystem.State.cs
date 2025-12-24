@@ -22,7 +22,8 @@ public sealed partial class GuidanceSystem
         Interactable,
         Npc,
         Player,
-        Waypoint
+        Waypoint,
+        DroppedItem
     }
 
     private static SelectionMode _selectionMode = SelectionMode.None;
@@ -31,6 +32,7 @@ public sealed partial class GuidanceSystem
     private static int _selectedPlayerIndex = -1;
     private static int _selectedInteractableIndex = -1;
     private static int _selectedExplorationIndex = -1;
+    private static int _selectedDroppedItemIndex = -1;
     private static ExplorationTargetRegistry.ExplorationTarget? _lastExplorationSelection;
     private static SelectionMode _categoryAnnouncementMode = SelectionMode.None;
     private static bool _categoryAnnouncementPending;
@@ -84,11 +86,13 @@ public sealed partial class GuidanceSystem
         NearbyPlayers.Clear();
         NearbyInteractables.Clear();
         NearbyExplorationTargets.Clear();
+        NearbyDroppedItems.Clear();
         _selectedIndex = -1;
         _selectedNpcIndex = -1;
         _selectedPlayerIndex = -1;
         _selectedInteractableIndex = -1;
         _selectedExplorationIndex = -1;
+        _selectedDroppedItemIndex = -1;
         _lastExplorationSelection = null;
         _selectionMode = SelectionMode.None;
         ResetProximityProgress();
