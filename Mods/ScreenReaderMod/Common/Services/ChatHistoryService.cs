@@ -9,6 +9,7 @@ namespace ScreenReaderMod.Common.Services;
 internal static class ChatHistoryService
 {
     private const int MaxEntries = 200;
+    private const uint DuplicateWindowTicks = 2;
     private static readonly List<string> History = new(MaxEntries);
     private static string? _lastRecorded;
     private static uint _lastRecordedTick;
@@ -27,7 +28,7 @@ internal static class ChatHistoryService
         uint tick = Main.GameUpdateCount;
         if (!string.IsNullOrWhiteSpace(_lastRecorded) &&
             string.Equals(_lastRecorded, sanitized, StringComparison.Ordinal) &&
-            _lastRecordedTick == tick)
+            tick - _lastRecordedTick <= DuplicateWindowTicks)
         {
             return;
         }

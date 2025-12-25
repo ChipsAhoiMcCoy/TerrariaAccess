@@ -33,6 +33,11 @@ Mods: {
 					Label: Interactable Cue Volume
 					Tooltip: Adjusts the volume of audio cues for nearby interactable objects like chests, doors, and crafting stations.
 				}
+
+				AnnounceDamageNumbers: {
+					Label: Announce Damage Numbers
+					Tooltip: Announces the damage numbers you deal to hostile NPCs.
+				}
 			}
 
 			EdgeDetectionMode: {
@@ -42,6 +47,8 @@ Mods: {
 				Off.Label: Off
 			}
 		}
+
+		Combat.DamageAnnouncement: "{0} damage"
 
 		HostMenu: {
 			LobbyLabel: Steam lobby
@@ -177,7 +184,29 @@ Mods: {
 			WaypointNext.DisplayName: Next Waypoint
 			WaypointPrevious.DisplayName: Previous Waypoint
 			WaypointCreate.DisplayName: Create Waypoint
+			WaypointDelete.DisplayName: Waypoint Delete
+			GuidanceCategoryNext.DisplayName: Next Guidance Category
+			GuidanceCategoryPrevious.DisplayName: Previous Guidance Category
+			GuidanceEntryNext.DisplayName: Next Guidance Entry
+			GuidanceEntryPrevious.DisplayName: Previous Guidance Entry
 			GuidanceTeleport.DisplayName: Teleport to Guidance Target
+			SpeechInterrupt.DisplayName: Toggle Speech Interrupt
+			BuildModeToggle.DisplayName: Toggle Build Mode
+			BuildModePlace.DisplayName: Set Build Point
+			ControllerInventorySmartSelect.DisplayName: Inventory Smart Select
+			ControllerInventorySectionNext.DisplayName: Inventory Section Next
+			ControllerInventorySectionPrevious.DisplayName: Inventory Section Previous
+			ControllerInventoryQuickUse.DisplayName: Inventory Quick Use
+			ControllerInventoryHousingQuery.DisplayName: Inventory Housing Query
+			ControllerLockOn.DisplayName: Lock On Target
+			ControllerRightStickUp.DisplayName: Right Stick Up
+			ControllerRightStickDown.DisplayName: Right Stick Down
+			ControllerRightStickLeft.DisplayName: Right Stick Left
+			ControllerRightStickRight.DisplayName: Right Stick Right
+			KeyboardCursorNudgeUp.DisplayName: Cursor Nudge Up
+			KeyboardCursorNudgeDown.DisplayName: Cursor Nudge Down
+			KeyboardCursorNudgeLeft.DisplayName: Cursor Nudge Left
+			KeyboardCursorNudgeRight.DisplayName: Cursor Nudge Right
 			StatusCheck.DisplayName: Status Checker
 		}
 	}
@@ -199,6 +228,20 @@ Keybinds: {
 	GuidanceTeleport.DisplayName: Teleport to Guidance Target
 	BuildModeToggle.DisplayName: Toggle Build Mode
 	BuildModePlace.DisplayName: Set Build Point
+	ControllerInventorySmartSelect.DisplayName: Controller Inventory Smart Select
+	ControllerInventorySectionNext.DisplayName: Controller Inventory Section Next
+	ControllerInventorySectionPrevious.DisplayName: Controller Inventory Section Previous
+	ControllerInventoryQuickUse.DisplayName: Controller Inventory Quick Use
+	ControllerInventoryHousingQuery.DisplayName: Controller Inventory Housing Query
+	ControllerLockOn.DisplayName: Controller Lock On Target
+	ControllerRightStickUp.DisplayName: Controller Right Stick Up
+	ControllerRightStickDown.DisplayName: Controller Right Stick Down
+	ControllerRightStickLeft.DisplayName: Controller Right Stick Left
+	ControllerRightStickRight.DisplayName: Controller Right Stick Right
+	KeyboardCursorNudgeUp.DisplayName: Keyboard Cursor Nudge Up
+	KeyboardCursorNudgeDown.DisplayName: Keyboard Cursor Nudge Down
+	KeyboardCursorNudgeLeft.DisplayName: Keyboard Cursor Nudge Left
+	KeyboardCursorNudgeRight.DisplayName: Keyboard Cursor Nudge Right
 	StatusCheck.DisplayName: Status Checker
 }
 
@@ -233,6 +276,11 @@ Configs: {
 
 		InteractableCueVolume: {
 			Label: Interactable Cue Volume
+			Tooltip: ""
+		}
+
+		AnnounceDamageNumbers: {
+			Label: Announce Damage Numbers
 			Tooltip: ""
 		}
 	}

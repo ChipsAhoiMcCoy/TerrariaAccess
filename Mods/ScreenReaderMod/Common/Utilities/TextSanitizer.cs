@@ -1,4 +1,4 @@
-#nullable enable
+﻿#nullable enable
 using System;
 using System.Linq;
 using System.Text;
@@ -74,6 +74,22 @@ internal static class TextSanitizer
             return true;
         }
 
+        if (token.StartsWith("n:", StringComparison.OrdinalIgnoreCase))
+        {
+            string name = token.Length > 2 ? token[2..] : string.Empty;
+            if (!string.IsNullOrEmpty(name))
+            {
+                string resolved = name.Replace("\\[", "[").Replace("\\]", "]");
+                if (!string.IsNullOrWhiteSpace(resolved))
+                {
+                    builder.Append(resolved.Trim());
+                    builder.Append(',');
+                }
+            }
+
+            return true;
+        }
+
         if (token.StartsWith("i:", StringComparison.OrdinalIgnoreCase) ||
             token.StartsWith("rb", StringComparison.OrdinalIgnoreCase) ||
             token.StartsWith("g", StringComparison.OrdinalIgnoreCase) ||
@@ -85,3 +101,4 @@ internal static class TextSanitizer
         return false;
     }
 }
+

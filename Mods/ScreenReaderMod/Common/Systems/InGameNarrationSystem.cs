@@ -8,13 +8,13 @@ using System.Text;
 using Microsoft.Xna.Framework;
 using Microsoft.Xna.Framework.Audio;
 using Microsoft.Xna.Framework.Graphics;
-using Terraria.Chat;
 using ScreenReaderMod.Common.Services;
 using ScreenReaderMod.Common.Systems.MenuNarration;
 using ScreenReaderMod.Common.Utilities;
 using Terraria;
 using Terraria.Audio;
 using Terraria.GameContent;
+using Terraria.GameContent.UI.Chat;
 using Terraria.GameContent.UI.BigProgressBar;
 using Terraria.GameContent.Events;
 using Terraria.GameContent.UI.Elements;
@@ -90,6 +90,12 @@ public sealed partial class InGameNarrationSystem : ModSystem
     };
     private static string? _lastChatAnnouncement;
     private static DateTime _lastChatAnnouncedAt;
+    private static string? _lastPopupAnnouncement;
+    private static string? _lastChatMonitorAnnouncement;
+    private static bool[] _popupActiveSnapshot = Array.Empty<bool>();
+    private static string?[] _popupTextSnapshot = Array.Empty<string?>();
+    private static FieldInfo? _remadeChatMessagesField;
+    private static FieldInfo? _legacyChatLinesField;
     private readonly Dictionary<int, int> _inventoryStacksByType = new();
     private bool _inventoryInitialized;
     private bool _wasIngameOptionsOpen;
@@ -214,14 +220,12 @@ public sealed partial class InGameNarrationSystem : ModSystem
         On_Main.NewText_string_byte_byte_byte += HandleNewText;
         On_Main.NewText_object_Nullable1 += HandleNewTextObject;
         On_Main.NewTextMultiline += HandleNewTextMultiline;
+        On_PopupText.NewText_AdvancedPopupRequest_Vector2 += HandlePopupTextAdvanced;
         On_Main.MouseText_string_string_int_byte_int_int_int_int_int_bool += CaptureMouseText;
         On_ChestUI.RenameChest += HandleChestRename;
         On_IngameOptions.Draw += HandleIngameOptionsDraw;
         On_IngameOptions.DrawLeftSide += CaptureIngameOptionsLeft;
         On_IngameOptions.DrawRightSide += CaptureIngameOptionsRight;
-        On_ChatHelper.BroadcastChatMessageAs += HandleBroadcastChatMessageAs;
-        On_ChatHelper.SendChatMessageToClientAs += HandleSendChatMessageToClientAs;
-        On_ChatHelper.BroadcastChatMessage += HandleBroadcastChatMessage;
     }
 
     private void ConfigureNarrationScheduler()
@@ -301,14 +305,12 @@ public sealed partial class InGameNarrationSystem : ModSystem
         On_Main.NewText_string_byte_byte_byte -= HandleNewText;
         On_Main.NewText_object_Nullable1 -= HandleNewTextObject;
         On_Main.NewTextMultiline -= HandleNewTextMultiline;
+        On_PopupText.NewText_AdvancedPopupRequest_Vector2 -= HandlePopupTextAdvanced;
         On_Main.MouseText_string_string_int_byte_int_int_int_int_int_bool -= CaptureMouseText;
         On_ChestUI.RenameChest -= HandleChestRename;
         On_IngameOptions.Draw -= HandleIngameOptionsDraw;
         On_IngameOptions.DrawLeftSide -= CaptureIngameOptionsLeft;
         On_IngameOptions.DrawRightSide -= CaptureIngameOptionsRight;
-        On_ChatHelper.BroadcastChatMessageAs -= HandleBroadcastChatMessageAs;
-        On_ChatHelper.SendChatMessageToClientAs -= HandleSendChatMessageToClientAs;
-        On_ChatHelper.BroadcastChatMessage -= HandleBroadcastChatMessage;
     }
 
     private void ResetSharedResources()
@@ -327,6 +329,10 @@ public sealed partial class InGameNarrationSystem : ModSystem
         ChatHistoryService.Reset();
         _lastChatAnnouncement = null;
         _lastChatAnnouncedAt = DateTime.MinValue;
+        _lastPopupAnnouncement = null;
+        _lastChatMonitorAnnouncement = null;
+        _popupActiveSnapshot = Array.Empty<bool>();
+        _popupTextSnapshot = Array.Empty<string?>();
         _inventoryStacksByType.Clear();
         _lastPickupAnnouncedAt.Clear();
         _inventoryInitialized = false;
@@ -338,6 +344,8 @@ public sealed partial class InGameNarrationSystem : ModSystem
     public override void UpdateUI(GameTime gameTime)
     {
         AnnounceStatusTextIfNeeded();
+        TryAnnounceChatMonitorFallback();
+        TryAnnouncePopupTextInstances();
         TryUpdateNarrators(requirePaused: true);
     }
 
@@ -817,26 +825,9 @@ public sealed partial class InGameNarrationSystem : ModSystem
         TryAnnounceHousingQuery(sanitized, c);
     }
 
-    private static void HandleBroadcastChatMessage(On_ChatHelper.orig_BroadcastChatMessage orig, NetworkText text, Color color, int excludedPlayer)
+    private static int HandlePopupTextAdvanced(On_PopupText.orig_NewText_AdvancedPopupRequest_Vector2 orig, AdvancedPopupRequest request, Vector2 position)
     {
-        orig(text, color, excludedPlayer);
-        string message = text.ToString();
-        TryAnnounceWorldText(message);
-        TryAnnounceHousingQuery(message, color);
-    }
-
-    private static void HandleBroadcastChatMessageAs(On_ChatHelper.orig_BroadcastChatMessageAs orig, byte messageAuthor, NetworkText text, Color color, int excludedPlayer)
-    {
-        orig(messageAuthor, text, color, excludedPlayer);
-        LogChatDebug("BroadcastChatMessageAs", messageAuthor, text, excludedPlayer, color);
-        TryAnnounceChatMessage(messageAuthor, text, color);
-    }
-
-    private static void HandleSendChatMessageToClientAs(On_ChatHelper.orig_SendChatMessageToClientAs orig, byte messageAuthor, NetworkText text, Color color, int playerId)
-    {
-        orig(messageAuthor, text, color, playerId);
-        LogChatDebug("SendChatMessageToClientAs", messageAuthor, text, playerId, color);
-        TryAnnounceChatMessage(messageAuthor, text, color);
+        return orig(request, position);
     }
 
     private static void TryAnnounceWorldText(string? text)
@@ -857,48 +848,213 @@ public sealed partial class InGameNarrationSystem : ModSystem
         AnnounceChatLine(sanitized);
     }
 
-    private static void TryAnnounceChatMessage(byte messageAuthor, NetworkText text, Color color)
+    private static void TryAnnounceChatMonitorFallback()
     {
-        if (text is null)
+        string? raw = TryGetLatestChatMonitorMessage();
+        if (string.IsNullOrWhiteSpace(raw))
         {
             return;
         }
 
-        string raw = text.ToString();
-        string sanitizedMessage = TextSanitizer.Clean(raw);
-        if (string.IsNullOrWhiteSpace(sanitizedMessage))
+        string? sanitized = NormalizeChatMonitorText(raw);
+        if (string.IsNullOrWhiteSpace(sanitized))
         {
-            LogChatDebug("SkipEmptyChat", messageAuthor, text, null, color);
             return;
         }
 
-        string? playerName = ResolvePlayerName(messageAuthor);
-        string historyEntry = FormatChatHistoryEntry(sanitizedMessage, playerName);
-        ChatHistoryService.Record(historyEntry);
-
-        string announcement = string.IsNullOrWhiteSpace(playerName)
-            ? sanitizedMessage
-            : $"{playerName}: {sanitizedMessage}";
-
-        TryAnnounceChatCore(announcement, sanitizedMessage, messageAuthor, playerName, "AnnounceChat", color);
-        TryAnnounceHousingQuery(sanitizedMessage, color);
+        TryAnnounceWorldMessage(sanitized, ref _lastChatMonitorAnnouncement, _lastChatAnnouncement, _lastPopupAnnouncement, recordHistory: true);
     }
 
-    private static string? ResolvePlayerName(int playerSlot)
+    private static void TryAnnouncePopupTextInstances()
     {
-        if (playerSlot < 0 || playerSlot >= Main.maxPlayers)
+        PopupText[] popups = Main.popupText;
+        if (popups is null || popups.Length == 0)
+        {
+            return;
+        }
+
+        if (_popupActiveSnapshot.Length != popups.Length)
+        {
+            _popupActiveSnapshot = new bool[popups.Length];
+            _popupTextSnapshot = new string?[popups.Length];
+        }
+
+        for (int i = 0; i < popups.Length; i++)
+        {
+            PopupText? popup = popups[i];
+            if (popup is null)
+            {
+                _popupActiveSnapshot[i] = false;
+                _popupTextSnapshot[i] = null;
+                continue;
+            }
+
+            if (!popup.active)
+            {
+                _popupActiveSnapshot[i] = false;
+                _popupTextSnapshot[i] = null;
+                continue;
+            }
+
+            if (popup.context == PopupTextContext.RegularItemPickup ||
+                popup.context == PopupTextContext.ItemPickupToVoidContainer)
+            {
+                _popupActiveSnapshot[i] = true;
+                _popupTextSnapshot[i] = null;
+                continue;
+            }
+
+            string announcement = BuildPopupAnnouncement(popup);
+            if (string.IsNullOrWhiteSpace(announcement))
+            {
+                continue;
+            }
+
+            string sanitized = TextSanitizer.Clean(announcement);
+            if (string.IsNullOrWhiteSpace(sanitized))
+            {
+                continue;
+            }
+
+            bool wasActive = _popupActiveSnapshot[i];
+            string? previousText = _popupTextSnapshot[i];
+            if (!wasActive || !string.Equals(previousText, sanitized, StringComparison.OrdinalIgnoreCase))
+            {
+                TryAnnounceWorldMessage(sanitized, ref _lastPopupAnnouncement, _lastChatAnnouncement, _lastChatMonitorAnnouncement, recordHistory: false);
+            }
+
+            _popupActiveSnapshot[i] = true;
+            _popupTextSnapshot[i] = sanitized;
+        }
+    }
+
+    private static string BuildPopupAnnouncement(PopupText popup)
+    {
+        if (string.IsNullOrWhiteSpace(popup.name))
+        {
+            return string.Empty;
+        }
+
+        string text = popup.name;
+        if (popup.stack > 1)
+        {
+            text += $" ({popup.stack})";
+        }
+
+        return text;
+    }
+
+    private static string? NormalizeChatMonitorText(string raw)
+    {
+        if (string.IsNullOrWhiteSpace(raw))
         {
             return null;
         }
 
-        Player? player = Main.player[playerSlot];
-        if (player is null || !player.active)
+        if (ChatLineParser.TryParseLeadingNameTagChat(raw, out string playerName, out string message))
         {
+            return ChatLineParser.FormatNameMessage(playerName, message);
+        }
+
+        return TextSanitizer.Clean(raw);
+    }
+
+    private static bool TryAnnounceWorldMessage(string sanitized, ref string? lastPrimary, string? lastSecondary, string? lastTertiary, bool recordHistory)
+    {
+        if (string.IsNullOrWhiteSpace(sanitized))
+        {
+            return false;
+        }
+
+        if (MatchesAny(sanitized, lastPrimary, lastSecondary, lastTertiary))
+        {
+            return false;
+        }
+
+        lastPrimary = sanitized;
+        if (recordHistory)
+        {
+            ChatHistoryService.Record(sanitized);
+        }
+
+        WorldAnnouncementService.Announce(sanitized);
+        return true;
+    }
+
+    private static bool MatchesAny(string sanitized, string? first, string? second, string? third)
+    {
+        if (!string.IsNullOrWhiteSpace(first) &&
+            string.Equals(first, sanitized, StringComparison.OrdinalIgnoreCase))
+        {
+            return true;
+        }
+
+        if (!string.IsNullOrWhiteSpace(second) &&
+            string.Equals(second, sanitized, StringComparison.OrdinalIgnoreCase))
+        {
+            return true;
+        }
+
+        if (!string.IsNullOrWhiteSpace(third) &&
+            string.Equals(third, sanitized, StringComparison.OrdinalIgnoreCase))
+        {
+            return true;
+        }
+
+        return false;
+    }
+
+    private static string? TryGetLatestChatMonitorMessage()
+    {
+        if (Main.chatMonitor is RemadeChatMonitor remade)
+        {
+            _remadeChatMessagesField ??= typeof(RemadeChatMonitor).GetField("_messages", BindingFlags.Instance | BindingFlags.NonPublic);
+            if (_remadeChatMessagesField?.GetValue(remade) is List<ChatMessageContainer> messages && messages.Count > 0)
+            {
+                return messages[0]?.OriginalText;
+            }
+
             return null;
         }
 
-        string sanitized = TextSanitizer.Clean(player.name);
-        return string.IsNullOrWhiteSpace(sanitized) ? null : sanitized;
+        if (Main.chatMonitor is LegacyChatMonitor legacy)
+        {
+            _legacyChatLinesField ??= typeof(LegacyChatMonitor).GetField("chatLine", BindingFlags.Instance | BindingFlags.NonPublic);
+            if (_legacyChatLinesField?.GetValue(legacy) is ChatLine[] lines && lines.Length > 0)
+            {
+                ChatLine line = lines[0];
+                string text = line.originalText ?? string.Empty;
+                if (string.IsNullOrWhiteSpace(text) || text.StartsWith("this is a hack", StringComparison.OrdinalIgnoreCase))
+                {
+                    text = FlattenSnippets(line.parsedText);
+                }
+
+                return text;
+            }
+        }
+
+        return null;
+    }
+
+    private static string FlattenSnippets(TextSnippet[] snippets)
+    {
+        if (snippets == null || snippets.Length == 0)
+        {
+            return string.Empty;
+        }
+
+        var builder = new StringBuilder();
+        foreach (TextSnippet snippet in snippets)
+        {
+            if (snippet == null)
+            {
+                continue;
+            }
+
+            builder.Append(snippet.Text);
+        }
+
+        return builder.ToString();
     }
 
     private static bool TryAnnounceChatMultiline(string? rawText, Color color)
@@ -908,26 +1064,23 @@ public sealed partial class InGameNarrationSystem : ModSystem
             return false;
         }
 
+        if (ChatLineParser.TryParseLeadingNameTagChat(rawText, out string playerName, out string message))
+        {
+            string entry = ChatLineParser.FormatNameMessage(playerName, message);
+            ChatHistoryService.Record(entry);
+            TryAnnounceChatCore(entry, message, null, playerName, "NewTextMultilineNameTag", color);
+            return true;
+        }
+
         string sanitized = TextSanitizer.Clean(rawText);
         if (string.IsNullOrWhiteSpace(sanitized))
         {
             return false;
         }
 
-        string historyEntry = FormatChatHistoryEntry(sanitized);
-        if (TryFormatNameTagChat(sanitized, out string? announcement, out string? playerName))
-        {
-            ChatHistoryService.Record(historyEntry);
-            if (!string.IsNullOrWhiteSpace(announcement))
-            {
-                TryAnnounceChatCore(announcement, sanitized, null, playerName, "NewTextMultilineNameTag", color);
-            }
-            return true;
-        }
-
         if (CursorDescriptorService.IsLikelyPlayerChat(sanitized))
         {
-            ChatHistoryService.Record(historyEntry);
+            ChatHistoryService.Record(sanitized);
             TryAnnounceChatCore(sanitized, sanitized, null, null, "NewTextMultilineLikelyChat", color);
             return true;
         }
@@ -935,44 +1088,11 @@ public sealed partial class InGameNarrationSystem : ModSystem
         return false;
     }
 
-    private static bool TryFormatNameTagChat(string sanitized, out string? announcement, out string? playerName)
-    {
-        announcement = null;
-        playerName = null;
-
-        if (!sanitized.StartsWith("[n:", StringComparison.OrdinalIgnoreCase))
-        {
-            return false;
-        }
-
-        int closing = sanitized.IndexOf(']');
-        if (closing <= 3 || closing >= sanitized.Length)
-        {
-            return false;
-        }
-
-        string name = sanitized.Substring(3, closing - 3).Trim();
-        string message = sanitized[(closing + 1)..].TrimStart();
-        if (string.IsNullOrWhiteSpace(name) || string.IsNullOrWhiteSpace(message))
-        {
-            return false;
-        }
-
-        announcement = $"{name}: {message}";
-        playerName = name;
-        return true;
-    }
-
     private static string FormatChatHistoryEntry(string sanitized, string? resolvedPlayerName = null)
     {
         if (!string.IsNullOrWhiteSpace(resolvedPlayerName))
         {
             return $"{resolvedPlayerName}: {sanitized}";
-        }
-
-        if (TryFormatNameTagChat(sanitized, out string? announcement, out _))
-        {
-            return announcement ?? sanitized;
         }
 
         return sanitized;

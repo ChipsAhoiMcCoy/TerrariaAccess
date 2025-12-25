@@ -36,6 +36,9 @@ public class ScreenReaderModConfig : ModConfig
     [Slider]
     public int InteractableCueVolume { get; set; } = 100;
 
+    [DefaultValue(false)]
+    public bool AnnounceDamageNumbers { get; set; }
+
     public override void OnLoaded()
     {
         Instance = this;

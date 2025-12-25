@@ -7,6 +7,7 @@ using global::ScreenReaderMod;
 using ScreenReaderMod.Common.Services;
 using ScreenReaderMod.Common.Systems;
 using ScreenReaderMod.Common.Systems.BuildMode;
+using ScreenReaderMod.Common.Systems.KeyboardParity;
 using ScreenReaderMod.Common.Utilities;
 using Terraria;
 using Terraria.DataStructures;
@@ -866,6 +867,11 @@ public sealed class BuildModePlayer : ModPlayer
 
     private static bool IsGamepadDpadPressed()
     {
+        if (KeyboardCursorNudgeSystem.WasArrowHeldThisFrame())
+        {
+            return true;
+        }
+
         try
         {
             TriggersSet triggers = PlayerInput.Triggers.Current;

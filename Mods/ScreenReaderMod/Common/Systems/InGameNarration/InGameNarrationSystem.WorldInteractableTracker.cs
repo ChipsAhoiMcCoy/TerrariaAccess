@@ -25,6 +25,23 @@ public sealed partial class InGameNarrationSystem
         private const float MinimumVisibilityBrightness = 0.02f;
 
         private static readonly Dictionary<string, SoundEffect> ToneCache = new();
+        private static readonly HashSet<int> RescuableNpcTypes = new()
+        {
+            NPCID.OldMan,
+            NPCID.BoundGoblin,
+            NPCID.BoundWizard,
+            NPCID.BoundMechanic,
+            NPCID.WebbedStylist,
+            NPCID.SleepingAngler,
+            NPCID.DemonTaxCollector,
+            NPCID.GolferRescue,
+            NPCID.BartenderUnconscious,
+            NPCID.TravellingMerchant,
+            NPCID.SkeletonMerchant,
+            NPCID.BoundTownSlimeOld,
+            NPCID.BoundTownSlimePurple,
+            NPCID.BoundTownSlimeYellow
+        };
 
         private readonly List<WorldInteractableSource> _sources = new();
         private readonly List<Candidate> _candidateBuffer = new();
@@ -65,6 +82,20 @@ public sealed partial class InGameNarrationSystem
                     widthTiles: 2,
                     heightTiles: 3,
                     profile: InteractableCueProfile.HeartCrystal),
+                new TileInteractableDefinition(
+                    tileTypes: new[] { (int)TileID.LifeFruit },
+                    frameWidth: 36,
+                    frameHeight: 36,
+                    widthTiles: 2,
+                    heightTiles: 2,
+                    profile: InteractableCueProfile.LifeFruit),
+                new TileInteractableDefinition(
+                    tileTypes: new[] { (int)TileID.PlanteraBulb },
+                    frameWidth: 36,
+                    frameHeight: 36,
+                    widthTiles: 2,
+                    heightTiles: 2,
+                    profile: InteractableCueProfile.PlanteraBulb),
                 new TileInteractableDefinition(
                     tileTypes: new[] { (int)TileID.DemonAltar },
                     frameWidth: 54,
@@ -107,6 +138,11 @@ public sealed partial class InGameNarrationSystem
 
             RegisterSource(new OreInteractableSource(
                 scanRadiusTiles: 90f));
+
+            RegisterSource(new NpcInteractableSource(
+                scanRadiusTiles: 80f,
+                InteractableCueProfile.RescueNpc,
+                RescuableNpcTypes));
 
             RegisterSource(new ItemInteractableSource(
                 scanRadiusTiles: 75f,
@@ -1126,6 +1162,81 @@ public sealed partial class InGameNarrationSystem
         }
     }
 
+    private sealed class NpcInteractableSource : WorldInteractableSource
+    {
+        private readonly InteractableCueProfile _profile;
+        private readonly HashSet<int> _npcTypes = new();
+
+        public NpcInteractableSource(float scanRadiusTiles, InteractableCueProfile profile, IEnumerable<int> npcTypes)
+            : base(scanRadiusTiles)
+        {
+            _profile = profile;
+            if (npcTypes is null)
+            {
+                return;
+            }
+
+            foreach (int npcType in npcTypes)
+            {
+                _npcTypes.Add(npcType);
+            }
+        }
+
+        public override void Collect(Player player, List<Candidate> buffer)
+        {
+            if (_npcTypes.Count == 0)
+            {
+                return;
+            }
+
+            Vector2 playerCenter = player.Center;
+            float scanRadius = Math.Max(1f, ScanRadiusTiles);
+
+            for (int i = 0; i < Main.maxNPCs; i++)
+            {
+                NPC npc = Main.npc[i];
+                if (!npc.active || npc.lifeMax <= 0)
+                {
+                    continue;
+                }
+
+                if (!_npcTypes.Contains(npc.type))
+                {
+                    continue;
+                }
+
+                float distanceTiles = Vector2.Distance(playerCenter, npc.Center) / 16f;
+                if (distanceTiles > scanRadius)
+                {
+                    continue;
+                }
+
+                string label = ResolveNpcLabel(npc);
+                buffer.Add(new Candidate(new TrackedInteractableKey(SourceId, i), npc.Center, _profile, label));
+            }
+        }
+
+        private static string ResolveNpcLabel(NPC npc)
+        {
+            if (!string.IsNullOrWhiteSpace(npc.FullName))
+            {
+                return npc.FullName;
+            }
+
+            if (!string.IsNullOrWhiteSpace(npc.GivenName))
+            {
+                return npc.GivenName;
+            }
+
+            if (!string.IsNullOrWhiteSpace(npc.TypeName))
+            {
+                return npc.TypeName;
+            }
+
+            return "Rescue NPC";
+        }
+    }
+
     private readonly record struct Candidate(TrackedInteractableKey Key, Vector2 WorldPosition, InteractableCueProfile Profile, string? ArrivalLabelOverride);
 
     private readonly record struct CandidateDistance(Candidate Candidate, float DistanceTiles);
@@ -1311,6 +1422,36 @@ public sealed partial class InGameNarrationSystem
             delayResponseExponent: 0.7f,
             arrivalLabel: "a heart crystal");
 
+        public static InteractableCueProfile LifeFruit { get; } = new(
+            id: "life-fruit",
+            fundamentalFrequency: 940f,
+            partialMultipliers: new[] { 1.6f, 2.15f },
+            envelope: SynthesizedSoundFactory.ToneEnvelopes.WorldCue,
+            durationSeconds: 0.22f,
+            baseGain: 0.4f,
+            minVolume: 0.22f,
+            maxVolume: 0.92f,
+            maxAudibleDistanceTiles: 90f,
+            minIntervalFrames: SweepIntervalFrames,
+            maxIntervalFrames: 52,
+            delayResponseExponent: 0.7f,
+            arrivalLabel: "a life fruit");
+
+        public static InteractableCueProfile PlanteraBulb { get; } = new(
+            id: "plantera-bulb",
+            fundamentalFrequency: 520f,
+            partialMultipliers: new[] { 1.35f, 1.75f },
+            envelope: SynthesizedSoundFactory.ToneEnvelopes.WorldCue,
+            durationSeconds: 0.22f,
+            baseGain: 0.4f,
+            minVolume: 0.24f,
+            maxVolume: 0.86f,
+            maxAudibleDistanceTiles: 90f,
+            minIntervalFrames: SweepIntervalFrames,
+            maxIntervalFrames: 52,
+            delayResponseExponent: 0.7f,
+            arrivalLabel: "a Plantera bulb");
+
         public static InteractableCueProfile DemonAltar { get; } = new(
             id: "demon-altar",
             fundamentalFrequency: 480f,
@@ -1385,6 +1526,21 @@ public sealed partial class InGameNarrationSystem
             maxIntervalFrames: 50,
             delayResponseExponent: 0.7f,
             arrivalLabel: "a bee larva");
+
+        public static InteractableCueProfile RescueNpc { get; } = new(
+            id: "rescue-npc",
+            fundamentalFrequency: 760f,
+            partialMultipliers: new[] { 1.25f, 1.55f },
+            envelope: SynthesizedSoundFactory.ToneEnvelopes.WorldCue,
+            durationSeconds: 0.2f,
+            baseGain: 0.36f,
+            minVolume: 0.22f,
+            maxVolume: 0.8f,
+            maxAudibleDistanceTiles: 80f,
+            minIntervalFrames: SweepIntervalFrames,
+            maxIntervalFrames: 48,
+            delayResponseExponent: 0.7f,
+            arrivalLabel: "a rescue NPC");
 
         public static InteractableCueProfile FallenStar { get; } = new(
             id: "fallen-star",
