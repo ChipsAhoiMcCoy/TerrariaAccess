@@ -60,6 +60,8 @@ public sealed partial class InGameNarrationSystem
         private static FieldInfo? _mouseTextIsValidField;
         private static string? _capturedMouseText;
         private static uint _capturedMouseTextFrame;
+        private static int _inventoryOpenGraceFrames;
+        private const int InventoryOpenGracePeriod = 3;
 
         public static void RecordFocus(Item[] inventory, int context, int slot)
         {
@@ -120,6 +122,12 @@ public sealed partial class InGameNarrationSystem
         /// </summary>
         internal static event Action? InventoryOpened;
 
+        /// <summary>
+        /// Event raised when the inventory transitions from open to closed.
+        /// Used to notify other narrators (like HotbarNarrator) to apply a grace period.
+        /// </summary>
+        internal static event Action? InventoryClosed;
+
         public void Update(Player player)
         {
             if (Main.ingameOptionsWindow)
@@ -131,6 +139,10 @@ public sealed partial class InGameNarrationSystem
             bool isInventoryOpen = IsInventoryUiOpen(player);
             if (!isInventoryOpen)
             {
+                if (_wasInventoryOpen)
+                {
+                    OnInventoryJustClosed();
+                }
                 _wasInventoryOpen = false;
                 Reset();
                 return;
@@ -348,6 +360,15 @@ public sealed partial class InGameNarrationSystem
 
         private bool TryAnnounceMouseText()
         {
+            // Skip mouse text announcements during grace period after inventory opens.
+            // This prevents announcing just the item name before the full hover item
+            // is resolved, which would cause duplicate announcements.
+            if (_inventoryOpenGraceFrames > 0)
+            {
+                _inventoryOpenGraceFrames--;
+                return false;
+            }
+
             string? mouseText = TryGetMouseText();
             if (string.IsNullOrWhiteSpace(mouseText))
             {
@@ -433,6 +454,7 @@ public sealed partial class InGameNarrationSystem
             _inGameUiTracker.Reset();
             UiAreaNarrationContext.Clear();
             _lastFocusKey = null;
+            _inventoryOpenGraceFrames = 0;
         }
 
         private static void OnInventoryJustOpened()
@@ -442,8 +464,19 @@ public sealed partial class InGameNarrationSystem
             // on the inventory until the user explicitly navigates to crafting.
             UiAreaNarrationContext.RecordArea(UiNarrationArea.Inventory);
 
+            // Set grace period to prevent mouse text from being announced before
+            // the hover item is fully resolved (prevents duplicate announcements)
+            _inventoryOpenGraceFrames = InventoryOpenGracePeriod;
+
             // Notify other narrators (like CraftingNarrator) to reset their state
             InventoryOpened?.Invoke();
+        }
+
+        private static void OnInventoryJustClosed()
+        {
+            // Notify other narrators (like HotbarNarrator) that inventory has closed
+            // so they can apply grace periods to prevent double-announcements
+            InventoryClosed?.Invoke();
         }
 
         private static string BuildFocusKey(HoverTarget target, SlotFocus? focus, int? craftingIndex)

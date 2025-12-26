@@ -184,6 +184,7 @@ public sealed partial class InGameNarrationSystem : ModSystem
 
         RegisterHooks();
         ConfigureNarrationScheduler();
+        HotbarNarrator.SubscribeToInventoryEvents();
     }
 
     public override void Unload()
@@ -193,6 +194,7 @@ public sealed partial class InGameNarrationSystem : ModSystem
             return;
         }
 
+        HotbarNarrator.UnsubscribeFromInventoryEvents();
         _narrationScheduler.Clear();
         ResetSharedResources();
         UnregisterHooks();
