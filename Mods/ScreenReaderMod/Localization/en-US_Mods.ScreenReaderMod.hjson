@@ -110,6 +110,11 @@ Mods: {
 			Disabled: Controller parity disabled.
 		}
 
+		SearchMode: {
+			NavigationEnabled: Navigation mode. Use arrow keys to browse mods, Enter to select. Press Tab to search.
+			SearchEnabled: Search mode. Type to filter mods. Press Tab to return to navigation.
+		}
+
 		WorldAnnouncements: {
 			BloodMoonStart: The Blood Moon is rising.
 			BloodMoonEnd: The Blood Moon has ended.

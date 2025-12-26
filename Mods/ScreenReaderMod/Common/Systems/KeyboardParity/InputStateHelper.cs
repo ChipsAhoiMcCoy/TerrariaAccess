@@ -1,4 +1,5 @@
 #nullable enable
+using ScreenReaderMod.Common.Systems.ModBrowser;
 using Terraria;
 using Terraria.GameInput;
 
@@ -20,7 +21,18 @@ internal static class InputStateHelper
             return true;
         }
 
-        return Main.CurrentInputTextTakerOverride is not null;
+        if (Main.CurrentInputTextTakerOverride is not null)
+        {
+            return true;
+        }
+
+        // When in search mode in mod browser menus, treat as text input active
+        if (SearchModeManager.IsRelevantMenu && SearchModeManager.IsSearchModeActive)
+        {
+            return true;
+        }
+
+        return false;
     }
 
     /// <summary>

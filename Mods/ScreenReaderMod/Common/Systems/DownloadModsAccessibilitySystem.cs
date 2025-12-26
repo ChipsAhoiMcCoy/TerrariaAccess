@@ -18,6 +18,7 @@ using Terraria.ModLoader;
 using Terraria.ModLoader.UI.ModBrowser;
 using Terraria.UI;
 using Terraria.UI.Gamepad;
+using ScreenReaderMod.Common.Systems.ModBrowser;
 
 namespace ScreenReaderMod.Common.Systems;
 
@@ -260,11 +261,16 @@ public sealed class DownloadModsAccessibilitySystem : ModSystem
             Mod.Logger.Info("[DownloadMods] Entered Download Mods menu");
         }
 
-        // Process gamepad navigation even if not strictly "UsingGamepadUI" - check for actual gamepad input
+        // Update search mode manager (handles Tab key toggle)
+        SearchModeManager.Update();
+
+        // Process navigation - support both gamepad and keyboard input
+        // Keyboard navigation only works when not in search mode
         bool hasGamepadInput = PlayerInput.UsingGamepadUI ||
                                GamePad.GetState(PlayerIndex.One).IsConnected;
+        bool hasKeyboardNavigation = !SearchModeManager.IsSearchModeActive;
 
-        if (!hasGamepadInput)
+        if (!hasGamepadInput && !hasKeyboardNavigation)
         {
             return;
         }
@@ -784,6 +790,14 @@ public sealed class DownloadModsAccessibilitySystem : ModSystem
     // A button state
     private static bool _aButtonWasPressed;
 
+    // Keyboard navigation state tracking
+    private static bool _keyLeftWasPressed;
+    private static bool _keyRightWasPressed;
+    private static bool _keyUpWasPressed;
+    private static bool _keyDownWasPressed;
+    private static bool _keyEnterWasPressed;
+    private static bool _keySpaceWasPressed;
+
     // Right analog scroll tracking
     private static int _lastScrollAnnouncedModIndex = -1;
     private static float _lastScrollPosition = -1f;
@@ -791,56 +805,95 @@ public sealed class DownloadModsAccessibilitySystem : ModSystem
     private static void HandleManualNavigation(object browser)
     {
         GamePadState gpState = GamePad.GetState(PlayerIndex.One);
+        KeyboardState kbState = Main.keyState;
 
-        if (!gpState.IsConnected)
+        bool leftPressed = false;
+        bool rightPressed = false;
+        bool upPressed = false;
+        bool downPressed = false;
+
+        // Handle gamepad input
+        if (gpState.IsConnected)
         {
-            return;
+            // Detect new presses (transition from not pressed to pressed) for D-pad
+            leftPressed = gpState.DPad.Left == ButtonState.Pressed && !_leftWasPressed;
+            rightPressed = gpState.DPad.Right == ButtonState.Pressed && !_rightWasPressed;
+            upPressed = gpState.DPad.Up == ButtonState.Pressed && !_upWasPressed;
+            downPressed = gpState.DPad.Down == ButtonState.Pressed && !_downWasPressed;
+
+            // Update D-pad previous state
+            _leftWasPressed = gpState.DPad.Left == ButtonState.Pressed;
+            _rightWasPressed = gpState.DPad.Right == ButtonState.Pressed;
+            _upWasPressed = gpState.DPad.Up == ButtonState.Pressed;
+            _downWasPressed = gpState.DPad.Down == ButtonState.Pressed;
+
+            // Check analog stick with deadzone AND proper debouncing
+            Vector2 stick = gpState.ThumbSticks.Left;
+            const float threshold = 0.5f;
+
+            bool stickLeftNow = stick.X < -threshold;
+            bool stickRightNow = stick.X > threshold;
+            bool stickUpNow = stick.Y > threshold;
+            bool stickDownNow = stick.Y < -threshold;
+
+            // Only trigger on new stick movement
+            if (!leftPressed && stickLeftNow && !_stickLeftWasPressed)
+            {
+                leftPressed = true;
+            }
+            if (!rightPressed && stickRightNow && !_stickRightWasPressed)
+            {
+                rightPressed = true;
+            }
+            if (!upPressed && stickUpNow && !_stickUpWasPressed)
+            {
+                upPressed = true;
+            }
+            if (!downPressed && stickDownNow && !_stickDownWasPressed)
+            {
+                downPressed = true;
+            }
+
+            // Update analog stick previous state
+            _stickLeftWasPressed = stickLeftNow;
+            _stickRightWasPressed = stickRightNow;
+            _stickUpWasPressed = stickUpNow;
+            _stickDownWasPressed = stickDownNow;
         }
 
-        // Detect new presses (transition from not pressed to pressed) for D-pad
-        bool leftPressed = gpState.DPad.Left == ButtonState.Pressed && !_leftWasPressed;
-        bool rightPressed = gpState.DPad.Right == ButtonState.Pressed && !_rightWasPressed;
-        bool upPressed = gpState.DPad.Up == ButtonState.Pressed && !_upWasPressed;
-        bool downPressed = gpState.DPad.Down == ButtonState.Pressed && !_downWasPressed;
-
-        // Update D-pad previous state
-        _leftWasPressed = gpState.DPad.Left == ButtonState.Pressed;
-        _rightWasPressed = gpState.DPad.Right == ButtonState.Pressed;
-        _upWasPressed = gpState.DPad.Up == ButtonState.Pressed;
-        _downWasPressed = gpState.DPad.Down == ButtonState.Pressed;
-
-        // Check analog stick with deadzone AND proper debouncing
-        Vector2 stick = gpState.ThumbSticks.Left;
-        const float threshold = 0.5f;
-
-        bool stickLeftNow = stick.X < -threshold;
-        bool stickRightNow = stick.X > threshold;
-        bool stickUpNow = stick.Y > threshold;
-        bool stickDownNow = stick.Y < -threshold;
-
-        // Only trigger on new stick movement
-        if (!leftPressed && stickLeftNow && !_stickLeftWasPressed)
+        // Handle keyboard input when not in search mode
+        if (!SearchModeManager.IsSearchModeActive)
         {
-            leftPressed = true;
-        }
-        if (!rightPressed && stickRightNow && !_stickRightWasPressed)
-        {
-            rightPressed = true;
-        }
-        if (!upPressed && stickUpNow && !_stickUpWasPressed)
-        {
-            upPressed = true;
-        }
-        if (!downPressed && stickDownNow && !_stickDownWasPressed)
-        {
-            downPressed = true;
-        }
+            // Check arrow keys and WASD
+            bool keyLeftNow = kbState.IsKeyDown(Keys.Left) || kbState.IsKeyDown(Keys.A);
+            bool keyRightNow = kbState.IsKeyDown(Keys.Right) || kbState.IsKeyDown(Keys.D);
+            bool keyUpNow = kbState.IsKeyDown(Keys.Up) || kbState.IsKeyDown(Keys.W);
+            bool keyDownNow = kbState.IsKeyDown(Keys.Down) || kbState.IsKeyDown(Keys.S);
 
-        // Update analog stick previous state
-        _stickLeftWasPressed = stickLeftNow;
-        _stickRightWasPressed = stickRightNow;
-        _stickUpWasPressed = stickUpNow;
-        _stickDownWasPressed = stickDownNow;
+            // Detect new key presses
+            if (!leftPressed && keyLeftNow && !_keyLeftWasPressed)
+            {
+                leftPressed = true;
+            }
+            if (!rightPressed && keyRightNow && !_keyRightWasPressed)
+            {
+                rightPressed = true;
+            }
+            if (!upPressed && keyUpNow && !_keyUpWasPressed)
+            {
+                upPressed = true;
+            }
+            if (!downPressed && keyDownNow && !_keyDownWasPressed)
+            {
+                downPressed = true;
+            }
+
+            // Update keyboard previous state
+            _keyLeftWasPressed = keyLeftNow;
+            _keyRightWasPressed = keyRightNow;
+            _keyUpWasPressed = keyUpNow;
+            _keyDownWasPressed = keyDownNow;
+        }
 
         if (!leftPressed && !rightPressed && !upPressed && !downPressed)
         {
@@ -913,18 +966,42 @@ public sealed class DownloadModsAccessibilitySystem : ModSystem
     private static void HandleActionButton(object browser)
     {
         GamePadState gpState = GamePad.GetState(PlayerIndex.One);
+        KeyboardState kbState = Main.keyState;
 
-        if (!gpState.IsConnected)
+        bool actionJustPressed = false;
+
+        // Check for A button press (gamepad)
+        if (gpState.IsConnected)
         {
-            return;
+            bool aPressed = gpState.Buttons.A == ButtonState.Pressed;
+            bool aJustPressed = aPressed && !_aButtonWasPressed;
+            _aButtonWasPressed = aPressed;
+
+            if (aJustPressed)
+            {
+                actionJustPressed = true;
+            }
         }
 
-        // Check for A button press (confirm/action button)
-        bool aPressed = gpState.Buttons.A == ButtonState.Pressed;
-        bool aJustPressed = aPressed && !_aButtonWasPressed;
-        _aButtonWasPressed = aPressed;
+        // Check for Enter/Space key (keyboard) when not in search mode
+        if (!SearchModeManager.IsSearchModeActive)
+        {
+            bool enterNow = kbState.IsKeyDown(Keys.Enter);
+            bool spaceNow = kbState.IsKeyDown(Keys.Space);
 
-        if (aJustPressed)
+            bool enterJustPressed = enterNow && !_keyEnterWasPressed;
+            bool spaceJustPressed = spaceNow && !_keySpaceWasPressed;
+
+            _keyEnterWasPressed = enterNow;
+            _keySpaceWasPressed = spaceNow;
+
+            if (enterJustPressed || spaceJustPressed)
+            {
+                actionJustPressed = true;
+            }
+        }
+
+        if (actionJustPressed)
         {
             int? currentPointId = GetCurrentPointId();
             if (currentPointId.HasValue && BindingById.TryGetValue(currentPointId.Value, out var binding))
@@ -1574,6 +1651,15 @@ public sealed class DownloadModsAccessibilitySystem : ModSystem
         if (!BindingById.TryGetValue(currentPoint, out PointBinding binding))
         {
             ScreenReaderMod.Instance?.Logger.Debug($"[DownloadMods] No binding found for point {currentPoint}");
+            return;
+        }
+
+        // In search mode, only announce mod items (not filters or action buttons)
+        // This lets users hear the first mod that matches their search
+        if (SearchModeManager.IsSearchModeActive &&
+            binding.Type != PointType.ModItem &&
+            binding.Type != PointType.ModItemButton)
+        {
             return;
         }
 

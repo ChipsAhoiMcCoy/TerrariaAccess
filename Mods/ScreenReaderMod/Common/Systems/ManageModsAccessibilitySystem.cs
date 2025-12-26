@@ -18,6 +18,7 @@ using Terraria.Localization;
 using Terraria.ModLoader;
 using Terraria.UI;
 using Terraria.UI.Gamepad;
+using ScreenReaderMod.Common.Systems.ModBrowser;
 
 namespace ScreenReaderMod.Common.Systems;
 
@@ -323,11 +324,16 @@ public sealed class ManageModsAccessibilitySystem : ModSystem
             Mod.Logger.Info("[ManageMods] Entered Manage Mods menu");
         }
 
-        // Process gamepad navigation even if not strictly "UsingGamepadUI" - check for actual gamepad input
+        // Update search mode manager (handles Tab key toggle)
+        SearchModeManager.Update();
+
+        // Process navigation - support both gamepad and keyboard input
+        // Keyboard navigation only works when not in search mode
         bool hasGamepadInput = PlayerInput.UsingGamepadUI ||
                                GamePad.GetState(PlayerIndex.One).IsConnected;
+        bool hasKeyboardNavigation = !SearchModeManager.IsSearchModeActive;
 
-        if (!hasGamepadInput)
+        if (!hasGamepadInput && !hasKeyboardNavigation)
         {
             return;
         }
@@ -822,60 +828,106 @@ public sealed class ManageModsAccessibilitySystem : ModSystem
     // A button state for toggle re-announcement
     private static bool _aButtonWasPressed;
 
+    // Keyboard navigation state tracking
+    private static bool _keyLeftWasPressed;
+    private static bool _keyRightWasPressed;
+    private static bool _keyUpWasPressed;
+    private static bool _keyDownWasPressed;
+    private static bool _keyEnterWasPressed;
+    private static bool _keySpaceWasPressed;
+
     private static void HandleManualNavigation(object mods)
     {
-        // Get current gamepad state - check even if not officially "UsingGamepadUI"
         GamePadState gpState = GamePad.GetState(PlayerIndex.One);
+        KeyboardState kbState = Main.keyState;
 
-        if (!gpState.IsConnected)
+        bool leftPressed = false;
+        bool rightPressed = false;
+        bool upPressed = false;
+        bool downPressed = false;
+
+        // Handle gamepad input
+        if (gpState.IsConnected)
         {
-            return;
+            // Detect new presses (transition from not pressed to pressed) for D-pad
+            leftPressed = gpState.DPad.Left == ButtonState.Pressed && !_leftWasPressed;
+            rightPressed = gpState.DPad.Right == ButtonState.Pressed && !_rightWasPressed;
+            upPressed = gpState.DPad.Up == ButtonState.Pressed && !_upWasPressed;
+            downPressed = gpState.DPad.Down == ButtonState.Pressed && !_downWasPressed;
+
+            // Update D-pad previous state
+            _leftWasPressed = gpState.DPad.Left == ButtonState.Pressed;
+            _rightWasPressed = gpState.DPad.Right == ButtonState.Pressed;
+            _upWasPressed = gpState.DPad.Up == ButtonState.Pressed;
+            _downWasPressed = gpState.DPad.Down == ButtonState.Pressed;
+
+            // Check analog stick with deadzone AND proper debouncing
+            Vector2 stick = gpState.ThumbSticks.Left;
+            const float threshold = 0.5f;
+
+            bool stickLeftNow = stick.X < -threshold;
+            bool stickRightNow = stick.X > threshold;
+            bool stickUpNow = stick.Y > threshold;
+            bool stickDownNow = stick.Y < -threshold;
+
+            // Only trigger on new stick movement (transition from not pressed to pressed)
+            if (!leftPressed && stickLeftNow && !_stickLeftWasPressed)
+            {
+                leftPressed = true;
+            }
+            if (!rightPressed && stickRightNow && !_stickRightWasPressed)
+            {
+                rightPressed = true;
+            }
+            if (!upPressed && stickUpNow && !_stickUpWasPressed)
+            {
+                upPressed = true;
+            }
+            if (!downPressed && stickDownNow && !_stickDownWasPressed)
+            {
+                downPressed = true;
+            }
+
+            // Update analog stick previous state
+            _stickLeftWasPressed = stickLeftNow;
+            _stickRightWasPressed = stickRightNow;
+            _stickUpWasPressed = stickUpNow;
+            _stickDownWasPressed = stickDownNow;
         }
 
-        // Detect new presses (transition from not pressed to pressed) for D-pad
-        bool leftPressed = gpState.DPad.Left == ButtonState.Pressed && !_leftWasPressed;
-        bool rightPressed = gpState.DPad.Right == ButtonState.Pressed && !_rightWasPressed;
-        bool upPressed = gpState.DPad.Up == ButtonState.Pressed && !_upWasPressed;
-        bool downPressed = gpState.DPad.Down == ButtonState.Pressed && !_downWasPressed;
-
-        // Update D-pad previous state
-        _leftWasPressed = gpState.DPad.Left == ButtonState.Pressed;
-        _rightWasPressed = gpState.DPad.Right == ButtonState.Pressed;
-        _upWasPressed = gpState.DPad.Up == ButtonState.Pressed;
-        _downWasPressed = gpState.DPad.Down == ButtonState.Pressed;
-
-        // Check analog stick with deadzone AND proper debouncing
-        Vector2 stick = gpState.ThumbSticks.Left;
-        const float threshold = 0.5f;
-
-        bool stickLeftNow = stick.X < -threshold;
-        bool stickRightNow = stick.X > threshold;
-        bool stickUpNow = stick.Y > threshold;
-        bool stickDownNow = stick.Y < -threshold;
-
-        // Only trigger on new stick movement (transition from not pressed to pressed)
-        if (!leftPressed && stickLeftNow && !_stickLeftWasPressed)
+        // Handle keyboard input when not in search mode
+        if (!SearchModeManager.IsSearchModeActive)
         {
-            leftPressed = true;
-        }
-        if (!rightPressed && stickRightNow && !_stickRightWasPressed)
-        {
-            rightPressed = true;
-        }
-        if (!upPressed && stickUpNow && !_stickUpWasPressed)
-        {
-            upPressed = true;
-        }
-        if (!downPressed && stickDownNow && !_stickDownWasPressed)
-        {
-            downPressed = true;
-        }
+            // Check arrow keys and WASD
+            bool keyLeftNow = kbState.IsKeyDown(Keys.Left) || kbState.IsKeyDown(Keys.A);
+            bool keyRightNow = kbState.IsKeyDown(Keys.Right) || kbState.IsKeyDown(Keys.D);
+            bool keyUpNow = kbState.IsKeyDown(Keys.Up) || kbState.IsKeyDown(Keys.W);
+            bool keyDownNow = kbState.IsKeyDown(Keys.Down) || kbState.IsKeyDown(Keys.S);
 
-        // Update analog stick previous state
-        _stickLeftWasPressed = stickLeftNow;
-        _stickRightWasPressed = stickRightNow;
-        _stickUpWasPressed = stickUpNow;
-        _stickDownWasPressed = stickDownNow;
+            // Detect new key presses
+            if (!leftPressed && keyLeftNow && !_keyLeftWasPressed)
+            {
+                leftPressed = true;
+            }
+            if (!rightPressed && keyRightNow && !_keyRightWasPressed)
+            {
+                rightPressed = true;
+            }
+            if (!upPressed && keyUpNow && !_keyUpWasPressed)
+            {
+                upPressed = true;
+            }
+            if (!downPressed && keyDownNow && !_keyDownWasPressed)
+            {
+                downPressed = true;
+            }
+
+            // Update keyboard previous state
+            _keyLeftWasPressed = keyLeftNow;
+            _keyRightWasPressed = keyRightNow;
+            _keyUpWasPressed = keyUpNow;
+            _keyDownWasPressed = keyDownNow;
+        }
 
         if (!leftPressed && !rightPressed && !upPressed && !downPressed)
         {
@@ -959,11 +1011,7 @@ public sealed class ManageModsAccessibilitySystem : ModSystem
     private static void HandleActionButton(object mods)
     {
         GamePadState gpState = GamePad.GetState(PlayerIndex.One);
-
-        if (!gpState.IsConnected)
-        {
-            return;
-        }
+        KeyboardState kbState = Main.keyState;
 
         // Decrement cooldowns
         if (_toggleCooldownFrames > 0)
@@ -975,14 +1023,42 @@ public sealed class ManageModsAccessibilitySystem : ModSystem
             _dialogActionCooldown--;
         }
 
-        // Check for A button press (confirm/action button)
-        bool aPressed = gpState.Buttons.A == ButtonState.Pressed;
-        bool aJustPressed = aPressed && !_aButtonWasPressed;
-        _aButtonWasPressed = aPressed;
+        bool actionJustPressed = false;
 
-        // When A is pressed on a mod item, toggle it and announce
+        // Check for A button press (gamepad)
+        if (gpState.IsConnected)
+        {
+            bool aPressed = gpState.Buttons.A == ButtonState.Pressed;
+            bool aJustPressed = aPressed && !_aButtonWasPressed;
+            _aButtonWasPressed = aPressed;
+
+            if (aJustPressed)
+            {
+                actionJustPressed = true;
+            }
+        }
+
+        // Check for Enter/Space key (keyboard) when not in search mode
+        if (!SearchModeManager.IsSearchModeActive)
+        {
+            bool enterNow = kbState.IsKeyDown(Keys.Enter);
+            bool spaceNow = kbState.IsKeyDown(Keys.Space);
+
+            bool enterJustPressed = enterNow && !_keyEnterWasPressed;
+            bool spaceJustPressed = spaceNow && !_keySpaceWasPressed;
+
+            _keyEnterWasPressed = enterNow;
+            _keySpaceWasPressed = spaceNow;
+
+            if (enterJustPressed || spaceJustPressed)
+            {
+                actionJustPressed = true;
+            }
+        }
+
+        // When action is pressed on a mod item, toggle it and announce
         // Also check dialog cooldown to prevent accidental re-triggering after closing dialog
-        if (aJustPressed && _currentRegion == FocusRegion.ModList && _toggleCooldownFrames == 0 && _dialogActionCooldown == 0)
+        if (actionJustPressed && _currentRegion == FocusRegion.ModList && _toggleCooldownFrames == 0 && _dialogActionCooldown == 0)
         {
             // Check if we're on a mod item button (More Info, Delete, Config)
             if (_currentModButtonIndex > 0)
@@ -1596,6 +1672,15 @@ public sealed class ManageModsAccessibilitySystem : ModSystem
         if (!BindingById.TryGetValue(currentPoint, out PointBinding binding))
         {
             ScreenReaderMod.Instance?.Logger.Debug($"[ManageMods] No binding found for point {currentPoint}");
+            return;
+        }
+
+        // In search mode, only announce mod items (not filters or action buttons)
+        // This lets users hear the first mod that matches their search
+        if (SearchModeManager.IsSearchModeActive &&
+            binding.Type != PointType.ModItem &&
+            binding.Type != PointType.ModItemButton)
+        {
             return;
         }
 
