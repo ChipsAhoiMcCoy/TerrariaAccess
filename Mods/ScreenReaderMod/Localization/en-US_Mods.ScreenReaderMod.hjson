@@ -105,6 +105,11 @@ Mods: {
 			SelectedSuffix: Selected
 		}
 
+		KeyboardParity: {
+			Enabled: Controller parity enabled.
+			Disabled: Controller parity disabled.
+		}
+
 		WorldAnnouncements: {
 			BloodMoonStart: The Blood Moon is rising.
 			BloodMoonEnd: The Blood Moon has ended.
