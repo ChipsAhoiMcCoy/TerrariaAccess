@@ -23,7 +23,7 @@ The build script produces `ScreenReaderMod.tmod` and copies it to `%USERPROFILE%
 
 ## Debugging
 
-Logs are in `tModLoader-Logs/client.log`. Key log tags:
+Logs are in `C:\Program Files (x86)\Steam\steamapps\common\tModLoader\tModLoader-Logs\client.log`. Key log tags:
 - `[Narration]`, `[WorldNarration]`, `[MenuNarration]` - speech events
 - `[NVDA]` - NVDA controller API calls
 - `[NarrationScheduler][Timing]` - scheduler performance (when trace enabled)

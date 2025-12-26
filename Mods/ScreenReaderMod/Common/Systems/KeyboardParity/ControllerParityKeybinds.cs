@@ -8,7 +8,7 @@ namespace ScreenReaderMod.Common.Systems.KeyboardParity;
 internal static class ControllerParityKeybinds
 {
     internal static ModKeybind? InventorySelect { get; private set; }
-    internal static ModKeybind? InventorySmartSelect { get; private set; }
+    internal static ModKeybind? InventoryInteract { get; private set; }
     internal static ModKeybind? InventorySectionNext { get; private set; }
     internal static ModKeybind? InventorySectionPrevious { get; private set; }
     internal static ModKeybind? InventoryQuickUse { get; private set; }
@@ -28,7 +28,7 @@ internal static class ControllerParityKeybinds
         }
 
         InventorySelect = KeybindLoader.RegisterKeybind(mod, "ControllerInventorySelect", Keys.I);
-        InventorySmartSelect = KeybindLoader.RegisterKeybind(mod, "ControllerInventorySmartSelect", Keys.F);
+        InventoryInteract = KeybindLoader.RegisterKeybind(mod, "ControllerInventoryInteract", Keys.P);
         InventorySectionNext = KeybindLoader.RegisterKeybind(mod, "ControllerInventorySectionNext", Keys.E);
         InventorySectionPrevious = KeybindLoader.RegisterKeybind(mod, "ControllerInventorySectionPrevious", Keys.Q);
         InventoryQuickUse = KeybindLoader.RegisterKeybind(mod, "ControllerInventoryQuickUse", Keys.J);
@@ -44,7 +44,7 @@ internal static class ControllerParityKeybinds
     {
         _initialized = false;
         InventorySelect = null;
-        InventorySmartSelect = null;
+        InventoryInteract = null;
         InventorySectionNext = null;
         InventorySectionPrevious = null;
         InventoryQuickUse = null;

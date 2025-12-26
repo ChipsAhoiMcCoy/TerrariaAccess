@@ -10,6 +10,7 @@ using MonoMod.RuntimeDetour;
 using ScreenReaderMod.Common.Services;
 using ScreenReaderMod.Common.Systems.KeyboardParity;
 using Terraria;
+using Terraria.Audio;
 using Terraria.GameContent.UI.States;
 using Terraria.GameInput;
 using Terraria.ModLoader;
@@ -49,14 +50,14 @@ public sealed class KeyboardInputParitySystem : ModSystem
   private static MethodInfo? _usingGamepadGetter;
   private static MethodInfo? _usingGamepadUiGetter;
   private static MethodInfo? _gamepadInputMethod;
-  private static MethodInfo? _leftClickSellOrTrashMethod;
   private static ILHook? _gamepadInputIlHook;
-  private static Hook? _leftClickSellOrTrashHook;
   private static int _lastMouseNpcType = -1;
   private static int _lastHousingQueryPoint = -1;
   private static bool _wasEnterOrSpaceDown = false;
   private static bool _wasMouseLeftDown = false;
   private static bool _wasIKeyDown = false;
+  private static bool _wasQuickUseKeyDown = false;
+  private static bool _wasMouseRightTriggerActive = false;
 
   public override void Load()
   {
@@ -73,8 +74,6 @@ public sealed class KeyboardInputParitySystem : ModSystem
     _usingGamepadHook = TryCreateHook(_usingGamepadGetter, OverrideUsingGamepad, "PlayerInput.UsingGamepad");
     _usingGamepadUiHook = TryCreateHook(_usingGamepadUiGetter, OverrideUsingGamepadUi, "PlayerInput.UsingGamepadUI");
     _gamepadInputIlHook = TryCreateIlHook(_gamepadInputMethod, InjectVirtualSticksIntoGamepadInput, "PlayerInput.GamePadInput");
-    _leftClickSellOrTrashHook = TryCreateHook(_leftClickSellOrTrashMethod, SuppressShiftTrashWhenDisabled, "ItemSlot.LeftClick_SellOrTrash");
-
     KeyboardParityFeatureState.StateChanged += OnFeatureToggleStateChanged;
     // Force parity on at startup so the game always sees a controller and the virtual sticks/keybinds stay active.
     KeyboardParityFeatureState.SetEnabled(true);
@@ -102,16 +101,12 @@ public sealed class KeyboardInputParitySystem : ModSystem
     _usingGamepadHook = null;
     _usingGamepadUiHook?.Dispose();
     _usingGamepadUiHook = null;
-    _leftClickSellOrTrashHook?.Dispose();
-    _leftClickSellOrTrashHook = null;
-
     _bindsKeyboardField = null;
     _bindsKeyboardUiField = null;
     _createBindingGroupMethod = null;
     _assembleBindPanelsMethod = null;
     _drawRadialCircularMethod = null;
     _drawRadialQuicksMethod = null;
-    _leftClickSellOrTrashMethod = null;
     _usingGamepadGetter = null;
     _usingGamepadUiGetter = null;
   }
@@ -127,7 +122,6 @@ public sealed class KeyboardInputParitySystem : ModSystem
     Type itemSlotType = typeof(ItemSlot);
     _drawRadialCircularMethod = itemSlotType.GetMethod("DrawRadialCircular", BindingFlags.Public | BindingFlags.Static);
     _drawRadialQuicksMethod = itemSlotType.GetMethod("DrawRadialQuicks", BindingFlags.Public | BindingFlags.Static);
-    _leftClickSellOrTrashMethod = itemSlotType.GetMethod("LeftClick_SellOrTrash", BindingFlags.NonPublic | BindingFlags.Static);
 
     Type playerInputType = typeof(PlayerInput);
     _usingGamepadGetter = playerInputType.GetMethod("get_UsingGamepad", BindingFlags.Public | BindingFlags.Static);
@@ -322,85 +316,6 @@ public sealed class KeyboardInputParitySystem : ModSystem
     return orig() || ShouldEmulateGamepad();
   }
 
-  private delegate bool LeftClickSellOrTrashDelegate(Item[] inv, int context, int slot);
-
-  /// <summary>
-  /// Suppresses shift-based quick actions (sell/trash) when keyboard parity is enabled.
-  ///
-  /// The issue: Terraria's default keyboard profiles map LeftShift to SmartSelect. When we
-  /// enable gamepad UI mode for keyboard parity, pressing Shift triggers SmartSelect, which
-  /// sets ShiftForcedOn=true and calls LeftClick. This causes Shift to act like the quick
-  /// action key instead of being ignored.
-  ///
-  /// The fix: Check if our explicit SmartSelect keybind (F by default) is pressed. If Shift
-  /// is pressed but our keybind is not, block the action. This ensures users must use F for
-  /// quick actions, not accidental Shift presses.
-  /// </summary>
-  private static bool SuppressShiftTrashWhenDisabled(LeftClickSellOrTrashDelegate orig, Item[] inv, int context, int slot)
-  {
-    // If keyboard parity is not enabled, use original behavior entirely.
-    if (!KeyboardParityFeatureState.Enabled)
-    {
-      return orig(inv, context, slot);
-    }
-
-    bool shiftInUse = ItemSlot.ShiftInUse;
-    bool physicalShiftPressed = Main.keyState.PressingShift();
-
-    if (!shiftInUse)
-    {
-      // Shift is not held (neither physical nor forced), let original handle it.
-      return orig(inv, context, slot);
-    }
-
-    // Check if our explicit SmartSelect keybind is being pressed.
-    // This is the only way users should trigger quick actions in keyboard parity mode.
-    bool smartSelectKeybindPressed = IsSmartSelectKeybindPressed();
-
-    if (smartSelectKeybindPressed)
-    {
-      // User is pressing our SmartSelect keybind (F by default). Allow the action.
-      global::ScreenReaderMod.ScreenReaderMod.Instance?.Logger.Info($"[ShiftSuppression] Allowing action: SmartSelect keybind pressed");
-      return orig(inv, context, slot);
-    }
-
-    // SmartSelect keybind is NOT pressed. Check if physical Shift triggered this.
-    // The game's default keyboard profile maps LeftShift to SmartSelect, which causes
-    // Shift to trigger SmartSelect in gamepad UI mode. Block this.
-    if (physicalShiftPressed)
-    {
-      global::ScreenReaderMod.ScreenReaderMod.Instance?.Logger.Info($"[ShiftSuppression] BLOCKING: Physical Shift pressed but SmartSelect keybind not pressed");
-      return true;
-    }
-
-    // ShiftInUse is true but neither our keybind nor physical Shift is pressed.
-    // This could be ShiftForcedOn from some other game mechanism. Allow it.
-    global::ScreenReaderMod.ScreenReaderMod.Instance?.Logger.Info($"[ShiftSuppression] Allowing action: ShiftForcedOn from game mechanism");
-    return orig(inv, context, slot);
-  }
-
-  /// <summary>
-  /// Checks if our explicit SmartSelect keybind (InventorySmartSelect) is currently pressed.
-  /// Uses both the ModKeybind API and raw keyboard state for reliability.
-  /// </summary>
-  private static bool IsSmartSelectKeybindPressed()
-  {
-    ModKeybind? keybind = ControllerParityKeybinds.InventorySmartSelect;
-    if (keybind is null)
-    {
-      return false;
-    }
-
-    // Check via ModKeybind API
-    if (keybind.Current)
-    {
-      return true;
-    }
-
-    // Fallback: check raw keyboard state for the assigned keys
-    return IsKeybindPressedRaw(keybind);
-  }
-
   private static void ForceGamepadUiModeIfNeeded(bool needsUiMode)
   {
     if (IsTextInputActive())
@@ -435,11 +350,170 @@ public sealed class KeyboardInputParitySystem : ModSystem
     }
 
     InjectVirtualTrigger(ControllerParityKeybinds.InventorySelect, TriggerNames.MouseLeft);
-    InjectVirtualTrigger(ControllerParityKeybinds.InventorySmartSelect, TriggerNames.SmartSelect);
+    InjectVirtualTrigger(ControllerParityKeybinds.InventoryInteract, TriggerNames.MouseRight);
 
     InjectVirtualTrigger(ControllerParityKeybinds.InventorySectionPrevious, TriggerNames.HotbarMinus);
     InjectVirtualTrigger(ControllerParityKeybinds.InventorySectionNext, TriggerNames.HotbarPlus);
-    InjectVirtualTrigger(ControllerParityKeybinds.InventoryQuickUse, TriggerNames.QuickMount);
+
+    // Quick Use: Inject QuickMount trigger for using consumables (potions, food, buff items)
+    ApplyQuickUseTrigger();
+
+    // Ensure MouseRight trigger from keyboard (Interact key) properly sets Main.mouseRight
+    // so ItemSlot.RightClick can process container opening and similar actions
+    ApplyMouseRightFromTrigger();
+  }
+
+  /// <summary>
+  /// When the MouseRight trigger is active (from keyboard Interact key), ensure Main.mouseRight
+  /// and Main.mouseRightRelease are set so ItemSlot.RightClick can process the action.
+  /// This is needed because our forced gamepad UI mode may interfere with normal keyboard trigger processing.
+  /// </summary>
+  private static void ApplyMouseRightFromTrigger()
+  {
+    // Check both the trigger and the keybind directly as a fallback
+    bool triggerActive = PlayerInput.Triggers.Current.MouseRight;
+
+    // Also check the InventoryInteract keybind directly in case trigger injection timing is off
+    ModKeybind? interactKeybind = ControllerParityKeybinds.InventoryInteract;
+    if (interactKeybind is not null)
+    {
+      bool keybindPressed = interactKeybind.Current || IsKeybindPressedRaw(interactKeybind);
+      triggerActive = triggerActive || keybindPressed;
+    }
+
+    bool justPressed = triggerActive && !_wasMouseRightTriggerActive;
+    _wasMouseRightTriggerActive = triggerActive;
+
+    if (justPressed)
+    {
+      // Set the mouse flags so ItemSlot.RightClick can process the action
+      Main.mouseRight = true;
+      Main.mouseRightRelease = true;
+    }
+    else if (triggerActive)
+    {
+      // Continue holding mouseRight for held actions (like stack splitting)
+      Main.mouseRight = true;
+    }
+  }
+
+  private static void ApplyQuickUseTrigger()
+  {
+    ModKeybind? keybind = ControllerParityKeybinds.InventoryQuickUse;
+    if (keybind is null)
+    {
+      _wasQuickUseKeyDown = false;
+      return;
+    }
+
+    bool isPressed = keybind.Current || IsKeybindPressedRaw(keybind);
+    bool justPressed = isPressed && !_wasQuickUseKeyDown;
+    _wasQuickUseKeyDown = isPressed;
+
+    if (!justPressed)
+    {
+      return;
+    }
+
+    // Get the currently focused inventory slot from UILinkPointNavigator
+    // Link points 0-49 correspond directly to inventory slots 0-49
+    int currentPoint = UILinkPointNavigator.CurrentPoint;
+    if (currentPoint < 0 || currentPoint > 49)
+    {
+      return;
+    }
+
+    Player player = Main.LocalPlayer;
+    if (player is null || !player.active || player.dead || player.cursed || player.CCed)
+    {
+      return;
+    }
+
+    // Check that cursor is empty (can't quick-use while holding an item)
+    if (Main.mouseItem.stack > 0)
+    {
+      return;
+    }
+
+    Item item = player.inventory[currentPoint];
+    if (item is null || item.IsAir || item.stack <= 0)
+    {
+      return;
+    }
+
+    // Check if this item can be quick-used (similar to Item.CanBeQuickUsed)
+    bool canQuickUse = item.healLife > 0 || item.healMana > 0 ||
+                       (item.buffType > 0 && item.buffTime > 0);
+    if (!canQuickUse)
+    {
+      return;
+    }
+
+    // Use the item directly (modeled after Player.QuickBuff)
+    TryUseConsumableItem(player, item);
+  }
+
+  private static void TryUseConsumableItem(Player player, Item item)
+  {
+    // Check if the player can use this item
+    if (!CombinedHooks.CanUseItem(player, item))
+    {
+      return;
+    }
+
+    // Handle healing items
+    if (item.healLife > 0 && player.statLife < player.statLifeMax2)
+    {
+      player.statLife += item.healLife;
+      if (player.statLife > player.statLifeMax2)
+      {
+        player.statLife = player.statLifeMax2;
+      }
+      player.HealEffect(item.healLife);
+    }
+
+    if (item.healMana > 0 && player.statMana < player.statManaMax2)
+    {
+      player.statMana += item.healMana;
+      if (player.statMana > player.statManaMax2)
+      {
+        player.statMana = player.statManaMax2;
+      }
+      player.ManaEffect(item.healMana);
+    }
+
+    // Handle buff items
+    if (item.buffType > 0)
+    {
+      int buffTime = item.buffTime;
+      if (buffTime == 0)
+      {
+        buffTime = 3600; // Default 1 minute
+      }
+      player.AddBuff(item.buffType, buffTime);
+    }
+
+    // Call mod hooks
+    ItemLoader.UseItem(item, player);
+
+    // Play sound
+    if (item.UseSound.HasValue)
+    {
+      SoundEngine.PlaySound(item.UseSound.Value, player.Center);
+    }
+
+    // Consume the item if it's consumable
+    if (item.consumable && ItemLoader.ConsumeItem(item, player))
+    {
+      item.stack--;
+      if (item.stack <= 0)
+      {
+        item.TurnToAir();
+      }
+    }
+
+    // Update recipes
+    Recipe.FindRecipes();
   }
 
   private static void ApplyGlobalVirtualTriggers()
@@ -679,8 +753,7 @@ public sealed class KeyboardInputParitySystem : ModSystem
                            justPressed.SmartSelect || justPressed.MouseRight;
 
       // Check the mod keybinds directly
-      bool keybindPressed = (ControllerParityKeybinds.InventorySelect?.JustPressed ?? false) ||
-                           (ControllerParityKeybinds.InventorySmartSelect?.JustPressed ?? false);
+      bool keybindPressed = ControllerParityKeybinds.InventorySelect?.JustPressed ?? false;
 
       // Check for Enter/Space which are common confirm keys on keyboard
       KeyboardState kbState = Keyboard.GetState();

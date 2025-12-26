@@ -194,7 +194,7 @@ Mods: {
 			BuildModeToggle.DisplayName: Toggle Build Mode
 			BuildModePlace.DisplayName: Set Build Point
 			ControllerInventorySelect.DisplayName: Inventory Select
-			ControllerInventorySmartSelect.DisplayName: Inventory Smart Select
+			ControllerInventoryInteract.DisplayName: Inventory Interact
 			ControllerInventorySectionNext.DisplayName: Inventory Section Next
 			ControllerInventorySectionPrevious.DisplayName: Inventory Section Previous
 			ControllerInventoryQuickUse.DisplayName: Inventory Quick Use
@@ -225,7 +225,7 @@ Keybinds: {
 	BuildModeToggle.DisplayName: Toggle Build Mode
 	BuildModePlace.DisplayName: Set Build Point
 	ControllerInventorySelect.DisplayName: Controller Inventory Select
-	ControllerInventorySmartSelect.DisplayName: Controller Inventory Smart Select
+	ControllerInventoryInteract.DisplayName: Controller Inventory Interact
 	ControllerInventorySectionNext.DisplayName: Controller Inventory Section Next
 	ControllerInventorySectionPrevious.DisplayName: Controller Inventory Section Previous
 	ControllerInventoryQuickUse.DisplayName: Controller Inventory Quick Use
