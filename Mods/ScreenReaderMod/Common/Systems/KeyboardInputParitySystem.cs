@@ -443,7 +443,8 @@ public sealed class KeyboardInputParitySystem : ModSystem
         string key = enabled
             ? "Mods.ScreenReaderMod.KeyboardParity.Enabled"
             : "Mods.ScreenReaderMod.KeyboardParity.Disabled";
-        string announcement = LocalizationHelper.GetText(key);
+        string fallback = enabled ? "Gamepad Emulation Enabled" : "Gamepad Emulation Disabled";
+        string announcement = LocalizationHelper.GetTextOrFallback(key, fallback);
         ScreenReaderService.Announce(announcement, force: true);
     }
 

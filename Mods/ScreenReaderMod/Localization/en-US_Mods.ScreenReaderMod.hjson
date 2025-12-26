@@ -106,8 +106,8 @@ Mods: {
 		}
 
 		KeyboardParity: {
-			Enabled: Controller parity enabled.
-			Disabled: Controller parity disabled.
+			Enabled: Gamepad Emulation Enabled
+			Disabled: Gamepad Emulation Disabled
 		}
 
 		SearchMode: {

@@ -327,6 +327,15 @@ public sealed class ManageModsAccessibilitySystem : ModSystem
         // Update search mode manager (handles Tab key toggle)
         SearchModeManager.Update();
 
+        // If user pressed Enter to exit search mode, focus the first mod
+        if (SearchModeManager.ConsumeFocusFirstModRequest())
+        {
+            _currentFocusIndex = 0;
+            _currentModButtonIndex = 0;
+            _currentRegion = FocusRegion.ModList;
+            _lastAnnouncedPointId = -1; // Reset to trigger announcement
+        }
+
         // Process navigation - support both gamepad and keyboard input
         // Keyboard navigation only works when not in search mode
         bool hasGamepadInput = PlayerInput.UsingGamepadUI ||

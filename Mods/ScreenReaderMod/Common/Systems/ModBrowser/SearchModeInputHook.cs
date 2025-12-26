@@ -5,6 +5,8 @@ using Microsoft.Xna.Framework;
 using Microsoft.Xna.Framework.Graphics;
 using MonoMod.RuntimeDetour;
 using Terraria;
+using Terraria.Audio;
+using Terraria.ID;
 using Terraria.ModLoader;
 using Terraria.UI;
 
@@ -23,6 +25,9 @@ public sealed class SearchModeInputHook : ModSystem
     private static FieldInfo? _hintTextField;
     private static FieldInfo? _currentStringField;
     private static FieldInfo? _textBlinkerCountField;
+
+    // Track previous search text for keystroke sound feedback
+    private static string? _previousSearchText;
 
     public override void Load()
     {
@@ -92,14 +97,38 @@ public sealed class SearchModeInputHook : ModSystem
 
     private static void DrawSelf_Hook(DrawSelfDelegate orig, UIElement self, SpriteBatch spriteBatch)
     {
-        // If not in a relevant menu or if search mode is active, use original behavior
-        if (!SearchModeManager.IsRelevantMenu || SearchModeManager.IsSearchModeActive)
+        // If not in a relevant menu, use original behavior
+        if (!SearchModeManager.IsRelevantMenu)
         {
+            _previousSearchText = null;
             orig(self, spriteBatch);
             return;
         }
 
+        // If search mode is active, use original behavior but track text changes for keystroke sound
+        if (SearchModeManager.IsSearchModeActive)
+        {
+            orig(self, spriteBatch);
+
+            // Check for text changes and play keystroke sound
+            if (_currentStringField is not null)
+            {
+                string? currentText = _currentStringField.GetValue(self) as string;
+                if (!string.Equals(currentText, _previousSearchText, StringComparison.Ordinal))
+                {
+                    // Only play sound if there was previous text (not on first frame)
+                    if (_previousSearchText is not null)
+                    {
+                        SoundEngine.PlaySound(SoundID.MenuTick);
+                    }
+                    _previousSearchText = currentText;
+                }
+            }
+            return;
+        }
+
         // In navigation mode: draw the text field without capturing keyboard input
+        _previousSearchText = null;
         DrawTextFieldWithoutInputCapture(self, spriteBatch);
     }
 

@@ -72,7 +72,6 @@ public sealed class DownloadModsAccessibilitySystem : ModSystem
     private static FieldInfo? _clearButtonField;
     private static FieldInfo? _downloadAllButtonField;
     private static FieldInfo? _updateAllButtonField;
-    private static FieldInfo? _filterTextBoxField;
     private static FieldInfo? _tagFilterToggleField;
 
     // UIModDownloadItem field references
@@ -148,7 +147,6 @@ public sealed class DownloadModsAccessibilitySystem : ModSystem
         _clearButtonField = _uiModBrowserType.GetField("_clearButton", BindingFlags.NonPublic | BindingFlags.Instance);
         _downloadAllButtonField = _uiModBrowserType.GetField("_downloadAllButton", BindingFlags.NonPublic | BindingFlags.Instance);
         _updateAllButtonField = _uiModBrowserType.GetField("_updateAllButton", BindingFlags.NonPublic | BindingFlags.Instance);
-        _filterTextBoxField = _uiModBrowserType.GetField("FilterTextBox", BindingFlags.Public | BindingFlags.Instance);
         _tagFilterToggleField = _uiModBrowserType.GetField("TagFilterToggle", BindingFlags.Public | BindingFlags.Instance);
 
         // Get UIModDownloadItem fields
@@ -263,6 +261,15 @@ public sealed class DownloadModsAccessibilitySystem : ModSystem
 
         // Update search mode manager (handles Tab key toggle)
         SearchModeManager.Update();
+
+        // If user pressed Enter to exit search mode, focus the first mod
+        if (SearchModeManager.ConsumeFocusFirstModRequest())
+        {
+            _currentFocusIndex = 0;
+            _currentModButtonIndex = 0;
+            _currentRegion = FocusRegion.ModList;
+            _lastAnnouncedPointId = -1; // Reset to trigger announcement
+        }
 
         // Process navigation - support both gamepad and keyboard input
         // Keyboard navigation only works when not in search mode

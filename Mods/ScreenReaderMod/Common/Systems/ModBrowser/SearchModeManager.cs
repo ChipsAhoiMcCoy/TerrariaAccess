@@ -3,6 +3,8 @@ using Microsoft.Xna.Framework.Input;
 using ScreenReaderMod.Common.Services;
 using ScreenReaderMod.Common.Utilities;
 using Terraria;
+using Terraria.Audio;
+using Terraria.ID;
 
 namespace ScreenReaderMod.Common.Systems.ModBrowser;
 
@@ -15,7 +17,9 @@ internal static class SearchModeManager
 {
     private static bool _isSearchModeActive;
     private static bool _tabWasPressed;
+    private static bool _enterWasPressed;
     private static bool _wasInRelevantMenu;
+    private static bool _shouldFocusFirstMod;
 
     /// <summary>
     /// Gets whether search mode is currently active.
@@ -23,6 +27,20 @@ internal static class SearchModeManager
     /// When true (search mode), keyboard input should go to the search text box.
     /// </summary>
     internal static bool IsSearchModeActive => _isSearchModeActive;
+
+    /// <summary>
+    /// Checks if focus should be set to the first mod (after exiting search via Enter).
+    /// Calling this method consumes the flag (resets it to false).
+    /// </summary>
+    internal static bool ConsumeFocusFirstModRequest()
+    {
+        if (_shouldFocusFirstMod)
+        {
+            _shouldFocusFirstMod = false;
+            return true;
+        }
+        return false;
+    }
 
     /// <summary>
     /// Gets whether the current menu is one where search mode management applies.
@@ -93,6 +111,24 @@ internal static class SearchModeManager
         {
             Toggle();
         }
+
+        // Check for Enter key press to exit search mode (like submitting in chat)
+        if (_isSearchModeActive)
+        {
+            bool enterPressed = Main.keyState.IsKeyDown(Keys.Enter);
+            bool enterJustPressed = enterPressed && !_enterWasPressed;
+            _enterWasPressed = enterPressed;
+
+            if (enterJustPressed)
+            {
+                _shouldFocusFirstMod = true;
+                ExitSearchMode();
+            }
+        }
+        else
+        {
+            _enterWasPressed = Main.keyState.IsKeyDown(Keys.Enter);
+        }
     }
 
     /// <summary>
@@ -103,11 +139,17 @@ internal static class SearchModeManager
     {
         _isSearchModeActive = !_isSearchModeActive;
 
-        // Only announce when entering search mode
         if (_isSearchModeActive)
         {
+            // Play menu open sound and announce when entering search mode
+            SoundEngine.PlaySound(SoundID.MenuOpen);
             string announcement = GetSearchModeAnnouncement();
             ScreenReaderService.Announce(announcement, force: true);
+        }
+        else
+        {
+            // Play menu close sound when exiting search mode via Tab
+            SoundEngine.PlaySound(SoundID.MenuClose);
         }
 
         ScreenReaderMod.Instance?.Logger.Info($"[SearchMode] Toggled to {(_isSearchModeActive ? "search" : "navigation")} mode");
@@ -124,9 +166,10 @@ internal static class SearchModeManager
         }
 
         _isSearchModeActive = false;
+        SoundEngine.PlaySound(SoundID.MenuClose);
         // No announcement when exiting search mode
 
-        ScreenReaderMod.Instance?.Logger.Info("[SearchMode] Exited search mode via Escape");
+        ScreenReaderMod.Instance?.Logger.Info("[SearchMode] Exited search mode");
     }
 
     /// <summary>
@@ -136,7 +179,9 @@ internal static class SearchModeManager
     {
         _isSearchModeActive = false;
         _tabWasPressed = false;
+        _enterWasPressed = false;
         _wasInRelevantMenu = false;
+        _shouldFocusFirstMod = false;
     }
 
     /// <summary>
