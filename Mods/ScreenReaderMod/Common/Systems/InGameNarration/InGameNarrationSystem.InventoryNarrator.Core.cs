@@ -42,6 +42,7 @@ public sealed partial class InGameNarrationSystem
         private static readonly FocusTracker _focusTracker = new();
         private SlotFocus? _currentFocus;
         private string? _lastFocusKey;
+        private bool _wasInventoryOpen;
         private const UiNarrationArea InventoryNarrationAreas =
             UiNarrationArea.Inventory |
             UiNarrationArea.Storage |
@@ -113,6 +114,12 @@ public sealed partial class InGameNarrationSystem
             _focusTracker.ClearSpecialLinkPoint(point);
         }
 
+        /// <summary>
+        /// Event raised when the inventory transitions from closed to open.
+        /// Used to notify other narrators (like CraftingNarrator) to reset their state.
+        /// </summary>
+        internal static event Action? InventoryOpened;
+
         public void Update(Player player)
         {
             if (Main.ingameOptionsWindow)
@@ -121,10 +128,19 @@ public sealed partial class InGameNarrationSystem
                 return;
             }
 
-            if (!IsInventoryUiOpen(player))
+            bool isInventoryOpen = IsInventoryUiOpen(player);
+            if (!isInventoryOpen)
             {
+                _wasInventoryOpen = false;
                 Reset();
                 return;
+            }
+
+            // Detect inventory just opened - set focus to inventory area and notify other narrators
+            if (!_wasInventoryOpen)
+            {
+                _wasInventoryOpen = true;
+                OnInventoryJustOpened();
             }
 
             bool usingGamepad = PlayerInput.UsingGamepadUI;
@@ -417,6 +433,17 @@ public sealed partial class InGameNarrationSystem
             _inGameUiTracker.Reset();
             UiAreaNarrationContext.Clear();
             _lastFocusKey = null;
+        }
+
+        private static void OnInventoryJustOpened()
+        {
+            // Set the active area to Inventory to prevent crafting narrator from immediately
+            // announcing recipes when the inventory first opens. This ensures focus stays
+            // on the inventory until the user explicitly navigates to crafting.
+            UiAreaNarrationContext.RecordArea(UiNarrationArea.Inventory);
+
+            // Notify other narrators (like CraftingNarrator) to reset their state
+            InventoryOpened?.Invoke();
         }
 
         private static string BuildFocusKey(HoverTarget target, SlotFocus? focus, int? craftingIndex)

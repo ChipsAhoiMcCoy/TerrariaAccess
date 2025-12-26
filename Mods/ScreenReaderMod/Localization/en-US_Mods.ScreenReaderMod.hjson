@@ -193,20 +193,16 @@ Mods: {
 			SpeechInterrupt.DisplayName: Toggle Speech Interrupt
 			BuildModeToggle.DisplayName: Toggle Build Mode
 			BuildModePlace.DisplayName: Set Build Point
+			ControllerInventorySelect.DisplayName: Inventory Select
 			ControllerInventorySmartSelect.DisplayName: Inventory Smart Select
 			ControllerInventorySectionNext.DisplayName: Inventory Section Next
 			ControllerInventorySectionPrevious.DisplayName: Inventory Section Previous
 			ControllerInventoryQuickUse.DisplayName: Inventory Quick Use
-			ControllerInventoryHousingQuery.DisplayName: Inventory Housing Query
 			ControllerLockOn.DisplayName: Lock On Target
 			ControllerRightStickUp.DisplayName: Right Stick Up
 			ControllerRightStickDown.DisplayName: Right Stick Down
 			ControllerRightStickLeft.DisplayName: Right Stick Left
 			ControllerRightStickRight.DisplayName: Right Stick Right
-			KeyboardCursorNudgeUp.DisplayName: Cursor Nudge Up
-			KeyboardCursorNudgeDown.DisplayName: Cursor Nudge Down
-			KeyboardCursorNudgeLeft.DisplayName: Cursor Nudge Left
-			KeyboardCursorNudgeRight.DisplayName: Cursor Nudge Right
 			StatusCheck.DisplayName: Status Checker
 		}
 	}
@@ -228,20 +224,16 @@ Keybinds: {
 	GuidanceTeleport.DisplayName: Teleport to Guidance Target
 	BuildModeToggle.DisplayName: Toggle Build Mode
 	BuildModePlace.DisplayName: Set Build Point
+	ControllerInventorySelect.DisplayName: Controller Inventory Select
 	ControllerInventorySmartSelect.DisplayName: Controller Inventory Smart Select
 	ControllerInventorySectionNext.DisplayName: Controller Inventory Section Next
 	ControllerInventorySectionPrevious.DisplayName: Controller Inventory Section Previous
 	ControllerInventoryQuickUse.DisplayName: Controller Inventory Quick Use
-	ControllerInventoryHousingQuery.DisplayName: Controller Inventory Housing Query
 	ControllerLockOn.DisplayName: Controller Lock On Target
 	ControllerRightStickUp.DisplayName: Controller Right Stick Up
 	ControllerRightStickDown.DisplayName: Controller Right Stick Down
 	ControllerRightStickLeft.DisplayName: Controller Right Stick Left
 	ControllerRightStickRight.DisplayName: Controller Right Stick Right
-	KeyboardCursorNudgeUp.DisplayName: Keyboard Cursor Nudge Up
-	KeyboardCursorNudgeDown.DisplayName: Keyboard Cursor Nudge Down
-	KeyboardCursorNudgeLeft.DisplayName: Keyboard Cursor Nudge Left
-	KeyboardCursorNudgeRight.DisplayName: Keyboard Cursor Nudge Right
 	StatusCheck.DisplayName: Status Checker
 }
 

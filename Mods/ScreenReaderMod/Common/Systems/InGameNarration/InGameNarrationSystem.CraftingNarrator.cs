@@ -45,6 +45,25 @@ public sealed partial class InGameNarrationSystem
         private RecipeIdentity _lastReforgeIdentity;
         private int _lastGuideRecipeCount;
         private bool _announcedEmptyReforge;
+        private bool _subscribedToInventoryOpened;
+
+        private void EnsureSubscribedToInventoryOpened()
+        {
+            if (_subscribedToInventoryOpened)
+            {
+                return;
+            }
+
+            InventoryNarrator.InventoryOpened += OnInventoryOpened;
+            _subscribedToInventoryOpened = true;
+        }
+
+        private void OnInventoryOpened()
+        {
+            // Reset crafting state when inventory opens to prevent stale announcements
+            // and ensure crafting doesn't speak until user navigates to it
+            ResetFocus();
+        }
 
         private static readonly Lazy<Dictionary<int, int>> RecipeGroupLookup = new(DiscoverRecipeGroupLookup);
         private static readonly Func<Recipe, int, int>? AcceptedGroupResolver = CreateAcceptedGroupResolver();
@@ -326,8 +345,33 @@ public sealed partial class InGameNarrationSystem
             UiAreaNarrationContext.RecordArea(area);
         }
 
+        // Link point ranges for crafting-related UI in gamepad mode
+        private const int CraftingGridLinkPointStart = 700;
+        private const int CraftingGridLinkPointEnd = 1500;
+        private const int CraftingListLinkPointStart = 1500;
+        private const int CraftingListLinkPointEnd = 2000;
+
+        private static bool IsLinkPointInCraftingRange(int point)
+        {
+            // Crafting grid (when recBigList is active): 700-1499
+            if (point >= CraftingGridLinkPointStart && point < CraftingGridLinkPointEnd)
+            {
+                return Main.recBigList;
+            }
+
+            // Crafting list (normal view): 1500-1999
+            if (point >= CraftingListLinkPointStart && point < CraftingListLinkPointEnd)
+            {
+                return true;
+            }
+
+            return false;
+        }
+
         public void Update(Player player)
         {
+            EnsureSubscribedToInventoryOpened();
+
             if (Main.ingameOptionsWindow)
             {
                 Reset();
@@ -348,12 +392,31 @@ public sealed partial class InGameNarrationSystem
                 return;
             }
 
-            if (PlayerInput.UsingGamepadUI &&
-                InventoryNarrator.TryGetContextForLinkPoint(UILinkPointNavigator.CurrentPoint, out int context) &&
-                !ItemSlotContextFacts.IsCraftingContext(context))
+            // When using gamepad UI, verify we're actually on a crafting-related link point.
+            // This prevents announcing recipes when inventory first opens and focus is elsewhere.
+            if (PlayerInput.UsingGamepadUI)
             {
-                ResetFocus();
-                return;
+                int currentPoint = UILinkPointNavigator.CurrentPoint;
+
+                // First check if we have cached context for this link point
+                if (InventoryNarrator.TryGetContextForLinkPoint(currentPoint, out int context))
+                {
+                    if (!ItemSlotContextFacts.IsCraftingContext(context))
+                    {
+                        ResetFocus();
+                        return;
+                    }
+                }
+                else
+                {
+                    // No cached context - check if link point is in a crafting-related range
+                    // If not, don't announce (prevents speaking first recipe when inventory opens)
+                    if (!IsLinkPointInCraftingRange(currentPoint))
+                    {
+                        ResetFocus();
+                        return;
+                    }
+                }
             }
 
             if (!TryCaptureFocus(out RecipeFocus focus))

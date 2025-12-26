@@ -535,7 +535,7 @@ public sealed partial class InGameNarrationSystem
 
         private static bool IsGamepadDpadPressed()
         {
-            if (KeyboardCursorNudgeSystem.WasArrowHeldThisFrame())
+            if (DpadVirtualizationSystem.WasDpadHeldThisFrame())
             {
                 return true;
             }

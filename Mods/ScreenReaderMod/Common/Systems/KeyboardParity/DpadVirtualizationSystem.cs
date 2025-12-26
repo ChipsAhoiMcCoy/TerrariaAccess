@@ -10,14 +10,15 @@ using Terraria.UI;
 namespace ScreenReaderMod.Common.Systems.KeyboardParity;
 
 /// <summary>
-/// Lets keyboard arrow keys nudge the cursor in-game, mirroring the controller D-Pad feedback loop.
+/// Virtualizes the right stick keys as a D-pad for tile-by-tile cursor movement when Smart Cursor is off.
+/// When Smart Cursor is on, these keys act as analog stick input instead.
 /// </summary>
-public sealed class KeyboardCursorNudgeSystem : ModSystem
+public sealed class DpadVirtualizationSystem : ModSystem
 {
     private const int DefaultRepeatDelayFrames = 6;
     private const float TileSizePixels = 16f;
 
-    private static uint _lastArrowHeldFrame = uint.MaxValue;
+    private static uint _lastDpadHeldFrame = uint.MaxValue;
 
     private readonly int[] _directionCooldowns = new int[4];
 
@@ -26,16 +27,16 @@ public sealed class KeyboardCursorNudgeSystem : ModSystem
         if (!ShouldProcess())
         {
             ResetCooldowns();
-            _lastArrowHeldFrame = uint.MaxValue;
+            _lastDpadHeldFrame = uint.MaxValue;
             return;
         }
 
-        if (AreArrowKeysHeld())
+        if (AreDpadKeysHeld())
         {
-            RegisterArrowHeldFrame();
+            RegisterDpadHeldFrame();
         }
 
-        Vector2 nudges = CollectArrowNudges();
+        Vector2 nudges = CollectDpadNudges();
         if (nudges == Vector2.Zero)
         {
             return;
@@ -84,14 +85,27 @@ public sealed class KeyboardCursorNudgeSystem : ModSystem
         return true;
     }
 
-    private Vector2 CollectArrowNudges()
+    private Vector2 CollectDpadNudges()
     {
+        // D-pad virtualization only activates when Smart Cursor is off.
+        // When Smart Cursor is on, these keys are handled as analog stick input by KeyboardInputParitySystem.
+        bool smartCursorActive = Main.SmartCursorIsUsed || Main.SmartCursorWanted;
+        if (smartCursorActive)
+        {
+            return Vector2.Zero;
+        }
+
         Vector2 nudges = Vector2.Zero;
 
-        nudges += EvaluateDirection(IsPressed(KeyboardCursorNudgeKeybinds.Up), -Vector2.UnitY, 0);
-        nudges += EvaluateDirection(IsPressed(KeyboardCursorNudgeKeybinds.Right), Vector2.UnitX, 1);
-        nudges += EvaluateDirection(IsPressed(KeyboardCursorNudgeKeybinds.Down), Vector2.UnitY, 2);
-        nudges += EvaluateDirection(IsPressed(KeyboardCursorNudgeKeybinds.Left), -Vector2.UnitX, 3);
+        bool up = IsPressed(ControllerParityKeybinds.RightStickUp);
+        bool right = IsPressed(ControllerParityKeybinds.RightStickRight);
+        bool down = IsPressed(ControllerParityKeybinds.RightStickDown);
+        bool left = IsPressed(ControllerParityKeybinds.RightStickLeft);
+
+        nudges += EvaluateDirection(up, -Vector2.UnitY, 0);
+        nudges += EvaluateDirection(right, Vector2.UnitX, 1);
+        nudges += EvaluateDirection(down, Vector2.UnitY, 2);
+        nudges += EvaluateDirection(left, -Vector2.UnitX, 3);
 
         return nudges;
     }
@@ -170,22 +184,33 @@ public sealed class KeyboardCursorNudgeSystem : ModSystem
         PlayerInput.SettingsForUI.SetCursorMode(CursorMode.Gamepad);
     }
 
-    internal static bool WasArrowHeldThisFrame()
+    /// <summary>
+    /// Returns true if any D-pad virtualization key was held this frame.
+    /// Used by narration systems to detect cursor movement input.
+    /// </summary>
+    internal static bool WasDpadHeldThisFrame()
     {
-        return _lastArrowHeldFrame == Main.GameUpdateCount;
+        return _lastDpadHeldFrame == Main.GameUpdateCount;
     }
 
-    private static bool AreArrowKeysHeld()
+    private static bool AreDpadKeysHeld()
     {
-        return IsPressed(KeyboardCursorNudgeKeybinds.Up)
-            || IsPressed(KeyboardCursorNudgeKeybinds.Down)
-            || IsPressed(KeyboardCursorNudgeKeybinds.Left)
-            || IsPressed(KeyboardCursorNudgeKeybinds.Right);
+        // D-pad virtualization only applies when Smart Cursor is off.
+        bool smartCursorActive = Main.SmartCursorIsUsed || Main.SmartCursorWanted;
+        if (smartCursorActive)
+        {
+            return false;
+        }
+
+        return IsPressed(ControllerParityKeybinds.RightStickUp)
+            || IsPressed(ControllerParityKeybinds.RightStickDown)
+            || IsPressed(ControllerParityKeybinds.RightStickLeft)
+            || IsPressed(ControllerParityKeybinds.RightStickRight);
     }
 
-    private static void RegisterArrowHeldFrame()
+    private static void RegisterDpadHeldFrame()
     {
-        _lastArrowHeldFrame = Main.GameUpdateCount;
+        _lastDpadHeldFrame = Main.GameUpdateCount;
     }
 
     private static Point ClampToPlacementReach(Point tileTarget)

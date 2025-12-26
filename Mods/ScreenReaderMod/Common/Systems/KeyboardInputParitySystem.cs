@@ -14,6 +14,7 @@ using Terraria.GameContent.UI.States;
 using Terraria.GameInput;
 using Terraria.ModLoader;
 using Terraria.UI;
+using Terraria.UI.Gamepad;
 
 namespace ScreenReaderMod.Common.Systems;
 
@@ -48,7 +49,14 @@ public sealed class KeyboardInputParitySystem : ModSystem
   private static MethodInfo? _usingGamepadGetter;
   private static MethodInfo? _usingGamepadUiGetter;
   private static MethodInfo? _gamepadInputMethod;
+  private static MethodInfo? _leftClickSellOrTrashMethod;
   private static ILHook? _gamepadInputIlHook;
+  private static Hook? _leftClickSellOrTrashHook;
+  private static int _lastMouseNpcType = -1;
+  private static int _lastHousingQueryPoint = -1;
+  private static bool _wasEnterOrSpaceDown = false;
+  private static bool _wasMouseLeftDown = false;
+  private static bool _wasIKeyDown = false;
 
   public override void Load()
   {
@@ -65,6 +73,7 @@ public sealed class KeyboardInputParitySystem : ModSystem
     _usingGamepadHook = TryCreateHook(_usingGamepadGetter, OverrideUsingGamepad, "PlayerInput.UsingGamepad");
     _usingGamepadUiHook = TryCreateHook(_usingGamepadUiGetter, OverrideUsingGamepadUi, "PlayerInput.UsingGamepadUI");
     _gamepadInputIlHook = TryCreateIlHook(_gamepadInputMethod, InjectVirtualSticksIntoGamepadInput, "PlayerInput.GamePadInput");
+    _leftClickSellOrTrashHook = TryCreateHook(_leftClickSellOrTrashMethod, SuppressShiftTrashWhenDisabled, "ItemSlot.LeftClick_SellOrTrash");
 
     KeyboardParityFeatureState.StateChanged += OnFeatureToggleStateChanged;
     // Force parity on at startup so the game always sees a controller and the virtual sticks/keybinds stay active.
@@ -93,6 +102,8 @@ public sealed class KeyboardInputParitySystem : ModSystem
     _usingGamepadHook = null;
     _usingGamepadUiHook?.Dispose();
     _usingGamepadUiHook = null;
+    _leftClickSellOrTrashHook?.Dispose();
+    _leftClickSellOrTrashHook = null;
 
     _bindsKeyboardField = null;
     _bindsKeyboardUiField = null;
@@ -100,6 +111,7 @@ public sealed class KeyboardInputParitySystem : ModSystem
     _assembleBindPanelsMethod = null;
     _drawRadialCircularMethod = null;
     _drawRadialQuicksMethod = null;
+    _leftClickSellOrTrashMethod = null;
     _usingGamepadGetter = null;
     _usingGamepadUiGetter = null;
   }
@@ -115,6 +127,7 @@ public sealed class KeyboardInputParitySystem : ModSystem
     Type itemSlotType = typeof(ItemSlot);
     _drawRadialCircularMethod = itemSlotType.GetMethod("DrawRadialCircular", BindingFlags.Public | BindingFlags.Static);
     _drawRadialQuicksMethod = itemSlotType.GetMethod("DrawRadialQuicks", BindingFlags.Public | BindingFlags.Static);
+    _leftClickSellOrTrashMethod = itemSlotType.GetMethod("LeftClick_SellOrTrash", BindingFlags.NonPublic | BindingFlags.Static);
 
     Type playerInputType = typeof(PlayerInput);
     _usingGamepadGetter = playerInputType.GetMethod("get_UsingGamepad", BindingFlags.Public | BindingFlags.Static);
@@ -261,6 +274,15 @@ public sealed class KeyboardInputParitySystem : ModSystem
 
     HandleFeatureToggleHotkey();
 
+    // Inject housing-relevant triggers early so CheckHousingQueryOnMouseClick can see them.
+    // Without this, the trigger check happens before ApplyInventoryVirtualTriggers() runs.
+    if (KeyboardParityFeatureState.Enabled && Main.playerInventory && !IsTextInputActive())
+    {
+      InjectVirtualTrigger(ControllerParityKeybinds.InventorySelect, TriggerNames.MouseLeft);
+    }
+
+    CheckHousingQueryOnMouseClick();
+
     if (!KeyboardParityFeatureState.Enabled)
     {
       return;
@@ -300,6 +322,85 @@ public sealed class KeyboardInputParitySystem : ModSystem
     return orig() || ShouldEmulateGamepad();
   }
 
+  private delegate bool LeftClickSellOrTrashDelegate(Item[] inv, int context, int slot);
+
+  /// <summary>
+  /// Suppresses shift-based quick actions (sell/trash) when keyboard parity is enabled.
+  ///
+  /// The issue: Terraria's default keyboard profiles map LeftShift to SmartSelect. When we
+  /// enable gamepad UI mode for keyboard parity, pressing Shift triggers SmartSelect, which
+  /// sets ShiftForcedOn=true and calls LeftClick. This causes Shift to act like the quick
+  /// action key instead of being ignored.
+  ///
+  /// The fix: Check if our explicit SmartSelect keybind (F by default) is pressed. If Shift
+  /// is pressed but our keybind is not, block the action. This ensures users must use F for
+  /// quick actions, not accidental Shift presses.
+  /// </summary>
+  private static bool SuppressShiftTrashWhenDisabled(LeftClickSellOrTrashDelegate orig, Item[] inv, int context, int slot)
+  {
+    // If keyboard parity is not enabled, use original behavior entirely.
+    if (!KeyboardParityFeatureState.Enabled)
+    {
+      return orig(inv, context, slot);
+    }
+
+    bool shiftInUse = ItemSlot.ShiftInUse;
+    bool physicalShiftPressed = Main.keyState.PressingShift();
+
+    if (!shiftInUse)
+    {
+      // Shift is not held (neither physical nor forced), let original handle it.
+      return orig(inv, context, slot);
+    }
+
+    // Check if our explicit SmartSelect keybind is being pressed.
+    // This is the only way users should trigger quick actions in keyboard parity mode.
+    bool smartSelectKeybindPressed = IsSmartSelectKeybindPressed();
+
+    if (smartSelectKeybindPressed)
+    {
+      // User is pressing our SmartSelect keybind (F by default). Allow the action.
+      global::ScreenReaderMod.ScreenReaderMod.Instance?.Logger.Info($"[ShiftSuppression] Allowing action: SmartSelect keybind pressed");
+      return orig(inv, context, slot);
+    }
+
+    // SmartSelect keybind is NOT pressed. Check if physical Shift triggered this.
+    // The game's default keyboard profile maps LeftShift to SmartSelect, which causes
+    // Shift to trigger SmartSelect in gamepad UI mode. Block this.
+    if (physicalShiftPressed)
+    {
+      global::ScreenReaderMod.ScreenReaderMod.Instance?.Logger.Info($"[ShiftSuppression] BLOCKING: Physical Shift pressed but SmartSelect keybind not pressed");
+      return true;
+    }
+
+    // ShiftInUse is true but neither our keybind nor physical Shift is pressed.
+    // This could be ShiftForcedOn from some other game mechanism. Allow it.
+    global::ScreenReaderMod.ScreenReaderMod.Instance?.Logger.Info($"[ShiftSuppression] Allowing action: ShiftForcedOn from game mechanism");
+    return orig(inv, context, slot);
+  }
+
+  /// <summary>
+  /// Checks if our explicit SmartSelect keybind (InventorySmartSelect) is currently pressed.
+  /// Uses both the ModKeybind API and raw keyboard state for reliability.
+  /// </summary>
+  private static bool IsSmartSelectKeybindPressed()
+  {
+    ModKeybind? keybind = ControllerParityKeybinds.InventorySmartSelect;
+    if (keybind is null)
+    {
+      return false;
+    }
+
+    // Check via ModKeybind API
+    if (keybind.Current)
+    {
+      return true;
+    }
+
+    // Fallback: check raw keyboard state for the assigned keys
+    return IsKeybindPressedRaw(keybind);
+  }
+
   private static void ForceGamepadUiModeIfNeeded(bool needsUiMode)
   {
     if (IsTextInputActive())
@@ -333,11 +434,12 @@ public sealed class KeyboardInputParitySystem : ModSystem
       return;
     }
 
+    InjectVirtualTrigger(ControllerParityKeybinds.InventorySelect, TriggerNames.MouseLeft);
     InjectVirtualTrigger(ControllerParityKeybinds.InventorySmartSelect, TriggerNames.SmartSelect);
+
     InjectVirtualTrigger(ControllerParityKeybinds.InventorySectionPrevious, TriggerNames.HotbarMinus);
     InjectVirtualTrigger(ControllerParityKeybinds.InventorySectionNext, TriggerNames.HotbarPlus);
     InjectVirtualTrigger(ControllerParityKeybinds.InventoryQuickUse, TriggerNames.QuickMount);
-    InjectVirtualTrigger(ControllerParityKeybinds.InventoryHousingQuery, TriggerNames.Grapple);
   }
 
   private static void ApplyGlobalVirtualTriggers()
@@ -409,7 +511,15 @@ public sealed class KeyboardInputParitySystem : ModSystem
 
   private static void InjectVirtualTrigger(ModKeybind? keybind, string triggerName)
   {
-    if (keybind is null || !keybind.Current)
+    if (keybind is null)
+    {
+      return;
+    }
+
+    // Check ModKeybind first, then fall back to raw keyboard state detection
+    // This ensures detection works even in gamepad UI mode
+    bool isPressed = keybind.Current || IsKeybindPressedRaw(keybind);
+    if (!isPressed)
     {
       return;
     }
@@ -420,13 +530,52 @@ public sealed class KeyboardInputParitySystem : ModSystem
       return;
     }
 
+    // Use gamepad UI mode when in UI context so the game properly processes the trigger
+    InputMode sourceMode = PlayerInput.CurrentInputMode == InputMode.XBoxGamepadUI
+        ? InputMode.XBoxGamepadUI
+        : InputMode.Keyboard;
+
     bool wasHeldLastFrame = pack.Old.KeyStatus.TryGetValue(triggerName, out bool wasHeld) && wasHeld;
-    SetTriggerState(pack, triggerName, InputMode.Keyboard);
+    SetTriggerState(pack, triggerName, sourceMode);
     if (!wasHeldLastFrame)
     {
       pack.JustPressed.KeyStatus[triggerName] = true;
-      pack.JustPressed.LatestInputMode[triggerName] = InputMode.Keyboard;
+      pack.JustPressed.LatestInputMode[triggerName] = sourceMode;
     }
+  }
+
+  /// <summary>
+  /// Checks if a ModKeybind's assigned keys are pressed using raw keyboard state.
+  /// This is a fallback for when ModKeybind.Current doesn't work correctly in gamepad modes.
+  /// </summary>
+  private static bool IsKeybindPressedRaw(ModKeybind keybind)
+  {
+    try
+    {
+      List<string> assignedKeys = keybind.GetAssignedKeys();
+      if (assignedKeys is null || assignedKeys.Count == 0)
+      {
+        return false;
+      }
+
+      KeyboardState kbState = Main.keyState;
+      foreach (string keyName in assignedKeys)
+      {
+        if (Enum.TryParse<Keys>(keyName, ignoreCase: true, out Keys key))
+        {
+          if (kbState.IsKeyDown(key))
+          {
+            return true;
+          }
+        }
+      }
+    }
+    catch
+    {
+      // Ignore errors in fallback detection
+    }
+
+    return false;
   }
 
   private static void InjectVirtualTrigger(string triggerName, bool isHeld)
@@ -442,12 +591,17 @@ public sealed class KeyboardInputParitySystem : ModSystem
       return;
     }
 
+    // Use gamepad UI mode when in UI context so the game properly processes the trigger
+    InputMode sourceMode = PlayerInput.CurrentInputMode == InputMode.XBoxGamepadUI
+        ? InputMode.XBoxGamepadUI
+        : InputMode.Keyboard;
+
     bool wasHeldLastFrame = pack.Old.KeyStatus.TryGetValue(triggerName, out bool wasHeld) && wasHeld;
-    SetTriggerState(pack, triggerName, InputMode.Keyboard);
+    SetTriggerState(pack, triggerName, sourceMode);
     if (!wasHeldLastFrame)
     {
       pack.JustPressed.KeyStatus[triggerName] = true;
-      pack.JustPressed.LatestInputMode[triggerName] = InputMode.Keyboard;
+      pack.JustPressed.LatestInputMode[triggerName] = sourceMode;
     }
   }
 
@@ -465,6 +619,143 @@ public sealed class KeyboardInputParitySystem : ModSystem
     {
       KeyboardParityFeatureState.Toggle();
     }
+  }
+
+  /// <summary>
+  /// Detects when the user activates the housing query button and
+  /// immediately triggers a housing check at the player's position.
+  /// This replicates the gamepad behavior where pressing X on the housing query button
+  /// checks housing viability at the player's current tile location.
+  /// </summary>
+  private static void CheckHousingQueryOnMouseClick()
+  {
+    Main? mainInstance = Main.instance;
+    if (mainInstance is null)
+    {
+      return;
+    }
+
+    int currentMouseNpcType = mainInstance.mouseNPCType;
+
+    if (Main.gameMenu || !Main.playerInventory)
+    {
+      _lastMouseNpcType = currentMouseNpcType;
+      return;
+    }
+
+    // Detect transition into housing query mode (mouseNPCType == 0)
+    // mouseNPCType == 0 means "housing query" mode; other values represent NPC indices
+    bool justEnteredHousingQueryMode = currentMouseNpcType == 0 && _lastMouseNpcType != 0;
+    _lastMouseNpcType = currentMouseNpcType;
+
+    // Skip if actual gamepad hardware triggered this - the native UILinksInitializer
+    // handler already does the housing check when X button is pressed on gamepad.
+    // We only check for actual gamepad hardware, not the emulated state from keyboard parity.
+    if (IsActualGamepadGrapplePressed())
+    {
+      return;
+    }
+
+    // Case 1: User just entered housing query mode (clicked the housing query button)
+    if (justEnteredHousingQueryMode)
+    {
+      TriggerHousingCheckAtPlayerPosition();
+      return;
+    }
+
+    // Case 2: User is on the housing query button (UILinkPoint 600) and presses
+    // an interact key. This allows the user to check housing status using
+    // their standard interact key while focused on the button.
+    int currentPoint = UILinkPointNavigator.CurrentPoint;
+    bool onHousingButton = currentPoint == 600;
+    bool onNpcHousingTab = Main.EquipPage == 1;
+
+    if (KeyboardParityFeatureState.Enabled && onNpcHousingTab && onHousingButton)
+    {
+      TriggersSet justPressed = PlayerInput.Triggers.JustPressed;
+
+      // Check triggers that might be used for interaction
+      bool triggerPressed = justPressed.MouseLeft || justPressed.Grapple ||
+                           justPressed.SmartSelect || justPressed.MouseRight;
+
+      // Check the mod keybinds directly
+      bool keybindPressed = (ControllerParityKeybinds.InventorySelect?.JustPressed ?? false) ||
+                           (ControllerParityKeybinds.InventorySmartSelect?.JustPressed ?? false);
+
+      // Check for Enter/Space which are common confirm keys on keyboard
+      KeyboardState kbState = Keyboard.GetState();
+      bool enterOrSpaceDown = kbState.IsKeyDown(Keys.Enter) || kbState.IsKeyDown(Keys.Space);
+      bool enterJustPressed = enterOrSpaceDown && !_wasEnterOrSpaceDown;
+      _wasEnterOrSpaceDown = enterOrSpaceDown;
+
+      // Check for actual mouse left button
+      bool mouseLeftDown = Main.mouseLeft;
+      bool mouseLeftJustPressed = mouseLeftDown && !_wasMouseLeftDown;
+      _wasMouseLeftDown = mouseLeftDown;
+
+      // Check for I key directly (the default InventorySelect key)
+      bool iKeyDown = kbState.IsKeyDown(Keys.I);
+      bool iKeyJustPressed = iKeyDown && !_wasIKeyDown;
+      _wasIKeyDown = iKeyDown;
+
+      if (triggerPressed || keybindPressed || enterJustPressed || mouseLeftJustPressed || iKeyJustPressed)
+      {
+        TriggerHousingCheckAtPlayerPosition();
+      }
+    }
+    else
+    {
+      // Reset tracking when not on point 600
+      _wasEnterOrSpaceDown = false;
+      _wasMouseLeftDown = false;
+      _wasIKeyDown = false;
+    }
+
+    _lastHousingQueryPoint = currentPoint;
+  }
+
+  private static bool IsActualGamepadGrapplePressed()
+  {
+    try
+    {
+      GamePadState state = GamePad.GetState(PlayerIndex.One);
+      if (!state.IsConnected)
+      {
+        return false;
+      }
+
+      // X button on Xbox controller (which maps to Grapple trigger)
+      return state.Buttons.X == ButtonState.Pressed;
+    }
+    catch
+    {
+      return false;
+    }
+  }
+
+  private static void TriggerHousingCheckAtPlayerPosition()
+  {
+    Player player = Main.LocalPlayer;
+    if (player is null || !player.active)
+    {
+      return;
+    }
+
+    // Use player's center position, matching gamepad behavior
+    // (see UILinksInitializer.cs line ~720: Main.player[Main.myPlayer].Center.ToTileCoordinates())
+    Point tilePos = player.Center.ToTileCoordinates();
+    int tileX = tilePos.X;
+    int tileY = tilePos.Y;
+
+    // Validate tile is in world bounds
+    if (!WorldGen.InWorld(tileX, tileY, 1))
+    {
+      return;
+    }
+
+    // Trigger the housing query - this will output the result via Main.NewText,
+    // which is hooked by TryAnnounceHousingQuery in InGameNarrationSystem
+    WorldGen.MoveTownNPC(tileX, tileY, -1);
   }
 
   private static void InjectVirtualSticksIntoGamepadInput(ILContext il)
@@ -513,7 +804,15 @@ public sealed class KeyboardInputParitySystem : ModSystem
 
     KeyboardState state = Main.keyState;
     bool movementOverride = TryReadStick(state, Keys.W, Keys.S, Keys.A, Keys.D, out Vector2 movement);
-    bool aimOverride = TryReadStick(ControllerParityKeybinds.RightStickUp, ControllerParityKeybinds.RightStickDown, ControllerParityKeybinds.RightStickLeft, ControllerParityKeybinds.RightStickRight, out Vector2 aim);
+
+    // When Smart Cursor is off, right stick keys are used for cursor nudge instead.
+    bool smartCursorActive = Main.SmartCursorIsUsed || Main.SmartCursorWanted;
+    bool aimOverride = false;
+    Vector2 aim = Vector2.Zero;
+    if (smartCursorActive)
+    {
+      aimOverride = TryReadStick(ControllerParityKeybinds.RightStickUp, ControllerParityKeybinds.RightStickDown, ControllerParityKeybinds.RightStickLeft, ControllerParityKeybinds.RightStickRight, out aim);
+    }
 
     if (movementOverride)
     {
