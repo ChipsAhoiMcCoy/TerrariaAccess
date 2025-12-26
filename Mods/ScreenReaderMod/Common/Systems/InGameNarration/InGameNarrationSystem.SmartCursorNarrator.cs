@@ -177,6 +177,11 @@ public sealed partial class InGameNarrationSystem
 
         private static bool IsOtherIngameUiActive()
         {
+            if (Main.ingameOptionsWindow)
+            {
+                return true;
+            }
+
             if (Main.editSign || Main.editChest || Main.drawingPlayerChat || Main.inFancyUI)
             {
                 return true;

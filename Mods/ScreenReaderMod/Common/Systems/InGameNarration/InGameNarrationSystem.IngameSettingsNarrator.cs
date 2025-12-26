@@ -156,6 +156,7 @@ public sealed partial class InGameNarrationSystem
         private int _noFocusFrameCount;
         private int _menuOpenSettleFrames;
         private int _lastRawCategory = int.MinValue;
+        private bool _wasOptionFocused;
 
         public void OnMenuOpened()
         {
@@ -206,6 +207,17 @@ public sealed partial class InGameNarrationSystem
             _lastRawCategory = rawCategory;
 
             string? categoryLabel = GetCategoryLabelById(categoryId, selectedLeftIndex, leftHover);
+            // Detect returning to category list from option editing.
+            // When user exits an options list back to the category list, re-announce the category.
+            bool noOptionFocused = rightHover < 0 && rightLock < 0;
+            bool returnedToCategoryList = noOptionFocused && _wasOptionFocused && selectedLeftIndex >= 0;
+            _wasOptionFocused = !noOptionFocused;
+
+            if (returnedToCategoryList && !string.IsNullOrWhiteSpace(categoryLabel))
+            {
+                _forceCategoryAnnouncement = true;
+            }
+
             if (!string.IsNullOrWhiteSpace(categoryLabel))
             {
                 bool categoryChanged = categoryId != _lastCategory;
@@ -216,7 +228,6 @@ public sealed partial class InGameNarrationSystem
 
                 if (categoryChanged || _forceCategoryAnnouncement)
                 {
-                    bool noOptionFocused = rightHover < 0 && rightLock < 0;
                     // Always announce category on menu open (_forceCategoryAnnouncement),
                     // or when navigating between categories with no option focused.
                     // Skip announcement if category and leftHover are out of sync to avoid
@@ -1267,6 +1278,7 @@ public sealed partial class InGameNarrationSystem
             _noFocusFrameCount = 0;
             _menuOpenSettleFrames = 0;
             _lastRawCategory = int.MinValue;
+            _wasOptionFocused = false;
         }
 
         private void PlayTickIfNew(string key)

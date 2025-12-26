@@ -39,3 +39,4 @@ Tools/Decompiled/
 
 # Ignore local Claude Code settings
 .claude/
+nul
