@@ -15,6 +15,7 @@ using Terraria.GameContent.UI.States;
 using Terraria.GameInput;
 using Terraria.ModLoader;
 using Terraria.UI;
+using Terraria.UI.Gamepad;
 
 namespace ScreenReaderMod.Common.Systems;
 
@@ -44,6 +45,7 @@ public sealed class KeyboardInputParitySystem : ModSystem
     private static ILHook? _gamepadInputIlHook;
 
     private static HousingQueryHandler? _housingQueryHandler;
+
 
     public override void Load()
     {
@@ -357,7 +359,17 @@ public sealed class KeyboardInputParitySystem : ModSystem
         }
 
         VirtualTriggerService.InjectFromKeybind(ControllerParityKeybinds.InventorySelect, TriggerNames.MouseLeft);
-        VirtualTriggerService.InjectFromKeybind(ControllerParityKeybinds.InventoryInteract, TriggerNames.MouseRight);
+
+        // Only inject MouseRight if no chest/container is open.
+        // When a container is open, continued MouseRight injection can cause it to toggle closed.
+        // The player needs to release the interact key and press again to interact with chest slots.
+        Player player = Main.LocalPlayer;
+        bool chestOpen = player is not null && (player.chest != -1 || player.tileEntityAnchor.InUse);
+        if (!chestOpen)
+        {
+            VirtualTriggerService.InjectFromKeybind(ControllerParityKeybinds.InventoryInteract, TriggerNames.MouseRight);
+        }
+
         VirtualTriggerService.InjectFromKeybind(ControllerParityKeybinds.InventorySectionPrevious, TriggerNames.HotbarMinus);
         VirtualTriggerService.InjectFromKeybind(ControllerParityKeybinds.InventorySectionNext, TriggerNames.HotbarPlus);
 
@@ -374,7 +386,11 @@ public sealed class KeyboardInputParitySystem : ModSystem
         VirtualTriggerService.InjectFromKeybind(ControllerParityKeybinds.InventoryQuickUse, TriggerNames.QuickMount);
 
         // Ensure MouseRight trigger from keyboard (Interact key) properly sets Main.mouseRight
-        VirtualTriggerService.ApplyMouseRightFromTrigger();
+        // But skip when a container is open to prevent accidental closure
+        if (!chestOpen)
+        {
+            VirtualTriggerService.ApplyMouseRightFromTrigger();
+        }
     }
 
     private static void ApplyMenuNavigationVirtualTriggers(bool uiModeActive)

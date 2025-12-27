@@ -155,7 +155,7 @@ public sealed partial class InGameNarrationSystem
                 hoveringPlayer = false;
             }
 
-            if (!PlayerInput.UsingGamepad)
+            if (!PlayerInput.UsingGamepad && !DpadVirtualizationSystem.AreDpadKeysHeld())
             {
                 _wasHoveringPlayer = hoveringPlayer;
                 return;
@@ -535,7 +535,7 @@ public sealed partial class InGameNarrationSystem
 
         private static bool IsGamepadDpadPressed()
         {
-            if (DpadVirtualizationSystem.WasDpadHeldThisFrame())
+            if (DpadVirtualizationSystem.AreDpadKeysHeld())
             {
                 return true;
             }

@@ -31,11 +31,6 @@ public sealed class DpadVirtualizationSystem : ModSystem
             return;
         }
 
-        if (AreDpadKeysHeld())
-        {
-            RegisterDpadHeldFrame();
-        }
-
         Vector2 nudges = CollectDpadNudges();
         if (nudges == Vector2.Zero)
         {
@@ -169,7 +164,17 @@ public sealed class DpadVirtualizationSystem : ModSystem
         Point targetTile = ClampToPlacementReach(tileTarget.ToTileCoordinates());
         Vector2 snappedPixels = Vector2.Transform(targetTile.ToWorldCoordinates() - Main.screenPosition, zoomMatrix);
 
-        ApplyCursorPosition((int)snappedPixels.X, (int)snappedPixels.Y);
+        int newX = (int)snappedPixels.X;
+        int newY = (int)snappedPixels.Y;
+
+        // Only register D-pad input and apply position if cursor actually moved
+        if (newX == Main.mouseX && newY == Main.mouseY)
+        {
+            return;
+        }
+
+        RegisterDpadHeldFrame();
+        ApplyCursorPosition(newX, newY);
     }
 
     private static void ApplyCursorPosition(int x, int y)
@@ -193,7 +198,11 @@ public sealed class DpadVirtualizationSystem : ModSystem
         return _lastDpadHeldFrame == Main.GameUpdateCount;
     }
 
-    private static bool AreDpadKeysHeld()
+    /// <summary>
+    /// Returns true if any virtual D-pad key is currently held.
+    /// Used by narration systems to detect D-pad input mode (vs analog stick).
+    /// </summary>
+    internal static bool AreDpadKeysHeld()
     {
         // D-pad virtualization only applies when Smart Cursor is off.
         bool smartCursorActive = Main.SmartCursorIsUsed || Main.SmartCursorWanted;

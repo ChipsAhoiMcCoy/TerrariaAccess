@@ -107,6 +107,14 @@ public sealed partial class InGameNarrationSystem : ModSystem
 
     internal static CursorDescriptorService CursorDescriptors => _sharedCursorDescriptorService ??= new CursorDescriptorService();
 
+    /// <summary>
+    /// Event raised when player.chest transitions from -1 to a valid storage value.
+    /// Used by keyboard parity system to redirect focus to the chest/storage page.
+    /// </summary>
+    public static event Action<int>? ChestOpened;
+
+    internal static void RaiseChestOpened(int chestIndex) => ChestOpened?.Invoke(chestIndex);
+
     public InGameNarrationSystem()
     {
         _hotbarNarrator = new HotbarNarrator();

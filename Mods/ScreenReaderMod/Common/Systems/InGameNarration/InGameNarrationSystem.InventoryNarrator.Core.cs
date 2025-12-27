@@ -43,6 +43,7 @@ public sealed partial class InGameNarrationSystem
         private SlotFocus? _currentFocus;
         private string? _lastFocusKey;
         private bool _wasInventoryOpen;
+        private int _lastChestIndex = -1;
         private const UiNarrationArea InventoryNarrationAreas =
             UiNarrationArea.Inventory |
             UiNarrationArea.Storage |
@@ -62,6 +63,8 @@ public sealed partial class InGameNarrationSystem
         private static uint _capturedMouseTextFrame;
         private static int _inventoryOpenGraceFrames;
         private const int InventoryOpenGracePeriod = 3;
+        private static int _chestOpenGraceFrames;
+        private const int ChestOpenGracePeriod = 10;
 
         public static void RecordFocus(Item[] inventory, int context, int slot)
         {
@@ -128,6 +131,7 @@ public sealed partial class InGameNarrationSystem
         /// </summary>
         internal static event Action? InventoryClosed;
 
+
         public void Update(Player player)
         {
             if (Main.ingameOptionsWindow)
@@ -153,6 +157,25 @@ public sealed partial class InGameNarrationSystem
             {
                 _wasInventoryOpen = true;
                 OnInventoryJustOpened();
+            }
+
+            // Detect chest/storage transition - notify listeners when chest opens
+            int currentChest = player.chest;
+            if (currentChest != _lastChestIndex)
+            {
+                if (_lastChestIndex == -1 && currentChest != -1)
+                {
+                    RaiseChestOpened(currentChest);
+                    // Suppress empty slot announcements briefly to allow focus to be captured
+                    _chestOpenGraceFrames = ChestOpenGracePeriod;
+                }
+                _lastChestIndex = currentChest;
+            }
+
+            // Decrement chest grace period
+            if (_chestOpenGraceFrames > 0)
+            {
+                _chestOpenGraceFrames--;
             }
 
             bool usingGamepad = PlayerInput.UsingGamepadUI;
@@ -260,6 +283,11 @@ public sealed partial class InGameNarrationSystem
 
             if (target.HasItem)
             {
+                // Clear chest grace period once we successfully capture and announce an item
+                if (_chestOpenGraceFrames > 0 && player.chest != -1)
+                {
+                    _chestOpenGraceFrames = 0;
+                }
                 AnnounceItemHover(player, target);
                 return;
             }
@@ -337,11 +365,26 @@ public sealed partial class InGameNarrationSystem
                 return existing;
             }
 
-            return string.IsNullOrWhiteSpace(existing) ? addition : $"{existing}. {addition}";
+            if (string.IsNullOrWhiteSpace(existing))
+            {
+                return addition;
+            }
+
+            // Only add a period separator if existing doesn't already end with punctuation
+            string separator = NarrationTextFormatter.HasTerminalPunctuation(existing) ? " " : ". ";
+            return $"{existing}{separator}{addition}";
         }
 
         private bool TryAnnounceEmptySlot(HoverTarget target)
         {
+            // Skip empty slot announcements during grace period after chest opens.
+            // This prevents announcing "Empty, Piggy bank slot 1" before the actual
+            // item focus is captured, which would cause a false empty announcement.
+            if (_chestOpenGraceFrames > 0)
+            {
+                return false;
+            }
+
             if (!target.HasLocation)
             {
                 return false;
@@ -455,6 +498,7 @@ public sealed partial class InGameNarrationSystem
             UiAreaNarrationContext.Clear();
             _lastFocusKey = null;
             _inventoryOpenGraceFrames = 0;
+            _lastChestIndex = -1;
         }
 
         private static void OnInventoryJustOpened()
@@ -588,6 +632,17 @@ public sealed partial class InGameNarrationSystem
                 if (containerItems is not null && TryMatch(containerItems, identity, out int containerSlot))
                 {
                     return $"{container} slot {containerSlot + 1}";
+                }
+
+                // Fallback: try to infer slot from gamepad link point (400-439 are chest slots)
+                if (PlayerInput.UsingGamepadUI)
+                {
+                    int currentPoint = UILinkPointNavigator.CurrentPoint;
+                    if (currentPoint >= 400 && currentPoint < 440)
+                    {
+                        int slotFromPoint = currentPoint - 400;
+                        return $"{container} slot {slotFromPoint + 1}";
+                    }
                 }
 
                 return container;
@@ -1046,7 +1101,9 @@ public sealed partial class InGameNarrationSystem
                     continue;
                 }
 
-                string cleaned = GlyphTagFormatter.Normalize(segment).Trim();
+                // Only use TextSanitizer here - GlyphTagFormatter would incorrectly
+                // convert price numbers to controller button names (e.g., "5" → "Right bumper")
+                string cleaned = TextSanitizer.Clean(segment);
                 if (!string.IsNullOrWhiteSpace(cleaned))
                 {
                     segments.Add(cleaned);
@@ -1058,7 +1115,17 @@ public sealed partial class InGameNarrationSystem
                 return price.ToString();
             }
 
-            return string.Join(' ', segments);
+            string result = string.Join(' ', segments);
+
+            // Strip redundant "Buy price:" prefix (Lang.tip[50]) since we prepend "Costs"
+            string buyPricePrefix = Lang.tip[50].Value;
+            if (!string.IsNullOrEmpty(buyPricePrefix) &&
+                result.StartsWith(buyPricePrefix, StringComparison.OrdinalIgnoreCase))
+            {
+                result = result.Substring(buyPricePrefix.Length).TrimStart();
+            }
+
+            return result;
         }
 
         private static Item[]? GetContainerItems(Player player, int chestIndex)
