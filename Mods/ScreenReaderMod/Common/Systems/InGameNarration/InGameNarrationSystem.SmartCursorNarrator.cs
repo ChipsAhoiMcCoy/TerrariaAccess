@@ -144,6 +144,7 @@ public sealed partial class InGameNarrationSystem
 
         private void ResetSmartCursorRepeatTracking()
         {
+            _lastAnnouncement = null;
             _lastCursorAnnouncementKey = int.MinValue;
             _lastCursorTileType = -1;
             _lastTileX = int.MinValue;

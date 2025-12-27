@@ -92,7 +92,6 @@ public sealed class KeyboardInputParitySystem : ModSystem
 
         _housingQueryHandler = null;
         VirtualTriggerService.ResetState();
-        QuickUseConsumableService.ResetState();
     }
 
     #region Hook Creation
@@ -362,8 +361,17 @@ public sealed class KeyboardInputParitySystem : ModSystem
         VirtualTriggerService.InjectFromKeybind(ControllerParityKeybinds.InventorySectionPrevious, TriggerNames.HotbarMinus);
         VirtualTriggerService.InjectFromKeybind(ControllerParityKeybinds.InventorySectionNext, TriggerNames.HotbarPlus);
 
-        // Quick Use: Use consumables (potions, food, buff items)
-        QuickUseConsumableService.TryApplyQuickUse();
+        // Block Grapple trigger when E is used for section cycling to prevent accidental crafting.
+        // In vanilla Terraria, E is bound to Grapple, and Grapple triggers crafting in the crafting UI.
+        if (ControllerParityKeybinds.InventorySectionNext is { } sectionNextKeybind &&
+            VirtualTriggerService.IsKeybindPressedRaw(sectionNextKeybind))
+        {
+            PlayerInput.Triggers.Current.KeyStatus[TriggerNames.Grapple] = false;
+            PlayerInput.Triggers.JustPressed.KeyStatus[TriggerNames.Grapple] = false;
+        }
+
+        // Quick Use: Simulate right stick click (QuickMount trigger in UI mode)
+        VirtualTriggerService.InjectFromKeybind(ControllerParityKeybinds.InventoryQuickUse, TriggerNames.QuickMount);
 
         // Ensure MouseRight trigger from keyboard (Interact key) properly sets Main.mouseRight
         VirtualTriggerService.ApplyMouseRightFromTrigger();
