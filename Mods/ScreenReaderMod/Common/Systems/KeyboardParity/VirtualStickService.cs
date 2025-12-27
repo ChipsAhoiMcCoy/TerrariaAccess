@@ -30,12 +30,14 @@ internal static class VirtualStickService
 
         // When Smart Cursor is off, right stick keys (OKLS) are used for cursor nudge instead.
         // Arrow keys behave inversely: analog stick when Smart Cursor is off, D-pad when on.
+        // In menu contexts, OKLS should always act as right stick for scrolling.
         bool smartCursorActive = Main.SmartCursorIsUsed || Main.SmartCursorWanted;
+        bool inMenuContext = Main.gameMenu || InputStateHelper.IsFancyUiActive();
         bool aimOverride = false;
         Vector2 aim = Vector2.Zero;
-        if (smartCursorActive)
+        if (smartCursorActive || inMenuContext)
         {
-            // OKLS keys act as analog stick when Smart Cursor is on
+            // OKLS keys act as analog stick when Smart Cursor is on OR in menu context
             aimOverride = TryReadStick(
                 ControllerParityKeybinds.RightStickUp,
                 ControllerParityKeybinds.RightStickDown,
@@ -45,7 +47,7 @@ internal static class VirtualStickService
         }
         else
         {
-            // Arrow keys act as analog stick when Smart Cursor is off (inverse of OKLS)
+            // Arrow keys act as analog stick when Smart Cursor is off (gameplay only)
             aimOverride = TryReadStick(
                 ControllerParityKeybinds.ArrowUp,
                 ControllerParityKeybinds.ArrowDown,
@@ -116,28 +118,29 @@ internal static class VirtualStickService
 
     /// <summary>
     /// Reads stick input from ModKeybinds.
+    /// Uses raw keyboard state reading which works in both gameplay and menu contexts.
     /// </summary>
     internal static bool TryReadStick(ModKeybind? up, ModKeybind? down, ModKeybind? left, ModKeybind? right, out Vector2 result)
     {
         float x = 0f;
         float y = 0f;
 
-        if (up?.Current == true)
+        if (IsKeybindPressed(up))
         {
             y -= 1f;
         }
 
-        if (down?.Current == true)
+        if (IsKeybindPressed(down))
         {
             y += 1f;
         }
 
-        if (left?.Current == true)
+        if (IsKeybindPressed(left))
         {
             x -= 1f;
         }
 
-        if (right?.Current == true)
+        if (IsKeybindPressed(right))
         {
             x += 1f;
         }
@@ -150,6 +153,27 @@ internal static class VirtualStickService
 
         result.Normalize();
         return true;
+    }
+
+    /// <summary>
+    /// Checks if a keybind is pressed using raw keyboard state.
+    /// This works in menu contexts where ModKeybind.Current may not be processed.
+    /// </summary>
+    private static bool IsKeybindPressed(ModKeybind? keybind)
+    {
+        if (keybind is null)
+        {
+            return false;
+        }
+
+        // First try the normal keybind check (works in gameplay)
+        if (keybind.Current)
+        {
+            return true;
+        }
+
+        // Fall back to raw keyboard state reading (works in menus)
+        return VirtualTriggerService.IsKeybindPressedRaw(keybind);
     }
 
     /// <summary>
