@@ -213,7 +213,11 @@ Mods: {
 			ControllerRightStickDown.DisplayName: Right Stick Down
 			ControllerRightStickLeft.DisplayName: Right Stick Left
 			ControllerRightStickRight.DisplayName: Right Stick Right
-			SmartSelect.DisplayName: Smart Select
+			SmartSelect.DisplayName: Keyboard Parity Smart Select
+			ArrowUp.DisplayName: Keyboard Parity Arrow Up
+			ArrowDown.DisplayName: Keyboard Parity Arrow Down
+			ArrowLeft.DisplayName: Keyboard Parity Arrow Left
+			ArrowRight.DisplayName: Keyboard Parity Arrow Right
 			StatusCheck.DisplayName: Status Checker
 		}
 	}
@@ -245,7 +249,11 @@ Keybinds: {
 	ControllerRightStickDown.DisplayName: Controller Right Stick Down
 	ControllerRightStickLeft.DisplayName: Controller Right Stick Left
 	ControllerRightStickRight.DisplayName: Controller Right Stick Right
-	SmartSelect.DisplayName: Smart Select
+	SmartSelect.DisplayName: Keyboard Parity Smart Select
+	ArrowUp.DisplayName: Keyboard Parity Arrow Up
+	ArrowDown.DisplayName: Keyboard Parity Arrow Down
+	ArrowLeft.DisplayName: Keyboard Parity Arrow Left
+	ArrowRight.DisplayName: Keyboard Parity Arrow Right
 	StatusCheck.DisplayName: Status Checker
 }
 

@@ -28,17 +28,29 @@ internal static class VirtualStickService
         KeyboardState state = Main.keyState;
         bool movementOverride = TryReadStick(state, Keys.W, Keys.S, Keys.A, Keys.D, out Vector2 movement);
 
-        // When Smart Cursor is off, right stick keys are used for cursor nudge instead.
+        // When Smart Cursor is off, right stick keys (OKLS) are used for cursor nudge instead.
+        // Arrow keys behave inversely: analog stick when Smart Cursor is off, D-pad when on.
         bool smartCursorActive = Main.SmartCursorIsUsed || Main.SmartCursorWanted;
         bool aimOverride = false;
         Vector2 aim = Vector2.Zero;
         if (smartCursorActive)
         {
+            // OKLS keys act as analog stick when Smart Cursor is on
             aimOverride = TryReadStick(
                 ControllerParityKeybinds.RightStickUp,
                 ControllerParityKeybinds.RightStickDown,
                 ControllerParityKeybinds.RightStickLeft,
                 ControllerParityKeybinds.RightStickRight,
+                out aim);
+        }
+        else
+        {
+            // Arrow keys act as analog stick when Smart Cursor is off (inverse of OKLS)
+            aimOverride = TryReadStick(
+                ControllerParityKeybinds.ArrowUp,
+                ControllerParityKeybinds.ArrowDown,
+                ControllerParityKeybinds.ArrowLeft,
+                ControllerParityKeybinds.ArrowRight,
                 out aim);
         }
 

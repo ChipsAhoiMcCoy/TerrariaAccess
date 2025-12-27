@@ -82,20 +82,30 @@ public sealed class DpadVirtualizationSystem : ModSystem
 
     private Vector2 CollectDpadNudges()
     {
-        // D-pad virtualization only activates when Smart Cursor is off.
-        // When Smart Cursor is on, these keys are handled as analog stick input by KeyboardInputParitySystem.
+        // D-pad virtualization uses different keys based on Smart Cursor state:
+        // - Smart Cursor OFF: OKLS keys act as D-pad (arrow keys act as analog stick)
+        // - Smart Cursor ON: Arrow keys act as D-pad (OKLS keys act as analog stick)
         bool smartCursorActive = Main.SmartCursorIsUsed || Main.SmartCursorWanted;
-        if (smartCursorActive)
-        {
-            return Vector2.Zero;
-        }
 
         Vector2 nudges = Vector2.Zero;
+        bool up, right, down, left;
 
-        bool up = IsPressed(ControllerParityKeybinds.RightStickUp);
-        bool right = IsPressed(ControllerParityKeybinds.RightStickRight);
-        bool down = IsPressed(ControllerParityKeybinds.RightStickDown);
-        bool left = IsPressed(ControllerParityKeybinds.RightStickLeft);
+        if (smartCursorActive)
+        {
+            // Arrow keys act as D-pad when Smart Cursor is ON (inverse of OKLS)
+            up = IsPressed(ControllerParityKeybinds.ArrowUp);
+            right = IsPressed(ControllerParityKeybinds.ArrowRight);
+            down = IsPressed(ControllerParityKeybinds.ArrowDown);
+            left = IsPressed(ControllerParityKeybinds.ArrowLeft);
+        }
+        else
+        {
+            // OKLS keys act as D-pad when Smart Cursor is OFF
+            up = IsPressed(ControllerParityKeybinds.RightStickUp);
+            right = IsPressed(ControllerParityKeybinds.RightStickRight);
+            down = IsPressed(ControllerParityKeybinds.RightStickDown);
+            left = IsPressed(ControllerParityKeybinds.RightStickLeft);
+        }
 
         nudges += EvaluateDirection(up, -Vector2.UnitY, 0);
         nudges += EvaluateDirection(right, Vector2.UnitX, 1);
@@ -204,13 +214,21 @@ public sealed class DpadVirtualizationSystem : ModSystem
     /// </summary>
     internal static bool AreDpadKeysHeld()
     {
-        // D-pad virtualization only applies when Smart Cursor is off.
+        // D-pad keys vary based on Smart Cursor state:
+        // - Smart Cursor OFF: OKLS keys act as D-pad
+        // - Smart Cursor ON: Arrow keys act as D-pad
         bool smartCursorActive = Main.SmartCursorIsUsed || Main.SmartCursorWanted;
+
         if (smartCursorActive)
         {
-            return false;
+            // Arrow keys act as D-pad when Smart Cursor is ON
+            return IsPressed(ControllerParityKeybinds.ArrowUp)
+                || IsPressed(ControllerParityKeybinds.ArrowDown)
+                || IsPressed(ControllerParityKeybinds.ArrowLeft)
+                || IsPressed(ControllerParityKeybinds.ArrowRight);
         }
 
+        // OKLS keys act as D-pad when Smart Cursor is OFF
         return IsPressed(ControllerParityKeybinds.RightStickUp)
             || IsPressed(ControllerParityKeybinds.RightStickDown)
             || IsPressed(ControllerParityKeybinds.RightStickLeft)

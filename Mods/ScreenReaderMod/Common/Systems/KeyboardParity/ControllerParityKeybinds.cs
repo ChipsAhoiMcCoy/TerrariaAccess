@@ -18,6 +18,10 @@ internal static class ControllerParityKeybinds
     internal static ModKeybind? RightStickLeft { get; private set; }
     internal static ModKeybind? RightStickRight { get; private set; }
     internal static ModKeybind? SmartSelect { get; private set; }
+    internal static ModKeybind? ArrowUp { get; private set; }
+    internal static ModKeybind? ArrowDown { get; private set; }
+    internal static ModKeybind? ArrowLeft { get; private set; }
+    internal static ModKeybind? ArrowRight { get; private set; }
 
     private static bool _initialized;
 
@@ -39,6 +43,10 @@ internal static class ControllerParityKeybinds
         RightStickLeft = KeybindLoader.RegisterKeybind(mod, "ControllerRightStickLeft", Keys.K);
         RightStickRight = KeybindLoader.RegisterKeybind(mod, "ControllerRightStickRight", Keys.OemSemicolon);
         SmartSelect = KeybindLoader.RegisterKeybind(mod, "SmartSelect", Keys.F);
+        ArrowUp = KeybindLoader.RegisterKeybind(mod, "ArrowUp", Keys.Up);
+        ArrowDown = KeybindLoader.RegisterKeybind(mod, "ArrowDown", Keys.Down);
+        ArrowLeft = KeybindLoader.RegisterKeybind(mod, "ArrowLeft", Keys.Left);
+        ArrowRight = KeybindLoader.RegisterKeybind(mod, "ArrowRight", Keys.Right);
         _initialized = true;
     }
 
@@ -56,5 +64,9 @@ internal static class ControllerParityKeybinds
         RightStickLeft = null;
         RightStickRight = null;
         SmartSelect = null;
+        ArrowUp = null;
+        ArrowDown = null;
+        ArrowLeft = null;
+        ArrowRight = null;
     }
 }
