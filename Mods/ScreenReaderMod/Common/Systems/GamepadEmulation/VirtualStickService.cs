@@ -14,6 +14,17 @@ namespace ScreenReaderMod.Common.Systems.GamepadEmulation;
 /// </summary>
 internal static class VirtualStickService
 {
+    private static uint _lastAnalogStickFrame = uint.MaxValue;
+
+    /// <summary>
+    /// Returns true if analog stick virtualization was active this frame.
+    /// Used by cursor clamping systems to detect analog input mode.
+    /// </summary>
+    internal static bool WasAnalogStickActiveThisFrame()
+    {
+        return _lastAnalogStickFrame == Main.GameUpdateCount;
+    }
+
     /// <summary>
     /// Injects virtual stick input from keyboard keys into the gamepad input system.
     /// Should be called during the GamePadInput IL hook.
@@ -66,6 +77,7 @@ internal static class VirtualStickService
 
         if (aimOverride)
         {
+            _lastAnalogStickFrame = Main.GameUpdateCount;
             ApplyStickInversion(ref aim,
                 PlayerInput.CurrentProfile?.RightThumbstickInvertX == true,
                 PlayerInput.CurrentProfile?.RightThumbstickInvertY == true);

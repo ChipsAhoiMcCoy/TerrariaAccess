@@ -1,6 +1,7 @@
 #nullable enable
 using System;
 using Microsoft.Xna.Framework;
+using ScreenReaderMod.Common.Players;
 using Terraria;
 using Terraria.DataStructures;
 using Terraria.GameInput;
@@ -34,6 +35,7 @@ public sealed class DpadVirtualizationSystem : ModSystem
         Vector2 nudges = CollectDpadNudges();
         if (nudges == Vector2.Zero)
         {
+            ClampAnalogStickCursorIfNeeded();
             return;
         }
 
@@ -273,5 +275,76 @@ public sealed class DpadVirtualizationSystem : ModSystem
         {
             _directionCooldowns[i] = 0;
         }
+    }
+
+    /// <summary>
+    /// Clamps cursor position to placement reach when using analog stick virtualization
+    /// and Build Mode is not active. Prevents extended reach without Build Mode.
+    /// </summary>
+    private static void ClampAnalogStickCursorIfNeeded()
+    {
+        if (!VirtualStickService.WasAnalogStickActiveThisFrame())
+        {
+            return;
+        }
+
+        if (IsBuildModeActive())
+        {
+            return;
+        }
+
+        Matrix zoomMatrix = Main.GameViewMatrix.ZoomMatrix;
+        Matrix inverseZoom = Matrix.Invert(zoomMatrix);
+        Vector2 cursorWorld = Vector2.Transform(Main.MouseScreen, inverseZoom) + Main.screenPosition;
+        Point cursorTile = cursorWorld.ToTileCoordinates();
+
+        Point clampedTile = ClampToReach(cursorTile);
+        if (clampedTile == cursorTile)
+        {
+            return;
+        }
+
+        Vector2 snappedPixels = Vector2.Transform(
+            clampedTile.ToWorldCoordinates() - Main.screenPosition, zoomMatrix);
+
+        int newX = (int)snappedPixels.X;
+        int newY = (int)snappedPixels.Y;
+
+        // Skip if cursor position unchanged (prevents oscillation at boundaries)
+        if (newX == Main.mouseX && newY == Main.mouseY)
+        {
+            return;
+        }
+
+        ApplyCursorPosition(newX, newY);
+    }
+
+    /// <summary>
+    /// Clamps a tile coordinate to the player's current placement reach.
+    /// Does not include tileBoost since we want to clamp regardless of held item.
+    /// </summary>
+    private static Point ClampToReach(Point tileTarget)
+    {
+        Player player = Main.LocalPlayer;
+        if (player is null || !player.active)
+        {
+            return tileTarget;
+        }
+
+        int blockRange = player.blockRange;
+        float left = player.position.X / 16f - Player.tileRangeX - blockRange;
+        float right = (player.position.X + player.width) / 16f + Player.tileRangeX - 1f + blockRange;
+        float top = player.position.Y / 16f - Player.tileRangeY - blockRange;
+        float bottom = (player.position.Y + player.height) / 16f + Player.tileRangeY - 2f + blockRange;
+
+        int clampedX = (int)MathHelper.Clamp(tileTarget.X, left, right);
+        int clampedY = (int)MathHelper.Clamp(tileTarget.Y, top, bottom);
+        return new Point(clampedX, clampedY);
+    }
+
+    private static bool IsBuildModeActive()
+    {
+        var buildModePlayer = Main.LocalPlayer?.GetModPlayer<BuildModePlayer>();
+        return buildModePlayer?.IsBuildModeActive ?? false;
     }
 }

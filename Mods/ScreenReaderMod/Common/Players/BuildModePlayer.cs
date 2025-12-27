@@ -52,6 +52,12 @@ public sealed class BuildModePlayer : ModPlayer
     private readonly BuildModeRangeManager _rangeManager = new();
 
     private bool BuildModeActive => _state != BuildModeState.Inactive;
+
+    /// <summary>
+    /// Returns true if build mode is currently active. Used by external systems
+    /// to determine whether extended placement reach should be allowed.
+    /// </summary>
+    public bool IsBuildModeActive => BuildModeActive;
     private bool HasSelection => _state == BuildModeState.Executing && _firstCorner.HasValue && _secondCorner.HasValue;
     private bool AwaitingSecondCorner => _state == BuildModeState.AwaitingSecondCorner && _firstCorner.HasValue && !_secondCorner.HasValue;
 
