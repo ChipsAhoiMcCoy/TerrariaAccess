@@ -316,6 +316,46 @@ public sealed class GamepadEmulationSystem : ModSystem
 
     #endregion
 
+    #region Shift Key Suppression
+
+    /// <summary>
+    /// Suppresses the SmartSelect trigger when it's coming from the keyboard Shift key.
+    /// Terraria's default keyboard profile maps LeftShift to SmartSelect, but we want
+    /// SmartSelect to only be triggered by our F key keybind when gamepad emulation is active.
+    /// </summary>
+    private static void SuppressShiftSmartSelect()
+    {
+        if (!GamepadEmulationState.Enabled)
+        {
+            return;
+        }
+
+        if (InputStateHelper.IsTextInputActive())
+        {
+            return;
+        }
+
+        // Only suppress if Shift is being pressed (the unwanted trigger source)
+        if (!Main.keyState.PressingShift())
+        {
+            return;
+        }
+
+        // If our SmartSelect keybind (F key) is being pressed, allow the trigger
+        if (GamepadEmulationKeybinds.SmartSelect is { } keybind &&
+            (keybind.Current || VirtualTriggerService.IsKeybindPressedRaw(keybind)))
+        {
+            return;
+        }
+
+        // Shift is pressed but F is not - suppress the SmartSelect trigger
+        TriggersPack pack = PlayerInput.Triggers;
+        pack.Current.KeyStatus[TriggerNames.SmartSelect] = false;
+        pack.JustPressed.KeyStatus[TriggerNames.SmartSelect] = false;
+    }
+
+    #endregion
+
     #region Input Update
 
     public override void PostUpdateInput()
@@ -326,6 +366,7 @@ public sealed class GamepadEmulationSystem : ModSystem
         }
 
         HandleFeatureToggleHotkey();
+        SuppressShiftSmartSelect();
 
         // Inject housing-relevant triggers early so CheckHousingQueryOnMouseClick can see them.
         if (GamepadEmulationState.Enabled && Main.playerInventory && !InputStateHelper.IsTextInputActive())
