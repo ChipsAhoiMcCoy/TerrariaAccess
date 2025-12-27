@@ -43,6 +43,10 @@ public sealed class ManageModsAccessibilitySystem : ModSystem
     private static bool _upWasPressed;
     private static bool _downWasPressed;
 
+    // Right stick scroll tracking
+    private static int _lastScrollAnnouncedModIndex = -1;
+    private static float _lastScrollPosition = -1f;
+
     // Cached binding lists for navigation
     private static readonly List<PointBinding> FilterBindings = new();
     private static readonly List<PointBinding> ModBindingsList = new();
@@ -244,6 +248,8 @@ public sealed class ManageModsAccessibilitySystem : ModSystem
         DialogBindings.Clear();
         _lastAnnouncedPointId = -1;
         _lastSeenPointId = -1;
+        _lastScrollAnnouncedModIndex = -1;
+        _lastScrollPosition = -1f;
         _lastModsMenu = null;
         _initialFocusFramesRemaining = 0;
         _currentFocusIndex = 0;
@@ -300,6 +306,8 @@ public sealed class ManageModsAccessibilitySystem : ModSystem
                 _lastModsMenu = null;
                 _lastAnnouncedPointId = -1;
                 _lastSeenPointId = -1;
+                _lastScrollAnnouncedModIndex = -1;
+                _lastScrollPosition = -1f;
                 FilterBindings.Clear();
                 ModBindingsList.Clear();
                 ModItemButtonGroups.Clear();
@@ -317,6 +325,8 @@ public sealed class ManageModsAccessibilitySystem : ModSystem
             _lastModsMenu = currentState;
             _lastAnnouncedPointId = -1;
             _lastSeenPointId = -1;
+            _lastScrollAnnouncedModIndex = -1;
+            _lastScrollPosition = -1f;
             _initialFocusFramesRemaining = 10; // Increased from 5 to give more time
             _currentFocusIndex = 0;
             _currentModButtonIndex = 0;
@@ -772,7 +782,10 @@ public sealed class ManageModsAccessibilitySystem : ModSystem
             _initialFocusFramesRemaining--;
         }
 
-        // Handle scrolling when navigating mod list
+        // Handle right stick scrolling (from virtual stick via OKLS keys)
+        HandleRightStickScroll(modList, scrollbar, items);
+
+        // Handle scrolling when navigating mod list with D-pad
         HandleModListScrolling(modList, scrollbar, items);
     }
 
@@ -824,6 +837,96 @@ public sealed class ManageModsAccessibilitySystem : ModSystem
             else if (itemTop + itemHeight > currentScroll + viewHeight)
             {
                 scrollbar.ViewPosition = itemTop + itemHeight - viewHeight;
+            }
+        }
+    }
+
+    private static void HandleRightStickScroll(UIList? modList, UIScrollbar? scrollbar, IList? items)
+    {
+        // Only handle scroll when in mod list region
+        if (_currentRegion != FocusRegion.ModList)
+        {
+            _lastScrollAnnouncedModIndex = -1;
+            _lastScrollPosition = -1f;
+            return;
+        }
+
+        if (modList is null || scrollbar is null || items is null || items.Count == 0)
+        {
+            return;
+        }
+
+        // Check right analog stick vertical movement (from virtual stick or real gamepad)
+        // PlayerInput.GamepadThumbstickRight is set by VirtualStickService from OKLS keys
+        float rightStickY = PlayerInput.GamepadThumbstickRight.Y;
+        const float scrollThreshold = 0.1f;
+
+        // Apply scroll if stick is deflected
+        if (Math.Abs(rightStickY) >= scrollThreshold)
+        {
+            // Scroll speed similar to vanilla (16 pixels per frame at full deflection)
+            // Negative because stick up (positive Y) should scroll up (decrease ViewPosition)
+            float scrollAmount = -rightStickY * 16f;
+            scrollbar.ViewPosition += scrollAmount;
+        }
+
+        float currentScroll = scrollbar.ViewPosition;
+
+        // Check if scroll position changed significantly for announcement
+        if (Math.Abs(currentScroll - _lastScrollPosition) < 5f && _lastScrollPosition >= 0)
+        {
+            return; // Not enough scroll change for announcement
+        }
+
+        _lastScrollPosition = currentScroll;
+
+        // Find the mod item that's currently in the center of the viewport
+        CalculatedStyle listDims = modList.GetInnerDimensions();
+        float viewportCenter = listDims.Y + listDims.Height / 2f;
+
+        int closestModIndex = -1;
+        float closestDistance = float.MaxValue;
+
+        int index = 0;
+        foreach (object? item in items)
+        {
+            if (item is UIElement modItemElement)
+            {
+                CalculatedStyle itemDims = modItemElement.GetDimensions();
+                float itemCenter = itemDims.Y + itemDims.Height / 2f;
+                float distance = Math.Abs(itemCenter - viewportCenter);
+
+                if (distance < closestDistance)
+                {
+                    closestDistance = distance;
+                    closestModIndex = index;
+                }
+            }
+            index++;
+        }
+
+        // If the centered mod changed, announce it
+        if (closestModIndex >= 0 && closestModIndex != _lastScrollAnnouncedModIndex)
+        {
+            _lastScrollAnnouncedModIndex = closestModIndex;
+
+            // Get the mod item to announce
+            if (items[closestModIndex] is object modItem)
+            {
+                string modName = GetModDisplayName(modItem);
+                string modStatus = GetModStatus(modItem);
+                string announcement = string.IsNullOrEmpty(modStatus)
+                    ? $"{modName}, {closestModIndex + 1} of {items.Count}"
+                    : $"{modName}, {modStatus}, {closestModIndex + 1} of {items.Count}";
+
+                SoundEngine.PlaySound(SoundID.MenuTick);
+                ScreenReaderService.Announce(announcement, force: true);
+
+                // Update the focus to match scroll position
+                _currentFocusIndex = closestModIndex;
+                _currentModButtonIndex = 0;
+
+                ScreenReaderMod.Instance?.Logger.Debug($"[ManageMods] Scroll announced: {announcement}");
             }
         }
     }

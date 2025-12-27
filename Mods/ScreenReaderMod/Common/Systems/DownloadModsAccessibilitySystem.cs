@@ -1042,22 +1042,7 @@ public sealed class DownloadModsAccessibilitySystem : ModSystem
             return;
         }
 
-        GamePadState gpState = GamePad.GetState(PlayerIndex.One);
-        if (!gpState.IsConnected)
-        {
-            return;
-        }
-
-        // Check right analog stick vertical movement
-        float rightStickY = gpState.ThumbSticks.Right.Y;
-        const float scrollThreshold = 0.3f;
-
-        if (Math.Abs(rightStickY) < scrollThreshold)
-        {
-            return; // No significant scrolling happening
-        }
-
-        // Get the mod list and scrollbar
+        // Get the mod list and scrollbar first
         object? modListObj = _modListField?.GetValue(browser);
         UIElement? modList = modListObj as UIElement;
         if (modList is not UIList uiList)
@@ -1072,12 +1057,26 @@ public sealed class DownloadModsAccessibilitySystem : ModSystem
             return;
         }
 
+        // Check right analog stick vertical movement (from virtual stick or real gamepad)
+        // PlayerInput.GamepadThumbstickRight is set by VirtualStickService from OKLS keys
+        float rightStickY = PlayerInput.GamepadThumbstickRight.Y;
+        const float scrollThreshold = 0.1f;
+
+        // Apply scroll if stick is deflected
+        if (Math.Abs(rightStickY) >= scrollThreshold)
+        {
+            // Scroll speed similar to vanilla (16 pixels per frame at full deflection)
+            // Negative because stick up (positive Y) should scroll up (decrease ViewPosition)
+            float scrollAmount = -rightStickY * 16f;
+            scrollbar.ViewPosition += scrollAmount;
+        }
+
         float currentScroll = scrollbar.ViewPosition;
 
-        // Check if scroll position changed significantly
+        // Check if scroll position changed significantly for announcement
         if (Math.Abs(currentScroll - _lastScrollPosition) < 5f && _lastScrollPosition >= 0)
         {
-            return; // Not enough scroll change
+            return; // Not enough scroll change for announcement
         }
 
         _lastScrollPosition = currentScroll;
