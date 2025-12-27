@@ -213,6 +213,7 @@ Mods: {
 			ControllerRightStickDown.DisplayName: Right Stick Down
 			ControllerRightStickLeft.DisplayName: Right Stick Left
 			ControllerRightStickRight.DisplayName: Right Stick Right
+			SmartSelect.DisplayName: Smart Select
 			StatusCheck.DisplayName: Status Checker
 		}
 	}
@@ -244,6 +245,7 @@ Keybinds: {
 	ControllerRightStickDown.DisplayName: Controller Right Stick Down
 	ControllerRightStickLeft.DisplayName: Controller Right Stick Left
 	ControllerRightStickRight.DisplayName: Controller Right Stick Right
+	SmartSelect.DisplayName: Smart Select
 	StatusCheck.DisplayName: Status Checker
 }
 

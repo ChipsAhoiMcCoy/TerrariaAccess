@@ -43,6 +43,7 @@ public sealed class KeyboardInputParitySystem : ModSystem
     private static Hook? _usingGamepadHook;
     private static Hook? _usingGamepadUiHook;
     private static ILHook? _gamepadInputIlHook;
+    private static Hook? _shiftInUseHook;
 
     private static HousingQueryHandler? _housingQueryHandler;
 
@@ -63,6 +64,7 @@ public sealed class KeyboardInputParitySystem : ModSystem
         _usingGamepadHook = TryCreateHook(ParityReflectionCache.UsingGamepadGetter, OverrideUsingGamepad, "PlayerInput.UsingGamepad");
         _usingGamepadUiHook = TryCreateHook(ParityReflectionCache.UsingGamepadUiGetter, OverrideUsingGamepadUi, "PlayerInput.UsingGamepadUI");
         _gamepadInputIlHook = TryCreateIlHook(ParityReflectionCache.GamepadInput, InjectVirtualSticksIntoGamepadInput, "PlayerInput.GamePadInput");
+        _shiftInUseHook = TryCreateHook(ParityReflectionCache.ShiftInUseGetter, OverrideShiftInUse, "ItemSlot.ShiftInUse");
 
         KeyboardParityFeatureState.StateChanged += OnFeatureToggleStateChanged;
         // Force parity on at startup so the game always sees a controller and the virtual sticks/keybinds stay active.
@@ -91,6 +93,8 @@ public sealed class KeyboardInputParitySystem : ModSystem
         _usingGamepadHook = null;
         _usingGamepadUiHook?.Dispose();
         _usingGamepadUiHook = null;
+        _shiftInUseHook?.Dispose();
+        _shiftInUseHook = null;
 
         _housingQueryHandler = null;
         VirtualTriggerService.ResetState();
@@ -276,6 +280,40 @@ public sealed class KeyboardInputParitySystem : ModSystem
         }
     }
 
+    private delegate bool ShiftInUseGetter();
+
+    private static bool OverrideShiftInUse(ShiftInUseGetter orig)
+    {
+        // If keyboard parity is not enabled, use original behavior
+        if (!KeyboardParityFeatureState.Enabled)
+        {
+            return orig();
+        }
+
+        // If text input is active, use original behavior (allow normal Shift for typing)
+        if (InputStateHelper.IsTextInputActive())
+        {
+            return orig();
+        }
+
+        // Respect ShiftForcedOn - this is set by gamepad X button
+        if (ItemSlot.ShiftForcedOn)
+        {
+            return true;
+        }
+
+        // Suppress vanilla keyboard Shift when keyboard parity is enabled
+        // This only affects keyboard Shift, not gamepad (which uses ShiftForcedOn)
+        if (Main.keyState.PressingShift())
+        {
+            return false;
+        }
+
+        // Fall through to original behavior for any edge cases
+        return orig();
+    }
+
+
     #endregion
 
     #region Input Update
@@ -344,6 +382,10 @@ public sealed class KeyboardInputParitySystem : ModSystem
         }
 
         VirtualTriggerService.InjectFromKeybind(ControllerParityKeybinds.LockOn, TriggerNames.LockOn);
+
+        // SmartSelect: Inject the SmartSelect trigger for in-world auto-tool selection
+        // When pressed, Terraria auto-selects the best tool for the targeted tile
+        VirtualTriggerService.InjectFromKeybind(ControllerParityKeybinds.SmartSelect, TriggerNames.SmartSelect);
     }
 
     private static void ApplyInventoryVirtualTriggers(bool inventoryUiActive)
@@ -359,6 +401,10 @@ public sealed class KeyboardInputParitySystem : ModSystem
         }
 
         VirtualTriggerService.InjectFromKeybind(ControllerParityKeybinds.InventorySelect, TriggerNames.MouseLeft);
+
+        // SmartSelect: Inject the SmartSelect trigger to mimic gamepad Select button behavior
+        // In inventory, this drops held items or performs Shift+Click depending on context
+        VirtualTriggerService.InjectFromKeybind(ControllerParityKeybinds.SmartSelect, TriggerNames.SmartSelect);
 
         // Only inject MouseRight if no chest/container is open.
         // When a container is open, continued MouseRight injection can cause it to toggle closed.

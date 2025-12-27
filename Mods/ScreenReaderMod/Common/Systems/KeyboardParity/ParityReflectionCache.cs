@@ -41,6 +41,9 @@ internal static class ParityReflectionCache
     private static readonly Lazy<MethodInfo?> _gamepadInput = new(() =>
         typeof(PlayerInput).GetMethod("GamePadInput", BindingFlags.NonPublic | BindingFlags.Static));
 
+    private static readonly Lazy<MethodInfo?> _shiftInUseGetter = new(() =>
+        typeof(ItemSlot).GetProperty("ShiftInUse", BindingFlags.Public | BindingFlags.Static)?.GetGetMethod());
+
     /// <summary>
     /// UIManageControls._bindsKeyboard field for accessing keyboard binding groups.
     /// </summary>
@@ -85,6 +88,11 @@ internal static class ParityReflectionCache
     /// PlayerInput.GamePadInput method for virtual stick injection hook targeting.
     /// </summary>
     internal static MethodInfo? GamepadInput => _gamepadInput.Value;
+
+    /// <summary>
+    /// ItemSlot.get_ShiftInUse getter for smart select hook targeting.
+    /// </summary>
+    internal static MethodInfo? ShiftInUseGetter => _shiftInUseGetter.Value;
 
     /// <summary>
     /// Returns true if all required reflection handles for UI controls are available.
