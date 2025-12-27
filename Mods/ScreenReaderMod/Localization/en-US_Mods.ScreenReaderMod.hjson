@@ -105,7 +105,7 @@ Mods: {
 			SelectedSuffix: Selected
 		}
 
-		KeyboardParity: {
+		GamepadEmulation: {
 			Enabled: Gamepad Emulation Enabled
 			Disabled: Gamepad Emulation Disabled
 		}
@@ -203,21 +203,21 @@ Mods: {
 			SpeechInterrupt.DisplayName: Toggle Speech Interrupt
 			BuildModeToggle.DisplayName: Toggle Build Mode
 			BuildModePlace.DisplayName: Set Build Point
-			ControllerInventorySelect.DisplayName: Inventory Select
-			ControllerInventoryInteract.DisplayName: Inventory Interact
-			ControllerInventorySectionNext.DisplayName: Inventory Section Next
-			ControllerInventorySectionPrevious.DisplayName: Inventory Section Previous
-			ControllerInventoryQuickUse.DisplayName: Inventory Quick Use
-			ControllerLockOn.DisplayName: Lock On Target
-			ControllerRightStickUp.DisplayName: Right Stick Up
-			ControllerRightStickDown.DisplayName: Right Stick Down
-			ControllerRightStickLeft.DisplayName: Right Stick Left
-			ControllerRightStickRight.DisplayName: Right Stick Right
-			SmartSelect.DisplayName: Keyboard Parity Smart Select
-			ArrowUp.DisplayName: Keyboard Parity Arrow Up
-			ArrowDown.DisplayName: Keyboard Parity Arrow Down
-			ArrowLeft.DisplayName: Keyboard Parity Arrow Left
-			ArrowRight.DisplayName: Keyboard Parity Arrow Right
+			GamepadEmulationInventorySelect.DisplayName: Gamepad Emulation Inventory Select
+			GamepadEmulationInventoryInteract.DisplayName: Gamepad Emulation Inventory Interact
+			GamepadEmulationSectionNext.DisplayName: Gamepad Emulation Section Next
+			GamepadEmulationSectionPrevious.DisplayName: Gamepad Emulation Section Previous
+			GamepadEmulationQuickUse.DisplayName: Gamepad Emulation Quick Use
+			GamepadEmulationLockOn.DisplayName: Gamepad Emulation Lock On
+			GamepadEmulationRightStickUp.DisplayName: Gamepad Emulation Right Stick Up
+			GamepadEmulationRightStickDown.DisplayName: Gamepad Emulation Right Stick Down
+			GamepadEmulationRightStickLeft.DisplayName: Gamepad Emulation Right Stick Left
+			GamepadEmulationRightStickRight.DisplayName: Gamepad Emulation Right Stick Right
+			GamepadEmulationSmartSelect.DisplayName: Gamepad Emulation Smart Select
+			GamepadEmulationArrowUp.DisplayName: Gamepad Emulation Arrow Up
+			GamepadEmulationArrowDown.DisplayName: Gamepad Emulation Arrow Down
+			GamepadEmulationArrowLeft.DisplayName: Gamepad Emulation Arrow Left
+			GamepadEmulationArrowRight.DisplayName: Gamepad Emulation Arrow Right
 			StatusCheck.DisplayName: Status Checker
 		}
 	}
@@ -239,21 +239,21 @@ Keybinds: {
 	GuidanceTeleport.DisplayName: Teleport to Guidance Target
 	BuildModeToggle.DisplayName: Toggle Build Mode
 	BuildModePlace.DisplayName: Set Build Point
-	ControllerInventorySelect.DisplayName: Controller Inventory Select
-	ControllerInventoryInteract.DisplayName: Controller Inventory Interact
-	ControllerInventorySectionNext.DisplayName: Controller Inventory Section Next
-	ControllerInventorySectionPrevious.DisplayName: Controller Inventory Section Previous
-	ControllerInventoryQuickUse.DisplayName: Controller Inventory Quick Use
-	ControllerLockOn.DisplayName: Controller Lock On Target
-	ControllerRightStickUp.DisplayName: Controller Right Stick Up
-	ControllerRightStickDown.DisplayName: Controller Right Stick Down
-	ControllerRightStickLeft.DisplayName: Controller Right Stick Left
-	ControllerRightStickRight.DisplayName: Controller Right Stick Right
-	SmartSelect.DisplayName: Keyboard Parity Smart Select
-	ArrowUp.DisplayName: Keyboard Parity Arrow Up
-	ArrowDown.DisplayName: Keyboard Parity Arrow Down
-	ArrowLeft.DisplayName: Keyboard Parity Arrow Left
-	ArrowRight.DisplayName: Keyboard Parity Arrow Right
+	GamepadEmulationInventorySelect.DisplayName: Gamepad Emulation Inventory Select
+	GamepadEmulationInventoryInteract.DisplayName: Gamepad Emulation Inventory Interact
+	GamepadEmulationSectionNext.DisplayName: Gamepad Emulation Section Next
+	GamepadEmulationSectionPrevious.DisplayName: Gamepad Emulation Section Previous
+	GamepadEmulationQuickUse.DisplayName: Gamepad Emulation Quick Use
+	GamepadEmulationLockOn.DisplayName: Gamepad Emulation Lock On
+	GamepadEmulationRightStickUp.DisplayName: Gamepad Emulation Right Stick Up
+	GamepadEmulationRightStickDown.DisplayName: Gamepad Emulation Right Stick Down
+	GamepadEmulationRightStickLeft.DisplayName: Gamepad Emulation Right Stick Left
+	GamepadEmulationRightStickRight.DisplayName: Gamepad Emulation Right Stick Right
+	GamepadEmulationSmartSelect.DisplayName: Gamepad Emulation Smart Select
+	GamepadEmulationArrowUp.DisplayName: Gamepad Emulation Arrow Up
+	GamepadEmulationArrowDown.DisplayName: Gamepad Emulation Arrow Down
+	GamepadEmulationArrowLeft.DisplayName: Gamepad Emulation Arrow Left
+	GamepadEmulationArrowRight.DisplayName: Gamepad Emulation Arrow Right
 	StatusCheck.DisplayName: Status Checker
 }
 

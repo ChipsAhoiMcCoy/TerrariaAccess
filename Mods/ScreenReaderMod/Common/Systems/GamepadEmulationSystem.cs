@@ -8,7 +8,7 @@ using Mono.Cecil.Cil;
 using MonoMod.Cil;
 using MonoMod.RuntimeDetour;
 using ScreenReaderMod.Common.Services;
-using ScreenReaderMod.Common.Systems.KeyboardParity;
+using ScreenReaderMod.Common.Systems.GamepadEmulation;
 using ScreenReaderMod.Common.Utilities;
 using Terraria;
 using Terraria.GameContent.UI.States;
@@ -23,7 +23,7 @@ namespace ScreenReaderMod.Common.Systems;
 /// Gives keyboard profiles access to controller-only bindings and unlocks the associated gameplay features.
 /// Acts as an orchestrator, delegating to specialized services for different responsibilities.
 /// </summary>
-public sealed class KeyboardInputParitySystem : ModSystem
+public sealed class GamepadEmulationSystem : ModSystem
 {
     private const int ControllerExtrasGroupIndex = 3;
 
@@ -55,20 +55,20 @@ public sealed class KeyboardInputParitySystem : ModSystem
             return;
         }
 
-        ParityReflectionCache.LogMissingHandles();
+        EmulationReflectionCache.LogMissingHandles();
         _housingQueryHandler = new HousingQueryHandler();
 
-        _assembleBindPanelsHook = TryCreateHook(ParityReflectionCache.AssembleBindPanels, ManageControls_AssembleBindPanels, "controls assembly");
-        _radialHotbarHook = TryCreateIlHook(ParityReflectionCache.DrawRadialCircular, AllowKeyboardRadialHotbar, "radial hotbar fade");
-        _radialQuickbarHook = TryCreateIlHook(ParityReflectionCache.DrawRadialQuicks, AllowKeyboardRadialQuickbar, "radial quickbar fade");
-        _usingGamepadHook = TryCreateHook(ParityReflectionCache.UsingGamepadGetter, OverrideUsingGamepad, "PlayerInput.UsingGamepad");
-        _usingGamepadUiHook = TryCreateHook(ParityReflectionCache.UsingGamepadUiGetter, OverrideUsingGamepadUi, "PlayerInput.UsingGamepadUI");
-        _gamepadInputIlHook = TryCreateIlHook(ParityReflectionCache.GamepadInput, InjectVirtualSticksIntoGamepadInput, "PlayerInput.GamePadInput");
-        _shiftInUseHook = TryCreateHook(ParityReflectionCache.ShiftInUseGetter, OverrideShiftInUse, "ItemSlot.ShiftInUse");
+        _assembleBindPanelsHook = TryCreateHook(EmulationReflectionCache.AssembleBindPanels, ManageControls_AssembleBindPanels, "controls assembly");
+        _radialHotbarHook = TryCreateIlHook(EmulationReflectionCache.DrawRadialCircular, AllowKeyboardRadialHotbar, "radial hotbar fade");
+        _radialQuickbarHook = TryCreateIlHook(EmulationReflectionCache.DrawRadialQuicks, AllowKeyboardRadialQuickbar, "radial quickbar fade");
+        _usingGamepadHook = TryCreateHook(EmulationReflectionCache.UsingGamepadGetter, OverrideUsingGamepad, "PlayerInput.UsingGamepad");
+        _usingGamepadUiHook = TryCreateHook(EmulationReflectionCache.UsingGamepadUiGetter, OverrideUsingGamepadUi, "PlayerInput.UsingGamepadUI");
+        _gamepadInputIlHook = TryCreateIlHook(EmulationReflectionCache.GamepadInput, InjectVirtualSticksIntoGamepadInput, "PlayerInput.GamePadInput");
+        _shiftInUseHook = TryCreateHook(EmulationReflectionCache.ShiftInUseGetter, OverrideShiftInUse, "ItemSlot.ShiftInUse");
 
-        KeyboardParityFeatureState.StateChanged += OnFeatureToggleStateChanged;
+        GamepadEmulationState.StateChanged += OnFeatureToggleStateChanged;
         // Force parity on at startup so the game always sees a controller and the virtual sticks/keybinds stay active.
-        KeyboardParityFeatureState.SetEnabled(true);
+        GamepadEmulationState.SetEnabled(true);
     }
 
     public override void Unload()
@@ -78,8 +78,8 @@ public sealed class KeyboardInputParitySystem : ModSystem
             return;
         }
 
-        KeyboardParityFeatureState.StateChanged -= OnFeatureToggleStateChanged;
-        KeyboardParityFeatureState.SetEnabled(false);
+        GamepadEmulationState.StateChanged -= OnFeatureToggleStateChanged;
+        GamepadEmulationState.SetEnabled(false);
 
         _assembleBindPanelsHook?.Dispose();
         _assembleBindPanelsHook = null;
@@ -106,7 +106,7 @@ public sealed class KeyboardInputParitySystem : ModSystem
     {
         if (target is null)
         {
-            global::ScreenReaderMod.ScreenReaderMod.Instance?.Logger.Warn($"[KeyboardInputParity] Cannot hook {label}: missing MethodInfo.");
+            global::ScreenReaderMod.ScreenReaderMod.Instance?.Logger.Warn($"[GamepadEmulation] Cannot hook {label}: missing MethodInfo.");
             return null;
         }
 
@@ -116,7 +116,7 @@ public sealed class KeyboardInputParitySystem : ModSystem
         }
         catch (Exception ex)
         {
-            global::ScreenReaderMod.ScreenReaderMod.Instance?.Logger.Error($"[KeyboardInputParity] Failed to hook {label}: {ex}");
+            global::ScreenReaderMod.ScreenReaderMod.Instance?.Logger.Error($"[GamepadEmulation] Failed to hook {label}: {ex}");
             return null;
         }
     }
@@ -125,7 +125,7 @@ public sealed class KeyboardInputParitySystem : ModSystem
     {
         if (target is null)
         {
-            global::ScreenReaderMod.ScreenReaderMod.Instance?.Logger.Warn($"[KeyboardInputParity] Cannot patch {label}: missing MethodInfo.");
+            global::ScreenReaderMod.ScreenReaderMod.Instance?.Logger.Warn($"[GamepadEmulation] Cannot patch {label}: missing MethodInfo.");
             return null;
         }
 
@@ -135,7 +135,7 @@ public sealed class KeyboardInputParitySystem : ModSystem
         }
         catch (Exception ex)
         {
-            global::ScreenReaderMod.ScreenReaderMod.Instance?.Logger.Error($"[KeyboardInputParity] Failed to patch {label}: {ex}");
+            global::ScreenReaderMod.ScreenReaderMod.Instance?.Logger.Error($"[GamepadEmulation] Failed to patch {label}: {ex}");
             return null;
         }
     }
@@ -150,13 +150,13 @@ public sealed class KeyboardInputParitySystem : ModSystem
     {
         orig(self);
 
-        TryAppendControllerExtras(self, InputMode.Keyboard, ParityReflectionCache.BindsKeyboard);
-        TryAppendControllerExtras(self, InputMode.KeyboardUI, ParityReflectionCache.BindsKeyboardUi);
+        TryAppendControllerExtras(self, InputMode.Keyboard, EmulationReflectionCache.BindsKeyboard);
+        TryAppendControllerExtras(self, InputMode.KeyboardUI, EmulationReflectionCache.BindsKeyboardUi);
     }
 
     private static void TryAppendControllerExtras(UIManageControls self, InputMode mode, FieldInfo? targetField)
     {
-        if (targetField is null || ParityReflectionCache.CreateBindingGroup is null)
+        if (targetField is null || EmulationReflectionCache.CreateBindingGroup is null)
         {
             return;
         }
@@ -167,7 +167,7 @@ public sealed class KeyboardInputParitySystem : ModSystem
         }
 
         List<string> payload = new(ControllerExclusiveBindingIds);
-        if (ParityReflectionCache.CreateBindingGroup.Invoke(self, new object[] { ControllerExtrasGroupIndex, payload, mode }) is not UIElement group)
+        if (EmulationReflectionCache.CreateBindingGroup.Invoke(self, new object[] { ControllerExtrasGroupIndex, payload, mode }) is not UIElement group)
         {
             return;
         }
@@ -196,12 +196,12 @@ public sealed class KeyboardInputParitySystem : ModSystem
             }
             else
             {
-                global::ScreenReaderMod.ScreenReaderMod.Instance?.Logger.Warn($"[KeyboardInputParity] Unable to locate UsingGamepad check for {label} fade logic.");
+                global::ScreenReaderMod.ScreenReaderMod.Instance?.Logger.Warn($"[GamepadEmulation] Unable to locate UsingGamepad check for {label} fade logic.");
             }
         }
         catch (Exception ex)
         {
-            global::ScreenReaderMod.ScreenReaderMod.Instance?.Logger.Error($"[KeyboardInputParity] Failed to patch {label}: {ex}");
+            global::ScreenReaderMod.ScreenReaderMod.Instance?.Logger.Error($"[GamepadEmulation] Failed to patch {label}: {ex}");
         }
     }
 
@@ -261,7 +261,7 @@ public sealed class KeyboardInputParitySystem : ModSystem
             }
             else
             {
-                global::ScreenReaderMod.ScreenReaderMod.Instance?.Logger.Warn("[KeyboardInputParity] Unable to force controller connection; GamePadInput may short-circuit.");
+                global::ScreenReaderMod.ScreenReaderMod.Instance?.Logger.Warn("[GamepadEmulation] Unable to force controller connection; GamePadInput may short-circuit.");
             }
 
             cursor = new ILCursor(il);
@@ -271,12 +271,12 @@ public sealed class KeyboardInputParitySystem : ModSystem
             }
             else
             {
-                global::ScreenReaderMod.ScreenReaderMod.Instance?.Logger.Warn("[KeyboardInputParity] Unable to locate GamepadThumbstickRight assignment for virtual stick injection.");
+                global::ScreenReaderMod.ScreenReaderMod.Instance?.Logger.Warn("[GamepadEmulation] Unable to locate GamepadThumbstickRight assignment for virtual stick injection.");
             }
         }
         catch (Exception ex)
         {
-            global::ScreenReaderMod.ScreenReaderMod.Instance?.Logger.Error($"[KeyboardInputParity] Failed to patch GamePadInput for virtual sticks: {ex}");
+            global::ScreenReaderMod.ScreenReaderMod.Instance?.Logger.Error($"[GamepadEmulation] Failed to patch GamePadInput for virtual sticks: {ex}");
         }
     }
 
@@ -284,8 +284,8 @@ public sealed class KeyboardInputParitySystem : ModSystem
 
     private static bool OverrideShiftInUse(ShiftInUseGetter orig)
     {
-        // If keyboard parity is not enabled, use original behavior
-        if (!KeyboardParityFeatureState.Enabled)
+        // If gamepad emulation is not enabled, use original behavior
+        if (!GamepadEmulationState.Enabled)
         {
             return orig();
         }
@@ -302,7 +302,7 @@ public sealed class KeyboardInputParitySystem : ModSystem
             return true;
         }
 
-        // Suppress vanilla keyboard Shift when keyboard parity is enabled
+        // Suppress vanilla keyboard Shift when gamepad emulation is enabled
         // This only affects keyboard Shift, not gamepad (which uses ShiftForcedOn)
         if (Main.keyState.PressingShift())
         {
@@ -328,14 +328,14 @@ public sealed class KeyboardInputParitySystem : ModSystem
         HandleFeatureToggleHotkey();
 
         // Inject housing-relevant triggers early so CheckHousingQueryOnMouseClick can see them.
-        if (KeyboardParityFeatureState.Enabled && Main.playerInventory && !InputStateHelper.IsTextInputActive())
+        if (GamepadEmulationState.Enabled && Main.playerInventory && !InputStateHelper.IsTextInputActive())
         {
-            VirtualTriggerService.InjectFromKeybind(ControllerParityKeybinds.InventorySelect, TriggerNames.MouseLeft);
+            VirtualTriggerService.InjectFromKeybind(GamepadEmulationKeybinds.InventorySelect, TriggerNames.MouseLeft);
         }
 
         _housingQueryHandler?.Update();
 
-        if (!KeyboardParityFeatureState.Enabled)
+        if (!GamepadEmulationState.Enabled)
         {
             return;
         }
@@ -362,7 +362,7 @@ public sealed class KeyboardInputParitySystem : ModSystem
             return;
         }
 
-        if (KeyboardParityFeatureState.Enabled)
+        if (GamepadEmulationState.Enabled)
         {
             PlayerInput.CurrentInputMode = InputMode.XBoxGamepad;
         }
@@ -370,7 +370,7 @@ public sealed class KeyboardInputParitySystem : ModSystem
 
     private static void ApplyGlobalVirtualTriggers()
     {
-        if (!KeyboardParityFeatureState.Enabled || Main.gameMenu || InputStateHelper.IsTextInputActive())
+        if (!GamepadEmulationState.Enabled || Main.gameMenu || InputStateHelper.IsTextInputActive())
         {
             return;
         }
@@ -381,16 +381,16 @@ public sealed class KeyboardInputParitySystem : ModSystem
             return;
         }
 
-        VirtualTriggerService.InjectFromKeybind(ControllerParityKeybinds.LockOn, TriggerNames.LockOn);
+        VirtualTriggerService.InjectFromKeybind(GamepadEmulationKeybinds.LockOn, TriggerNames.LockOn);
 
         // SmartSelect: Inject the SmartSelect trigger for in-world auto-tool selection
         // When pressed, Terraria auto-selects the best tool for the targeted tile
-        VirtualTriggerService.InjectFromKeybind(ControllerParityKeybinds.SmartSelect, TriggerNames.SmartSelect);
+        VirtualTriggerService.InjectFromKeybind(GamepadEmulationKeybinds.SmartSelect, TriggerNames.SmartSelect);
     }
 
     private static void ApplyInventoryVirtualTriggers(bool inventoryUiActive)
     {
-        if (!inventoryUiActive || !KeyboardParityFeatureState.Enabled || InputStateHelper.IsTextInputActive())
+        if (!inventoryUiActive || !GamepadEmulationState.Enabled || InputStateHelper.IsTextInputActive())
         {
             return;
         }
@@ -400,11 +400,11 @@ public sealed class KeyboardInputParitySystem : ModSystem
             return;
         }
 
-        VirtualTriggerService.InjectFromKeybind(ControllerParityKeybinds.InventorySelect, TriggerNames.MouseLeft);
+        VirtualTriggerService.InjectFromKeybind(GamepadEmulationKeybinds.InventorySelect, TriggerNames.MouseLeft);
 
         // SmartSelect: Inject the SmartSelect trigger to mimic gamepad Select button behavior
         // In inventory, this drops held items or performs Shift+Click depending on context
-        VirtualTriggerService.InjectFromKeybind(ControllerParityKeybinds.SmartSelect, TriggerNames.SmartSelect);
+        VirtualTriggerService.InjectFromKeybind(GamepadEmulationKeybinds.SmartSelect, TriggerNames.SmartSelect);
 
         // Only inject MouseRight if no chest/container is open.
         // When a container is open, continued MouseRight injection can cause it to toggle closed.
@@ -413,15 +413,15 @@ public sealed class KeyboardInputParitySystem : ModSystem
         bool chestOpen = player is not null && (player.chest != -1 || player.tileEntityAnchor.InUse);
         if (!chestOpen)
         {
-            VirtualTriggerService.InjectFromKeybind(ControllerParityKeybinds.InventoryInteract, TriggerNames.MouseRight);
+            VirtualTriggerService.InjectFromKeybind(GamepadEmulationKeybinds.InventoryInteract, TriggerNames.MouseRight);
         }
 
-        VirtualTriggerService.InjectFromKeybind(ControllerParityKeybinds.InventorySectionPrevious, TriggerNames.HotbarMinus);
-        VirtualTriggerService.InjectFromKeybind(ControllerParityKeybinds.InventorySectionNext, TriggerNames.HotbarPlus);
+        VirtualTriggerService.InjectFromKeybind(GamepadEmulationKeybinds.InventorySectionPrevious, TriggerNames.HotbarMinus);
+        VirtualTriggerService.InjectFromKeybind(GamepadEmulationKeybinds.InventorySectionNext, TriggerNames.HotbarPlus);
 
         // Block Grapple trigger when E is used for section cycling to prevent accidental crafting.
         // In vanilla Terraria, E is bound to Grapple, and Grapple triggers crafting in the crafting UI.
-        if (ControllerParityKeybinds.InventorySectionNext is { } sectionNextKeybind &&
+        if (GamepadEmulationKeybinds.InventorySectionNext is { } sectionNextKeybind &&
             VirtualTriggerService.IsKeybindPressedRaw(sectionNextKeybind))
         {
             PlayerInput.Triggers.Current.KeyStatus[TriggerNames.Grapple] = false;
@@ -429,7 +429,7 @@ public sealed class KeyboardInputParitySystem : ModSystem
         }
 
         // Quick Use: Simulate right stick click (QuickMount trigger in UI mode)
-        VirtualTriggerService.InjectFromKeybind(ControllerParityKeybinds.InventoryQuickUse, TriggerNames.QuickMount);
+        VirtualTriggerService.InjectFromKeybind(GamepadEmulationKeybinds.InventoryQuickUse, TriggerNames.QuickMount);
 
         // Ensure MouseRight trigger from keyboard (Interact key) properly sets Main.mouseRight
         // But skip when a container is open to prevent accidental closure
@@ -441,7 +441,7 @@ public sealed class KeyboardInputParitySystem : ModSystem
 
     private static void ApplyMenuNavigationVirtualTriggers(bool uiModeActive)
     {
-        if (!KeyboardParityFeatureState.Enabled || !uiModeActive || InputStateHelper.IsTextInputActive())
+        if (!GamepadEmulationState.Enabled || !uiModeActive || InputStateHelper.IsTextInputActive())
         {
             return;
         }
@@ -498,7 +498,7 @@ public sealed class KeyboardInputParitySystem : ModSystem
     {
         if (Main.keyState.IsKeyDown(Keys.F6) && !Main.oldKeyState.IsKeyDown(Keys.F6))
         {
-            KeyboardParityFeatureState.Toggle();
+            GamepadEmulationState.Toggle();
         }
     }
 
@@ -511,8 +511,8 @@ public sealed class KeyboardInputParitySystem : ModSystem
         }
 
         string key = enabled
-            ? "Mods.ScreenReaderMod.KeyboardParity.Enabled"
-            : "Mods.ScreenReaderMod.KeyboardParity.Disabled";
+            ? "Mods.ScreenReaderMod.GamepadEmulation.Enabled"
+            : "Mods.ScreenReaderMod.GamepadEmulation.Disabled";
         string fallback = enabled ? "Gamepad Emulation Enabled" : "Gamepad Emulation Disabled";
         string announcement = LocalizationHelper.GetTextOrFallback(key, fallback);
         ScreenReaderService.Announce(announcement, force: true);

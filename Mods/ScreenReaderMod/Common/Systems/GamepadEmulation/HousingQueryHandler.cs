@@ -6,10 +6,10 @@ using Terraria.GameInput;
 using Terraria.UI.Gamepad;
 using Terraria.WorldBuilding;
 
-namespace ScreenReaderMod.Common.Systems.KeyboardParity;
+namespace ScreenReaderMod.Common.Systems.GamepadEmulation;
 
 /// <summary>
-/// Handles housing query detection and triggering for keyboard parity mode.
+/// Handles housing query detection and triggering for gamepad emulation mode.
 /// Replicates the gamepad behavior where pressing X on the housing query button
 /// checks housing viability at the player's current tile location.
 /// </summary>
@@ -68,7 +68,7 @@ internal sealed class HousingQueryHandler
         bool onHousingButton = currentPoint == 600;
         bool onNpcHousingTab = Main.EquipPage == 1;
 
-        if (KeyboardParityFeatureState.Enabled && onNpcHousingTab && onHousingButton)
+        if (GamepadEmulationState.Enabled && onNpcHousingTab && onHousingButton)
         {
             TriggersSet justPressed = PlayerInput.Triggers.JustPressed;
 
@@ -77,7 +77,7 @@ internal sealed class HousingQueryHandler
                                  justPressed.SmartSelect || justPressed.MouseRight;
 
             // Check the mod keybinds directly
-            bool keybindPressed = ControllerParityKeybinds.InventorySelect?.JustPressed ?? false;
+            bool keybindPressed = GamepadEmulationKeybinds.InventorySelect?.JustPressed ?? false;
 
             // Check for Enter/Space which are common confirm keys on keyboard
             KeyboardState kbState = Keyboard.GetState();

@@ -11,7 +11,7 @@ using Microsoft.Xna.Framework.Graphics;
 using Microsoft.Xna.Framework.Input;
 using ScreenReaderMod.Common;
 using ScreenReaderMod.Common.Services;
-using ScreenReaderMod.Common.Systems.KeyboardParity;
+using ScreenReaderMod.Common.Systems.GamepadEmulation;
 using ScreenReaderMod.Common.Systems.MenuNarration;
 using ScreenReaderMod.Common.Utilities;
 using AnnouncementCategory = ScreenReaderMod.Common.Services.ScreenReaderService.AnnouncementCategory;

@@ -3,9 +3,9 @@ using Microsoft.Xna.Framework.Input;
 using Terraria;
 using Terraria.ModLoader;
 
-namespace ScreenReaderMod.Common.Systems.KeyboardParity;
+namespace ScreenReaderMod.Common.Systems.GamepadEmulation;
 
-internal static class ControllerParityKeybinds
+internal static class GamepadEmulationKeybinds
 {
     internal static ModKeybind? InventorySelect { get; private set; }
     internal static ModKeybind? InventoryInteract { get; private set; }
@@ -32,21 +32,21 @@ internal static class ControllerParityKeybinds
             return;
         }
 
-        InventorySelect = KeybindLoader.RegisterKeybind(mod, "ControllerInventorySelect", Keys.I);
-        InventoryInteract = KeybindLoader.RegisterKeybind(mod, "ControllerInventoryInteract", Keys.P);
-        InventorySectionNext = KeybindLoader.RegisterKeybind(mod, "ControllerInventorySectionNext", Keys.E);
-        InventorySectionPrevious = KeybindLoader.RegisterKeybind(mod, "ControllerInventorySectionPrevious", Keys.Q);
-        InventoryQuickUse = KeybindLoader.RegisterKeybind(mod, "ControllerInventoryQuickUse", Keys.J);
-        LockOn = KeybindLoader.RegisterKeybind(mod, "ControllerLockOn", Keys.Tab);
-        RightStickUp = KeybindLoader.RegisterKeybind(mod, "ControllerRightStickUp", Keys.O);
-        RightStickDown = KeybindLoader.RegisterKeybind(mod, "ControllerRightStickDown", Keys.L);
-        RightStickLeft = KeybindLoader.RegisterKeybind(mod, "ControllerRightStickLeft", Keys.K);
-        RightStickRight = KeybindLoader.RegisterKeybind(mod, "ControllerRightStickRight", Keys.OemSemicolon);
-        SmartSelect = KeybindLoader.RegisterKeybind(mod, "SmartSelect", Keys.F);
-        ArrowUp = KeybindLoader.RegisterKeybind(mod, "ArrowUp", Keys.Up);
-        ArrowDown = KeybindLoader.RegisterKeybind(mod, "ArrowDown", Keys.Down);
-        ArrowLeft = KeybindLoader.RegisterKeybind(mod, "ArrowLeft", Keys.Left);
-        ArrowRight = KeybindLoader.RegisterKeybind(mod, "ArrowRight", Keys.Right);
+        InventorySelect = KeybindLoader.RegisterKeybind(mod, "GamepadEmulationInventorySelect", Keys.I);
+        InventoryInteract = KeybindLoader.RegisterKeybind(mod, "GamepadEmulationInventoryInteract", Keys.P);
+        InventorySectionNext = KeybindLoader.RegisterKeybind(mod, "GamepadEmulationSectionNext", Keys.E);
+        InventorySectionPrevious = KeybindLoader.RegisterKeybind(mod, "GamepadEmulationSectionPrevious", Keys.Q);
+        InventoryQuickUse = KeybindLoader.RegisterKeybind(mod, "GamepadEmulationQuickUse", Keys.J);
+        LockOn = KeybindLoader.RegisterKeybind(mod, "GamepadEmulationLockOn", Keys.Tab);
+        RightStickUp = KeybindLoader.RegisterKeybind(mod, "GamepadEmulationRightStickUp", Keys.O);
+        RightStickDown = KeybindLoader.RegisterKeybind(mod, "GamepadEmulationRightStickDown", Keys.L);
+        RightStickLeft = KeybindLoader.RegisterKeybind(mod, "GamepadEmulationRightStickLeft", Keys.K);
+        RightStickRight = KeybindLoader.RegisterKeybind(mod, "GamepadEmulationRightStickRight", Keys.OemSemicolon);
+        SmartSelect = KeybindLoader.RegisterKeybind(mod, "GamepadEmulationSmartSelect", Keys.F);
+        ArrowUp = KeybindLoader.RegisterKeybind(mod, "GamepadEmulationArrowUp", Keys.Up);
+        ArrowDown = KeybindLoader.RegisterKeybind(mod, "GamepadEmulationArrowDown", Keys.Down);
+        ArrowLeft = KeybindLoader.RegisterKeybind(mod, "GamepadEmulationArrowLeft", Keys.Left);
+        ArrowRight = KeybindLoader.RegisterKeybind(mod, "GamepadEmulationArrowRight", Keys.Right);
         _initialized = true;
     }
 

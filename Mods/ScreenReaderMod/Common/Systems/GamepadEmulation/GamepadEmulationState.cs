@@ -1,9 +1,9 @@
 #nullable enable
 using System;
 
-namespace ScreenReaderMod.Common.Systems.KeyboardParity;
+namespace ScreenReaderMod.Common.Systems.GamepadEmulation;
 
-internal static class KeyboardParityFeatureState
+internal static class GamepadEmulationState
 {
     internal static bool Enabled { get; private set; }
 

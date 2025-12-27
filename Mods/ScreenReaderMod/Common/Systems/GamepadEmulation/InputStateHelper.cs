@@ -3,16 +3,16 @@ using ScreenReaderMod.Common.Systems.ModBrowser;
 using Terraria;
 using Terraria.GameInput;
 
-namespace ScreenReaderMod.Common.Systems.KeyboardParity;
+namespace ScreenReaderMod.Common.Systems.GamepadEmulation;
 
 /// <summary>
-/// Provides shared input state checks for the keyboard parity subsystem.
+/// Provides shared input state checks for the gamepad emulation subsystem.
 /// </summary>
 internal static class InputStateHelper
 {
     /// <summary>
     /// Returns true if text input is currently active (chat, sign editing, etc.).
-    /// When true, keyboard parity should be disabled to allow normal typing.
+    /// When true, gamepad emulation should be disabled to allow normal typing.
     /// </summary>
     internal static bool IsTextInputActive()
     {
@@ -40,7 +40,7 @@ internal static class InputStateHelper
     /// </summary>
     internal static bool NeedsGamepadUiMode()
     {
-        if (!KeyboardParityFeatureState.Enabled && !IsKeyboardInputMode())
+        if (!GamepadEmulationState.Enabled && !IsKeyboardInputMode())
         {
             return false;
         }
@@ -109,12 +109,12 @@ internal static class InputStateHelper
     }
 
     /// <summary>
-    /// Returns true if keyboard parity should emulate gamepad input.
+    /// Returns true if gamepad emulation should emulate gamepad input.
     /// Returns false if text input is active or feature is disabled.
     /// </summary>
     internal static bool ShouldEmulateGamepad()
     {
-        if (!KeyboardParityFeatureState.Enabled)
+        if (!GamepadEmulationState.Enabled)
         {
             return false;
         }

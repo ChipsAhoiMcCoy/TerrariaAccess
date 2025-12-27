@@ -6,7 +6,7 @@ using Terraria;
 using Terraria.GameInput;
 using Terraria.ModLoader;
 
-namespace ScreenReaderMod.Common.Systems.KeyboardParity;
+namespace ScreenReaderMod.Common.Systems.GamepadEmulation;
 
 /// <summary>
 /// Handles virtual analog stick injection from keyboard inputs.
@@ -20,7 +20,7 @@ internal static class VirtualStickService
     /// </summary>
     internal static void InjectFromKeyboard()
     {
-        if (!KeyboardParityFeatureState.Enabled || InputStateHelper.IsTextInputActive())
+        if (!GamepadEmulationState.Enabled || InputStateHelper.IsTextInputActive())
         {
             return;
         }
@@ -39,20 +39,20 @@ internal static class VirtualStickService
         {
             // OKLS keys act as analog stick when Smart Cursor is on OR in menu context
             aimOverride = TryReadStick(
-                ControllerParityKeybinds.RightStickUp,
-                ControllerParityKeybinds.RightStickDown,
-                ControllerParityKeybinds.RightStickLeft,
-                ControllerParityKeybinds.RightStickRight,
+                GamepadEmulationKeybinds.RightStickUp,
+                GamepadEmulationKeybinds.RightStickDown,
+                GamepadEmulationKeybinds.RightStickLeft,
+                GamepadEmulationKeybinds.RightStickRight,
                 out aim);
         }
         else
         {
             // Arrow keys act as analog stick when Smart Cursor is off (gameplay only)
             aimOverride = TryReadStick(
-                ControllerParityKeybinds.ArrowUp,
-                ControllerParityKeybinds.ArrowDown,
-                ControllerParityKeybinds.ArrowLeft,
-                ControllerParityKeybinds.ArrowRight,
+                GamepadEmulationKeybinds.ArrowUp,
+                GamepadEmulationKeybinds.ArrowDown,
+                GamepadEmulationKeybinds.ArrowLeft,
+                GamepadEmulationKeybinds.ArrowRight,
                 out aim);
         }
 

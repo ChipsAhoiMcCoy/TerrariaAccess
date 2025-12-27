@@ -6,13 +6,13 @@ using Terraria.GameContent.UI.States;
 using Terraria.GameInput;
 using Terraria.UI;
 
-namespace ScreenReaderMod.Common.Systems.KeyboardParity;
+namespace ScreenReaderMod.Common.Systems.GamepadEmulation;
 
 /// <summary>
-/// Caches reflection handles for Terraria internals used by the keyboard parity system.
+/// Caches reflection handles for Terraria internals used by the gamepad emulation system.
 /// Uses lazy initialization to defer reflection until first access.
 /// </summary>
-internal static class ParityReflectionCache
+internal static class EmulationReflectionCache
 {
     private static readonly Lazy<FieldInfo?> _bindsKeyboard = new(() =>
         typeof(UIManageControls).GetField("_bindsKeyboard", BindingFlags.NonPublic | BindingFlags.Instance));
@@ -109,7 +109,7 @@ internal static class ParityReflectionCache
         if (!HasUiControlsHandles)
         {
             global::ScreenReaderMod.ScreenReaderMod.Instance?.Logger.Warn(
-                "[KeyboardInputParity] Failed to cache UIManageControls reflection handles; controller extras will be skipped.");
+                "[GamepadEmulation] Failed to cache UIManageControls reflection handles; controller extras will be skipped.");
         }
     }
 }

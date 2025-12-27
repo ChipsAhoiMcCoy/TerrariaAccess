@@ -7,7 +7,7 @@ using global::ScreenReaderMod;
 using ScreenReaderMod.Common.Services;
 using ScreenReaderMod.Common.Systems;
 using ScreenReaderMod.Common.Systems.BuildMode;
-using ScreenReaderMod.Common.Systems.KeyboardParity;
+using ScreenReaderMod.Common.Systems.GamepadEmulation;
 using ScreenReaderMod.Common.Utilities;
 using Terraria;
 using Terraria.DataStructures;

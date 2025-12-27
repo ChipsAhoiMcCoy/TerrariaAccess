@@ -6,7 +6,7 @@ using Terraria;
 using Terraria.GameInput;
 using Terraria.ModLoader;
 
-namespace ScreenReaderMod.Common.Systems.KeyboardParity;
+namespace ScreenReaderMod.Common.Systems.GamepadEmulation;
 
 /// <summary>
 /// Handles virtual trigger injection from keyboard inputs into Terraria's trigger system.
@@ -129,7 +129,7 @@ internal static class VirtualTriggerService
         bool triggerActive = PlayerInput.Triggers.Current.MouseRight;
 
         // Also check the InventoryInteract keybind directly in case trigger injection timing is off
-        ModKeybind? interactKeybind = ControllerParityKeybinds.InventoryInteract;
+        ModKeybind? interactKeybind = GamepadEmulationKeybinds.InventoryInteract;
         if (interactKeybind is not null)
         {
             bool keybindPressed = interactKeybind.Current || IsKeybindPressedRaw(interactKeybind);

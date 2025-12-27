@@ -7,7 +7,7 @@ using Terraria.GameInput;
 using Terraria.ModLoader;
 using Terraria.UI;
 
-namespace ScreenReaderMod.Common.Systems.KeyboardParity;
+namespace ScreenReaderMod.Common.Systems.GamepadEmulation;
 
 /// <summary>
 /// Virtualizes the right stick keys as a D-pad for tile-by-tile cursor movement when Smart Cursor is off.
@@ -42,7 +42,7 @@ public sealed class DpadVirtualizationSystem : ModSystem
 
     private static bool ShouldProcess()
     {
-        if (!KeyboardParityFeatureState.Enabled)
+        if (!GamepadEmulationState.Enabled)
         {
             return false;
         }
@@ -93,18 +93,18 @@ public sealed class DpadVirtualizationSystem : ModSystem
         if (smartCursorActive)
         {
             // Arrow keys act as D-pad when Smart Cursor is ON (inverse of OKLS)
-            up = IsPressed(ControllerParityKeybinds.ArrowUp);
-            right = IsPressed(ControllerParityKeybinds.ArrowRight);
-            down = IsPressed(ControllerParityKeybinds.ArrowDown);
-            left = IsPressed(ControllerParityKeybinds.ArrowLeft);
+            up = IsPressed(GamepadEmulationKeybinds.ArrowUp);
+            right = IsPressed(GamepadEmulationKeybinds.ArrowRight);
+            down = IsPressed(GamepadEmulationKeybinds.ArrowDown);
+            left = IsPressed(GamepadEmulationKeybinds.ArrowLeft);
         }
         else
         {
             // OKLS keys act as D-pad when Smart Cursor is OFF
-            up = IsPressed(ControllerParityKeybinds.RightStickUp);
-            right = IsPressed(ControllerParityKeybinds.RightStickRight);
-            down = IsPressed(ControllerParityKeybinds.RightStickDown);
-            left = IsPressed(ControllerParityKeybinds.RightStickLeft);
+            up = IsPressed(GamepadEmulationKeybinds.RightStickUp);
+            right = IsPressed(GamepadEmulationKeybinds.RightStickRight);
+            down = IsPressed(GamepadEmulationKeybinds.RightStickDown);
+            left = IsPressed(GamepadEmulationKeybinds.RightStickLeft);
         }
 
         nudges += EvaluateDirection(up, -Vector2.UnitY, 0);
@@ -222,17 +222,17 @@ public sealed class DpadVirtualizationSystem : ModSystem
         if (smartCursorActive)
         {
             // Arrow keys act as D-pad when Smart Cursor is ON
-            return IsPressed(ControllerParityKeybinds.ArrowUp)
-                || IsPressed(ControllerParityKeybinds.ArrowDown)
-                || IsPressed(ControllerParityKeybinds.ArrowLeft)
-                || IsPressed(ControllerParityKeybinds.ArrowRight);
+            return IsPressed(GamepadEmulationKeybinds.ArrowUp)
+                || IsPressed(GamepadEmulationKeybinds.ArrowDown)
+                || IsPressed(GamepadEmulationKeybinds.ArrowLeft)
+                || IsPressed(GamepadEmulationKeybinds.ArrowRight);
         }
 
         // OKLS keys act as D-pad when Smart Cursor is OFF
-        return IsPressed(ControllerParityKeybinds.RightStickUp)
-            || IsPressed(ControllerParityKeybinds.RightStickDown)
-            || IsPressed(ControllerParityKeybinds.RightStickLeft)
-            || IsPressed(ControllerParityKeybinds.RightStickRight);
+        return IsPressed(GamepadEmulationKeybinds.RightStickUp)
+            || IsPressed(GamepadEmulationKeybinds.RightStickDown)
+            || IsPressed(GamepadEmulationKeybinds.RightStickLeft)
+            || IsPressed(GamepadEmulationKeybinds.RightStickRight);
     }
 
     private static void RegisterDpadHeldFrame()

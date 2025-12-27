@@ -4,7 +4,7 @@ using ScreenReaderMod.Common.Services;
 using ScreenReaderMod.Common.Systems;
 using ScreenReaderMod.Common.Systems.BuildMode;
 using ScreenReaderMod.Common.Systems.Guidance;
-using ScreenReaderMod.Common.Systems.KeyboardParity;
+using ScreenReaderMod.Common.Systems.GamepadEmulation;
 using Terraria.ModLoader;
 
 namespace ScreenReaderMod;
@@ -19,7 +19,7 @@ public class ScreenReaderMod : Mod
         ScreenReaderService.Initialize();
         WorldAnnouncementService.Initialize();
         GuidanceKeybinds.EnsureInitialized(this);
-        ControllerParityKeybinds.EnsureInitialized(this);
+        GamepadEmulationKeybinds.EnsureInitialized(this);
         SpeechInterruptKeybinds.EnsureInitialized(this);
         StatusCheckKeybinds.EnsureInitialized(this);
         BuildModeKeybinds.EnsureInitialized(this);
@@ -27,7 +27,7 @@ public class ScreenReaderMod : Mod
 
     public override void Unload()
     {
-        ControllerParityKeybinds.Unload();
+        GamepadEmulationKeybinds.Unload();
         BuildModeKeybinds.Unload();
         StatusCheckKeybinds.Unload();
         SpeechInterruptKeybinds.Unload();
