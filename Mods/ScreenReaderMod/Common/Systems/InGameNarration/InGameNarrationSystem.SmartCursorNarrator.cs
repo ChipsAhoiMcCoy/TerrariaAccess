@@ -151,6 +151,13 @@ public sealed partial class InGameNarrationSystem
             _lastTileY = int.MinValue;
         }
 
+        private void ResetSmartCursorPositionTracking()
+        {
+            _lastAnnouncement = null;
+            _lastTileX = int.MinValue;
+            _lastTileY = int.MinValue;
+        }
+
         private static bool ShouldSuppressForMenus(Player player)
         {
             if (InventoryNarrator.IsInventoryUiOpen(player))
@@ -286,13 +293,13 @@ public sealed partial class InGameNarrationSystem
             bool suppressedWall = descriptor.IsWall && !ShouldAnnounceWall(player);
             if (suppressedWall)
             {
-                ResetSmartCursorRepeatTracking();
+                ResetSmartCursorPositionTracking();
                 return null;
             }
 
             if (!suppressedWall && descriptor.IsAir)
             {
-                ResetSmartCursorRepeatTracking();
+                ResetSmartCursorPositionTracking();
                 return null;
             }
 
