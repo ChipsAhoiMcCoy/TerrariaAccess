@@ -107,6 +107,9 @@ Mods: {
 		TileStates: {
 			Actuated: actuated
 			Unactuated: unactuated
+			HasActuator: has actuator
+			ActuatorOn: actuator on
+			ActuatorOff: actuator off
 			ActuatorPlaced: actuator placed
 			ActuatorRemoved: actuator removed
 			RedWireAdded: red wire added
@@ -129,6 +132,20 @@ Mods: {
 			WallEchoCoatingRemoved: wall echo coating removed
 			WallGlowPaintApplied: wall glow paint applied
 			WallGlowPaintRemoved: wall glow paint removed
+			SwitchOn: on
+			SwitchOff: off
+			LeverOn: on
+			LeverOff: off
+			ToggledOn: on
+			ToggledOff: off
+		}
+
+		WireColors: {
+			Red: Red
+			Green: Green
+			Blue: Blue
+			Yellow: Yellow
+			WireSuffix: wire
 		}
 
 		PaintColors: {

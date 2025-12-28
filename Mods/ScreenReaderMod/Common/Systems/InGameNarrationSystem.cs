@@ -536,6 +536,16 @@ public sealed partial class InGameNarrationSystem : ModSystem
                worldPosition.Y >= top && worldPosition.Y <= bottom;
     }
 
+    /// <summary>
+    /// Returns true if the player is holding a wiring tool (wrench, wire cutter, etc.)
+    /// that shows wire overlay when equipped.
+    /// </summary>
+    private static bool IsHoldingWiringTool(Player? player)
+    {
+        Item? held = player?.HeldItem;
+        return held is not null && !held.IsAir && held.mech;
+    }
+
     private static void HandleItemSlotHover(On_ItemSlot.orig_MouseHover_ItemArray_int_int orig, Item[] inv, int context, int slot)
     {
         orig(inv, context, slot);

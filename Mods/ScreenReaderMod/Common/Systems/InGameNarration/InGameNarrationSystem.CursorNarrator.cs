@@ -113,6 +113,8 @@ public sealed partial class InGameNarrationSystem
             public readonly bool IsWallInvisible;
             public readonly bool IsTileFullbright;
             public readonly bool IsWallFullbright;
+            public readonly bool IsToggleableOn;
+            public readonly bool IsToggleableTile;
 
             public TileStateSignature(int tileX, int tileY)
             {
@@ -131,6 +133,8 @@ public sealed partial class InGameNarrationSystem
                     IsWallInvisible = false;
                     IsTileFullbright = false;
                     IsWallFullbright = false;
+                    IsToggleableOn = false;
+                    IsToggleableTile = false;
                     return;
                 }
 
@@ -148,6 +152,26 @@ public sealed partial class InGameNarrationSystem
                 IsWallInvisible = tile.IsWallInvisible;
                 IsTileFullbright = tile.IsTileFullbright;
                 IsWallFullbright = tile.IsWallFullbright;
+
+                // Track lever/switch toggle state
+                (IsToggleableTile, IsToggleableOn) = GetToggleState(tile);
+            }
+
+            private static (bool isToggleable, bool isOn) GetToggleState(Tile tile)
+            {
+                if (!tile.HasTile)
+                {
+                    return (false, false);
+                }
+
+                // Only track lever state changes - switches are simple buttons
+                // Lever (TileID 132): frameX 0-35 = OFF, frameX 36+ = ON
+                if (tile.TileType == TileID.Lever)
+                {
+                    return (true, tile.TileFrameX >= 36);
+                }
+
+                return (false, false);
             }
 
             public bool Equals(TileStateSignature other) =>
@@ -163,7 +187,9 @@ public sealed partial class InGameNarrationSystem
                 IsTileInvisible == other.IsTileInvisible &&
                 IsWallInvisible == other.IsWallInvisible &&
                 IsTileFullbright == other.IsTileFullbright &&
-                IsWallFullbright == other.IsWallFullbright;
+                IsWallFullbright == other.IsWallFullbright &&
+                IsToggleableOn == other.IsToggleableOn &&
+                IsToggleableTile == other.IsToggleableTile;
 
             public override bool Equals(object? obj) => obj is TileStateSignature other && Equals(other);
 
@@ -183,6 +209,8 @@ public sealed partial class InGameNarrationSystem
                 hash.Add(IsWallInvisible);
                 hash.Add(IsTileFullbright);
                 hash.Add(IsWallFullbright);
+                hash.Add(IsToggleableOn);
+                hash.Add(IsToggleableTile);
                 return hash.ToHashCode();
             }
 
@@ -315,7 +343,7 @@ public sealed partial class InGameNarrationSystem
             _wasHoveringPlayer = false;
             _lastHoveredBodyPart = null;
 
-            // Handle state-only changes (e.g., slope changed, wire added, paint applied)
+            // Handle state-only changes (e.g., slope changed, wire added, paint applied, lever toggled)
             if (stateOnlyChanged)
             {
                 List<string> stateChanges = TileStateDescriptorService.GetStateChanges(
@@ -324,11 +352,13 @@ public sealed partial class InGameNarrationSystem
                     _lastTileStateSignature.TileColor, _lastTileStateSignature.WallColor,
                     _lastTileStateSignature.IsTileInvisible, _lastTileStateSignature.IsWallInvisible,
                     _lastTileStateSignature.IsTileFullbright, _lastTileStateSignature.IsWallFullbright,
+                    _lastTileStateSignature.IsToggleableTile, _lastTileStateSignature.IsToggleableOn,
                     currentStateSignature.BlockType, currentStateSignature.IsActuated, currentStateSignature.HasActuator,
                     currentStateSignature.RedWire, currentStateSignature.GreenWire, currentStateSignature.BlueWire, currentStateSignature.YellowWire,
                     currentStateSignature.TileColor, currentStateSignature.WallColor,
                     currentStateSignature.IsTileInvisible, currentStateSignature.IsWallInvisible,
-                    currentStateSignature.IsTileFullbright, currentStateSignature.IsWallFullbright);
+                    currentStateSignature.IsTileFullbright, currentStateSignature.IsWallFullbright,
+                    currentStateSignature.IsToggleableTile, currentStateSignature.IsToggleableOn);
 
                 if (stateChanges.Count > 0)
                 {
@@ -403,7 +433,52 @@ public sealed partial class InGameNarrationSystem
                 return;
             }
 
-            string message = string.IsNullOrWhiteSpace(coordinates) ? descriptor.Name : $"{descriptor.Name}, {coordinates}";
+            // Prepend actuator and wire info when holding wiring tools
+            string? mechanicsPrefix = null;
+            bool hasActuatorPrefix = false;
+            if (IsHoldingWiringTool(player) && WorldGen.InWorld(tileX, tileY, 1))
+            {
+                Tile tile = Main.tile[tileX, tileY];
+                string? actuatorPrefix = TileStateDescriptorService.FormatExistingActuator(tile.HasActuator, tile.IsActuated);
+                string? wirePrefix = TileStateDescriptorService.FormatExistingWires(
+                    tile.RedWire, tile.GreenWire, tile.BlueWire, tile.YellowWire);
+
+                hasActuatorPrefix = !string.IsNullOrEmpty(actuatorPrefix);
+
+                // Combine: "actuator on, Red wire" or just "actuator off" or just "Red wire"
+                if (hasActuatorPrefix && !string.IsNullOrEmpty(wirePrefix))
+                {
+                    mechanicsPrefix = $"{actuatorPrefix}, {wirePrefix}";
+                }
+                else if (hasActuatorPrefix)
+                {
+                    mechanicsPrefix = actuatorPrefix;
+                }
+                else if (!string.IsNullOrEmpty(wirePrefix))
+                {
+                    mechanicsPrefix = wirePrefix;
+                }
+            }
+
+            // Get the tile name, stripping redundant "has actuator" suffix if we're showing the prefix
+            string tileName = descriptor.Name;
+            if (hasActuatorPrefix)
+            {
+                tileName = StripActuatorSuffix(tileName);
+            }
+
+            string message;
+            if (!string.IsNullOrEmpty(mechanicsPrefix))
+            {
+                message = string.IsNullOrWhiteSpace(coordinates)
+                    ? $"{mechanicsPrefix}, {tileName}"
+                    : $"{mechanicsPrefix}, {tileName}, {coordinates}";
+            }
+            else
+            {
+                message = string.IsNullOrWhiteSpace(coordinates) ? tileName : $"{tileName}, {coordinates}";
+            }
+
             AnnouncementCategory category = descriptor.Category;
             AnnounceCursorMessage(message, force: true, category: category);
         }
@@ -538,6 +613,20 @@ public sealed partial class InGameNarrationSystem
             }
 
             return normalized;
+        }
+
+        /// <summary>
+        /// Strips the ", has actuator" suffix from a tile name to avoid redundancy
+        /// when the actuator status is already shown as a prefix.
+        /// </summary>
+        private static string StripActuatorSuffix(string name)
+        {
+            const string suffix = ", has actuator";
+            if (name.EndsWith(suffix, StringComparison.OrdinalIgnoreCase))
+            {
+                return name[..^suffix.Length];
+            }
+            return name;
         }
 
         private static Vector2 GetPlayerChestWorld(Player player)

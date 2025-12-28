@@ -47,6 +47,7 @@ public sealed partial class InGameNarrationSystem
         private bool _lastSmartCursorEnabled;
         private string? _pendingStatePrefix;
         private bool _suppressCursorAnnouncement;
+        private bool _lastIsLeverOn;
 
         public SmartCursorNarrator(CursorDescriptorService descriptorService)
         {
@@ -133,6 +134,7 @@ public sealed partial class InGameNarrationSystem
             _lastInteractTileType = -1;
             _lastCursorTileType = -1;
             _lastCursorAnnouncementKey = int.MinValue;
+            _lastIsLeverOn = false;
         }
 
         private void Reset()
@@ -246,19 +248,31 @@ public sealed partial class InGameNarrationSystem
 
             int tileX = Main.SmartInteractX;
             int tileY = Main.SmartInteractY;
-            if (tileX >= 0 && tileY >= 0)
+            if (tileX >= 0 && tileY >= 0 && WorldGen.InWorld(tileX, tileY, 1))
             {
+                Tile tile = Main.tile[tileX, tileY];
+
+                // Check for lever state changes at the same position
+                (bool isLever, bool leverIsOn) = GetLeverState(tile);
+                bool samePosition = tileX == _lastTileX && tileY == _lastTileY;
+                if (isLever && samePosition && leverIsOn != _lastIsLeverOn)
+                {
+                    _lastIsLeverOn = leverIsOn;
+                    category = AnnouncementCategory.Tile;
+                    return leverIsOn ? "on" : "off";
+                }
+
                 if (!_descriptorService.TryDescribe(tileX, tileY, out var descriptor))
                 {
                     return null;
                 }
 
-                if (tileX == _lastTileX && tileY == _lastTileY && string.Equals(descriptor.Name, _lastAnnouncement, StringComparison.Ordinal))
+                if (samePosition && string.Equals(descriptor.Name, _lastAnnouncement, StringComparison.Ordinal))
                 {
                     return null;
                 }
 
-                if (descriptor.TileType == _lastInteractTileType)
+                if (samePosition && descriptor.TileType == _lastInteractTileType)
                 {
                     return null;
                 }
@@ -268,6 +282,7 @@ public sealed partial class InGameNarrationSystem
                 _lastNpc = -1;
                 _lastProj = -1;
                 _lastInteractTileType = descriptor.TileType;
+                _lastIsLeverOn = leverIsOn;
 
                 if (!string.IsNullOrWhiteSpace(descriptor.Name))
                 {
@@ -303,8 +318,20 @@ public sealed partial class InGameNarrationSystem
                 return null;
             }
 
-            int announcementKey = CursorDescriptorService.ResolveAnnouncementKey(descriptor.TileType);
-            if (tileX == _lastTileX && tileY == _lastTileY && string.Equals(descriptor.Name, _lastAnnouncement, StringComparison.Ordinal))
+            Tile tile = Main.tile[tileX, tileY];
+
+            // Check for lever state changes at the same position
+            (bool isLever, bool leverIsOn) = GetLeverState(tile);
+            bool samePosition = tileX == _lastTileX && tileY == _lastTileY;
+            if (isLever && samePosition && leverIsOn != _lastIsLeverOn)
+            {
+                _lastIsLeverOn = leverIsOn;
+                category = AnnouncementCategory.Tile;
+                return leverIsOn ? "on" : "off";
+            }
+
+            int announcementKey = CursorDescriptorService.ResolveAnnouncementKey(descriptor.TileType, tile);
+            if (samePosition && string.Equals(descriptor.Name, _lastAnnouncement, StringComparison.Ordinal))
             {
                 return null;
             }
@@ -320,6 +347,7 @@ public sealed partial class InGameNarrationSystem
             _lastProj = -1;
             _lastCursorTileType = descriptor.TileType;
             _lastCursorAnnouncementKey = announcementKey;
+            _lastIsLeverOn = leverIsOn;
 
             if (string.IsNullOrWhiteSpace(descriptor.Name))
             {
@@ -327,6 +355,39 @@ public sealed partial class InGameNarrationSystem
             }
 
             category = descriptor.Category;
+
+            // Prepend actuator and wire info when holding wiring tools
+            if (IsHoldingWiringTool(player) && WorldGen.InWorld(tileX, tileY, 1))
+            {
+                string? actuatorPrefix = TileStateDescriptorService.FormatExistingActuator(tile.HasActuator, tile.IsActuated);
+                string? wirePrefix = TileStateDescriptorService.FormatExistingWires(
+                    tile.RedWire, tile.GreenWire, tile.BlueWire, tile.YellowWire);
+
+                bool hasActuatorPrefix = !string.IsNullOrEmpty(actuatorPrefix);
+
+                // Combine: "actuator on, Red wire" or just "actuator off" or just "Red wire"
+                string? mechanicsPrefix = null;
+                if (hasActuatorPrefix && !string.IsNullOrEmpty(wirePrefix))
+                {
+                    mechanicsPrefix = $"{actuatorPrefix}, {wirePrefix}";
+                }
+                else if (hasActuatorPrefix)
+                {
+                    mechanicsPrefix = actuatorPrefix;
+                }
+                else if (!string.IsNullOrEmpty(wirePrefix))
+                {
+                    mechanicsPrefix = wirePrefix;
+                }
+
+                if (!string.IsNullOrEmpty(mechanicsPrefix))
+                {
+                    // Strip redundant "has actuator" suffix if we're showing the prefix
+                    string tileName = hasActuatorPrefix ? StripActuatorSuffix(descriptor.Name) : descriptor.Name;
+                    return $"{mechanicsPrefix}, {tileName}";
+                }
+            }
+
             return descriptor.Name;
         }
 
@@ -365,6 +426,47 @@ public sealed partial class InGameNarrationSystem
             }
 
             return $"smart:{normalized}";
+        }
+
+        /// <summary>
+        /// Strips the ", has actuator" suffix from a tile name to avoid redundancy
+        /// when the actuator status is already shown as a prefix.
+        /// </summary>
+        private static string StripActuatorSuffix(string name)
+        {
+            const string suffix = ", has actuator";
+            if (name.EndsWith(suffix, StringComparison.OrdinalIgnoreCase))
+            {
+                return name[..^suffix.Length];
+            }
+            return name;
+        }
+
+        /// <summary>
+        /// Gets the lever state for a tile. Returns (isLever, isOn).
+        /// Only levers are tracked - switches are simple buttons.
+        /// </summary>
+        private static (bool isLever, bool isOn) GetLeverState(Tile tile)
+        {
+            if (!tile.HasTile || tile.TileType != TileID.Lever)
+            {
+                return (false, false);
+            }
+
+            // Lever (TileID 132): frameX 0-35 = OFF, frameX 36+ = ON
+            return (true, tile.TileFrameX >= 36);
+        }
+
+        private static string GetLocalized(string key)
+        {
+            string fullKey = $"Mods.ScreenReaderMod.{key}";
+            string value = Language.GetTextValue(fullKey);
+            if (string.Equals(value, fullKey, StringComparison.Ordinal))
+            {
+                int lastDot = key.LastIndexOf('.');
+                return lastDot >= 0 ? key[(lastDot + 1)..] : key;
+            }
+            return value;
         }
 
     }

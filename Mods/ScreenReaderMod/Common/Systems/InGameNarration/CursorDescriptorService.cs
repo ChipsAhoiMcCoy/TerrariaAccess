@@ -29,6 +29,21 @@ internal sealed class CursorDescriptorService
         TileID.Painting3X3,
         TileID.Painting4X3,
         TileID.Painting6X4,
+        TileID.Traps,
+        TileID.PressurePlates,
+        TileID.WeightedPressurePlate,
+        TileID.Timers,
+    };
+
+    /// <summary>
+    /// Tile types that use frameX / 18 to determine their style variant.
+    /// </summary>
+    private static readonly HashSet<int> FrameBasedStyleTileTypes = new()
+    {
+        TileID.Traps,
+        TileID.PressurePlates,
+        TileID.WeightedPressurePlate,
+        TileID.Timers,
     };
 
     private static readonly Dictionary<int, Dictionary<int, int>> TileStyleToItemType = BuildTileStyleMap();
@@ -86,12 +101,14 @@ internal sealed class CursorDescriptorService
 
         if (tileType == TileID.Banners && TryDescribeBanner(tile, out name))
         {
+            name = AppendTileStateLabels(tile, name);
             descriptor = BuildDescriptor(tileType, name);
             return true;
         }
 
         if (tileType != TileID.Banners && TryDescribeTileFromItemPlacement(tile, tileType, out name))
         {
+            name = AppendTileStateLabels(tile, name);
             descriptor = BuildDescriptor(tileType, name);
             return true;
         }
@@ -117,15 +134,62 @@ internal sealed class CursorDescriptorService
         }
 
         OverrideChestName(tileX, tileY, tileType, ref name);
+        name = AppendTileStateLabels(tile, name);
 
+        descriptor = BuildDescriptor(tileType, name);
+        return true;
+    }
+
+    /// <summary>
+    /// Appends shape, actuator, and interactive state labels to a tile name.
+    /// </summary>
+    private static string? AppendTileStateLabels(Tile tile, string? name)
+    {
         string? shapeDescriptor = GetTileShapeDescriptor(tile);
         if (!string.IsNullOrEmpty(shapeDescriptor))
         {
             name = $"{name}, {shapeDescriptor}";
         }
 
-        descriptor = BuildDescriptor(tileType, name);
-        return true;
+        // Add lever/switch on/off state
+        string? toggleStateLabel = GetToggleStateLabel(tile);
+        if (!string.IsNullOrEmpty(toggleStateLabel))
+        {
+            name = $"{name}, {toggleStateLabel}";
+        }
+
+        if (tile.HasActuator)
+        {
+            string actuatorLabel = GetLocalizedWithFallback("Mods.ScreenReaderMod.TileStates.HasActuator", "has actuator");
+            name = $"{name}, {actuatorLabel}";
+        }
+
+        return name;
+    }
+
+    /// <summary>
+    /// Gets the on/off state label for toggleable tiles like levers and switches.
+    /// </summary>
+    private static string? GetToggleStateLabel(Tile tile)
+    {
+        if (!tile.HasTile)
+        {
+            return null;
+        }
+
+        int tileType = tile.TileType;
+
+        // Lever (TileID 132): 2x2 tile, frameX toggles by ±36
+        // frameX 0-35 = OFF state, frameX 36-71 = ON state
+        if (tileType == TileID.Lever)
+        {
+            bool isOn = tile.TileFrameX >= 36;
+            return GetLocalizedWithFallback(
+                isOn ? "Mods.ScreenReaderMod.TileStates.LeverOn" : "Mods.ScreenReaderMod.TileStates.LeverOff",
+                isOn ? "on" : "off");
+        }
+
+        return null;
     }
 
     internal static int ResolveAnnouncementKey(int tileType)
@@ -137,6 +201,24 @@ internal sealed class CursorDescriptorService
         }
 
         return tileType;
+    }
+
+    /// <summary>
+    /// Resolves announcement key with frame state for toggleable tiles.
+    /// This ensures state changes (on/off) produce different keys.
+    /// </summary>
+    internal static int ResolveAnnouncementKey(int tileType, Tile tile)
+    {
+        int baseKey = ResolveAnnouncementKey(tileType);
+
+        // For toggleable tiles, include frame state to distinguish on/off
+        if (tileType == TileID.Lever)
+        {
+            bool isOn = tile.TileFrameX >= 36;
+            return isOn ? (baseKey | 0x10000) : baseKey;
+        }
+
+        return baseKey;
     }
 
     internal static bool ShouldSuppressVariantNames(int announcementKey)
@@ -232,10 +314,19 @@ internal sealed class CursorDescriptorService
     {
         name = null;
 
-        int style = TileObjectData.GetTileStyle(tile);
-        if (style < 0)
+        // Use frame-based style for tile types that use frameX / 18 for variant determination
+        int style;
+        if (FrameBasedStyleTileTypes.Contains(tileType))
         {
-            return false;
+            style = tile.TileFrameX / 18;
+        }
+        else
+        {
+            style = TileObjectData.GetTileStyle(tile);
+            if (style < 0)
+            {
+                return false;
+            }
         }
 
         if (!TryResolveStyleItemType(tileType, style, out int itemType) || itemType <= ItemID.None)

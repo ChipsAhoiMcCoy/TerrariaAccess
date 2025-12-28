@@ -17,11 +17,13 @@ internal static class TileStateDescriptorService
         byte oldTileColor, byte oldWallColor,
         bool oldIsTileInvisible, bool oldIsWallInvisible,
         bool oldIsTileFullbright, bool oldIsWallFullbright,
+        bool oldIsToggleableTile, bool oldIsToggleableOn,
         BlockType newBlockType, bool newIsActuated, bool newHasActuator,
         bool newRedWire, bool newGreenWire, bool newBlueWire, bool newYellowWire,
         byte newTileColor, byte newWallColor,
         bool newIsTileInvisible, bool newIsWallInvisible,
-        bool newIsTileFullbright, bool newIsWallFullbright)
+        bool newIsTileFullbright, bool newIsWallFullbright,
+        bool newIsToggleableTile, bool newIsToggleableOn)
     {
         List<string> changes = new();
 
@@ -31,6 +33,12 @@ internal static class TileStateDescriptorService
             string? shapeDesc = GetBlockTypeDescriptor(newBlockType);
             if (!string.IsNullOrEmpty(shapeDesc))
                 changes.Add(shapeDesc);
+        }
+
+        // Lever toggle state changes (switches are excluded - they're simple buttons)
+        if (newIsToggleableTile && oldIsToggleableOn != newIsToggleableOn)
+        {
+            changes.Add(newIsToggleableOn ? "on" : "off");
         }
 
         // Actuator state
@@ -46,11 +54,25 @@ internal static class TileStateDescriptorService
                 ? "TileStates.ActuatorPlaced" : "TileStates.ActuatorRemoved"));
         }
 
-        // Wire changes
-        AddWireChange(changes, oldRedWire, newRedWire, "Red");
-        AddWireChange(changes, oldGreenWire, newGreenWire, "Green");
-        AddWireChange(changes, oldBlueWire, newBlueWire, "Blue");
-        AddWireChange(changes, oldYellowWire, newYellowWire, "Yellow");
+        // Wire changes - collect added/removed separately for brief format
+        List<string> addedWireColors = new();
+        List<string> removedWireColors = new();
+        CollectWireChange(addedWireColors, removedWireColors, oldRedWire, newRedWire, "Red");
+        CollectWireChange(addedWireColors, removedWireColors, oldGreenWire, newGreenWire, "Green");
+        CollectWireChange(addedWireColors, removedWireColors, oldBlueWire, newBlueWire, "Blue");
+        CollectWireChange(addedWireColors, removedWireColors, oldYellowWire, newYellowWire, "Yellow");
+
+        // Format added wires as brief: "Red wire" or "Red, Blue wire"
+        if (addedWireColors.Count > 0)
+        {
+            changes.Add($"{string.Join(", ", addedWireColors)} wire");
+        }
+
+        // Format removed wires individually: "red wire removed"
+        foreach (string color in removedWireColors)
+        {
+            changes.Add(GetLocalized($"TileStates.{color}WireRemoved"));
+        }
 
         // Paint changes
         if (oldTileColor != newTileColor)
@@ -78,14 +100,14 @@ internal static class TileStateDescriptorService
         return changes;
     }
 
-    private static void AddWireChange(List<string> changes, bool oldVal, bool newVal, string color)
+    private static void CollectWireChange(List<string> added, List<string> removed, bool oldVal, bool newVal, string color)
     {
         if (oldVal == newVal) return;
 
-        string key = newVal
-            ? $"TileStates.{color}WireAdded"
-            : $"TileStates.{color}WireRemoved";
-        changes.Add(GetLocalized(key));
+        if (newVal)
+            added.Add(GetWireColorName(color));
+        else
+            removed.Add(color);
     }
 
     private static void AddPaintChange(List<string> changes, byte paintId,
@@ -138,6 +160,46 @@ internal static class TileStateDescriptorService
             BlockType.Solid => GetLocalized("TileShapes.Solid"),
             _ => null,
         };
+    }
+
+    /// <summary>
+    /// Formats existing actuator on a tile as "actuator on" or "actuator off".
+    /// Returns null if no actuator exists.
+    /// </summary>
+    /// <param name="hasActuator">Whether the tile has an actuator placed.</param>
+    /// <param name="isActuated">Whether the tile is currently actuated (inactive/phased).</param>
+    public static string? FormatExistingActuator(bool hasActuator, bool isActuated)
+    {
+        if (!hasActuator) return null;
+        // "actuator on" = tile is actuated (inactive/passable)
+        // "actuator off" = tile is solid
+        return GetLocalized(isActuated ? "TileStates.ActuatorOn" : "TileStates.ActuatorOff");
+    }
+
+    /// <summary>
+    /// Formats existing wires on a tile as "Red wire" or "Red, Blue wire".
+    /// Returns null if no wires exist.
+    /// </summary>
+    public static string? FormatExistingWires(bool redWire, bool greenWire, bool blueWire, bool yellowWire)
+    {
+        List<string> colors = new();
+        if (redWire) colors.Add(GetWireColorName("Red"));
+        if (greenWire) colors.Add(GetWireColorName("Green"));
+        if (blueWire) colors.Add(GetWireColorName("Blue"));
+        if (yellowWire) colors.Add(GetWireColorName("Yellow"));
+
+        if (colors.Count == 0) return null;
+
+        return $"{string.Join(", ", colors)} wire";
+    }
+
+    private static string GetWireColorName(string color)
+    {
+        string localized = GetLocalized($"WireColors.{color}");
+        // Fallback if localization returns the key suffix
+        if (localized == color || localized.Contains("WireColors"))
+            return color;
+        return localized;
     }
 
     private static string GetLocalized(string key)
