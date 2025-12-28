@@ -171,6 +171,12 @@ public sealed partial class InGameNarrationSystem
                     return (true, tile.TileFrameX >= 36);
                 }
 
+                // Timer (TileID 144): frameY 0 = OFF, frameY 18 = ON (ticking)
+                if (tile.TileType == TileID.Timers)
+                {
+                    return (true, tile.TileFrameY != 0);
+                }
+
                 return (false, false);
             }
 

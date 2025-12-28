@@ -168,7 +168,7 @@ internal sealed class CursorDescriptorService
     }
 
     /// <summary>
-    /// Gets the on/off state label for toggleable tiles like levers and switches.
+    /// Gets the on/off state label for toggleable tiles like levers, switches, and timers.
     /// </summary>
     private static string? GetToggleStateLabel(Tile tile)
     {
@@ -186,6 +186,15 @@ internal sealed class CursorDescriptorService
             bool isOn = tile.TileFrameX >= 36;
             return GetLocalizedWithFallback(
                 isOn ? "Mods.ScreenReaderMod.TileStates.LeverOn" : "Mods.ScreenReaderMod.TileStates.LeverOff",
+                isOn ? "on" : "off");
+        }
+
+        // Timer (TileID 144): 1x1 tile, frameY toggles between 0 (OFF) and 18 (ON/ticking)
+        if (tileType == TileID.Timers)
+        {
+            bool isOn = tile.TileFrameY != 0;
+            return GetLocalizedWithFallback(
+                isOn ? "Mods.ScreenReaderMod.TileStates.TimerOn" : "Mods.ScreenReaderMod.TileStates.TimerOff",
                 isOn ? "on" : "off");
         }
 
@@ -215,6 +224,12 @@ internal sealed class CursorDescriptorService
         if (tileType == TileID.Lever)
         {
             bool isOn = tile.TileFrameX >= 36;
+            return isOn ? (baseKey | 0x10000) : baseKey;
+        }
+
+        if (tileType == TileID.Timers)
+        {
+            bool isOn = tile.TileFrameY != 0;
             return isOn ? (baseKey | 0x10000) : baseKey;
         }
 

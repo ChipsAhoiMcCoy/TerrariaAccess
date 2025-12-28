@@ -42,6 +42,7 @@ public sealed partial class InGameNarrationSystem
         private static readonly FocusTracker _focusTracker = new();
         private SlotFocus? _currentFocus;
         private string? _lastFocusKey;
+        private ItemIdentity _lastAnnouncedItemIdentity;
         private bool _wasInventoryOpen;
         private int _lastChestIndex = -1;
         private const UiNarrationArea InventoryNarrationAreas =
@@ -353,6 +354,7 @@ public sealed partial class InGameNarrationSystem
             int slotSignature = ComputeSlotSignature(target.Focus);
             if (TryAnnounceCue(NarrationCue.ForItem(target.Identity, combined, target.Location, target.NormalizedTooltip, details, slotSignature), focus: target.Focus))
             {
+                _lastAnnouncedItemIdentity = target.Identity;
                 _narrationHistory.Reset(NarrationKind.EmptySlot);
                 _narrationHistory.Reset(NarrationKind.Tooltip);
             }
@@ -434,8 +436,16 @@ public sealed partial class InGameNarrationSystem
                 return;
             }
 
+            // Suppress tooltip if we just announced this exact item via HoverItem path
+            // This prevents repeated announcements when focus alternates between valid/invalid
+            if (!target.Identity.IsAir && target.Identity.Equals(_lastAnnouncedItemIdentity))
+            {
+                return;
+            }
+
             if (TryAnnounceCue(NarrationCue.ForTooltip(target.NormalizedTooltip)))
             {
+                _lastAnnouncedItemIdentity = target.Identity;
                 ResetHoverSlotCues();
             }
         }
@@ -497,6 +507,7 @@ public sealed partial class InGameNarrationSystem
             _inGameUiTracker.Reset();
             UiAreaNarrationContext.Clear();
             _lastFocusKey = null;
+            _lastAnnouncedItemIdentity = default;
             _inventoryOpenGraceFrames = 0;
             _lastChestIndex = -1;
         }
@@ -518,6 +529,14 @@ public sealed partial class InGameNarrationSystem
 
         private static void OnInventoryJustClosed()
         {
+            // Reset crafting UI state to prevent stale state from affecting navigation
+            // when inventory reopens. Without this, Main.recBigList can remain true
+            // if the user closed inventory while on the recipe grid (page 10), causing
+            // UILinkPointNavigator to incorrectly select page 10 instead of page 0
+            // on the next inventory open.
+            Main.recBigList = false;
+            Main.recStart = 0;
+
             // Notify other narrators (like HotbarNarrator) that inventory has closed
             // so they can apply grace periods to prevent double-announcements
             InventoryClosed?.Invoke();

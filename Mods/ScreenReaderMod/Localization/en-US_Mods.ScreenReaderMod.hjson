@@ -136,6 +136,8 @@ Mods: {
 			SwitchOff: off
 			LeverOn: on
 			LeverOff: off
+			TimerOn: on
+			TimerOff: off
 			ToggledOn: on
 			ToggledOff: off
 		}
@@ -146,6 +148,23 @@ Mods: {
 			Blue: Blue
 			Yellow: Yellow
 			WireSuffix: wire
+		}
+
+		WireColorMenu: {
+			Open: Wire Color Picker
+			Closed: Wire menu closed
+			RedOn: Red on
+			RedOff: Red off
+			GreenOn: Green on
+			GreenOff: Green off
+			BlueOn: Blue on
+			BlueOff: Blue off
+			YellowOn: Yellow on
+			YellowOff: Yellow off
+			CutterOn: Wire Cutter on
+			CutterOff: Wire Cutter off
+			ActuatorOn: Actuator on
+			ActuatorOff: Actuator off
 		}
 
 		PaintColors: {

@@ -47,7 +47,7 @@ public sealed partial class InGameNarrationSystem
         private bool _lastSmartCursorEnabled;
         private string? _pendingStatePrefix;
         private bool _suppressCursorAnnouncement;
-        private bool _lastIsLeverOn;
+        private bool _lastIsToggleOn;
 
         public SmartCursorNarrator(CursorDescriptorService descriptorService)
         {
@@ -134,7 +134,7 @@ public sealed partial class InGameNarrationSystem
             _lastInteractTileType = -1;
             _lastCursorTileType = -1;
             _lastCursorAnnouncementKey = int.MinValue;
-            _lastIsLeverOn = false;
+            _lastIsToggleOn = false;
         }
 
         private void Reset()
@@ -252,14 +252,14 @@ public sealed partial class InGameNarrationSystem
             {
                 Tile tile = Main.tile[tileX, tileY];
 
-                // Check for lever state changes at the same position
-                (bool isLever, bool leverIsOn) = GetLeverState(tile);
+                // Check for toggle state changes at the same position (levers, timers)
+                (bool isToggleable, bool isOn) = GetToggleState(tile);
                 bool samePosition = tileX == _lastTileX && tileY == _lastTileY;
-                if (isLever && samePosition && leverIsOn != _lastIsLeverOn)
+                if (isToggleable && samePosition && isOn != _lastIsToggleOn)
                 {
-                    _lastIsLeverOn = leverIsOn;
+                    _lastIsToggleOn = isOn;
                     category = AnnouncementCategory.Tile;
-                    return leverIsOn ? "on" : "off";
+                    return isOn ? "on" : "off";
                 }
 
                 if (!_descriptorService.TryDescribe(tileX, tileY, out var descriptor))
@@ -282,7 +282,7 @@ public sealed partial class InGameNarrationSystem
                 _lastNpc = -1;
                 _lastProj = -1;
                 _lastInteractTileType = descriptor.TileType;
-                _lastIsLeverOn = leverIsOn;
+                _lastIsToggleOn = isOn;
 
                 if (!string.IsNullOrWhiteSpace(descriptor.Name))
                 {
@@ -320,14 +320,14 @@ public sealed partial class InGameNarrationSystem
 
             Tile tile = Main.tile[tileX, tileY];
 
-            // Check for lever state changes at the same position
-            (bool isLever, bool leverIsOn) = GetLeverState(tile);
+            // Check for toggle state changes at the same position (levers, timers)
+            (bool isToggleable, bool isOn) = GetToggleState(tile);
             bool samePosition = tileX == _lastTileX && tileY == _lastTileY;
-            if (isLever && samePosition && leverIsOn != _lastIsLeverOn)
+            if (isToggleable && samePosition && isOn != _lastIsToggleOn)
             {
-                _lastIsLeverOn = leverIsOn;
+                _lastIsToggleOn = isOn;
                 category = AnnouncementCategory.Tile;
-                return leverIsOn ? "on" : "off";
+                return isOn ? "on" : "off";
             }
 
             int announcementKey = CursorDescriptorService.ResolveAnnouncementKey(descriptor.TileType, tile);
@@ -347,7 +347,7 @@ public sealed partial class InGameNarrationSystem
             _lastProj = -1;
             _lastCursorTileType = descriptor.TileType;
             _lastCursorAnnouncementKey = announcementKey;
-            _lastIsLeverOn = leverIsOn;
+            _lastIsToggleOn = isOn;
 
             if (string.IsNullOrWhiteSpace(descriptor.Name))
             {
@@ -443,18 +443,29 @@ public sealed partial class InGameNarrationSystem
         }
 
         /// <summary>
-        /// Gets the lever state for a tile. Returns (isLever, isOn).
-        /// Only levers are tracked - switches are simple buttons.
+        /// Gets the toggle state for a tile. Returns (isToggleable, isOn).
+        /// Only levers and timers are tracked - switches are simple buttons.
         /// </summary>
-        private static (bool isLever, bool isOn) GetLeverState(Tile tile)
+        private static (bool isToggleable, bool isOn) GetToggleState(Tile tile)
         {
-            if (!tile.HasTile || tile.TileType != TileID.Lever)
+            if (!tile.HasTile)
             {
                 return (false, false);
             }
 
             // Lever (TileID 132): frameX 0-35 = OFF, frameX 36+ = ON
-            return (true, tile.TileFrameX >= 36);
+            if (tile.TileType == TileID.Lever)
+            {
+                return (true, tile.TileFrameX >= 36);
+            }
+
+            // Timer (TileID 144): frameY 0 = OFF, frameY 18 = ON (ticking)
+            if (tile.TileType == TileID.Timers)
+            {
+                return (true, tile.TileFrameY != 0);
+            }
+
+            return (false, false);
         }
 
         private static string GetLocalized(string key)
