@@ -118,6 +118,12 @@ internal sealed class CursorDescriptorService
 
         OverrideChestName(tileX, tileY, tileType, ref name);
 
+        string? shapeDescriptor = GetTileShapeDescriptor(tile);
+        if (!string.IsNullOrEmpty(shapeDescriptor))
+        {
+            name = $"{name}, {shapeDescriptor}";
+        }
+
         descriptor = BuildDescriptor(tileType, name);
         return true;
     }
@@ -456,6 +462,39 @@ internal sealed class CursorDescriptorService
         }
 
         return string.IsNullOrWhiteSpace(cleaned) ? name : cleaned;
+    }
+
+    private static string? GetTileShapeDescriptor(Tile tile)
+    {
+        if (!tile.HasTile)
+        {
+            return null;
+        }
+
+        if (tile.IsHalfBlock)
+        {
+            return GetLocalizedWithFallback("Mods.ScreenReaderMod.TileShapes.HalfBlock", "half block");
+        }
+
+        return tile.Slope switch
+        {
+            SlopeType.SlopeDownLeft => GetLocalizedWithFallback("Mods.ScreenReaderMod.TileShapes.SlopeDownLeft", "sloped down-left"),
+            SlopeType.SlopeDownRight => GetLocalizedWithFallback("Mods.ScreenReaderMod.TileShapes.SlopeDownRight", "sloped down-right"),
+            SlopeType.SlopeUpLeft => GetLocalizedWithFallback("Mods.ScreenReaderMod.TileShapes.SlopeUpLeft", "sloped up-left"),
+            SlopeType.SlopeUpRight => GetLocalizedWithFallback("Mods.ScreenReaderMod.TileShapes.SlopeUpRight", "sloped up-right"),
+            _ => null,
+        };
+    }
+
+    private static string GetLocalizedWithFallback(string key, string fallback)
+    {
+        string value = Language.GetTextValue(key);
+        if (string.IsNullOrWhiteSpace(value) || string.Equals(value, key, StringComparison.Ordinal))
+        {
+            return fallback;
+        }
+
+        return value;
     }
 
     internal static bool IsLikelyPlayerChat(string text)

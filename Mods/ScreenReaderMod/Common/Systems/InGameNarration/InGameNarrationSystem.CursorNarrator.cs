@@ -53,12 +53,141 @@ public sealed partial class InGameNarrationSystem
         private static bool _suppressNextAnnouncement;
         private string? _lastTileAnnouncementName;
         private int _lastTileAnnouncementKey = int.MinValue;
+        private TileContentSignature _lastTileContentSignature;
+        private TileStateSignature _lastTileStateSignature;
 
         private enum PlayerBodyPart
         {
             Head,
             Torso,
             Legs
+        }
+
+        private readonly struct TileContentSignature : IEquatable<TileContentSignature>
+        {
+            public readonly bool HasTile;
+            public readonly ushort TileType;
+            public readonly byte LiquidType;
+            public readonly ushort WallType;
+
+            public TileContentSignature(int tileX, int tileY)
+            {
+                if (!WorldGen.InWorld(tileX, tileY, 1))
+                {
+                    HasTile = false;
+                    TileType = 0;
+                    LiquidType = 0;
+                    WallType = 0;
+                    return;
+                }
+
+                Tile tile = Main.tile[tileX, tileY];
+                HasTile = tile.HasTile;
+                TileType = HasTile ? tile.TileType : (ushort)0;
+                LiquidType = (byte)tile.LiquidType;
+                WallType = tile.WallType;
+            }
+
+            public bool Equals(TileContentSignature other) =>
+                HasTile == other.HasTile && TileType == other.TileType &&
+                LiquidType == other.LiquidType && WallType == other.WallType;
+
+            public override bool Equals(object? obj) => obj is TileContentSignature other && Equals(other);
+            public override int GetHashCode() => HashCode.Combine(HasTile, TileType, LiquidType, WallType);
+            public static bool operator ==(TileContentSignature left, TileContentSignature right) => left.Equals(right);
+            public static bool operator !=(TileContentSignature left, TileContentSignature right) => !left.Equals(right);
+        }
+
+        private readonly struct TileStateSignature : IEquatable<TileStateSignature>
+        {
+            public readonly BlockType BlockType;
+            public readonly bool IsActuated;
+            public readonly bool HasActuator;
+            public readonly bool RedWire;
+            public readonly bool GreenWire;
+            public readonly bool BlueWire;
+            public readonly bool YellowWire;
+            public readonly byte TileColor;
+            public readonly byte WallColor;
+            public readonly bool IsTileInvisible;
+            public readonly bool IsWallInvisible;
+            public readonly bool IsTileFullbright;
+            public readonly bool IsWallFullbright;
+
+            public TileStateSignature(int tileX, int tileY)
+            {
+                if (!WorldGen.InWorld(tileX, tileY, 1))
+                {
+                    BlockType = BlockType.Solid;
+                    IsActuated = false;
+                    HasActuator = false;
+                    RedWire = false;
+                    GreenWire = false;
+                    BlueWire = false;
+                    YellowWire = false;
+                    TileColor = 0;
+                    WallColor = 0;
+                    IsTileInvisible = false;
+                    IsWallInvisible = false;
+                    IsTileFullbright = false;
+                    IsWallFullbright = false;
+                    return;
+                }
+
+                Tile tile = Main.tile[tileX, tileY];
+                BlockType = tile.HasTile ? tile.BlockType : BlockType.Solid;
+                IsActuated = tile.IsActuated;
+                HasActuator = tile.HasActuator;
+                RedWire = tile.RedWire;
+                GreenWire = tile.GreenWire;
+                BlueWire = tile.BlueWire;
+                YellowWire = tile.YellowWire;
+                TileColor = tile.TileColor;
+                WallColor = tile.WallColor;
+                IsTileInvisible = tile.IsTileInvisible;
+                IsWallInvisible = tile.IsWallInvisible;
+                IsTileFullbright = tile.IsTileFullbright;
+                IsWallFullbright = tile.IsWallFullbright;
+            }
+
+            public bool Equals(TileStateSignature other) =>
+                BlockType == other.BlockType &&
+                IsActuated == other.IsActuated &&
+                HasActuator == other.HasActuator &&
+                RedWire == other.RedWire &&
+                GreenWire == other.GreenWire &&
+                BlueWire == other.BlueWire &&
+                YellowWire == other.YellowWire &&
+                TileColor == other.TileColor &&
+                WallColor == other.WallColor &&
+                IsTileInvisible == other.IsTileInvisible &&
+                IsWallInvisible == other.IsWallInvisible &&
+                IsTileFullbright == other.IsTileFullbright &&
+                IsWallFullbright == other.IsWallFullbright;
+
+            public override bool Equals(object? obj) => obj is TileStateSignature other && Equals(other);
+
+            public override int GetHashCode()
+            {
+                HashCode hash = new();
+                hash.Add(BlockType);
+                hash.Add(IsActuated);
+                hash.Add(HasActuator);
+                hash.Add(RedWire);
+                hash.Add(GreenWire);
+                hash.Add(BlueWire);
+                hash.Add(YellowWire);
+                hash.Add(TileColor);
+                hash.Add(WallColor);
+                hash.Add(IsTileInvisible);
+                hash.Add(IsWallInvisible);
+                hash.Add(IsTileFullbright);
+                hash.Add(IsWallFullbright);
+                return hash.ToHashCode();
+            }
+
+            public static bool operator ==(TileStateSignature left, TileStateSignature right) => left.Equals(right);
+            public static bool operator !=(TileStateSignature left, TileStateSignature right) => !left.Equals(right);
         }
 
         public CursorNarrator(CursorDescriptorService descriptorService)
@@ -147,6 +276,8 @@ public sealed partial class InGameNarrationSystem
 
                 _lastTileX = tileX;
                 _lastTileY = tileY;
+                _lastTileContentSignature = new TileContentSignature(tileX, tileY);
+                _lastTileStateSignature = new TileStateSignature(tileX, tileY);
             }
 
             bool hoveringPlayer = IsHoveringPlayer(player, cursorWorld);
@@ -155,7 +286,12 @@ public sealed partial class InGameNarrationSystem
                 hoveringPlayer = false;
             }
 
-            if (!PlayerInput.UsingGamepad && !DpadVirtualizationSystem.AreDpadKeysHeld())
+            TileContentSignature currentSignature = new TileContentSignature(tileX, tileY);
+            TileStateSignature currentStateSignature = new TileStateSignature(tileX, tileY);
+            bool contentChanged = !tileChanged && currentSignature != _lastTileContentSignature;
+            bool stateOnlyChanged = !tileChanged && !contentChanged && currentStateSignature != _lastTileStateSignature;
+
+            if (!PlayerInput.UsingGamepad && !DpadVirtualizationSystem.AreDpadKeysHeld() && !contentChanged && !stateOnlyChanged)
             {
                 _wasHoveringPlayer = hoveringPlayer;
                 return;
@@ -179,11 +315,39 @@ public sealed partial class InGameNarrationSystem
             _wasHoveringPlayer = false;
             _lastHoveredBodyPart = null;
 
-            bool shouldAnnounceTile = tileChanged || wasHoveringPlayer;
+            // Handle state-only changes (e.g., slope changed, wire added, paint applied)
+            if (stateOnlyChanged)
+            {
+                List<string> stateChanges = TileStateDescriptorService.GetStateChanges(
+                    _lastTileStateSignature.BlockType, _lastTileStateSignature.IsActuated, _lastTileStateSignature.HasActuator,
+                    _lastTileStateSignature.RedWire, _lastTileStateSignature.GreenWire, _lastTileStateSignature.BlueWire, _lastTileStateSignature.YellowWire,
+                    _lastTileStateSignature.TileColor, _lastTileStateSignature.WallColor,
+                    _lastTileStateSignature.IsTileInvisible, _lastTileStateSignature.IsWallInvisible,
+                    _lastTileStateSignature.IsTileFullbright, _lastTileStateSignature.IsWallFullbright,
+                    currentStateSignature.BlockType, currentStateSignature.IsActuated, currentStateSignature.HasActuator,
+                    currentStateSignature.RedWire, currentStateSignature.GreenWire, currentStateSignature.BlueWire, currentStateSignature.YellowWire,
+                    currentStateSignature.TileColor, currentStateSignature.WallColor,
+                    currentStateSignature.IsTileInvisible, currentStateSignature.IsWallInvisible,
+                    currentStateSignature.IsTileFullbright, currentStateSignature.IsWallFullbright);
+
+                if (stateChanges.Count > 0)
+                {
+                    string stateMessage = string.Join(", ", stateChanges);
+                    AnnounceCursorMessage(stateMessage, force: true, category: AnnouncementCategory.Tile);
+                }
+
+                _lastTileStateSignature = currentStateSignature;
+                return;
+            }
+
+            bool shouldAnnounceTile = tileChanged || wasHoveringPlayer || contentChanged;
             if (!shouldAnnounceTile)
             {
                 return;
             }
+
+            _lastTileContentSignature = currentSignature;
+            _lastTileStateSignature = currentStateSignature;
 
             string coordinates = smartCursorActive ? string.Empty : BuildCoordinateMessage(tileX, tileY);
 
@@ -265,6 +429,8 @@ public sealed partial class InGameNarrationSystem
             _originTileY = int.MinValue;
             _lastTileAnnouncementName = null;
             _lastTileAnnouncementKey = int.MinValue;
+            _lastTileContentSignature = default;
+            _lastTileStateSignature = default;
         }
 
         private static bool IsHoveringPlayer(Player player, Vector2 cursorWorld)

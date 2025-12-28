@@ -95,6 +95,76 @@ Mods: {
 			Honey: Honey
 		}
 
+		TileShapes: {
+			Solid: solid
+			HalfBlock: half block
+			SlopeDownLeft: sloped down-left
+			SlopeDownRight: sloped down-right
+			SlopeUpLeft: sloped up-left
+			SlopeUpRight: sloped up-right
+		}
+
+		TileStates: {
+			Actuated: actuated
+			Unactuated: unactuated
+			ActuatorPlaced: actuator placed
+			ActuatorRemoved: actuator removed
+			RedWireAdded: red wire added
+			RedWireRemoved: red wire removed
+			GreenWireAdded: green wire added
+			GreenWireRemoved: green wire removed
+			BlueWireAdded: blue wire added
+			BlueWireRemoved: blue wire removed
+			YellowWireAdded: yellow wire added
+			YellowWireRemoved: yellow wire removed
+			PaintedFormat: painted {0}
+			PaintRemoved: paint removed
+			WallPaintedFormat: wall painted {0}
+			WallPaintRemoved: wall paint removed
+			EchoCoatingApplied: echo coating applied
+			EchoCoatingRemoved: echo coating removed
+			GlowPaintApplied: glow paint applied
+			GlowPaintRemoved: glow paint removed
+			WallEchoCoatingApplied: wall echo coating applied
+			WallEchoCoatingRemoved: wall echo coating removed
+			WallGlowPaintApplied: wall glow paint applied
+			WallGlowPaintRemoved: wall glow paint removed
+		}
+
+		PaintColors: {
+			Red: red
+			Orange: orange
+			Yellow: yellow
+			Lime: lime
+			Green: green
+			Teal: teal
+			Cyan: cyan
+			SkyBlue: sky blue
+			Blue: blue
+			Purple: purple
+			Violet: violet
+			Pink: pink
+			DeepRed: deep red
+			DeepOrange: deep orange
+			DeepYellow: deep yellow
+			DeepLime: deep lime
+			DeepGreen: deep green
+			DeepTeal: deep teal
+			DeepCyan: deep cyan
+			DeepSkyBlue: deep sky blue
+			DeepBlue: deep blue
+			DeepPurple: deep purple
+			DeepViolet: deep violet
+			DeepPink: deep pink
+			Black: black
+			White: white
+			Gray: gray
+			Brown: brown
+			Shadow: shadow
+			Negative: negative
+			Illuminant: illuminant
+		}
+
 		ControlsMenu: {
 			Opened: Controls menu.
 			RebindingPrompt: Press the key or button to assign.
