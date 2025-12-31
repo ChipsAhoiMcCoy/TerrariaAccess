@@ -23,7 +23,9 @@ public sealed partial class GuidanceSystem
         Npc,
         Player,
         Waypoint,
-        DroppedItem
+        DroppedItem,
+        Critter,
+        Plantlife
     }
 
     private static SelectionMode _selectionMode = SelectionMode.None;
@@ -33,7 +35,28 @@ public sealed partial class GuidanceSystem
     private static int _selectedInteractableIndex = -1;
     private static int _selectedExplorationIndex = -1;
     private static int _selectedDroppedItemIndex = -1;
+    private static int _selectedCritterIndex = -1;
+    private static int _selectedPlantlifeIndex = -1;
     private static ExplorationTargetRegistry.ExplorationTarget? _lastExplorationSelection;
+
+    // Sweep state for "All" mode pinging
+    private static readonly List<SweepTarget> SweepOrder = new();
+    private static int _sweepCursor;
+    private static int _nextSweepFrame;
+    private const int SweepIntervalFrames = 10;
+    private const int SweepCycleDelayFrames = 54;
+
+    private readonly struct SweepTarget
+    {
+        public readonly Vector2 WorldPosition;
+        public readonly float DistanceTiles;
+
+        public SweepTarget(Vector2 worldPosition, float distanceTiles)
+        {
+            WorldPosition = worldPosition;
+            DistanceTiles = distanceTiles;
+        }
+    }
     private static SelectionMode _categoryAnnouncementMode = SelectionMode.None;
     private static bool _categoryAnnouncementPending;
     private static ProximityTargetKey _activeProximityTarget = new(SelectionMode.None, -1);
@@ -87,14 +110,21 @@ public sealed partial class GuidanceSystem
         NearbyInteractables.Clear();
         NearbyExplorationTargets.Clear();
         NearbyDroppedItems.Clear();
+        NearbyCritters.Clear();
+        NearbyPlantlife.Clear();
         _selectedIndex = -1;
         _selectedNpcIndex = -1;
         _selectedPlayerIndex = -1;
         _selectedInteractableIndex = -1;
         _selectedExplorationIndex = -1;
         _selectedDroppedItemIndex = -1;
+        _selectedCritterIndex = -1;
+        _selectedPlantlifeIndex = -1;
         _lastExplorationSelection = null;
         _selectionMode = SelectionMode.None;
+        SweepOrder.Clear();
+        _sweepCursor = 0;
+        _nextSweepFrame = 0;
         ResetProximityProgress();
         ClearCategoryAnnouncement();
         _nextPingUpdateFrame = -1;

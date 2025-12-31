@@ -142,6 +142,12 @@ Mods: {
 			ToggledOff: off
 		}
 
+		HerbStages: {
+			Immature: immature
+			Mature: mature
+			Blooming: blooming
+		}
+
 		WireColors: {
 			Red: Red
 			Green: Green

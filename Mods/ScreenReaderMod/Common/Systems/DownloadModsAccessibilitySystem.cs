@@ -554,106 +554,14 @@ public sealed class DownloadModsAccessibilitySystem : ModSystem
         }
         _previousModCount = currentModCount;
 
-        // Create all link points
+        // Create all link points but leave them UNLINKED
+        // This prevents native UILinkPointNavigator from handling D-pad navigation,
+        // allowing our manual navigation code to be the sole handler (preventing double-movement)
         foreach (PointBinding binding in bindings)
         {
             UILinkPoint linkPoint = EnsureLinkPoint(binding.Id);
             UILinkPointNavigator.SetPosition(binding.Id, binding.Position);
-            linkPoint.Unlink();
-        }
-
-        // Connect filter buttons horizontally (no escape to back button - only mod list can reach back)
-        for (int i = 0; i < filterBindings.Count - 1; i++)
-        {
-            ConnectHorizontal(filterBindings[i], filterBindings[i + 1]);
-        }
-
-        // Connect mod items vertically
-        for (int i = 0; i < modBindings.Count - 1; i++)
-        {
-            ConnectVertical(modBindings[i], modBindings[i + 1]);
-        }
-
-        // Mod items no longer escape left to back button - use down at bottom instead
-
-        // Connect top action buttons horizontally
-        for (int i = 0; i < topActionBindings.Count - 1; i++)
-        {
-            ConnectHorizontal(topActionBindings[i], topActionBindings[i + 1]);
-        }
-
-        // Connect bottom action buttons horizontally
-        for (int i = 0; i < bottomActionBindings.Count - 1; i++)
-        {
-            ConnectHorizontal(bottomActionBindings[i], bottomActionBindings[i + 1]);
-        }
-
-        // Connect filter row down to first mod item or top action buttons
-        if (filterBindings.Count > 0)
-        {
-            if (modBindings.Count > 0)
-            {
-                foreach (var filter in filterBindings)
-                {
-                    UILinkPoint filterPoint = EnsureLinkPoint(filter.Id);
-                    filterPoint.Down = modBindings[0].Id;
-                }
-                UILinkPoint firstModPoint = EnsureLinkPoint(modBindings[0].Id);
-                firstModPoint.Up = filterBindings[filterBindings.Count / 2].Id;
-            }
-            else if (topActionBindings.Count > 0)
-            {
-                foreach (var filter in filterBindings)
-                {
-                    UILinkPoint filterPoint = EnsureLinkPoint(filter.Id);
-                    filterPoint.Down = topActionBindings[0].Id;
-                }
-            }
-        }
-
-        // Connect last mod item down to bottom action buttons (Back, etc.)
-        if (modBindings.Count > 0 && bottomActionBindings.Count > 0)
-        {
-            UILinkPoint lastModPoint = EnsureLinkPoint(modBindings[^1].Id);
-            lastModPoint.Down = bottomActionBindings[0].Id;
-
-            foreach (var action in bottomActionBindings)
-            {
-                UILinkPoint actionPoint = EnsureLinkPoint(action.Id);
-                actionPoint.Up = modBindings[^1].Id;
-            }
-        }
-
-        // Connect top action buttons down to bottom action buttons
-        if (topActionBindings.Count > 0 && bottomActionBindings.Count > 0)
-        {
-            for (int i = 0; i < topActionBindings.Count; i++)
-            {
-                UILinkPoint topPoint = EnsureLinkPoint(topActionBindings[i].Id);
-                topPoint.Down = bottomActionBindings[Math.Min(i, bottomActionBindings.Count - 1)].Id;
-            }
-
-            for (int i = 0; i < bottomActionBindings.Count; i++)
-            {
-                UILinkPoint bottomPoint = EnsureLinkPoint(bottomActionBindings[i].Id);
-                bottomPoint.Up = topActionBindings[Math.Min(i, topActionBindings.Count - 1)].Id;
-            }
-        }
-
-        // If no mod items, connect filter directly to top action
-        if (modBindings.Count == 0 && filterBindings.Count > 0 && topActionBindings.Count > 0)
-        {
-            foreach (var filter in filterBindings)
-            {
-                UILinkPoint filterPoint = EnsureLinkPoint(filter.Id);
-                filterPoint.Down = topActionBindings[0].Id;
-            }
-
-            foreach (var action in topActionBindings)
-            {
-                UILinkPoint actionPoint = EnsureLinkPoint(action.Id);
-                actionPoint.Up = filterBindings[filterBindings.Count / 2].Id;
-            }
+            linkPoint.Unlink(); // Keep all points unlinked - our manual navigation handles movement
         }
 
         UILinkPointNavigator.Shortcuts.BackButtonCommand = 7;
@@ -911,30 +819,6 @@ public sealed class DownloadModsAccessibilitySystem : ModSystem
         string direction = leftPressed ? "LEFT" : rightPressed ? "RIGHT" : upPressed ? "UP" : "DOWN";
         ScreenReaderMod.Instance?.Logger.Debug($"[DownloadMods] Input: {direction}, current region: {_currentRegion}, index: {_currentFocusIndex}");
 
-        // Only sync from UILinkPointNavigator if we haven't initialized yet
-        int currentPoint = UILinkPointNavigator.CurrentPoint;
-        if (currentPoint < BaseLinkId || _currentFocusIndex < 0)
-        {
-            // Not our point or not initialized, force to first mod item or first available binding
-            if (ModBindingsList.Count > 0)
-            {
-                _currentRegion = FocusRegion.ModList;
-                _currentFocusIndex = 0;
-                int newPoint = ModBindingsList[0].Id;
-                UILinkPointNavigator.ChangePoint(newPoint);
-                ScreenReaderMod.Instance?.Logger.Info($"[DownloadMods] Force focus to mod list, point {newPoint}");
-            }
-            else if (BottomActionBindingsList.Count > 0)
-            {
-                _currentRegion = FocusRegion.BottomActionButtons;
-                _currentFocusIndex = 0;
-                int newPoint = BottomActionBindingsList[0].Id;
-                UILinkPointNavigator.ChangePoint(newPoint);
-                ScreenReaderMod.Instance?.Logger.Info($"[DownloadMods] Force focus to back button, point {newPoint}");
-            }
-            return;
-        }
-
         // Process navigation
         bool navigated = false;
 
@@ -1062,14 +946,21 @@ public sealed class DownloadModsAccessibilitySystem : ModSystem
         float rightStickY = PlayerInput.GamepadThumbstickRight.Y;
         const float scrollThreshold = 0.1f;
 
-        // Apply scroll if stick is deflected
-        if (Math.Abs(rightStickY) >= scrollThreshold)
+        // Only process scroll if right stick is actually being used
+        bool isActivelyScrolling = Math.Abs(rightStickY) >= scrollThreshold;
+
+        if (!isActivelyScrolling)
         {
-            // Scroll speed similar to vanilla (16 pixels per frame at full deflection)
-            // Negative because stick up (positive Y) should scroll up (decrease ViewPosition)
-            float scrollAmount = -rightStickY * 16f;
-            scrollbar.ViewPosition += scrollAmount;
+            // Not scrolling - just update scroll position tracking without changing focus
+            _lastScrollPosition = scrollbar.ViewPosition;
+            return;
         }
+
+        // Apply scroll
+        // Scroll speed similar to vanilla (16 pixels per frame at full deflection)
+        // Negative because stick up (positive Y) should scroll up (decrease ViewPosition)
+        float scrollAmount = -rightStickY * 16f;
+        scrollbar.ViewPosition += scrollAmount;
 
         float currentScroll = scrollbar.ViewPosition;
 
@@ -1112,7 +1003,7 @@ public sealed class DownloadModsAccessibilitySystem : ModSystem
             index++;
         }
 
-        // If the centered mod changed, announce it
+        // If the centered mod changed, announce it (only when actively scrolling)
         if (closestModIndex >= 0 && closestModIndex != _lastScrollAnnouncedModIndex)
         {
             _lastScrollAnnouncedModIndex = closestModIndex;
@@ -1132,7 +1023,7 @@ public sealed class DownloadModsAccessibilitySystem : ModSystem
                     SoundEngine.PlaySound(SoundID.MenuTick);
                     ScreenReaderService.Announce(announcement, force: true);
 
-                    // Update the D-pad focus to match scroll position
+                    // Update the D-pad focus to match scroll position (only when actively scrolling)
                     _currentFocusIndex = closestModIndex;
                     _currentModButtonIndex = 0;
 
@@ -1182,6 +1073,94 @@ public sealed class DownloadModsAccessibilitySystem : ModSystem
             FocusRegion.BottomActionButtons => BottomActionBindingsList,
             _ => null
         };
+    }
+
+    private static void SyncRegionFromCurrentPoint(int currentPoint)
+    {
+        // Check each region to find where the current point is
+        for (int i = 0; i < FilterBindings.Count; i++)
+        {
+            if (FilterBindings[i].Id == currentPoint)
+            {
+                _currentRegion = FocusRegion.FilterButtons;
+                _currentFocusIndex = i;
+                _currentModButtonIndex = 0;
+                return;
+            }
+        }
+
+        // Check mod list - both the toggle buttons and the item buttons
+        for (int i = 0; i < ModBindingsList.Count; i++)
+        {
+            if (ModBindingsList[i].Id == currentPoint)
+            {
+                _currentRegion = FocusRegion.ModList;
+                _currentFocusIndex = i;
+                _currentModButtonIndex = 0;
+                return;
+            }
+        }
+
+        // Check mod item buttons (More Info, Update, etc.)
+        for (int i = 0; i < ModItemButtonGroups.Count; i++)
+        {
+            var buttonGroup = ModItemButtonGroups[i];
+
+            if (buttonGroup.MoreInfoId == currentPoint)
+            {
+                _currentRegion = FocusRegion.ModList;
+                _currentFocusIndex = i;
+                _currentModButtonIndex = 1;
+                return;
+            }
+            if (buttonGroup.TMLUpdateId == currentPoint)
+            {
+                _currentRegion = FocusRegion.ModList;
+                _currentFocusIndex = i;
+                _currentModButtonIndex = buttonGroup.MoreInfoId.HasValue ? 2 : 1;
+                return;
+            }
+            if (buttonGroup.UpdateId == currentPoint)
+            {
+                _currentRegion = FocusRegion.ModList;
+                _currentFocusIndex = i;
+                // Position depends on available buttons
+                int baseIndex = 1;
+                if (buttonGroup.MoreInfoId.HasValue) baseIndex++;
+                if (buttonGroup.TMLUpdateId.HasValue) baseIndex++;
+                _currentModButtonIndex = baseIndex;
+                return;
+            }
+            if (buttonGroup.UpdateWithDepsId == currentPoint)
+            {
+                _currentRegion = FocusRegion.ModList;
+                _currentFocusIndex = i;
+                _currentModButtonIndex = buttonGroup.ButtonCount - 1;
+                return;
+            }
+        }
+
+        for (int i = 0; i < TopActionBindingsList.Count; i++)
+        {
+            if (TopActionBindingsList[i].Id == currentPoint)
+            {
+                _currentRegion = FocusRegion.TopActionButtons;
+                _currentFocusIndex = i;
+                _currentModButtonIndex = 0;
+                return;
+            }
+        }
+
+        for (int i = 0; i < BottomActionBindingsList.Count; i++)
+        {
+            if (BottomActionBindingsList[i].Id == currentPoint)
+            {
+                _currentRegion = FocusRegion.BottomActionButtons;
+                _currentFocusIndex = i;
+                _currentModButtonIndex = 0;
+                return;
+            }
+        }
     }
 
     private static bool NavigateLeft()

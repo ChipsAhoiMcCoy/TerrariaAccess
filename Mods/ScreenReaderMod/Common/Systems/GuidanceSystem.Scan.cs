@@ -121,6 +121,51 @@ public sealed partial class GuidanceSystem
 
     private static readonly List<DroppedItemGuidanceEntry> NearbyDroppedItems = new();
 
+    private readonly struct CritterGuidanceEntry
+    {
+        public readonly int NpcIndex;
+        public readonly string DisplayName;
+        public readonly Vector2 WorldPosition;
+        public readonly float DistanceTiles;
+
+        public CritterGuidanceEntry(int npcIndex, string displayName, Vector2 worldPosition, float distanceTiles)
+        {
+            NpcIndex = npcIndex;
+            DisplayName = displayName;
+            WorldPosition = worldPosition;
+            DistanceTiles = distanceTiles;
+        }
+    }
+
+    private static readonly List<CritterGuidanceEntry> NearbyCritters = new();
+
+    private readonly struct PlantlifeGuidanceEntry
+    {
+        public readonly Point Anchor;
+        public readonly string DisplayName;
+        public readonly Vector2 WorldPosition;
+        public readonly float DistanceTiles;
+
+        public PlantlifeGuidanceEntry(Point anchor, string displayName, Vector2 worldPosition, float distanceTiles)
+        {
+            Anchor = anchor;
+            DisplayName = displayName;
+            WorldPosition = worldPosition;
+            DistanceTiles = distanceTiles;
+        }
+    }
+
+    private static readonly List<PlantlifeGuidanceEntry> NearbyPlantlife = new();
+    private static readonly HashSet<Point> PlantlifeAnchorScratch = new();
+
+    private static readonly int[] PlantlifeTileTypes =
+    {
+        TileID.MatureHerbs,
+        TileID.BloomingHerbs,
+        TileID.MushroomPlants,
+        TileID.DyePlants
+    };
+
     private static Dictionary<int, List<InteractableDefinition>> BuildInteractableDefinitionMap()
     {
         Dictionary<int, List<InteractableDefinition>> map = new();
@@ -724,9 +769,10 @@ public sealed partial class GuidanceSystem
             }
         }
 
-        if (_selectedDroppedItemIndex < 0 || _selectedDroppedItemIndex >= NearbyDroppedItems.Count)
+        // Preserve "All" mode (-1) for categories that support it; only clamp out-of-bounds positive indices
+        if (_selectedDroppedItemIndex >= NearbyDroppedItems.Count)
         {
-            _selectedDroppedItemIndex = 0;
+            _selectedDroppedItemIndex = NearbyDroppedItems.Count - 1;
         }
     }
 
@@ -739,5 +785,212 @@ public sealed partial class GuidanceSystem
         }
 
         return item.stack > 1 ? $"{item.stack} {name}" : name;
+    }
+
+    private static void RefreshCritterEntries(Player player)
+    {
+        int preservedNpcIndex = -1;
+        if (_selectedCritterIndex >= 0 && _selectedCritterIndex < NearbyCritters.Count)
+        {
+            preservedNpcIndex = NearbyCritters[_selectedCritterIndex].NpcIndex;
+        }
+
+        NearbyCritters.Clear();
+        if (player is null || !player.active)
+        {
+            _selectedCritterIndex = -1;
+            return;
+        }
+
+        Vector2 origin = player.Center;
+        for (int i = 0; i < Main.maxNPCs; i++)
+        {
+            NPC npc = Main.npc[i];
+            if (!npc.active || npc.lifeMax <= 0)
+            {
+                continue;
+            }
+
+            if (!NPCID.Sets.CountsAsCritter[npc.type])
+            {
+                continue;
+            }
+
+            float distanceTiles = Vector2.Distance(origin, npc.Center) / 16f;
+            if (distanceTiles > DistanceReferenceTiles)
+            {
+                continue;
+            }
+
+            string displayName = ResolveCritterDisplayName(npc);
+            NearbyCritters.Add(new CritterGuidanceEntry(i, displayName, npc.Center, distanceTiles));
+        }
+
+        NearbyCritters.Sort((left, right) => left.DistanceTiles.CompareTo(right.DistanceTiles));
+
+        if (NearbyCritters.Count == 0)
+        {
+            _selectedCritterIndex = -1;
+            return;
+        }
+
+        if (preservedNpcIndex >= 0)
+        {
+            int restoredIndex = NearbyCritters.FindIndex(entry => entry.NpcIndex == preservedNpcIndex);
+            if (restoredIndex >= 0)
+            {
+                _selectedCritterIndex = restoredIndex;
+                return;
+            }
+        }
+
+        // Preserve "All" mode (-1) for categories that support it; only clamp out-of-bounds positive indices
+        if (_selectedCritterIndex >= NearbyCritters.Count)
+        {
+            _selectedCritterIndex = NearbyCritters.Count - 1;
+        }
+    }
+
+    private static string ResolveCritterDisplayName(NPC npc)
+    {
+        string localized = Lang.GetNPCNameValue(npc.type);
+        return !string.IsNullOrWhiteSpace(localized) ? localized : "Critter";
+    }
+
+    private static void RefreshPlantlifeEntries(Player player)
+    {
+        bool hasPreservedAnchor = false;
+        Point preservedAnchor = Point.Zero;
+        if (_selectedPlantlifeIndex >= 0 && _selectedPlantlifeIndex < NearbyPlantlife.Count)
+        {
+            preservedAnchor = NearbyPlantlife[_selectedPlantlifeIndex].Anchor;
+            hasPreservedAnchor = true;
+        }
+
+        NearbyPlantlife.Clear();
+        PlantlifeAnchorScratch.Clear();
+
+        if (player is null || !player.active)
+        {
+            _selectedPlantlifeIndex = -1;
+            return;
+        }
+
+        Vector2 origin = player.Center;
+        int scanRadius = (int)Math.Clamp(DistanceReferenceTiles + 8f, 4f, 120f);
+        int playerTileX = (int)(origin.X / 16f);
+        int playerTileY = (int)(origin.Y / 16f);
+        int minX = Math.Max(0, playerTileX - scanRadius);
+        int maxX = Math.Min(Main.maxTilesX - 1, playerTileX + scanRadius);
+        int minY = Math.Max(0, playerTileY - scanRadius);
+        int maxY = Math.Min(Main.maxTilesY - 1, playerTileY + scanRadius);
+
+        for (int x = minX; x <= maxX; x++)
+        {
+            for (int y = minY; y <= maxY; y++)
+            {
+                Tile tile = Main.tile[x, y];
+                if (!tile.HasTile)
+                {
+                    continue;
+                }
+
+                if (Array.IndexOf(PlantlifeTileTypes, tile.TileType) < 0)
+                {
+                    continue;
+                }
+
+                Point anchor = new(x, y);
+                if (!PlantlifeAnchorScratch.Add(anchor))
+                {
+                    continue;
+                }
+
+                Vector2 worldPosition = new((x + 0.5f) * 16f, (y + 0.5f) * 16f);
+                float distanceTiles = Vector2.Distance(worldPosition, origin) / 16f;
+
+                if (distanceTiles > DistanceReferenceTiles)
+                {
+                    continue;
+                }
+
+                string displayName = ResolvePlantDisplayName(tile);
+                NearbyPlantlife.Add(new PlantlifeGuidanceEntry(anchor, displayName, worldPosition, distanceTiles));
+            }
+        }
+
+        NearbyPlantlife.Sort((left, right) => left.DistanceTiles.CompareTo(right.DistanceTiles));
+
+        if (NearbyPlantlife.Count == 0)
+        {
+            _selectedPlantlifeIndex = -1;
+            return;
+        }
+
+        if (hasPreservedAnchor)
+        {
+            int restoredIndex = NearbyPlantlife.FindIndex(entry => entry.Anchor == preservedAnchor);
+            if (restoredIndex >= 0)
+            {
+                _selectedPlantlifeIndex = restoredIndex;
+                return;
+            }
+        }
+
+        // Preserve "All" mode (-1) for categories that support it; only clamp out-of-bounds positive indices
+        if (_selectedPlantlifeIndex >= NearbyPlantlife.Count)
+        {
+            _selectedPlantlifeIndex = NearbyPlantlife.Count - 1;
+        }
+    }
+
+    private static string ResolvePlantDisplayName(Tile tile)
+    {
+        return tile.TileType switch
+        {
+            TileID.MushroomPlants => "Glowing Mushroom",
+            TileID.MatureHerbs => ResolveHerbName(tile, "Mature"),
+            TileID.BloomingHerbs => ResolveHerbName(tile, "Blooming"),
+            TileID.DyePlants => ResolveDyePlantName(tile),
+            _ => "Plant"
+        };
+    }
+
+    private static string ResolveDyePlantName(Tile tile)
+    {
+        int style = tile.TileFrameX / 34;
+        return style switch
+        {
+            0 => "Teal Mushroom",
+            1 => "Green Mushroom",
+            2 => "Sky Blue Flower",
+            3 => "Yellow Marigold",
+            4 => "Blue Berries",
+            5 => "Lime Kelp",
+            6 => "Pink Prickly Pear",
+            7 => "Orange Bloodroot",
+            8 => "Strange Plant",
+            9 => "Strange Plant",
+            10 => "Strange Plant",
+            11 => "Strange Plant",
+            _ => "Dye Plant"
+        };
+    }
+
+    private static string ResolveHerbName(Tile tile, string prefix)
+    {
+        int frameX = tile.TileFrameX / 18;
+        string herbName = frameX switch
+        {
+            0 => "Daybloom",
+            1 => "Moonglow",
+            2 => "Blinkroot",
+            3 => "Deathweed",
+            4 => "Waterleaf",
+            5 => "Fireblossom",
+            6 => "Shiverthorn",
+            _ => "Herb"
+        };
+        return $"{prefix} {herbName}";
     }
 }

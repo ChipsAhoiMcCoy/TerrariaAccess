@@ -115,8 +115,16 @@ internal sealed class CursorDescriptorService
 
         try
         {
-            int lookup = MapHelper.TileToLookup(tileType, 0);
+            int baseOption = GetPlantStyleOption(tileType, tile);
+            int lookup = MapHelper.TileToLookup(tileType, baseOption);
             name = Lang.GetMapObjectName(lookup);
+
+            // Append growth stage for herbs
+            string? growthStage = GetHerbGrowthStageLabel(tileType);
+            if (!string.IsNullOrWhiteSpace(name) && growthStage != null)
+            {
+                name = $"{name}, {growthStage}";
+            }
         }
         catch
         {
@@ -601,6 +609,36 @@ internal sealed class CursorDescriptorService
         }
 
         return value;
+    }
+
+    /// <summary>
+    /// Gets the map legend option index for plant tiles that use frame-based variants.
+    /// This allows herbs and dye plants to display their specific names (e.g., "Daybloom" instead of generic "Herbs").
+    /// </summary>
+    private static int GetPlantStyleOption(int tileType, Tile tile)
+    {
+        return tileType switch
+        {
+            TileID.ImmatureHerbs or TileID.MatureHerbs or TileID.BloomingHerbs
+                => Math.Clamp(tile.TileFrameX / 18, 0, 6),
+            TileID.DyePlants
+                => tile.TileFrameX / 34,
+            _ => 0
+        };
+    }
+
+    /// <summary>
+    /// Gets the growth stage label for herb tiles.
+    /// </summary>
+    private static string? GetHerbGrowthStageLabel(int tileType)
+    {
+        return tileType switch
+        {
+            TileID.ImmatureHerbs => GetLocalizedWithFallback("Mods.ScreenReaderMod.HerbStages.Immature", "immature"),
+            TileID.MatureHerbs => GetLocalizedWithFallback("Mods.ScreenReaderMod.HerbStages.Mature", "mature"),
+            TileID.BloomingHerbs => GetLocalizedWithFallback("Mods.ScreenReaderMod.HerbStages.Blooming", "blooming"),
+            _ => null
+        };
     }
 
     internal static bool IsLikelyPlayerChat(string text)
