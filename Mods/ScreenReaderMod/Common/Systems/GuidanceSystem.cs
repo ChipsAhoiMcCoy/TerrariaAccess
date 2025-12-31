@@ -130,6 +130,16 @@ public sealed partial class GuidanceSystem : ModSystem
 
             EnsureTargetsUpToDate(player);
 
+            // Check sweep mode FIRST for "All" selections (index = -1)
+            // This must run before TryGetCurrentTrackingTarget, which returns false for "All" modes
+            if (IsSweepModeActive())
+            {
+                _nextPingUpdateFrame = -1;
+                _arrivalAnnounced = false;
+                UpdateSweepPings(player);
+                return;
+            }
+
             if (!TryGetCurrentTrackingTarget(player, out Vector2 targetPosition, out string arrivalLabel))
             {
                 _nextPingUpdateFrame = -1;
@@ -161,13 +171,8 @@ public sealed partial class GuidanceSystem : ModSystem
             bool allowPing = IsPingEnabledForCurrentSelection();
             if (!allowPing)
             {
+                // Sweep mode already handled at start of function; just disable pinging here
                 _nextPingUpdateFrame = -1;
-
-                // Check if we should run sweep mode for "All" selections
-                if (IsSweepModeActive())
-                {
-                    UpdateSweepPings(player);
-                }
                 return;
             }
 
