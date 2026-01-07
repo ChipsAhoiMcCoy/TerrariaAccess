@@ -549,13 +549,27 @@ public sealed partial class InGameNarrationSystem : ModSystem
     }
 
     /// <summary>
-    /// Returns true if the player is holding a wiring tool (wrench, wire cutter, etc.)
-    /// that shows wire overlay when equipped.
+    /// Returns true if the player can see wires - either by holding a wiring tool
+    /// (wrench, wire cutter, etc.) or by having a Mechanical Lens or Grand Design
+    /// in their inventory.
     /// </summary>
     private static bool IsHoldingWiringTool(Player? player)
     {
-        Item? held = player?.HeldItem;
-        return held is not null && !held.IsAir && held.mech;
+        if (player is null)
+        {
+            return false;
+        }
+
+        // Check if holding a wiring tool (wrench, wire cutter, etc.)
+        Item? held = player.HeldItem;
+        if (held is not null && !held.IsAir && held.mech)
+        {
+            return true;
+        }
+
+        // Check if player has Mechanical Lens or Grand Design in inventory
+        // These items set InfoAccMechShowWires = true when in inventory
+        return player.InfoAccMechShowWires;
     }
 
     private static void HandleItemSlotHover(On_ItemSlot.orig_MouseHover_ItemArray_int_int orig, Item[] inv, int context, int slot)

@@ -49,6 +49,27 @@ public sealed partial class InGameNarrationSystem
         private bool _suppressCursorAnnouncement;
         private bool _lastIsToggleOn;
 
+        // Static pending prefix for CursorNarrator to bundle with its next announcement
+        private static string? _pendingCursorPrefix;
+
+        internal static bool TryDequeuePendingPrefix(out string prefix)
+        {
+            if (_pendingCursorPrefix is null)
+            {
+                prefix = string.Empty;
+                return false;
+            }
+
+            prefix = _pendingCursorPrefix;
+            _pendingCursorPrefix = null;
+            return true;
+        }
+
+        internal static void ClearPendingPrefix()
+        {
+            _pendingCursorPrefix = null;
+        }
+
         public SmartCursorNarrator(CursorDescriptorService descriptorService)
         {
             _descriptorService = descriptorService;
@@ -76,10 +97,16 @@ public sealed partial class InGameNarrationSystem
             {
                 if (hasSmartCursor)
                 {
-                    _pendingStatePrefix = "Smart cursor enabled";
+                    _pendingStatePrefix = LocalizationHelper.GetTextOrFallback(
+                        "Mods.ScreenReaderMod.SmartCursor.Enabled",
+                        "Smart cursor");
                 }
                 else
                 {
+                    // Set pending prefix for CursorNarrator to bundle with its first tile announcement
+                    _pendingCursorPrefix = LocalizationHelper.GetTextOrFallback(
+                        "Mods.ScreenReaderMod.SmartCursor.UnlockedCursor",
+                        "Unlocked cursor");
                     _pendingStatePrefix = null;
                     _suppressCursorAnnouncement = false;
                 }
@@ -162,6 +189,11 @@ public sealed partial class InGameNarrationSystem
 
         private static bool ShouldSuppressForMenus(Player player)
         {
+            if (AccessibleWireColorMenu.Instance.IsOpen)
+            {
+                return true;
+            }
+
             if (InventoryNarrator.IsInventoryUiOpen(player))
             {
                 return true;

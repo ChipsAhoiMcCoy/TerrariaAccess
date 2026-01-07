@@ -14,23 +14,39 @@ public sealed partial class InGameNarrationSystem
 
         public void Update()
         {
+            // If the accessible wire color menu is open, skip processing entirely.
+            // The accessible menu handles all its own announcements.
+            if (AccessibleWireColorMenu.Instance.IsOpen)
+            {
+                // Keep tracking vanilla state so we don't get confused when accessible menu closes
+                _wasOpen = false;
+                _lastToolMode = WiresUI.Settings.ToolMode;
+                return;
+            }
+
+            // Always keep _lastToolMode in sync to prevent false change detection
+            // when menus open/close or when wire placement changes ToolMode
+            WiresUI.Settings.MultiToolMode currentMode = WiresUI.Settings.ToolMode;
+
+            // Handle vanilla menu (fallback if vanilla menu somehow opens without being intercepted)
             bool isOpen = WiresUI.Open;
 
             // Menu just opened
             if (isOpen && !_wasOpen)
             {
-                _lastToolMode = WiresUI.Settings.ToolMode;
+                _lastToolMode = currentMode;
                 string openMessage = LocalizationHelper.GetTextOrFallback(
                     "Mods.ScreenReaderMod.WireColorMenu.Open",
-                    "Wire Color Picker");
+                    "Wire Menu Opened");
                 ScreenReaderService.Announce(openMessage, force: true);
                 _wasOpen = true;
                 return;
             }
 
-            // Menu just closed
+            // Menu just closed - update tracking but don't announce changes
             if (!isOpen && _wasOpen)
             {
+                _lastToolMode = currentMode;
                 string closedMessage = LocalizationHelper.GetTextOrFallback(
                     "Mods.ScreenReaderMod.WireColorMenu.Closed",
                     "Wire menu closed");
@@ -42,12 +58,17 @@ public sealed partial class InGameNarrationSystem
             // Menu is open - check for selection changes
             if (isOpen)
             {
-                WiresUI.Settings.MultiToolMode currentMode = WiresUI.Settings.ToolMode;
                 if (currentMode != _lastToolMode)
                 {
                     AnnounceChanges(_lastToolMode, currentMode);
                     _lastToolMode = currentMode;
                 }
+            }
+            else
+            {
+                // Menu is closed - silently track mode changes without announcing
+                // This prevents spurious announcements when placing wires
+                _lastToolMode = currentMode;
             }
         }
 

@@ -44,6 +44,7 @@ public sealed partial class InGameNarrationSystem
         private int _lastTileX = int.MinValue;
         private int _lastTileY = int.MinValue;
         private bool _lastSmartCursorActive;
+        private bool _justTransitionedToTileByTile;
         private bool _wasHoveringPlayer;
         private PlayerBodyPart? _lastHoveredBodyPart;
         private int _originTileX = int.MinValue;
@@ -238,7 +239,8 @@ public sealed partial class InGameNarrationSystem
                 return;
             }
 
-            if (Main.gameMenu || Main.ingameOptionsWindow || Main.InGameUI?.CurrentState is not null || PlayerInput.UsingGamepadUI)
+            if (Main.gameMenu || Main.ingameOptionsWindow || Main.InGameUI?.CurrentState is not null ||
+                PlayerInput.UsingGamepadUI || AccessibleWireColorMenu.Instance.IsOpen)
             {
                 ResetCursorFeedback();
                 return;
@@ -251,6 +253,7 @@ public sealed partial class InGameNarrationSystem
             if (_lastSmartCursorActive && !smartCursorActive && canProvideCursorFeedback)
             {
                 CenterCursorOnPlayer(player);
+                _justTransitionedToTileByTile = true;
             }
 
             _lastSmartCursorActive = smartCursorActive;
@@ -325,7 +328,7 @@ public sealed partial class InGameNarrationSystem
             bool contentChanged = !tileChanged && currentSignature != _lastTileContentSignature;
             bool stateOnlyChanged = !tileChanged && !contentChanged && currentStateSignature != _lastTileStateSignature;
 
-            if (!PlayerInput.UsingGamepad && !DpadVirtualizationSystem.AreDpadKeysHeld() && !contentChanged && !stateOnlyChanged)
+            if (!PlayerInput.UsingGamepad && !DpadVirtualizationSystem.AreDpadKeysHeld() && !contentChanged && !stateOnlyChanged && !_justTransitionedToTileByTile)
             {
                 _wasHoveringPlayer = hoveringPlayer;
                 return;
@@ -336,10 +339,11 @@ public sealed partial class InGameNarrationSystem
                 PlayerBodyPart bodyPart = GetHoveredBodyPart(player, cursorWorld);
                 bool bodyPartChanged = bodyPart != _lastHoveredBodyPart;
 
-                if (!wasHoveringPlayer || bodyPartChanged)
+                if (!wasHoveringPlayer || bodyPartChanged || _justTransitionedToTileByTile)
                 {
                     AnnouncePlayer(player, bodyPart);
                     _lastHoveredBodyPart = bodyPart;
+                    _justTransitionedToTileByTile = false;
                 }
 
                 _wasHoveringPlayer = true;
@@ -487,12 +491,14 @@ public sealed partial class InGameNarrationSystem
 
             AnnouncementCategory category = descriptor.Category;
             AnnounceCursorMessage(message, force: true, category: category);
+            _justTransitionedToTileByTile = false;
         }
 
         private void ResetAll()
         {
             ResetCursorFeedback();
             _lastSmartCursorActive = false;
+            _justTransitionedToTileByTile = false;
         }
 
         private void ResetCursorFeedback()
@@ -554,6 +560,13 @@ public sealed partial class InGameNarrationSystem
             };
 
             string announcement = $"{player.name}'s {partName}";
+
+            // Check for pending "Tile by Tile" prefix from SmartCursorNarrator
+            if (SmartCursorNarrator.TryDequeuePendingPrefix(out string smartCursorPrefix))
+            {
+                announcement = $"{smartCursorPrefix}. {announcement}";
+            }
+
             ScreenReaderService.Announce(announcement, force: true);
         }
 
@@ -595,6 +608,13 @@ public sealed partial class InGameNarrationSystem
         private static void AnnounceCursorMessage(string message, bool force, AnnouncementCategory category = AnnouncementCategory.Default)
         {
             string messageKey = NormalizeKey(message);
+
+            // Check for pending "Tile by Tile" prefix from SmartCursorNarrator
+            if (SmartCursorNarrator.TryDequeuePendingPrefix(out string smartCursorPrefix))
+            {
+                message = $"{smartCursorPrefix}. {message}";
+            }
+
             if (HotbarNarrator.TryDequeuePendingAnnouncement(out string hotbarAnnouncement, out string? hotbarKey))
             {
                 string combined = string.IsNullOrWhiteSpace(hotbarAnnouncement)

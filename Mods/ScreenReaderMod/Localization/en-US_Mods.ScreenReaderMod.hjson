@@ -157,8 +157,11 @@ Mods: {
 		}
 
 		WireColorMenu: {
-			Open: Wire Color Picker
-			Closed: Wire menu closed
+			Open: Wire Menu Opened
+			Closed: Wire Menu Closed
+			MenuOpen: Wire Menu. Use Up and Down to navigate, Enter to toggle, Escape to close.
+			MenuOpenPrefix: Wire Menu Opened
+			OptionFormat: "{0}, {1}, {2} of {3}"
 			RedOn: Red on
 			RedOff: Red off
 			GreenOn: Green on
@@ -171,6 +174,11 @@ Mods: {
 			CutterOff: Wire Cutter off
 			ActuatorOn: Actuator on
 			ActuatorOff: Actuator off
+		}
+
+		SmartCursor: {
+			Enabled: Smart cursor enabled
+			TileByTile: Tile by Tile
 		}
 
 		PaintColors: {
