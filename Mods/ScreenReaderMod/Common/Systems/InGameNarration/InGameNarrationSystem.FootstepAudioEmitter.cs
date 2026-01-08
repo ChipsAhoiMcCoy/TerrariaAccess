@@ -18,12 +18,10 @@ public sealed partial class InGameNarrationSystem
     {
         private const float MinLandingDisplacement = 6f;
 
-        // Edge echo configuration
+        // Edge detection configuration
         private const int EdgeScanRangeTiles = 18;      // How far ahead to scan
         private const int MinDropHeightTiles = 3;       // Minimum drop to count as edge
-        private const int EchoDelayFrames = 3;          // Frames between footstep and echo
-        private const float EchoPanScalePixels = 320f;  // Pan scaling for positional audio
-        private const float EchoPitchMultiplier = 1.0f; // Echo same pitch as footstep
+        private const float PanScalePixels = 320f;      // Pan scaling for positional audio
 
         private Point _lastFootTile = new(-1, -1);
         private float _lastFootX = float.NaN;
@@ -34,16 +32,10 @@ public sealed partial class InGameNarrationSystem
         private SoundEffectInstance? _harmfulLoopInstance;
         private float _lastHarmfulFrequency;
 
-        // Edge echo state
-        private int _pendingEchoFrame = -1;             // Frame to play echo (-1 = none)
-        private Vector2 _pendingEchoPosition;           // World position of detected edge
-        private bool _pendingEchoIsPlatform;            // Whether edge is platform or ground
-        private int _pendingEchoDirection;              // Direction of pending echo (1 or -1)
-
-        // Edge static mode state
+        // Edge static state
         private const float StaticMaxVolume = 0.18f;    // Never louder than footsteps (footsteps are ~0.225-0.4375)
         private const float StaticMinVolume = 0.02f;    // Very faint when far away
-        private const float StaticMaxDistanceTiles = 18f; // Same as echo scan range
+        private const float StaticMaxDistanceTiles = 18f; // Same as scan range
         private SoundEffectInstance? _edgeStaticInstance;
         private float _lastEdgeStaticVolume;
         private float _lastEdgeStaticPan;
@@ -58,23 +50,16 @@ public sealed partial class InGameNarrationSystem
                 return;
             }
 
-            var edgeMode = ScreenReaderModConfig.Instance?.EdgeDetection ?? EdgeDetectionMode.Echo;
+            bool edgeEnabled = ScreenReaderModConfig.Instance?.EdgeDetectionEnabled ?? true;
 
-            // Handle edge detection based on mode
-            if (edgeMode == EdgeDetectionMode.Off)
+            // Handle edge detection
+            if (edgeEnabled)
             {
-                StopEdgeStatic();
-                ClearPendingEcho();
-            }
-            else if (edgeMode == EdgeDetectionMode.Echo)
-            {
-                TryPlayScheduledEcho(player);
-                StopEdgeStatic();
+                UpdateEdgeStatic(player);
             }
             else
             {
-                UpdateEdgeStatic(player);
-                ClearPendingEcho();
+                StopEdgeStatic();
             }
 
             bool grounded = IsGrounded(player);
@@ -83,7 +68,6 @@ public sealed partial class InGameNarrationSystem
                 TrackAirborneDisplacement(player);
                 _lastFootX = float.NaN;
                 StopHarmfulTone();
-                ClearPendingEcho();
                 StopEdgeStatic();
                 return;
             }
@@ -113,21 +97,6 @@ public sealed partial class InGameNarrationSystem
             bool onPlatform = IsPlatform(footTile.X, footTile.Y);
             bool onHarmfulTile = IsHarmfulTile(player, footTile);
             PlayStep(player, onPlatform, onHarmfulTile);
-
-            // Scan for edges ahead and schedule echo if found (echo mode only)
-            if (edgeMode == EdgeDetectionMode.Echo)
-            {
-                int moveDirection = Math.Sign(player.velocity.X);
-                if (moveDirection != 0)
-                {
-                    EdgeScanResult? edge = ScanForEdge(player, moveDirection);
-                    if (edge.HasValue)
-                    {
-                        ScheduleEdgeEcho(edge.Value, moveDirection);
-                    }
-                }
-            }
-            // Off mode: no edge detection at all (already cleared above)
         }
 
         public void Reset()
@@ -191,7 +160,6 @@ public sealed partial class InGameNarrationSystem
             _airborneStartY = 0f;
             _maxAirborneDisplacement = 0f;
             StopHarmfulTone();
-            ClearPendingEcho();
             StopEdgeStatic();
         }
 
@@ -244,6 +212,25 @@ public sealed partial class InGameNarrationSystem
             return Main.tileSolid[tile.TileType] || TileID.Sets.Platforms[tile.TileType];
         }
 
+        private static bool IsSolidWall(int tileX, int tileY)
+        {
+            Tile tile = Framing.GetTileSafely(tileX, tileY);
+            if (!tile.HasTile || tile.IsActuated)
+            {
+                return false;
+            }
+
+            // A solid wall blocks horizontal movement (not platforms, not top-solid-only)
+            return Main.tileSolid[tile.TileType] && !Main.tileSolidTop[tile.TileType];
+        }
+
+        private static bool IsPathBlockedAtBodyHeight(int tileX, int footTileY)
+        {
+            // Player is about 3 tiles tall; check the 2 tiles above foot level for walls
+            // If there's a solid wall at body/head height, the player can't walk through
+            return IsSolidWall(tileX, footTileY - 1) || IsSolidWall(tileX, footTileY - 2);
+        }
+
         private static int MeasureDropDepth(int tileX, int startY)
         {
             int depth = 0;
@@ -279,8 +266,27 @@ public sealed partial class InGameNarrationSystem
                     break;
                 }
 
+                // Stop scanning if there's a wall blocking the path at body height
+                // (e.g., house wall, building structure) - player can't reach edges beyond this
+                if (IsPathBlockedAtBodyHeight(scanX, footTile.Y))
+                {
+                    break;
+                }
+
                 if (!HasSupportingTile(scanX, footTile.Y))
                 {
+                    // Check if gap is at least 2 tiles wide (player width)
+                    // A 1-tile gap can be walked over, so ignore it
+                    int nextX = scanX + direction;
+                    bool isWideGap = nextX >= 0 && nextX < Main.maxTilesX &&
+                                     !HasSupportingTile(nextX, footTile.Y);
+
+                    if (!isWideGap)
+                    {
+                        // 1-tile gap, skip and continue scanning beyond it
+                        continue;
+                    }
+
                     int dropDepth = MeasureDropDepth(scanX, footTile.Y);
                     if (dropDepth >= MinDropHeightTiles)
                     {
@@ -296,49 +302,6 @@ public sealed partial class InGameNarrationSystem
             }
 
             return null;
-        }
-
-        private void ScheduleEdgeEcho(EdgeScanResult edge, int direction)
-        {
-            // If an echo is already pending in this direction, don't reschedule
-            // This prevents the echo from being pushed back indefinitely as the player walks
-            if (_pendingEchoFrame >= 0 && _pendingEchoDirection == direction)
-            {
-                return;
-            }
-
-            _pendingEchoFrame = (int)Main.GameUpdateCount + EchoDelayFrames;
-            _pendingEchoPosition = edge.WorldPosition;
-            _pendingEchoIsPlatform = edge.IsPlatform;
-            _pendingEchoDirection = direction;
-        }
-
-        private void ClearPendingEcho()
-        {
-            _pendingEchoFrame = -1;
-        }
-
-        private void TryPlayScheduledEcho(Player player)
-        {
-            if (_pendingEchoFrame < 0)
-            {
-                return;
-            }
-
-            if ((int)Main.GameUpdateCount < _pendingEchoFrame)
-            {
-                return;
-            }
-
-            Vector2 playerCenter = player.Center;
-            float offsetX = _pendingEchoPosition.X - playerCenter.X;
-            float pan = MathHelper.Clamp(offsetX / EchoPanScalePixels, -1f, 1f);
-
-            ComputeStepAudio(player, _pendingEchoIsPlatform, out float frequency, out float loudness);
-            float echoFrequency = frequency * EchoPitchMultiplier;
-
-            FootstepToneProvider.Play(echoFrequency, loudness, useTriangleWave: false, pan: pan);
-            _pendingEchoFrame = -1;
         }
 
         private static bool IsHarmfulTile(Player player, Point tileCoords)
@@ -467,7 +430,7 @@ public sealed partial class InGameNarrationSystem
             // Compute pan based on actual world position of edge relative to player
             Vector2 playerCenter = player.Center;
             float offsetX = nearestEdge.WorldPosition.X - playerCenter.X;
-            float pan = MathHelper.Clamp(offsetX / EchoPanScalePixels, -1f, 1f);
+            float pan = MathHelper.Clamp(offsetX / PanScalePixels, -1f, 1f);
 
             // Create or update the static sound
             if (_edgeStaticInstance is null || _edgeStaticInstance.IsDisposed || _edgeStaticInstance.State == SoundState.Stopped)

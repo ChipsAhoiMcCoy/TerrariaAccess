@@ -10,8 +10,8 @@ public class ScreenReaderModConfig : ModConfig
 
     public override ConfigScope Mode => ConfigScope.ClientSide;
 
-    [DefaultValue(EdgeDetectionMode.Off)]
-    public EdgeDetectionMode EdgeDetection { get; set; } = EdgeDetectionMode.Off;
+    [DefaultValue(true)]
+    public bool EdgeDetectionEnabled { get; set; } = true;
 
     [DefaultValue(true)]
     public bool SmartCursorTileSounds { get; set; } = true;
@@ -39,15 +39,11 @@ public class ScreenReaderModConfig : ModConfig
     [DefaultValue(false)]
     public bool AnnounceDamageNumbers { get; set; }
 
+    [DefaultValue(true)]
+    public bool SpatialInventoryAudio { get; set; } = true;
+
     public override void OnLoaded()
     {
         Instance = this;
     }
-}
-
-public enum EdgeDetectionMode
-{
-    Echo,
-    Static,
-    Off
 }

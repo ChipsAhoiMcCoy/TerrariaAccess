@@ -18,6 +18,7 @@ public class ScreenReaderMod : Mod
         Instance = this;
         ScreenReaderService.Initialize();
         WorldAnnouncementService.Initialize();
+        UiTickSoundPlayer.Initialize();
         GuidanceKeybinds.EnsureInitialized(this);
         GamepadEmulationKeybinds.EnsureInitialized(this);
         SpeechInterruptKeybinds.EnsureInitialized(this);
@@ -32,6 +33,7 @@ public class ScreenReaderMod : Mod
         StatusCheckKeybinds.Unload();
         SpeechInterruptKeybinds.Unload();
         GuidanceKeybinds.Unload();
+        UiTickSoundPlayer.Dispose();
         WorldAnnouncementService.Unload();
         ScreenReaderService.Unload();
         Instance = null;

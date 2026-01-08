@@ -241,7 +241,7 @@ public sealed partial class InGameNarrationSystem
                 if (craftingAvailableIndex >= 0 &&
                     CraftingNarrator.TryFocusRecipeAtAvailableIndex(craftingAvailableIndex))
                 {
-                    PlayTickIfNew($"craft-{craftingAvailableIndex}");
+                    PlayCraftingTickIfNew($"craft-{craftingAvailableIndex}", craftingAvailableIndex);
                     ResetHoverSlotsAndTooltips();
                     return;
                 }
@@ -280,7 +280,7 @@ public sealed partial class InGameNarrationSystem
 
             HoverTarget target = new(hover, identity, location, rawTooltip, normalizedTooltip, focus, AllowMouseText: !usingGamepadFocus);
             string focusKey = BuildFocusKey(target, focus, inGamepadCraftingGrid ? craftingAvailableIndex : (int?)null);
-            PlayTickIfNew(focusKey);
+            PlayTickIfNew(focusKey, focus);
 
             if (target.HasItem)
             {
@@ -568,7 +568,7 @@ public sealed partial class InGameNarrationSystem
             return string.Empty;
         }
 
-        private void PlayTickIfNew(string key)
+        private void PlayTickIfNew(string key, SlotFocus? focus = null)
         {
             if (string.IsNullOrWhiteSpace(key) || string.Equals(key, _lastFocusKey, StringComparison.Ordinal))
             {
@@ -576,7 +576,49 @@ public sealed partial class InGameNarrationSystem
             }
 
             _lastFocusKey = key;
-            SoundEngine.PlaySound(SoundID.MenuTick);
+            PlaySpatialInventoryTick(focus);
+        }
+
+        private void PlayCraftingTickIfNew(string key, int craftingAvailableIndex)
+        {
+            if (string.IsNullOrWhiteSpace(key) || string.Equals(key, _lastFocusKey, StringComparison.Ordinal))
+            {
+                return;
+            }
+
+            _lastFocusKey = key;
+            PlaySpatialCraftingTick(craftingAvailableIndex);
+        }
+
+        private static void PlaySpatialCraftingTick(int craftingAvailableIndex)
+        {
+            if (!UiSlotSpatialAudio.TryGetCraftingGridPosition(craftingAvailableIndex, out var position))
+            {
+                UiTickSoundPlayer.PlaySpatialTick(0f, 0f);
+                return;
+            }
+
+            var spatial = UiSlotSpatialAudio.ComputeSpatialParams(position);
+            UiTickSoundPlayer.PlaySpatialTick(spatial.Pan, spatial.Pitch);
+        }
+
+        private static void PlaySpatialInventoryTick(SlotFocus? focus)
+        {
+            if (!focus.HasValue)
+            {
+                UiTickSoundPlayer.PlaySpatialTick(0f, 0f);
+                return;
+            }
+
+            SlotFocus value = focus.Value;
+            if (!UiSlotSpatialAudio.TryGetSlotPosition(value.Context, value.Slot, out var position))
+            {
+                UiTickSoundPlayer.PlaySpatialTick(0f, 0f);
+                return;
+            }
+
+            var spatial = UiSlotSpatialAudio.ComputeSpatialParams(position);
+            UiTickSoundPlayer.PlaySpatialTick(spatial.Pan, spatial.Pitch);
         }
 
         public void ForceReset()

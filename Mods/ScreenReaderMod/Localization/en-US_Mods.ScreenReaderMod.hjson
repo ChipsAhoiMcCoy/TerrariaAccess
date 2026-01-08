@@ -4,9 +4,9 @@ Mods: {
 			ScreenReaderModConfig: {
 				DisplayName: Screen Reader Mod Settings
 
-				EdgeDetection: {
-					Label: Experimental Edge Detection
-					Tooltip: Experimental feature. Choose how edges (drop-offs) are announced while walking. Echo plays a tone after each footstep when an edge is ahead. Static plays continuous white noise that gets louder as you approach an edge. Off disables edge detection entirely.
+				EdgeDetectionEnabled: {
+					Label: Edge Detection
+					Tooltip: When enabled, plays a subtle static sound that gets louder as you approach drop-offs (3+ tiles deep) while walking. The sound indicates direction and stops when you stop moving or become airborne.
 				}
 
 				SmartCursorTileSounds: {
@@ -38,13 +38,11 @@ Mods: {
 					Label: Announce Damage Numbers
 					Tooltip: Announces the damage numbers you deal to hostile NPCs.
 				}
-			}
 
-			EdgeDetectionMode: {
-				Tooltip: ""
-				Echo.Label: Echo
-				Static.Label: Static
-				Off.Label: Off
+				SpatialInventoryAudio: {
+					Label: Experimental Spatial Inventory Audio
+					Tooltip: Experimental feature. When enabled, inventory navigation clicks use panning (left/right) and pitch (high/low) to indicate slot position.
+				}
 			}
 		}
 
@@ -381,8 +379,8 @@ Configs: {
 	ScreenReaderModConfig: {
 		DisplayName: Screen Reader Mod Config
 
-		EdgeDetection: {
-			Label: Experimental Edge Detection
+		EdgeDetectionEnabled: {
+			Label: Edge Detection
 			Tooltip: ""
 		}
 
@@ -415,23 +413,9 @@ Configs: {
 			Label: Announce Damage Numbers
 			Tooltip: ""
 		}
-	}
 
-	EdgeDetectionMode: {
-		Tooltip: ""
-
-		Echo: {
-			Label: Echo
-			Tooltip: ""
-		}
-
-		Static: {
-			Label: Static
-			Tooltip: ""
-		}
-
-		Off: {
-			Label: Off
+		SpatialInventoryAudio: {
+			Label: Experimental Spatial Inventory Audio
 			Tooltip: ""
 		}
 	}
