@@ -341,7 +341,7 @@ public sealed partial class InGameNarrationSystem
 
                 if (!wasHoveringPlayer || bodyPartChanged || _justTransitionedToTileByTile)
                 {
-                    AnnouncePlayer(player, bodyPart);
+                    AnnouncePlayer(player, bodyPart, cursorWorld);
                     _lastHoveredBodyPart = bodyPart;
                     _justTransitionedToTileByTile = false;
                 }
@@ -549,7 +549,7 @@ public sealed partial class InGameNarrationSystem
             }
         }
 
-        private static void AnnouncePlayer(Player player, PlayerBodyPart bodyPart)
+        private void AnnouncePlayer(Player player, PlayerBodyPart bodyPart, Vector2 cursorWorld)
         {
             string partName = bodyPart switch
             {
@@ -559,7 +559,23 @@ public sealed partial class InGameNarrationSystem
                 _ => "Body"
             };
 
-            string announcement = $"{player.name}'s {partName}";
+            // Calculate vertical offset from ground level
+            string offsetText = "";
+            if (_originTileY != int.MinValue)
+            {
+                int cursorTileY = (int)(cursorWorld.Y / 16f);
+                int verticalOffset = _originTileY - cursorTileY;
+                if (verticalOffset > 0)
+                {
+                    offsetText = $", {verticalOffset} up";
+                }
+                else if (verticalOffset < 0)
+                {
+                    offsetText = $", {Math.Abs(verticalOffset)} down";
+                }
+            }
+
+            string announcement = $"{player.name}'s {partName}{offsetText}";
 
             // Check for pending "Tile by Tile" prefix from SmartCursorNarrator
             if (SmartCursorNarrator.TryDequeuePendingPrefix(out string smartCursorPrefix))
@@ -588,7 +604,14 @@ public sealed partial class InGameNarrationSystem
 
         private static void CenterCursorOnPlayer(Player player)
         {
-            Vector2 screenSpace = player.Center - Main.screenPosition;
+            // Calculate tile coordinates at the player's feet (the ground tile they're standing on)
+            int groundTileX = (int)(player.Center.X / 16f);
+            int groundTileY = (int)(player.Bottom.Y / 16f);
+
+            // Position cursor at the center of the ground tile (tiles are always 16x16 world units)
+            Vector2 groundTileCenter = new Vector2(groundTileX * 16f + 8f, groundTileY * 16f + 8f);
+            Vector2 screenSpace = groundTileCenter - Main.screenPosition;
+
             int centeredX = (int)MathHelper.Clamp(screenSpace.X, 0f, Main.screenWidth - 1);
             int centeredY = (int)MathHelper.Clamp(screenSpace.Y, 0f, Main.screenHeight - 1);
 
@@ -600,9 +623,9 @@ public sealed partial class InGameNarrationSystem
 
         private void UpdateOriginFromPlayer(Player player)
         {
-            Vector2 chestWorld = GetPlayerChestWorld(player);
-            _originTileX = (int)(chestWorld.X / 16f);
-            _originTileY = (int)(chestWorld.Y / 16f);
+            // Use the tile below the player's feet as the origin (ground level)
+            _originTileX = (int)(player.Center.X / 16f);
+            _originTileY = (int)(player.Bottom.Y / 16f);
         }
 
         private static void AnnounceCursorMessage(string message, bool force, AnnouncementCategory category = AnnouncementCategory.Default)
@@ -655,13 +678,6 @@ public sealed partial class InGameNarrationSystem
             return name;
         }
 
-        private static Vector2 GetPlayerChestWorld(Player player)
-        {
-            const float chestFraction = 0.25f;
-            float verticalOffset = player.height * chestFraction * player.gravDir;
-            return player.Center - new Vector2(0f, verticalOffset);
-        }
-
         private string BuildCoordinateMessage(int tileX, int tileY)
         {
             if (_originTileX == int.MinValue || _originTileY == int.MinValue)
@@ -688,7 +704,7 @@ public sealed partial class InGameNarrationSystem
 
             if (parts.Count == 0)
             {
-                return "origin";
+                return "ground level";
             }
 
             return string.Join(", ", parts);
