@@ -2,6 +2,7 @@
 using Microsoft.Xna.Framework;
 using Microsoft.Xna.Framework.Input;
 using ScreenReaderMod.Common.Systems;
+using ScreenReaderMod.Common.Systems.GamepadEmulation;
 using Terraria;
 using Terraria.DataStructures;
 using Terraria.GameContent.UI;
@@ -23,6 +24,8 @@ public sealed class WireColorMenuPlayer : ModPlayer
     private bool _wasSpacePressed;
     private bool _wasConfirmPressed;
     private bool _wasCancelPressed;
+    private bool _wasInventorySelectPressed;
+    private bool _wasInventoryInteractPressed;
 
     // Track if we need to suppress interactions after menu closes
     private bool _suppressUntilButtonRelease;
@@ -95,6 +98,8 @@ public sealed class WireColorMenuPlayer : ModPlayer
         _wasSpacePressed = false;
         _wasConfirmPressed = false;
         _wasCancelPressed = false;
+        _wasInventorySelectPressed = false;
+        _wasInventoryInteractPressed = false;
         _suppressUntilButtonRelease = false;
     }
 
@@ -104,6 +109,15 @@ public sealed class WireColorMenuPlayer : ModPlayer
         if (Main.keyState.IsKeyDown(Keys.Escape))
         {
             return true;
+        }
+
+        // Check InventoryInteract keybind (P key by default)
+        if (GamepadEmulationKeybinds.InventoryInteract is { } interactKeybind)
+        {
+            if (interactKeybind.Current || VirtualTriggerService.IsKeybindPressedRaw(interactKeybind))
+            {
+                return true;
+            }
         }
 
         // Check gamepad B button
@@ -197,10 +211,28 @@ public sealed class WireColorMenuPlayer : ModPlayer
         bool spaceJustPressed = spacePressed && !_wasSpacePressed;
         _wasSpacePressed = spacePressed;
 
+        // InventorySelect keybind (I key by default) for gamepad emulation
+        bool inventorySelectPressed = false;
+        if (GamepadEmulationKeybinds.InventorySelect is { } selectKeybind)
+        {
+            inventorySelectPressed = selectKeybind.Current || VirtualTriggerService.IsKeybindPressedRaw(selectKeybind);
+        }
+        bool inventorySelectJustPressed = inventorySelectPressed && !_wasInventorySelectPressed;
+        _wasInventorySelectPressed = inventorySelectPressed;
+
         // Escape to close
         bool escapePressed = keyState.IsKeyDown(Keys.Escape);
         bool escapeJustPressed = escapePressed && !_wasEscapePressed;
         _wasEscapePressed = escapePressed;
+
+        // InventoryInteract keybind (P key by default) to close menu
+        bool inventoryInteractPressed = false;
+        if (GamepadEmulationKeybinds.InventoryInteract is { } interactKeybind)
+        {
+            inventoryInteractPressed = interactKeybind.Current || VirtualTriggerService.IsKeybindPressedRaw(interactKeybind);
+        }
+        bool inventoryInteractJustPressed = inventoryInteractPressed && !_wasInventoryInteractPressed;
+        _wasInventoryInteractPressed = inventoryInteractPressed;
 
         // Read gamepad input directly from hardware state - bypasses blockInput
         bool gamepadUp = false;
@@ -262,12 +294,12 @@ public sealed class WireColorMenuPlayer : ModPlayer
             menu.NavigateDown();
         }
 
-        if (enterJustPressed || spaceJustPressed || confirmJustPressed)
+        if (enterJustPressed || spaceJustPressed || confirmJustPressed || inventorySelectJustPressed)
         {
             menu.ToggleSelected();
         }
 
-        if (escapeJustPressed || cancelJustPressed)
+        if (escapeJustPressed || cancelJustPressed || inventoryInteractJustPressed)
         {
             // Set flag to suppress interactions until button is released
             // This prevents B button from triggering NPC interaction immediately after close
