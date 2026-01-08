@@ -308,6 +308,32 @@ Mods: {
 			InventorySpecial.LoadoutControls: Loadout controls
 		}
 
+		InventoryRegions: {
+			Hotbar: Hotbar
+			Inventory: Inventory
+			Coins: Coins
+			Ammo: Ammo
+			CharacterPanel: Character Panel
+			InventoryExtras: Inventory Extras
+			Crafting: Crafting
+			CraftingGrid: Crafting Grid
+			Storage: Storage
+			Shop: Shop
+		}
+
+		InventorySpecial: {
+			LoadoutControls: Loadout controls
+			EnablePvp: Enable PvP
+			DisablePvp: Disable PvP
+			Defense: Defense
+			TeamNeutral: No team
+			TeamRed: Red team
+			TeamGreen: Green team
+			TeamBlue: Blue team
+			TeamYellow: Yellow team
+			TeamPink: Pink team
+		}
+
 		Keybinds: {
 			WaypointNext.DisplayName: Next Waypoint
 			WaypointPrevious.DisplayName: Previous Waypoint

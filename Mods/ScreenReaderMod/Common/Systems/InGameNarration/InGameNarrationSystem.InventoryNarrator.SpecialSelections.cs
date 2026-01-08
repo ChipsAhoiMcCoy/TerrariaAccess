@@ -32,6 +32,15 @@ public sealed partial class InGameNarrationSystem
                 return true;
             }
 
+            // Determine region for special selections
+            InventoryRegion currentRegion = ResolveRegionForSpecialPoint(currentPoint);
+            string? regionPrefix = null;
+            if (currentRegion != InventoryRegion.None && currentRegion != _lastAnnouncedRegion)
+            {
+                regionPrefix = GetRegionDisplayName(currentRegion);
+                _lastAnnouncedRegion = currentRegion;
+            }
+
             PlayTickIfNew($"special-{currentPoint}");
             _currentFocus = null;
             _focusTracker.ClearSpecialLinkPoint(currentPoint);
@@ -40,7 +49,7 @@ public sealed partial class InGameNarrationSystem
             _narrationHistory.Reset(NarrationKind.SpecialSelection);
             UiAreaNarrationContext.RecordArea(UiNarrationArea.Inventory);
             SpecialSelectionRepeat.Record(currentPoint);
-            TryAnnounceCue(NarrationCue.ForSpecial(label), force: true);
+            TryAnnounceCue(NarrationCue.ForSpecial(label), force: true, regionPrefix: regionPrefix);
             return true;
         }
 
@@ -142,6 +151,24 @@ public sealed partial class InGameNarrationSystem
                 >= 1551 and <= 1556 => true,
                 1557 => true,
                 _ => false,
+            };
+        }
+
+        private static InventoryRegion ResolveRegionForSpecialPoint(int point)
+        {
+            return point switch
+            {
+                // Inventory management buttons (Quick Stack, Sort)
+                301 or 302 => InventoryRegion.InventoryExtras,
+                // Equipment page buttons, Camera Mode, Emote, Bestiary, Loadout controls
+                >= 304 and <= 311 => InventoryRegion.CharacterPanel,
+                // Individual loadout slots
+                >= 312 and <= 320 => InventoryRegion.CharacterPanel,
+                // Chest buttons
+                >= 500 and <= 505 => InventoryRegion.Storage,
+                // PvP and team buttons
+                >= 1550 and <= 1557 => InventoryRegion.CharacterPanel,
+                _ => InventoryRegion.None,
             };
         }
 

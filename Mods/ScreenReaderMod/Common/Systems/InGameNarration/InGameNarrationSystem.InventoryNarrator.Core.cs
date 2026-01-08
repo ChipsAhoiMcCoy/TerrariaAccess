@@ -45,6 +45,7 @@ public sealed partial class InGameNarrationSystem
         private ItemIdentity _lastAnnouncedItemIdentity;
         private bool _wasInventoryOpen;
         private int _lastChestIndex = -1;
+        private static InventoryRegion _lastAnnouncedRegion = InventoryRegion.None;
         private const UiNarrationArea InventoryNarrationAreas =
             UiNarrationArea.Inventory |
             UiNarrationArea.Storage |
@@ -338,8 +339,25 @@ public sealed partial class InGameNarrationSystem
 
         private void AnnounceItemHover(Player player, HoverTarget target)
         {
+            // Determine current region and check for change
+            InventoryRegion currentRegion = ResolveRegion(target.Focus, player);
+
+            // Fallback: check gamepad link point for crafting list when no slot focus
+            if (currentRegion == InventoryRegion.None && PlayerInput.UsingGamepadUI)
+            {
+                currentRegion = ResolveRegionFromLinkPoint(UILinkPointNavigator.CurrentPoint);
+            }
+
+            string? regionPrefix = null;
+            if (currentRegion != InventoryRegion.None && currentRegion != _lastAnnouncedRegion)
+            {
+                regionPrefix = GetRegionDisplayName(currentRegion);
+                _lastAnnouncedRegion = currentRegion;
+            }
+
             string label = NarrationTextFormatter.ComposeItemLabel(target.Item);
             string message = string.IsNullOrEmpty(target.Location) ? label : $"{label}, {target.Location}";
+
             string? details = BuildTooltipDetails(target.Item, target.RawTooltip, allowMouseText: target.AllowMouseText);
             string? requirementDetails = CraftingNarrator.TryGetRequirementTooltipDetails(target.Item, string.IsNullOrWhiteSpace(target.Location));
             details = MergeDetails(details, requirementDetails);
@@ -352,7 +370,7 @@ public sealed partial class InGameNarrationSystem
 
             string combined = NarrationTextFormatter.CombineItemAnnouncement(message, details);
             int slotSignature = ComputeSlotSignature(target.Focus);
-            if (TryAnnounceCue(NarrationCue.ForItem(target.Identity, combined, target.Location, target.NormalizedTooltip, details, slotSignature), focus: target.Focus))
+            if (TryAnnounceCue(NarrationCue.ForItem(target.Identity, combined, target.Location, target.NormalizedTooltip, details, slotSignature), focus: target.Focus, regionPrefix: regionPrefix))
             {
                 _lastAnnouncedItemIdentity = target.Identity;
                 _narrationHistory.Reset(NarrationKind.EmptySlot);
@@ -392,9 +410,26 @@ public sealed partial class InGameNarrationSystem
                 return false;
             }
 
+            // Determine current region and check for change
+            InventoryRegion currentRegion = ResolveRegion(target.Focus, Main.LocalPlayer);
+
+            // Fallback: check gamepad link point for crafting list when no slot focus
+            if (currentRegion == InventoryRegion.None && PlayerInput.UsingGamepadUI)
+            {
+                currentRegion = ResolveRegionFromLinkPoint(UILinkPointNavigator.CurrentPoint);
+            }
+
+            string? regionPrefix = null;
+            if (currentRegion != InventoryRegion.None && currentRegion != _lastAnnouncedRegion)
+            {
+                regionPrefix = GetRegionDisplayName(currentRegion);
+                _lastAnnouncedRegion = currentRegion;
+            }
+
             string message = $"Empty, {target.Location}";
+
             int slotSignature = ComputeSlotSignature(target.Focus);
-            if (TryAnnounceCue(NarrationCue.ForEmpty(message, target.Location, slotSignature), focus: target.Focus))
+            if (TryAnnounceCue(NarrationCue.ForEmpty(message, target.Location, slotSignature), focus: target.Focus, regionPrefix: regionPrefix))
             {
                 _narrationHistory.Reset(NarrationKind.HoverItem);
                 _narrationHistory.Reset(NarrationKind.Tooltip);
@@ -510,6 +545,7 @@ public sealed partial class InGameNarrationSystem
             _lastAnnouncedItemIdentity = default;
             _inventoryOpenGraceFrames = 0;
             _lastChestIndex = -1;
+            _lastAnnouncedRegion = InventoryRegion.None;
         }
 
         private static void OnInventoryJustOpened()
@@ -1231,6 +1267,139 @@ public sealed partial class InGameNarrationSystem
             return ItemIdentity.From(item).Equals(identity);
         }
 
+        private static InventoryRegion ResolveRegion(SlotFocus? focus, Player player)
+        {
+            if (!focus.HasValue)
+            {
+                return InventoryRegion.None;
+            }
+
+            SlotFocus f = focus.Value;
+            int context = Math.Abs(f.Context);
+            int slot = f.Slot;
+
+            switch (context)
+            {
+                case ItemSlot.Context.HotbarItem:
+                    return InventoryRegion.Hotbar;
+
+                case ItemSlot.Context.InventoryItem:
+                    if (f.Items is not null && ReferenceEquals(f.Items, player.inventory))
+                    {
+                        if (slot < 10) return InventoryRegion.Hotbar;
+                        if (slot < 50) return InventoryRegion.Inventory;
+                        if (slot < 54) return InventoryRegion.Coins;
+                        if (slot < 58) return InventoryRegion.Ammo;
+                    }
+                    return InventoryRegion.Inventory;
+
+                case ItemSlot.Context.InventoryCoin:
+                    return InventoryRegion.Coins;
+
+                case ItemSlot.Context.InventoryAmmo:
+                    return InventoryRegion.Ammo;
+
+                case ItemSlot.Context.EquipArmor:
+                case ItemSlot.Context.EquipArmorVanity:
+                case ItemSlot.Context.EquipAccessory:
+                case ItemSlot.Context.EquipAccessoryVanity:
+                case ItemSlot.Context.EquipDye:
+                case ItemSlot.Context.EquipMiscDye:
+                case ItemSlot.Context.EquipGrapple:
+                case ItemSlot.Context.EquipMount:
+                case ItemSlot.Context.EquipMinecart:
+                case ItemSlot.Context.EquipPet:
+                case ItemSlot.Context.EquipLight:
+                    return InventoryRegion.CharacterPanel;
+
+                case ItemSlot.Context.TrashItem:
+                    return InventoryRegion.InventoryExtras;
+
+                case ItemSlot.Context.CraftingMaterial:
+                case ItemSlot.Context.GuideItem:
+                case ItemSlot.Context.PrefixItem:
+                    return InventoryRegion.Crafting;
+
+                case ItemSlot.Context.ChestItem:
+                case ItemSlot.Context.BankItem:
+                case ItemSlot.Context.VoidItem:
+                    return InventoryRegion.Storage;
+
+                case ItemSlot.Context.ShopItem:
+                    return InventoryRegion.Shop;
+
+                default:
+                    return InventoryRegion.None;
+            }
+        }
+
+        // Link point ranges for crafting UI in gamepad mode
+        private const int CraftingGridLinkPointStart = 700;
+        private const int CraftingGridLinkPointEnd = 1500;
+        private const int CraftingListLinkPointStart = 1500;
+        private const int CraftingListLinkPointEnd = 2000;
+
+        private static InventoryRegion ResolveRegionFromLinkPoint(int point)
+        {
+            // Crafting grid (when recBigList is active): 700-1499
+            if (point >= CraftingGridLinkPointStart && point < CraftingGridLinkPointEnd && Main.recBigList)
+            {
+                return InventoryRegion.CraftingGrid;
+            }
+
+            // Crafting list (normal view): 1500-1999
+            if (point >= CraftingListLinkPointStart && point < CraftingListLinkPointEnd)
+            {
+                return InventoryRegion.Crafting;
+            }
+
+            return InventoryRegion.None;
+        }
+
+        /// <summary>
+        /// Gets the region prefix if the region has changed, and updates the last announced region.
+        /// Used by CraftingNarrator to prepend region prefix to crafting announcements.
+        /// </summary>
+        internal static string? TryGetAndUpdateCraftingRegionPrefix(bool isGridMode)
+        {
+            InventoryRegion targetRegion = isGridMode ? InventoryRegion.CraftingGrid : InventoryRegion.Crafting;
+            if (targetRegion == _lastAnnouncedRegion)
+            {
+                return null;
+            }
+
+            _lastAnnouncedRegion = targetRegion;
+            return GetRegionDisplayName(targetRegion);
+        }
+
+        private static string? GetRegionDisplayName(InventoryRegion region)
+        {
+            return region switch
+            {
+                InventoryRegion.Hotbar => LocalizationHelper.GetTextOrFallback(
+                    "Mods.ScreenReaderMod.InventoryRegions.Hotbar", "Hotbar"),
+                InventoryRegion.Inventory => LocalizationHelper.GetTextOrFallback(
+                    "Mods.ScreenReaderMod.InventoryRegions.Inventory", "Inventory"),
+                InventoryRegion.Coins => LocalizationHelper.GetTextOrFallback(
+                    "Mods.ScreenReaderMod.InventoryRegions.Coins", "Coins"),
+                InventoryRegion.Ammo => LocalizationHelper.GetTextOrFallback(
+                    "Mods.ScreenReaderMod.InventoryRegions.Ammo", "Ammo"),
+                InventoryRegion.CharacterPanel => LocalizationHelper.GetTextOrFallback(
+                    "Mods.ScreenReaderMod.InventoryRegions.CharacterPanel", "Character Panel"),
+                InventoryRegion.InventoryExtras => LocalizationHelper.GetTextOrFallback(
+                    "Mods.ScreenReaderMod.InventoryRegions.InventoryExtras", "Inventory Extras"),
+                InventoryRegion.Crafting => LocalizationHelper.GetTextOrFallback(
+                    "Mods.ScreenReaderMod.InventoryRegions.Crafting", "Crafting"),
+                InventoryRegion.CraftingGrid => LocalizationHelper.GetTextOrFallback(
+                    "Mods.ScreenReaderMod.InventoryRegions.CraftingGrid", "Crafting Grid"),
+                InventoryRegion.Storage => LocalizationHelper.GetTextOrFallback(
+                    "Mods.ScreenReaderMod.InventoryRegions.Storage", "Storage"),
+                InventoryRegion.Shop => LocalizationHelper.GetTextOrFallback(
+                    "Mods.ScreenReaderMod.InventoryRegions.Shop", "Shop"),
+                _ => null,
+            };
+        }
+
         private static string? TryGetMouseText()
         {
             string? captured = TryGetCapturedMouseText();
@@ -1319,7 +1488,8 @@ public sealed partial class InGameNarrationSystem
             in NarrationCue cue,
             bool force = false,
             UiNarrationArea allowedAreas = InventoryNarrationAreas,
-            SlotFocus? focus = null)
+            SlotFocus? focus = null,
+            string? regionPrefix = null)
         {
             if (!_narrationHistory.TryStore(cue))
             {
@@ -1334,7 +1504,13 @@ public sealed partial class InGameNarrationSystem
             }
 
             NarrationInstrumentationContext.SetPendingKey(BuildInstrumentationKey(cue));
-            ScreenReaderService.Announce(cue.Message, force);
+
+            // Prepend region prefix only when actually announcing (after deduplication check)
+            string message = string.IsNullOrWhiteSpace(regionPrefix)
+                ? cue.Message
+                : $"{regionPrefix}. {cue.Message}";
+
+            ScreenReaderService.Announce(message, force);
             return true;
         }
 

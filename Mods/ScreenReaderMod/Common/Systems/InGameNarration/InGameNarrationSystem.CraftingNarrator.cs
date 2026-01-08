@@ -436,7 +436,14 @@ public sealed partial class InGameNarrationSystem
             }
 
             _lastAnnouncement = announcement;
-            ScreenReaderService.Announce(announcement.Message, force: true);
+
+            // Check for region change and prepend prefix if needed
+            string? regionPrefix = InventoryNarrator.TryGetAndUpdateCraftingRegionPrefix(Main.recBigList);
+            string message = string.IsNullOrWhiteSpace(regionPrefix)
+                ? announcement.Message
+                : $"{regionPrefix}. {announcement.Message}";
+
+            ScreenReaderService.Announce(message, force: true);
         }
 
         private void HandleGuideAndReforge(Player player)

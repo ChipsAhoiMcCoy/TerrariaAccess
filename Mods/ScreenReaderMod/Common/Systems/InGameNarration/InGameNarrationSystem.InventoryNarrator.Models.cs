@@ -84,6 +84,21 @@ public sealed partial class InGameNarrationSystem
             Count,
         }
 
+        private enum InventoryRegion
+        {
+            None = 0,
+            Hotbar,
+            Inventory,
+            Coins,
+            Ammo,
+            CharacterPanel,
+            InventoryExtras,
+            Crafting,
+            CraftingGrid,
+            Storage,
+            Shop,
+        }
+
         private readonly record struct NarrationCue(
             NarrationKind Kind,
             string Message,
