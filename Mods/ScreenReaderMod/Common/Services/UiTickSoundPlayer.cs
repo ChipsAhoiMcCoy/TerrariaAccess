@@ -15,7 +15,7 @@ internal static class UiTickSoundPlayer
     private const int MaxActiveInstances = 8;
     private const float TickFrequency = 1200f;
     private const float TickDuration = 0.04f;
-    private const float TickGain = 0.7f;
+    private const float TickGain = 0.45f;
 
     private static readonly ToneEnvelope TickEnvelope = new(
         attackFraction: 0.05f,

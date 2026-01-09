@@ -33,13 +33,13 @@ public sealed partial class GuidanceSystem : ModSystem
     private const float ProximityAnnouncementStepTiles = 10f;
     private const float ProximityAnnouncementToleranceTiles = 0.35f;
     private const float ExplorationSelectionMatchToleranceTiles = 6f;
-    private const float MinVolume = 0.18f;
+    private const float FixedVolume = 0.45f;
     private static readonly SpatialAudioPanner.SpatialAudioProfile GuidanceAudioProfile = new(
         PitchScalePixels: PitchScale,
         PanScalePixels: PanScalePixels,
         DistanceReferenceTiles: DistanceReferenceTiles,
-        MinVolume: MinVolume,
-        VolumeScale: 0.85f,
+        MinVolume: FixedVolume,
+        VolumeScale: 0f,
         PitchClamp: 0.7f);
 
     public override void Load()

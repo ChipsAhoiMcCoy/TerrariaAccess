@@ -36,6 +36,11 @@ public class ScreenReaderModConfig : ModConfig
     [Slider]
     public int InteractableCueVolume { get; set; } = 100;
 
+    [DefaultValue(100)]
+    [Range(0, 100)]
+    [Slider]
+    public int CursorVolume { get; set; } = 100;
+
     [DefaultValue(false)]
     public bool AnnounceDamageNumbers { get; set; }
 

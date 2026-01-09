@@ -34,6 +34,11 @@ Mods: {
 					Tooltip: Adjusts the volume of audio cues for nearby interactable objects like chests, doors, and crafting stations.
 				}
 
+				CursorVolume: {
+					Label: Cursor Volume
+					Tooltip: Adjusts the volume of the tones that play when the cursor navigates to a tile.
+				}
+
 				AnnounceDamageNumbers: {
 					Label: Announce Damage Numbers
 					Tooltip: Announces the damage numbers you deal to hostile NPCs.
@@ -432,6 +437,11 @@ Configs: {
 
 		InteractableCueVolume: {
 			Label: Interactable Cue Volume
+			Tooltip: ""
+		}
+
+		CursorVolume: {
+			Label: Cursor Volume
 			Tooltip: ""
 		}
 

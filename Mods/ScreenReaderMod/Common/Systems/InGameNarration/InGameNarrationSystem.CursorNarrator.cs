@@ -49,8 +49,7 @@ public sealed partial class InGameNarrationSystem
         private PlayerBodyPart? _lastHoveredBodyPart;
         private int _originTileX = int.MinValue;
         private int _originTileY = int.MinValue;
-        private static SoundEffect? _cursorTone;
-        private static readonly List<SoundEffectInstance> ActiveInstances = new();
+        private static readonly List<(SoundEffect effect, SoundEffectInstance instance)> ActiveSounds = new();
         private static bool _suppressNextAnnouncement;
         private string? _lastTileAnnouncementName;
         private int _lastTileAnnouncementKey = int.MinValue;
@@ -729,38 +728,61 @@ public sealed partial class InGameNarrationSystem
                 return;
             }
 
+            float configVolume = (ScreenReaderModConfig.Instance?.CursorVolume ?? 100) / 100f;
+            if (configVolume <= 0f)
+            {
+                return;
+            }
+
             CleanupFinishedInstances();
 
             Vector2 offset = tileCenterWorld - player.Center;
-            SoundEffect tone = EnsureCursorTone();
+
+            // Calculate frequency based on screen position:
+            // - Top of screen: 1000 Hz
+            // - Middle of screen: 440 Hz
+            // - Bottom of screen: 200 Hz
+            // This automatically adapts to any resolution or zoom level
+            Vector2 screenPos = tileCenterWorld - Main.screenPosition;
+            float normalizedScreenY = MathHelper.Clamp(screenPos.Y / Main.screenHeight, 0f, 1f);
+            float frequency;
+            if (normalizedScreenY <= 0.5f)
+            {
+                // Top half of screen: interpolate 1000 Hz down to 440 Hz
+                float t = normalizedScreenY * 2f; // 0 at top, 1 at middle
+                frequency = MathHelper.Lerp(1000f, 440f, t);
+            }
+            else
+            {
+                // Bottom half of screen: interpolate 440 Hz down to 200 Hz
+                float t = (normalizedScreenY - 0.5f) * 2f; // 0 at middle, 1 at bottom
+                frequency = MathHelper.Lerp(440f, 200f, t);
+            }
+
+            SoundEffect tone = CreateCursorTone(frequency);
 
             float pan = MathHelper.Clamp(offset.X / 480f, -1f, 1f);
-            float pitch = MathHelper.Clamp(-offset.Y / 320f, -0.6f, 0.6f);
-            float baseVolume = MathHelper.Clamp(0.35f + Math.Abs(pitch) * 0.2f, 0f, 0.7f);
-            if (!hasTile)
-            {
-                baseVolume *= 0.5f;
-            }
+            float baseVolume = 0.45f;
             float distanceTiles = offset.Length() / 16f;
             float loudness = SoundLoudnessUtility.ApplyDistanceFalloff(
                 baseVolume,
                 distanceTiles,
                 CursorLoudnessReferenceTiles,
                 minFactor: 0.4f);
-            float volume = loudness * Main.soundVolume * AudioVolumeDefaults.WorldCueVolumeScale;
+            float volume = loudness * Main.soundVolume * AudioVolumeDefaults.WorldCueVolumeScale * configVolume;
 
             SoundEffectInstance instance = tone.CreateInstance();
             instance.IsLooped = false;
             instance.Volume = volume;
-            instance.Pitch = pitch;
+            instance.Pitch = 0f;
             instance.Pan = pan;
             instance.Play();
-            ActiveInstances.Add(instance);
+            ActiveSounds.Add((tone, instance));
         }
 
         public static void DisposeStaticResources()
         {
-            foreach (SoundEffectInstance instance in ActiveInstances)
+            foreach (var (effect, instance) in ActiveSounds)
             {
                 try
                 {
@@ -772,33 +794,16 @@ public sealed partial class InGameNarrationSystem
                 }
 
                 instance.Dispose();
+                effect.Dispose();
             }
 
-            ActiveInstances.Clear();
-
-            if (_cursorTone is not null)
-            {
-                _cursorTone.Dispose();
-                _cursorTone = null;
-            }
+            ActiveSounds.Clear();
         }
 
-        private static SoundEffect EnsureCursorTone()
-        {
-            if (_cursorTone is null || _cursorTone.IsDisposed)
-            {
-                _cursorTone?.Dispose();
-                _cursorTone = CreateCursorTone();
-            }
-
-            return _cursorTone;
-        }
-
-        private static SoundEffect CreateCursorTone()
+        private static SoundEffect CreateCursorTone(float frequency)
         {
             const int sampleRate = 44100;
-            const float durationSeconds = 0.09f;
-            const float frequency = 880f;
+            const float durationSeconds = 0.045f;
             int sampleCount = Math.Max(1, (int)(sampleRate * durationSeconds));
             byte[] buffer = new byte[sampleCount * sizeof(short)];
 
@@ -819,13 +824,14 @@ public sealed partial class InGameNarrationSystem
 
         private static void CleanupFinishedInstances()
         {
-            for (int i = ActiveInstances.Count - 1; i >= 0; i--)
+            for (int i = ActiveSounds.Count - 1; i >= 0; i--)
             {
-                SoundEffectInstance instance = ActiveInstances[i];
+                var (effect, instance) = ActiveSounds[i];
                 if (instance.State == SoundState.Stopped)
                 {
                     instance.Dispose();
-                    ActiveInstances.RemoveAt(i);
+                    effect.Dispose();
+                    ActiveSounds.RemoveAt(i);
                 }
             }
         }

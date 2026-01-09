@@ -23,7 +23,7 @@ public sealed partial class InGameNarrationSystem
         private const int MinIntervalFrames = 7;
         private const int MaxIntervalFrames = 32;
         private const float HostileToneDurationSeconds = 0.13f;
-        private const float HostileToneGain = 0.42f;
+        private const float HostileToneGain = 0.45f;
         private static readonly float[] HostileTonePartials = { 1.24f, 1.5f };
         private static readonly ToneEnvelope HostileToneEnvelope = new(attackFraction: 0.12f, releaseFraction: 0.55f, applyHannWindow: true);
 

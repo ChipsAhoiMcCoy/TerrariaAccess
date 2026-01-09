@@ -33,8 +33,7 @@ public sealed partial class InGameNarrationSystem
         private float _lastHarmfulFrequency;
 
         // Edge static state
-        private const float StaticMaxVolume = 0.18f;    // Never louder than footsteps (footsteps are ~0.225-0.4375)
-        private const float StaticMinVolume = 0.02f;    // Very faint when far away
+        private const float StaticVolume = 0.22f;        // Fixed volume (about half of main sounds)
         private const float StaticMaxDistanceTiles = 18f; // Same as scan range
         private SoundEffectInstance? _edgeStaticInstance;
         private float _lastEdgeStaticVolume;
@@ -338,7 +337,7 @@ public sealed partial class InGameNarrationSystem
             frequency = onPlatform
                 ? MathHelper.Lerp(360f, 430f, normalized)
                 : MathHelper.Lerp(190f, 220f, normalized);
-            float baseVolume = MathHelper.Lerp(0.225f, 0.4375f, normalized);
+            float baseVolume = 0.45f;
             loudness = SoundLoudnessUtility.ApplyDistanceFalloff(baseVolume, distanceTiles: 0f, referenceTiles: 1f);
         }
 
@@ -376,7 +375,7 @@ public sealed partial class InGameNarrationSystem
             float horizontalSpeed = Math.Abs(player.velocity.X);
             float normalized = MathHelper.Clamp((verticalSpeed + horizontalSpeed) / 8f, 0f, 1f);
             frequency = MathHelper.Lerp(520f, 640f, normalized);
-            float baseVolume = MathHelper.Lerp(0.22f, 0.48f, normalized);
+            float baseVolume = 0.22f;
             loudness = SoundLoudnessUtility.ApplyDistanceFalloff(baseVolume, distanceTiles: 0f, referenceTiles: 1f);
         }
 
@@ -419,13 +418,8 @@ public sealed partial class InGameNarrationSystem
 
             EdgeScanResult nearestEdge = edge.Value;
 
-            // Compute volume based on distance (closer = louder)
-            // Use quadratic falloff for more dramatic volume increase as player approaches
-            float distanceTiles = nearestEdge.DistancePixels / 16f;
-            float normalizedDistance = MathHelper.Clamp(distanceTiles / StaticMaxDistanceTiles, 0f, 1f);
-            // Quadratic falloff: volume increases more dramatically as player gets close
-            float proximityFactor = (1f - normalizedDistance) * (1f - normalizedDistance);
-            float volume = MathHelper.Lerp(StaticMinVolume, StaticMaxVolume, proximityFactor);
+            // Fixed volume for edge detection
+            float volume = StaticVolume;
 
             // Compute pan based on actual world position of edge relative to player
             Vector2 playerCenter = player.Center;

@@ -103,7 +103,7 @@ public sealed partial class InGameNarrationSystem
             frequency = movingUp
                 ? MathHelper.Lerp(520f, 680f, normalized)
                 : MathHelper.Lerp(420f, 560f, normalized);
-            float baseVolume = MathHelper.Lerp(0.18f, 0.42f, normalized);
+            float baseVolume = 0.45f;
             loudness = SoundLoudnessUtility.ApplyDistanceFalloff(baseVolume, distanceTiles: 0f, referenceTiles: 1f);
         }
 

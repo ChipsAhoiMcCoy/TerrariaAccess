@@ -114,7 +114,7 @@ public sealed partial class GuidanceSystem
             frequency: 720f,
             durationSeconds: 0.13f,
             envelope: SynthesizedSoundFactory.ToneEnvelopes.WaypointPulse,
-            gain: 0.75f);
+            gain: 0.45f);
     }
 
     private static void CleanupFinishedWaypointInstances()

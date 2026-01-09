@@ -1328,8 +1328,7 @@ public sealed partial class InGameNarrationSystem
             ToneEnvelope envelope,
             float durationSeconds,
             float baseGain,
-            float minVolume,
-            float maxVolume,
+            float volume,
             float maxAudibleDistanceTiles,
             int minIntervalFrames,
             int maxIntervalFrames,
@@ -1345,8 +1344,7 @@ public sealed partial class InGameNarrationSystem
             Envelope = envelope;
             DurationSeconds = durationSeconds;
             BaseGain = baseGain;
-            MinVolume = minVolume;
-            MaxVolume = maxVolume;
+            Volume = volume;
             MaxAudibleDistanceTiles = maxAudibleDistanceTiles;
             MinIntervalFrames = minIntervalFrames;
             MaxIntervalFrames = maxIntervalFrames;
@@ -1363,8 +1361,7 @@ public sealed partial class InGameNarrationSystem
         public ToneEnvelope Envelope { get; }
         public float DurationSeconds { get; }
         public float BaseGain { get; }
-        public float MinVolume { get; }
-        public float MaxVolume { get; }
+        public float Volume { get; }
         public float MaxAudibleDistanceTiles { get; }
         public int MinIntervalFrames { get; }
         public int MaxIntervalFrames { get; }
@@ -1376,14 +1373,8 @@ public sealed partial class InGameNarrationSystem
 
         public float ComputeVolume(float distanceTiles)
         {
-            if (MaxAudibleDistanceTiles <= 0f)
-            {
-                return MaxVolume;
-            }
-
-            float normalized = Math.Clamp(distanceTiles / MaxAudibleDistanceTiles, 0f, 1f);
-            float closeness = 1f - normalized;
-            return MathHelper.Lerp(MinVolume, MaxVolume, closeness);
+            _ = distanceTiles;
+            return Volume;
         }
 
         public int ComputeDelayFrames(float distanceTiles)
@@ -1399,8 +1390,7 @@ public sealed partial class InGameNarrationSystem
             envelope: SynthesizedSoundFactory.ToneEnvelopes.WorldCue,
             durationSeconds: 0.18f,
             baseGain: 0.4f,
-            minVolume: 0.2f,
-            maxVolume: 0.8f,
+            volume: 0.45f,
             maxAudibleDistanceTiles: 85f,
             minIntervalFrames: SweepIntervalFrames,
             maxIntervalFrames: 52,
@@ -1414,8 +1404,7 @@ public sealed partial class InGameNarrationSystem
             envelope: SynthesizedSoundFactory.ToneEnvelopes.WorldCue,
             durationSeconds: 0.22f,
             baseGain: 0.4f,
-            minVolume: 0.22f,
-            maxVolume: 0.94f,
+            volume: 0.45f,
             maxAudibleDistanceTiles: 90f,
             minIntervalFrames: SweepIntervalFrames,
             maxIntervalFrames: 52,
@@ -1429,8 +1418,7 @@ public sealed partial class InGameNarrationSystem
             envelope: SynthesizedSoundFactory.ToneEnvelopes.WorldCue,
             durationSeconds: 0.22f,
             baseGain: 0.4f,
-            minVolume: 0.22f,
-            maxVolume: 0.92f,
+            volume: 0.45f,
             maxAudibleDistanceTiles: 90f,
             minIntervalFrames: SweepIntervalFrames,
             maxIntervalFrames: 52,
@@ -1444,8 +1432,7 @@ public sealed partial class InGameNarrationSystem
             envelope: SynthesizedSoundFactory.ToneEnvelopes.WorldCue,
             durationSeconds: 0.22f,
             baseGain: 0.4f,
-            minVolume: 0.24f,
-            maxVolume: 0.86f,
+            volume: 0.45f,
             maxAudibleDistanceTiles: 90f,
             minIntervalFrames: SweepIntervalFrames,
             maxIntervalFrames: 52,
@@ -1459,8 +1446,7 @@ public sealed partial class InGameNarrationSystem
             envelope: SynthesizedSoundFactory.ToneEnvelopes.WorldCue,
             durationSeconds: 0.2f,
             baseGain: 0.38f,
-            minVolume: 0.2f,
-            maxVolume: 0.7f,
+            volume: 0.45f,
             maxAudibleDistanceTiles: 85f,
             minIntervalFrames: SweepIntervalFrames,
             maxIntervalFrames: 56,
@@ -1474,8 +1460,7 @@ public sealed partial class InGameNarrationSystem
             envelope: SynthesizedSoundFactory.ToneEnvelopes.WorldCue,
             durationSeconds: 0.2f,
             baseGain: 0.38f,
-            minVolume: 0.24f,
-            maxVolume: 0.74f,
+            volume: 0.45f,
             maxAudibleDistanceTiles: 85f,
             minIntervalFrames: SweepIntervalFrames,
             maxIntervalFrames: 56,
@@ -1489,8 +1474,7 @@ public sealed partial class InGameNarrationSystem
             envelope: SynthesizedSoundFactory.ToneEnvelopes.WorldCue,
             durationSeconds: 0.2f,
             baseGain: 0.38f,
-            minVolume: 0.2f,
-            maxVolume: 0.7f,
+            volume: 0.45f,
             maxAudibleDistanceTiles: 80f,
             minIntervalFrames: SweepIntervalFrames,
             maxIntervalFrames: 54,
@@ -1504,8 +1488,7 @@ public sealed partial class InGameNarrationSystem
             envelope: SynthesizedSoundFactory.ToneEnvelopes.WorldCue,
             durationSeconds: 0.2f,
             baseGain: 0.38f,
-            minVolume: 0.22f,
-            maxVolume: 0.72f,
+            volume: 0.45f,
             maxAudibleDistanceTiles: 80f,
             minIntervalFrames: SweepIntervalFrames,
             maxIntervalFrames: 54,
@@ -1519,8 +1502,7 @@ public sealed partial class InGameNarrationSystem
             envelope: SynthesizedSoundFactory.ToneEnvelopes.WorldCue,
             durationSeconds: 0.2f,
             baseGain: 0.42f,
-            minVolume: 0.25f,
-            maxVolume: 0.82f,
+            volume: 0.45f,
             maxAudibleDistanceTiles: 70f,
             minIntervalFrames: SweepIntervalFrames,
             maxIntervalFrames: 50,
@@ -1534,8 +1516,7 @@ public sealed partial class InGameNarrationSystem
             envelope: SynthesizedSoundFactory.ToneEnvelopes.WorldCue,
             durationSeconds: 0.2f,
             baseGain: 0.36f,
-            minVolume: 0.22f,
-            maxVolume: 0.8f,
+            volume: 0.45f,
             maxAudibleDistanceTiles: 80f,
             minIntervalFrames: SweepIntervalFrames,
             maxIntervalFrames: 48,
@@ -1549,8 +1530,7 @@ public sealed partial class InGameNarrationSystem
             envelope: SynthesizedSoundFactory.ToneEnvelopes.WorldCue,
             durationSeconds: 0.2f,
             baseGain: 0.38f,
-            minVolume: 0.24f,
-            maxVolume: 0.78f,
+            volume: 0.45f,
             maxAudibleDistanceTiles: 95f,
             minIntervalFrames: SweepIntervalFrames,
             maxIntervalFrames: 46,
@@ -1564,8 +1544,7 @@ public sealed partial class InGameNarrationSystem
             envelope: SynthesizedSoundFactory.ToneEnvelopes.WorldCue,
             durationSeconds: 0.2f,
             baseGain: 0.36f,
-            minVolume: 0.24f,
-            maxVolume: 0.82f,
+            volume: 0.45f,
             maxAudibleDistanceTiles: 92f,
             minIntervalFrames: SweepIntervalFrames,
             maxIntervalFrames: 48,
@@ -1580,8 +1559,7 @@ public sealed partial class InGameNarrationSystem
             envelope: SynthesizedSoundFactory.ToneEnvelopes.WorldCue,
             durationSeconds: 0.22f,
             baseGain: 0.38f,
-            minVolume: 0.24f,
-            maxVolume: 0.86f,
+            volume: 0.45f,
             maxAudibleDistanceTiles: 92f,
             minIntervalFrames: SweepIntervalFrames,
             maxIntervalFrames: 48,
