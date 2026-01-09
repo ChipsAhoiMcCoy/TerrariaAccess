@@ -248,8 +248,18 @@ public sealed partial class InGameNarrationSystem
                 }
             }
 
-            SlotFocus? focus = (selectingSpecial || inGamepadCraftingGrid) ? null : _currentFocus;
-            Item? focusedItem = (selectingSpecial || inGamepadCraftingGrid) ? null : GetItemFromFocus(focus);
+            // Also handle crafting list (vertical menu) link points so the area context
+            // is set correctly for the CraftingNarrator's gate check
+            bool inGamepadCraftingList = usingGamepad &&
+                currentPoint >= CraftingListLinkPointStart &&
+                currentPoint < CraftingListLinkPointEnd;
+            if (inGamepadCraftingList)
+            {
+                UiAreaNarrationContext.RecordArea(UiNarrationArea.Crafting);
+            }
+
+            SlotFocus? focus = (selectingSpecial || inGamepadCraftingGrid || inGamepadCraftingList) ? null : _currentFocus;
+            Item? focusedItem = (selectingSpecial || inGamepadCraftingGrid || inGamepadCraftingList) ? null : GetItemFromFocus(focus);
             if (focus.HasValue)
             {
                 UiAreaNarrationContext.RecordSlotContext(focus.Value.Context);
@@ -1350,7 +1360,7 @@ public sealed partial class InGameNarrationSystem
             // Crafting list (normal view): 1500-1999
             if (point >= CraftingListLinkPointStart && point < CraftingListLinkPointEnd)
             {
-                return InventoryRegion.Crafting;
+                return InventoryRegion.CraftingList;
             }
 
             return InventoryRegion.None;
@@ -1362,13 +1372,23 @@ public sealed partial class InGameNarrationSystem
         /// </summary>
         internal static string? TryGetAndUpdateCraftingRegionPrefix(bool isGridMode)
         {
-            InventoryRegion targetRegion = isGridMode ? InventoryRegion.CraftingGrid : InventoryRegion.Crafting;
+            InventoryRegion targetRegion = isGridMode ? InventoryRegion.CraftingGrid : InventoryRegion.CraftingList;
             if (targetRegion == _lastAnnouncedRegion)
             {
                 return null;
             }
 
             _lastAnnouncedRegion = targetRegion;
+            return GetRegionDisplayName(targetRegion);
+        }
+
+        /// <summary>
+        /// Gets the display name for the crafting region without updating tracking state.
+        /// Used by CraftingNarrator to force a region prefix on first entry to crafting.
+        /// </summary>
+        internal static string? GetCraftingRegionDisplayName(bool isGridMode)
+        {
+            InventoryRegion targetRegion = isGridMode ? InventoryRegion.CraftingGrid : InventoryRegion.CraftingList;
             return GetRegionDisplayName(targetRegion);
         }
 
@@ -1392,6 +1412,8 @@ public sealed partial class InGameNarrationSystem
                     "Mods.ScreenReaderMod.InventoryRegions.Crafting", "Crafting"),
                 InventoryRegion.CraftingGrid => LocalizationHelper.GetTextOrFallback(
                     "Mods.ScreenReaderMod.InventoryRegions.CraftingGrid", "Crafting Grid"),
+                InventoryRegion.CraftingList => LocalizationHelper.GetTextOrFallback(
+                    "Mods.ScreenReaderMod.InventoryRegions.CraftingList", "Crafting"),
                 InventoryRegion.Storage => LocalizationHelper.GetTextOrFallback(
                     "Mods.ScreenReaderMod.InventoryRegions.Storage", "Storage"),
                 InventoryRegion.Shop => LocalizationHelper.GetTextOrFallback(

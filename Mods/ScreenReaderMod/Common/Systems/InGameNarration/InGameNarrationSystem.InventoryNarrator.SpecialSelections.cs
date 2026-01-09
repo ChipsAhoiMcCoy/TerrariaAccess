@@ -160,8 +160,10 @@ public sealed partial class InGameNarrationSystem
             {
                 // Inventory management buttons (Quick Stack, Sort)
                 301 or 302 => InventoryRegion.InventoryExtras,
-                // Equipment page buttons, Camera Mode, Emote, Bestiary, Loadout controls
-                >= 304 and <= 311 => InventoryRegion.CharacterPanel,
+                // Equipment page buttons and Camera Mode
+                >= 304 and <= 308 => InventoryRegion.CharacterPanel,
+                // Emote, Bestiary, and Loadout Controls buttons (visually near inventory)
+                309 or 310 or 311 => InventoryRegion.InventoryExtras,
                 // Individual loadout slots
                 >= 312 and <= 320 => InventoryRegion.CharacterPanel,
                 // Chest buttons

@@ -36,6 +36,7 @@ public sealed partial class InGameNarrationSystem
     private sealed class CraftingNarrator
     {
         private RecipeAnnouncement? _lastAnnouncement;
+        private bool? _lastWasGridMode;
         private static RecipeFocus? _hoveredFocusOverride;
         private static uint _hoveredFocusFrame;
         private static int _recipeLookupVersion = -1;
@@ -386,18 +387,14 @@ public sealed partial class InGameNarrationSystem
 
             HandleGuideAndReforge(player);
 
-            if (!UiAreaNarrationContext.IsActiveArea(UiNarrationArea.Crafting | UiNarrationArea.Guide))
-            {
-                ResetFocus();
-                return;
-            }
+            // When using gamepad UI, detect crafting link points FIRST and set the area context
+            // before the area check. This ensures we can announce when navigating to crafting.
+            int currentPoint = PlayerInput.UsingGamepadUI ? UILinkPointNavigator.CurrentPoint : -1;
+            bool isOnCraftingGrid = currentPoint >= CraftingGridLinkPointStart && currentPoint < CraftingGridLinkPointEnd;
+            bool isOnCraftingList = currentPoint >= CraftingListLinkPointStart && currentPoint < CraftingListLinkPointEnd;
 
-            // When using gamepad UI, verify we're actually on a crafting-related link point.
-            // This prevents announcing recipes when inventory first opens and focus is elsewhere.
             if (PlayerInput.UsingGamepadUI)
             {
-                int currentPoint = UILinkPointNavigator.CurrentPoint;
-
                 // First check if we have cached context for this link point
                 if (InventoryNarrator.TryGetContextForLinkPoint(currentPoint, out int context))
                 {
@@ -406,6 +403,8 @@ public sealed partial class InGameNarrationSystem
                         ResetFocus();
                         return;
                     }
+                    // Valid crafting context - ensure area is set
+                    UiAreaNarrationContext.RecordArea(UiNarrationArea.Crafting);
                 }
                 else
                 {
@@ -416,7 +415,42 @@ public sealed partial class InGameNarrationSystem
                         ResetFocus();
                         return;
                     }
+                    // Link point is in crafting range - set the area context
+                    UiAreaNarrationContext.RecordArea(UiNarrationArea.Crafting);
                 }
+            }
+
+            if (!UiAreaNarrationContext.IsActiveArea(UiNarrationArea.Crafting | UiNarrationArea.Guide))
+            {
+                ResetFocus();
+                return;
+            }
+
+            // Determine actual grid mode based on link point position, not Main.recBigList,
+            // because Terraria doesn't reset recBigList when leaving the grid page.
+            bool actualGridMode = isOnCraftingGrid && Main.recBigList;
+
+            // Track mode based on link point position for region announcements, because
+            // Main.recBigList may not be set on the same frame the link point changes.
+            // This prevents the region prefix from being skipped on first navigation.
+            bool linkPointGridMode = isOnCraftingGrid;
+
+            // Detect first entry to crafting area (from inventory/hotbar) - when _lastWasGridMode
+            // is null, we haven't been in crafting yet this session and should announce the region.
+            bool isFirstEntry = !_lastWasGridMode.HasValue;
+
+            // Detect mode change (grid <-> list) BEFORE capturing focus - this ensures
+            // we clear stale hover data before building the announcement.
+            // Use linkPointGridMode to avoid flickering when recBigList lags behind.
+            bool modeChanged = _lastWasGridMode.HasValue && _lastWasGridMode.Value != linkPointGridMode;
+            _lastWasGridMode = linkPointGridMode;
+
+            // When mode changes, clear the stale hovered focus from the previous mode
+            // to prevent announcing the old grid item when switching to the list
+            if (modeChanged)
+            {
+                _hoveredFocusOverride = null;
+                _hoveredFocusFrame = 0;
             }
 
             if (!TryCaptureFocus(out RecipeFocus focus))
@@ -430,18 +464,35 @@ public sealed partial class InGameNarrationSystem
                 return;
             }
 
-            if (_lastAnnouncement.HasValue && _lastAnnouncement.Value.Equals(announcement))
+            // Get region prefix for display (will return prefix if region changed in its tracking)
+            // Use linkPointGridMode rather than actualGridMode for region prefix, because
+            // Main.recBigList may not be set on the same frame the link point changes,
+            // causing the region prefix to be skipped when first navigating to the grid.
+            string? regionPrefix = InventoryNarrator.TryGetAndUpdateCraftingRegionPrefix(linkPointGridMode);
+
+            // On first entry to crafting (from inventory/hotbar), always announce the region prefix
+            // even if the region tracking thinks we're already in that region. This handles cases
+            // where _lastAnnouncedRegion wasn't properly reset between crafting visits.
+            if (isFirstEntry && string.IsNullOrWhiteSpace(regionPrefix))
+            {
+                regionPrefix = InventoryNarrator.GetCraftingRegionDisplayName(linkPointGridMode);
+            }
+
+            bool hasRegionPrefix = !string.IsNullOrWhiteSpace(regionPrefix);
+
+            // Skip deduplication if mode changed, first entry, OR if region prefix indicates a change
+            bool skipDedup = modeChanged || isFirstEntry || hasRegionPrefix;
+
+            if (!skipDedup && _lastAnnouncement.HasValue && _lastAnnouncement.Value.Equals(announcement))
             {
                 return;
             }
 
             _lastAnnouncement = announcement;
 
-            // Check for region change and prepend prefix if needed
-            string? regionPrefix = InventoryNarrator.TryGetAndUpdateCraftingRegionPrefix(Main.recBigList);
-            string message = string.IsNullOrWhiteSpace(regionPrefix)
-                ? announcement.Message
-                : $"{regionPrefix}. {announcement.Message}";
+            string message = hasRegionPrefix
+                ? $"{regionPrefix}. {announcement.Message}"
+                : announcement.Message;
 
             ScreenReaderService.Announce(message, force: true);
         }
@@ -843,6 +894,7 @@ public sealed partial class InGameNarrationSystem
         private void ResetFocus()
         {
             _lastAnnouncement = null;
+            _lastWasGridMode = null;
             _hoveredFocusOverride = null;
             _hoveredFocusFrame = 0;
         }

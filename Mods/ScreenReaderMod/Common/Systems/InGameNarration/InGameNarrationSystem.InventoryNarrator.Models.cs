@@ -95,6 +95,7 @@ public sealed partial class InGameNarrationSystem
             InventoryExtras,
             Crafting,
             CraftingGrid,
+            CraftingList,
             Storage,
             Shop,
         }
