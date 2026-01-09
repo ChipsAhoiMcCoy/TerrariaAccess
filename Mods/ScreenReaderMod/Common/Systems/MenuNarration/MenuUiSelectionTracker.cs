@@ -718,6 +718,16 @@ internal sealed partial class MenuUiSelectionTracker
         var buttons = new List<UIElement>();
         CollectImageButtonsRecursive(root, buttons);
 
+        // Filter to only include buttons in the bottom action row.
+        // tModLoader adds error/warning buttons at the top (VAlign=0) which would
+        // otherwise shift the indices of the standard action buttons (Play, Favorite, etc.).
+        if (buttons.Count > 0)
+        {
+            float maxY = buttons.Max(static b => b.GetDimensions().Y);
+            const float rowTolerance = 20f;
+            buttons = buttons.Where(b => maxY - b.GetDimensions().Y < rowTolerance).ToList();
+        }
+
         buttons.Sort(static (a, b) =>
         {
             float ax = a.GetDimensions().X;
