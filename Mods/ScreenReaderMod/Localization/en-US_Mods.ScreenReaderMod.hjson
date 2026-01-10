@@ -156,6 +156,31 @@ Mods: {
 			Blooming: blooming
 		}
 
+		TreeNames: {
+			Forest: Forest Tree
+			Corrupt: Corrupt Tree
+			Mushroom: Mushroom Tree
+			Crimson: Crimson Tree
+			Jungle: Jungle Tree
+			Snow: Boreal Tree
+			Hallowed: Hallowed Tree
+			Palm: Palm Tree
+			PalmCorrupt: Corrupt Palm Tree
+			PalmCrimson: Crimson Palm Tree
+			PalmHallowed: Hallowed Palm Tree
+			Ash: Ash Tree
+			Pine: Pine Tree
+			Sakura: Sakura Tree
+			YellowWillow: Yellow Willow Tree
+			Topaz: Topaz Gem Tree
+			Amethyst: Amethyst Gem Tree
+			Sapphire: Sapphire Gem Tree
+			Emerald: Emerald Gem Tree
+			Ruby: Ruby Gem Tree
+			Diamond: Diamond Gem Tree
+			Amber: Amber Gem Tree
+		}
+
 		WireColors: {
 			Red: Red
 			Green: Green

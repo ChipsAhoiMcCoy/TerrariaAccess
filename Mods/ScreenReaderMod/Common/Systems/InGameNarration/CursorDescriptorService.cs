@@ -4,6 +4,7 @@ using System.Collections.Generic;
 using ScreenReaderMod.Common.Services;
 using ScreenReaderMod.Common.Utilities;
 using Terraria;
+using Terraria.Enums;
 using Terraria.ID;
 using Terraria.Localization;
 using Terraria.Map;
@@ -120,6 +121,18 @@ internal sealed class CursorDescriptorService
             name = AppendTileStateLabels(tile, name);
             descriptor = BuildDescriptor(tileType, name);
             return true;
+        }
+
+        // Try to get biome-specific tree names
+        if (IsTreeTile(tileType))
+        {
+            string? treeName = TryGetTreeName(tileX, tileY, tile);
+            if (!string.IsNullOrWhiteSpace(treeName))
+            {
+                name = AppendTileStateLabels(tile, treeName);
+                descriptor = BuildDescriptor(tileType, name);
+                return true;
+            }
         }
 
         try
@@ -707,6 +720,193 @@ internal sealed class CursorDescriptorService
             TileID.ImmatureHerbs => GetLocalizedWithFallback("Mods.ScreenReaderMod.HerbStages.Immature", "immature"),
             TileID.MatureHerbs => GetLocalizedWithFallback("Mods.ScreenReaderMod.HerbStages.Mature", "mature"),
             TileID.BloomingHerbs => GetLocalizedWithFallback("Mods.ScreenReaderMod.HerbStages.Blooming", "blooming"),
+            _ => null
+        };
+    }
+
+    /// <summary>
+    /// Checks if the given tile type is any type of tree tile.
+    /// </summary>
+    private static bool IsTreeTile(int tileType)
+    {
+        return tileType == TileID.Trees ||
+               tileType == TileID.MushroomTrees ||
+               tileType == TileID.PalmTree ||
+               tileType == TileID.PineTree ||
+               tileType == TileID.VanityTreeSakura ||
+               tileType == TileID.VanityTreeYellowWillow ||
+               tileType == TileID.TreeAsh ||
+               tileType == TileID.TreeTopaz ||
+               tileType == TileID.TreeAmethyst ||
+               tileType == TileID.TreeSapphire ||
+               tileType == TileID.TreeEmerald ||
+               tileType == TileID.TreeRuby ||
+               tileType == TileID.TreeDiamond ||
+               tileType == TileID.TreeAmber;
+    }
+
+    /// <summary>
+    /// Gets the biome-specific tree name for a tree tile at the given coordinates.
+    /// </summary>
+    private static string? TryGetTreeName(int tileX, int tileY, Tile tile)
+    {
+        int tileType = tile.TileType;
+
+        // Handle special tree types that don't depend on ground tile
+        switch (tileType)
+        {
+            case TileID.MushroomTrees:
+                return GetLocalizedWithFallback("Mods.ScreenReaderMod.TreeNames.Mushroom", "Mushroom Tree");
+            case TileID.PineTree:
+                return GetLocalizedWithFallback("Mods.ScreenReaderMod.TreeNames.Pine", "Pine Tree");
+            case TileID.VanityTreeSakura:
+                return GetLocalizedWithFallback("Mods.ScreenReaderMod.TreeNames.Sakura", "Sakura Tree");
+            case TileID.VanityTreeYellowWillow:
+                return GetLocalizedWithFallback("Mods.ScreenReaderMod.TreeNames.YellowWillow", "Yellow Willow Tree");
+            case TileID.TreeAsh:
+                return GetLocalizedWithFallback("Mods.ScreenReaderMod.TreeNames.Ash", "Ash Tree");
+            case TileID.TreeTopaz:
+                return GetLocalizedWithFallback("Mods.ScreenReaderMod.TreeNames.Topaz", "Topaz Gem Tree");
+            case TileID.TreeAmethyst:
+                return GetLocalizedWithFallback("Mods.ScreenReaderMod.TreeNames.Amethyst", "Amethyst Gem Tree");
+            case TileID.TreeSapphire:
+                return GetLocalizedWithFallback("Mods.ScreenReaderMod.TreeNames.Sapphire", "Sapphire Gem Tree");
+            case TileID.TreeEmerald:
+                return GetLocalizedWithFallback("Mods.ScreenReaderMod.TreeNames.Emerald", "Emerald Gem Tree");
+            case TileID.TreeRuby:
+                return GetLocalizedWithFallback("Mods.ScreenReaderMod.TreeNames.Ruby", "Ruby Gem Tree");
+            case TileID.TreeDiamond:
+                return GetLocalizedWithFallback("Mods.ScreenReaderMod.TreeNames.Diamond", "Diamond Gem Tree");
+            case TileID.TreeAmber:
+                return GetLocalizedWithFallback("Mods.ScreenReaderMod.TreeNames.Amber", "Amber Gem Tree");
+        }
+
+        // For standard trees and palm trees, determine type from ground tile
+        if (tileType == TileID.Trees || tileType == TileID.PalmTree)
+        {
+            TreeTypes treeType = GetTreeTypeFromPosition(tileX, tileY, tileType);
+            return GetTreeNameFromType(treeType);
+        }
+
+        return null;
+    }
+
+    /// <summary>
+    /// Finds the ground tile below a tree and determines the tree type.
+    /// Mimics WorldGen.GetTreeBottom and WorldGen.GetTreeType.
+    /// </summary>
+    private static TreeTypes GetTreeTypeFromPosition(int tileX, int tileY, int treeTileType)
+    {
+        int x = tileX;
+        int y = tileY;
+
+        // For palm trees, just go straight down
+        if (treeTileType == TileID.PalmTree)
+        {
+            while (y < Main.maxTilesY - 50)
+            {
+                Tile t = Framing.GetTileSafely(x, y);
+                if (t.HasTile && t.TileType != TileID.PalmTree)
+                {
+                    break;
+                }
+                y++;
+            }
+        }
+        else
+        {
+            // For standard trees, adjust x position based on frame to find trunk center
+            Tile startTile = Framing.GetTileSafely(x, y);
+            int frameCol = startTile.TileFrameX / 22;
+            int frameRow = startTile.TileFrameY / 22;
+
+            if (frameCol == 3 && frameRow <= 2)
+                x++;
+            else if (frameCol == 4 && frameRow >= 3 && frameRow <= 5)
+                x--;
+            else if (frameCol == 1 && frameRow >= 6 && frameRow <= 8)
+                x--;
+            else if (frameCol == 2 && frameRow >= 6 && frameRow <= 8)
+                x++;
+            else if (frameCol == 2 && frameRow >= 9)
+                x++;
+            else if (frameCol == 3 && frameRow >= 9)
+                x--;
+
+            // Go down until we find a non-tree tile
+            while (y < Main.maxTilesY - 50)
+            {
+                Tile t = Framing.GetTileSafely(x, y);
+                if (!t.HasTile)
+                {
+                    y++;
+                    continue;
+                }
+
+                // Check if it's still a tree trunk tile
+                if (TileID.Sets.IsATreeTrunk[t.TileType] || t.TileType == TileID.MushroomTrees)
+                {
+                    y++;
+                    continue;
+                }
+
+                break;
+            }
+        }
+
+        // Now we're at the ground tile - determine tree type
+        Tile groundTile = Framing.GetTileSafely(x, y);
+        if (!groundTile.HasTile)
+        {
+            return TreeTypes.None;
+        }
+
+        return GetTreeTypeFromGroundTile(groundTile.TileType);
+    }
+
+    /// <summary>
+    /// Determines the tree type based on the ground tile type.
+    /// Mirrors the logic from WorldGen.GetTreeType.
+    /// </summary>
+    private static TreeTypes GetTreeTypeFromGroundTile(int groundTileType)
+    {
+        return groundTileType switch
+        {
+            TileID.Grass or TileID.GolfGrass => TreeTypes.Forest,
+            TileID.CorruptGrass => TreeTypes.Corrupt,
+            TileID.MushroomGrass => TreeTypes.Mushroom,
+            TileID.CrimsonGrass => TreeTypes.Crimson,
+            TileID.JungleGrass => TreeTypes.Jungle,
+            TileID.SnowBlock => TreeTypes.Snow,
+            TileID.HallowedGrass or TileID.GolfGrassHallowed => TreeTypes.Hallowed,
+            TileID.Sand => TreeTypes.Palm,
+            TileID.Ebonsand => TreeTypes.PalmCorrupt,
+            TileID.Crimsand => TreeTypes.PalmCrimson,
+            TileID.Pearlsand => TreeTypes.PalmHallowed,
+            TileID.Ash => TreeTypes.Ash,
+            _ => TreeTypes.None
+        };
+    }
+
+    /// <summary>
+    /// Gets the localized tree name for a given tree type.
+    /// </summary>
+    private static string? GetTreeNameFromType(TreeTypes treeType)
+    {
+        return treeType switch
+        {
+            TreeTypes.Forest => GetLocalizedWithFallback("Mods.ScreenReaderMod.TreeNames.Forest", "Forest Tree"),
+            TreeTypes.Corrupt => GetLocalizedWithFallback("Mods.ScreenReaderMod.TreeNames.Corrupt", "Corrupt Tree"),
+            TreeTypes.Mushroom => GetLocalizedWithFallback("Mods.ScreenReaderMod.TreeNames.Mushroom", "Mushroom Tree"),
+            TreeTypes.Crimson => GetLocalizedWithFallback("Mods.ScreenReaderMod.TreeNames.Crimson", "Crimson Tree"),
+            TreeTypes.Jungle => GetLocalizedWithFallback("Mods.ScreenReaderMod.TreeNames.Jungle", "Jungle Tree"),
+            TreeTypes.Snow => GetLocalizedWithFallback("Mods.ScreenReaderMod.TreeNames.Snow", "Boreal Tree"),
+            TreeTypes.Hallowed => GetLocalizedWithFallback("Mods.ScreenReaderMod.TreeNames.Hallowed", "Hallowed Tree"),
+            TreeTypes.Palm => GetLocalizedWithFallback("Mods.ScreenReaderMod.TreeNames.Palm", "Palm Tree"),
+            TreeTypes.PalmCorrupt => GetLocalizedWithFallback("Mods.ScreenReaderMod.TreeNames.PalmCorrupt", "Corrupt Palm Tree"),
+            TreeTypes.PalmCrimson => GetLocalizedWithFallback("Mods.ScreenReaderMod.TreeNames.PalmCrimson", "Crimson Palm Tree"),
+            TreeTypes.PalmHallowed => GetLocalizedWithFallback("Mods.ScreenReaderMod.TreeNames.PalmHallowed", "Hallowed Palm Tree"),
+            TreeTypes.Ash => GetLocalizedWithFallback("Mods.ScreenReaderMod.TreeNames.Ash", "Ash Tree"),
             _ => null
         };
     }
