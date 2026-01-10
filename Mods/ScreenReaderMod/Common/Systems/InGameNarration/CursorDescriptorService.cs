@@ -33,6 +33,7 @@ internal sealed class CursorDescriptorService
         TileID.PressurePlates,
         TileID.WeightedPressurePlate,
         TileID.Timers,
+        TileID.LogicSensor,
     };
 
     /// <summary>
@@ -51,6 +52,7 @@ internal sealed class CursorDescriptorService
         TileID.Traps,
         TileID.PressurePlates,
         TileID.WeightedPressurePlate,
+        TileID.LogicSensor,
     };
 
     private static readonly Dictionary<int, Dictionary<int, int>> TileStyleToItemType = BuildTileStyleMap();
@@ -220,6 +222,15 @@ internal sealed class CursorDescriptorService
                 isOn ? "on" : "off");
         }
 
+        // Logic Sensor (TileID 423): 1x1 tile, frameX toggles between 0 (OFF) and 18 (ON/activated)
+        if (tileType == TileID.LogicSensor)
+        {
+            bool isOn = tile.TileFrameX >= 18;
+            return GetLocalizedWithFallback(
+                isOn ? "Mods.ScreenReaderMod.TileStates.SensorOn" : "Mods.ScreenReaderMod.TileStates.SensorOff",
+                isOn ? "active" : "inactive");
+        }
+
         return null;
     }
 
@@ -279,6 +290,13 @@ internal sealed class CursorDescriptorService
         if (tileType == TileID.Timers)
         {
             bool isOn = tile.TileFrameY != 0;
+            return isOn ? (baseKey | 0x10000) : baseKey;
+        }
+
+        // Logic Sensor: include on/off state so state changes trigger re-announcement
+        if (tileType == TileID.LogicSensor)
+        {
+            bool isOn = tile.TileFrameX >= 18;
             return isOn ? (baseKey | 0x10000) : baseKey;
         }
 

@@ -184,6 +184,12 @@ public sealed partial class InGameNarrationSystem
                     return (true, tile.TileFrameY != 0);
                 }
 
+                // Logic Sensor (TileID 423): frameX 0 = OFF, frameX 18 = ON (activated)
+                if (tile.TileType == TileID.LogicSensor)
+                {
+                    return (true, tile.TileFrameX >= 18);
+                }
+
                 return (false, false);
             }
 

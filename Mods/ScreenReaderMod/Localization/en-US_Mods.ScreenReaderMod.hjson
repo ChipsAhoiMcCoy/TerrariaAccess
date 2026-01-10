@@ -141,6 +141,8 @@ Mods: {
 			LeverOff: off
 			TimerOn: on
 			TimerOff: off
+			SensorOn: active
+			SensorOff: inactive
 			ToggledOn: on
 			ToggledOff: off
 			JunctionBoxStraight: straight mode, wires pass through in the same direction
