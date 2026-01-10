@@ -34,6 +34,8 @@ public sealed partial class InGameNarrationSystem
 {
     private sealed class NpcDialogueNarrator
     {
+        private const uint ButtonAnnouncementCooldownFrames = 30; // ~0.5 seconds at 60fps
+
         private int _lastNpc = -1;
         private string? _lastChat;
         private bool _lastPrimaryFocus;
@@ -43,6 +45,8 @@ public sealed partial class InGameNarrationSystem
         private bool _suppressNextButtonAnnouncement;
         private string? _pendingNpcChat;
         private int _lastAnnouncedButtonIndex = -1;
+        private ButtonType _lastAnnouncedButtonType;
+        private uint _lastButtonAnnouncementFrame;
 
         private static string? _currentPrimaryButton;
         private static string? _currentCloseButton;
@@ -140,6 +144,7 @@ public sealed partial class InGameNarrationSystem
             _lastChat = null;
             _pendingNpcChat = null;
             _lastAnnouncedButtonIndex = -1;
+            _lastButtonAnnouncementFrame = 0;
             // Don't suppress - we want the first button to announce with the bundled NPC chat
             _suppressNextButtonAnnouncement = false;
             NpcDialogueInputTracker.Reset();
@@ -166,9 +171,15 @@ public sealed partial class InGameNarrationSystem
                 else
                 {
                     // NPC changed what they're saying during the conversation (e.g., after clicking a button)
-                    // Announce immediately since we're already past the initial dialog
+                    // Bundle with current button position so player knows where they are
+                    // Pass updateCooldown: true to prevent HandleButtonFocus from immediately re-announcing the button
+                    string? currentButtonInfo = GetCurrentFocusedButtonInfo(updateCooldown: true);
+                    string announcement = string.IsNullOrWhiteSpace(currentButtonInfo)
+                        ? npcChatMessage
+                        : $"{npcChatMessage}. {currentButtonInfo}";
+
                     NarrationInstrumentationContext.SetPendingKey("npc-dialogue:text");
-                    ScreenReaderService.Announce(npcChatMessage, category: category, requestInterrupt: interruptsAllowed);
+                    ScreenReaderService.Announce(announcement, category: category, requestInterrupt: interruptsAllowed);
                 }
 
                 _lastChat = normalizedText;
@@ -305,12 +316,22 @@ public sealed partial class InGameNarrationSystem
                     return;
                 }
 
+                // Debounce: skip if we just announced this same button recently
+                // This prevents double announcements when clicking a button causes brief focus toggle
+                if (buttonType == _lastAnnouncedButtonType && IsWithinCooldown())
+                {
+                    lastState = true;
+                    return;
+                }
+
                 string trimmed = label.Trim();
 
                 // Build button announcement with "X of Y" position
                 int buttonIndex = availableButtons.IndexOf(buttonType);
                 int position = buttonIndex >= 0 ? buttonIndex + 1 : 1;
                 _lastAnnouncedButtonIndex = buttonIndex;
+                _lastAnnouncedButtonType = buttonType;
+                _lastButtonAnnouncementFrame = Main.GameUpdateCount;
 
                 string buttonLabel = trimmed;
                 if (!trimmed.Contains("button", StringComparison.OrdinalIgnoreCase))
@@ -343,6 +364,79 @@ public sealed partial class InGameNarrationSystem
             lastState = true;
         }
 
+        private bool IsWithinCooldown()
+        {
+            if (_lastButtonAnnouncementFrame == 0)
+            {
+                return false;
+            }
+
+            uint currentFrame = Main.GameUpdateCount;
+            uint elapsed = currentFrame >= _lastButtonAnnouncementFrame
+                ? currentFrame - _lastButtonAnnouncementFrame
+                : uint.MaxValue - _lastButtonAnnouncementFrame + currentFrame + 1;
+
+            return elapsed < ButtonAnnouncementCooldownFrames;
+        }
+
+        private string? GetCurrentFocusedButtonInfo(bool updateCooldown = false)
+        {
+            var availableButtons = BuildAvailableButtonsList();
+            int totalButtons = availableButtons.Count;
+
+            // Check which button is currently focused and build its info
+            ButtonType? focusedType = null;
+            string? label = null;
+
+            if (Main.npcChatFocus2 && !string.IsNullOrWhiteSpace(_currentPrimaryButton))
+            {
+                focusedType = ButtonType.Primary;
+                label = _currentPrimaryButton;
+            }
+            else if (Main.npcChatFocus1 && !string.IsNullOrWhiteSpace(_currentCloseButton))
+            {
+                focusedType = ButtonType.Close;
+                label = _currentCloseButton;
+            }
+            else if (Main.npcChatFocus3 && !string.IsNullOrWhiteSpace(_currentSecondaryButton))
+            {
+                focusedType = ButtonType.Secondary;
+                label = _currentSecondaryButton;
+            }
+            else if (Main.npcChatFocus4 && !string.IsNullOrWhiteSpace(_currentHappinessButton))
+            {
+                focusedType = ButtonType.Happiness;
+                label = _currentHappinessButton;
+            }
+
+            if (!focusedType.HasValue || string.IsNullOrWhiteSpace(label))
+            {
+                return null;
+            }
+
+            // Update cooldown tracking if requested, to prevent duplicate button announcements
+            // when HandleButtonFocus runs immediately after
+            if (updateCooldown)
+            {
+                _lastAnnouncedButtonType = focusedType.Value;
+                _lastButtonAnnouncementFrame = Main.GameUpdateCount;
+            }
+
+            string trimmed = label.Trim();
+            string buttonLabel = trimmed.Contains("button", StringComparison.OrdinalIgnoreCase)
+                ? trimmed
+                : $"{trimmed} button";
+
+            if (totalButtons > 1)
+            {
+                int buttonIndex = availableButtons.IndexOf(focusedType.Value);
+                int position = buttonIndex >= 0 ? buttonIndex + 1 : 1;
+                return $"{buttonLabel}, {position} of {totalButtons}";
+            }
+
+            return buttonLabel;
+        }
+
         private static ScreenReaderService.AnnouncementCategory ResolveCategory(NarrationServiceContext context)
         {
             return context.Category ?? ScreenReaderService.AnnouncementCategory.Default;
@@ -354,6 +448,7 @@ public sealed partial class InGameNarrationSystem
             _lastChat = null;
             _pendingNpcChat = null;
             _lastAnnouncedButtonIndex = -1;
+            _lastButtonAnnouncementFrame = 0;
             ResetFocus();
             _suppressNextButtonAnnouncement = false;
             _currentPrimaryButton = null;
