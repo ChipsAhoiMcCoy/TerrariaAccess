@@ -638,33 +638,64 @@ public sealed partial class InGameNarrationSystem
 
         private static void PlaySpatialCraftingTick(int craftingAvailableIndex)
         {
-            if (!UiSlotSpatialAudio.TryGetCraftingGridPosition(craftingAvailableIndex, out var position))
+            // First try: Get position directly from game's UILinkPointNavigator (most accurate)
+            if (UiSlotSpatialAudio.TryGetCurrentLinkPointPosition(out var linkPointPos))
             {
-                UiTickSoundPlayer.PlaySpatialTick(0f, 0f);
+                var spatial = UiSlotSpatialAudio.ComputeSpatialParamsFromScreen(linkPointPos);
+                UiTickSoundPlayer.PlaySpatialTick(spatial.Pan, spatial.Pitch);
                 return;
             }
 
-            var spatial = UiSlotSpatialAudio.ComputeSpatialParams(position);
-            UiTickSoundPlayer.PlaySpatialTick(spatial.Pan, spatial.Pitch);
+            // Second try: Get cursor position (synced during gamepad navigation)
+            if (UiSlotSpatialAudio.TryGetCursorPosition(out var cursorPos))
+            {
+                var spatial = UiSlotSpatialAudio.ComputeSpatialParamsFromScreen(cursorPos);
+                UiTickSoundPlayer.PlaySpatialTick(spatial.Pan, spatial.Pitch);
+                return;
+            }
+
+            // Fallback: Use calculated screen position for crafting grid
+            if (UiSlotSpatialAudio.TryGetCraftingGridScreenPosition(craftingAvailableIndex, out var screenPos))
+            {
+                var spatial = UiSlotSpatialAudio.ComputeSpatialParamsFromScreen(screenPos);
+                UiTickSoundPlayer.PlaySpatialTick(spatial.Pan, spatial.Pitch);
+                return;
+            }
+
+            // No position available, play centered tick
+            UiTickSoundPlayer.PlaySpatialTick(0f, 0f);
         }
 
         private static void PlaySpatialInventoryTick(SlotFocus? focus)
         {
-            if (!focus.HasValue)
+            // Try to get the best available screen position:
+            // 1) UILinkPointNavigator position (most accurate, directly from game)
+            // 2) Cursor position (synced to selected element during gamepad navigation)
+            // 3) Calculated position based on context/slot (fallback)
+            int context = focus?.Context ?? 0;
+            int slot = focus?.Slot ?? 0;
+
+            if (UiSlotSpatialAudio.TryGetBestScreenPosition(context, slot, out var screenPos))
             {
-                UiTickSoundPlayer.PlaySpatialTick(0f, 0f);
+                var spatial = UiSlotSpatialAudio.ComputeSpatialParamsFromScreen(screenPos);
+                UiTickSoundPlayer.PlaySpatialTick(spatial.Pan, spatial.Pitch);
                 return;
             }
 
-            SlotFocus value = focus.Value;
-            if (!UiSlotSpatialAudio.TryGetSlotPosition(value.Context, value.Slot, out var position))
+            // Ultimate fallback: logical grid-based positioning
+            if (focus.HasValue)
             {
-                UiTickSoundPlayer.PlaySpatialTick(0f, 0f);
-                return;
+                SlotFocus value = focus.Value;
+                if (UiSlotSpatialAudio.TryGetSlotPosition(value.Context, value.Slot, out var position))
+                {
+                    var fallbackSpatial = UiSlotSpatialAudio.ComputeSpatialParams(position);
+                    UiTickSoundPlayer.PlaySpatialTick(fallbackSpatial.Pan, fallbackSpatial.Pitch);
+                    return;
+                }
             }
 
-            var spatial = UiSlotSpatialAudio.ComputeSpatialParams(position);
-            UiTickSoundPlayer.PlaySpatialTick(spatial.Pan, spatial.Pitch);
+            // No position available, play centered tick
+            UiTickSoundPlayer.PlaySpatialTick(0f, 0f);
         }
 
         public void ForceReset()
