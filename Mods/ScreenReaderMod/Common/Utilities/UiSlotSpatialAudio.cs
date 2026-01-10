@@ -45,6 +45,13 @@ internal static class UiSlotSpatialAudio
 
         Vector2 position = linkPoint.Position;
 
+        // Some link points (like crafting grid 700-1499) never have their positions set via
+        // UILinkPointNavigator.SetPosition, so they remain at (0,0). Reject these as invalid.
+        if (position.X <= 0f && position.Y <= 0f)
+        {
+            return false;
+        }
+
         // Positions are already scaled by UIScale when set, so we need to unscale for our calculations
         // since we compare against screenWidth/screenHeight which are unscaled
         float uiScale = Main.UIScale;
@@ -468,6 +475,18 @@ internal static class UiSlotSpatialAudio
             return false;
         }
 
+        // Match Terraria's crafting grid constants from Main.cs
+        const int CraftingSlotSpacing = 42;
+        const int CraftingBaseX = 310;
+        const int CraftingRightMargin = 280;
+
+        int screenWidth = Main.screenWidth;
+        int iconsPerRow = (screenWidth - CraftingBaseX - CraftingRightMargin) / CraftingSlotSpacing;
+        if (iconsPerRow <= 0)
+        {
+            iconsPerRow = 10; // Fallback to reasonable default
+        }
+
         int recStart = Main.recStart;
         int localIndex = availableIndex - recStart;
         if (localIndex < 0)
@@ -475,10 +494,20 @@ internal static class UiSlotSpatialAudio
             localIndex = availableIndex;
         }
 
-        int row = localIndex / 10;
-        int col = localIndex % 10;
+        int row = localIndex / iconsPerRow;
+        int col = localIndex % iconsPerRow;
 
-        position = new SlotPosition(Row: row, Column: col, MaxRows: 4, MaxColumns: 10);
+        // MaxRows is estimated from screen height using Terraria's formula
+        const int CraftingBaseY = 340;
+        const int CraftingBottomMargin = 20;
+        int screenHeight = Main.screenHeight;
+        int iconsPerColumn = (screenHeight - CraftingBaseY - CraftingBottomMargin) / CraftingSlotSpacing;
+        if (iconsPerColumn <= 0)
+        {
+            iconsPerColumn = 4; // Fallback to reasonable default
+        }
+
+        position = new SlotPosition(Row: row, Column: col, MaxRows: iconsPerColumn, MaxColumns: iconsPerRow);
         return true;
     }
 
@@ -486,11 +515,31 @@ internal static class UiSlotSpatialAudio
     /// Gets the screen position for a crafting grid slot based on its available recipe index.
     /// The crafting grid appears at the bottom-left when expanded (recBigList = true).
     /// </summary>
+    /// <remarks>
+    /// Position values derived from Terraria's Main.cs crafting grid drawing code:
+    /// - Base X = 310 (num81)
+    /// - Base Y = 340 (num80)
+    /// - Slot spacing = 42 pixels (num79)
+    /// - Icons per row = (screenWidth - 310 - 280) / 42 (dynamic based on screen width)
+    /// </remarks>
     public static bool TryGetCraftingGridScreenPosition(int availableIndex, out ScreenPosition screenPos)
     {
         screenPos = default;
 
         if (availableIndex < 0) return false;
+
+        // Match Terraria's crafting grid constants from Main.cs
+        const int CraftingSlotSpacing = 42;
+        const int CraftingBaseX = 310;
+        const int CraftingBaseY = 340;
+        const int CraftingRightMargin = 280;
+
+        int screenWidth = Main.screenWidth;
+        int iconsPerRow = (screenWidth - CraftingBaseX - CraftingRightMargin) / CraftingSlotSpacing;
+        if (iconsPerRow <= 0)
+        {
+            iconsPerRow = 10; // Fallback to reasonable default
+        }
 
         int recStart = Main.recStart;
         int localIndex = availableIndex - recStart;
@@ -499,19 +548,15 @@ internal static class UiSlotSpatialAudio
             localIndex = availableIndex;
         }
 
-        int col = localIndex % 10;
-        int row = localIndex / 10;
+        int col = localIndex % iconsPerRow;
+        int row = localIndex / iconsPerRow;
 
-        // Crafting grid appears at bottom-left, below the main inventory
-        // Based on Terraria's crafting UI positioning
-        float craftingScale = 0.755f;
-        float craftingBaseX = 94f;
-        float craftingBaseY = Main.instance?.invBottom ?? 210f;
-        craftingBaseY += 100f; // Additional offset below inventory
+        // Calculate screen position matching Terraria's drawing code
+        // Position is at the top-left of the slot, add half slot size to center
+        float x = CraftingBaseX + col * CraftingSlotSpacing + CraftingSlotSpacing * 0.5f;
+        float y = CraftingBaseY + row * CraftingSlotSpacing + CraftingSlotSpacing * 0.5f;
 
-        screenPos = new ScreenPosition(
-            craftingBaseX + col * SlotSize * craftingScale,
-            craftingBaseY + row * SlotSize * craftingScale);
+        screenPos = new ScreenPosition(x, y);
         return true;
     }
 
