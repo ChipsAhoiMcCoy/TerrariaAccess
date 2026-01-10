@@ -435,7 +435,9 @@ public sealed partial class InGameNarrationSystem
 
             int announcementKey = CursorDescriptorService.ResolveAnnouncementKey(descriptor.TileType);
 
-            bool suppressRepeats = smartCursorActive || (PlayerInput.UsingGamepad && !IsGamepadDpadPressed());
+            // Skip repeat suppression when holding an axe so the player hears each tree announced
+            bool isHoldingAxe = (player?.HeldItem?.axe ?? 0) > 0;
+            bool suppressRepeats = !isHoldingAxe && (smartCursorActive || (PlayerInput.UsingGamepad && !IsGamepadDpadPressed()));
             if (suppressRepeats &&
                 string.Equals(descriptor.Name, _lastTileAnnouncementName, StringComparison.Ordinal) &&
                 announcementKey == _lastTileAnnouncementKey)

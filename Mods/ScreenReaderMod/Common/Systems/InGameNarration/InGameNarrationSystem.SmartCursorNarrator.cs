@@ -141,14 +141,16 @@ public sealed partial class InGameNarrationSystem
                 _pendingStatePrefix = null;
             }
 
-            if (string.Equals(message, _lastAnnouncement, StringComparison.Ordinal))
+            // Skip duplicate suppression when holding an axe so the player hears each tree announced
+            bool isHoldingAxe = (player?.HeldItem?.axe ?? 0) > 0;
+            if (!isHoldingAxe && string.Equals(message, _lastAnnouncement, StringComparison.Ordinal))
             {
                 return;
             }
 
             _lastAnnouncement = message;
             NarrationInstrumentationContext.SetPendingKey(BuildSmartCursorKey(message));
-            ScreenReaderService.Announce(message, category: category);
+            ScreenReaderService.Announce(message, category: category, force: isHoldingAxe);
         }
 
         private void ResetStateTracking()
@@ -368,7 +370,9 @@ public sealed partial class InGameNarrationSystem
                 return null;
             }
 
-            if (announcementKey == _lastCursorAnnouncementKey)
+            // Skip repeat suppression when holding an axe so the player hears each tree announced
+            bool isHoldingAxe = (player?.HeldItem?.axe ?? 0) > 0;
+            if (!isHoldingAxe && announcementKey == _lastCursorAnnouncementKey)
             {
                 return null;
             }
