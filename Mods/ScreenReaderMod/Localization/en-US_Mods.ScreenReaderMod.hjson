@@ -143,6 +143,9 @@ Mods: {
 			TimerOff: off
 			ToggledOn: on
 			ToggledOff: off
+			JunctionBoxStraight: straight mode, wires pass through in the same direction
+			JunctionBoxCrossA: cross mode A, down connects to left, up connects to right
+			JunctionBoxCrossB: cross mode B, down connects to right, up connects to left
 		}
 
 		HerbStages: {

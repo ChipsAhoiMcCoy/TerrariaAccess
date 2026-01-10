@@ -23,7 +23,8 @@ internal static class TileStateDescriptorService
         byte newTileColor, byte newWallColor,
         bool newIsTileInvisible, bool newIsWallInvisible,
         bool newIsTileFullbright, bool newIsWallFullbright,
-        bool newIsToggleableTile, bool newIsToggleableOn)
+        bool newIsToggleableTile, bool newIsToggleableOn,
+        int oldJunctionBoxMode = -1, int newJunctionBoxMode = -1)
     {
         List<string> changes = new();
 
@@ -39,6 +40,16 @@ internal static class TileStateDescriptorService
         if (newIsToggleableTile && oldIsToggleableOn != newIsToggleableOn)
         {
             changes.Add(newIsToggleableOn ? "on" : "off");
+        }
+
+        // Junction Box mode changes
+        if (newJunctionBoxMode >= 0 && oldJunctionBoxMode != newJunctionBoxMode)
+        {
+            string? modeLabel = GetJunctionBoxModeLabel(newJunctionBoxMode);
+            if (!string.IsNullOrEmpty(modeLabel))
+            {
+                changes.Add(modeLabel);
+            }
         }
 
         // Actuator state
@@ -213,6 +224,20 @@ internal static class TileStateDescriptorService
             return lastDot >= 0 ? key[(lastDot + 1)..] : key;
         }
         return value;
+    }
+
+    /// <summary>
+    /// Gets the mode description for Junction Box mode changes.
+    /// </summary>
+    private static string? GetJunctionBoxModeLabel(int mode)
+    {
+        return mode switch
+        {
+            0 => "wires pass through in the same direction",
+            1 => "down connects to left, up connects to right",
+            2 => "down connects to right, up connects to left",
+            _ => null,
+        };
     }
 
     private static Dictionary<byte, string> BuildPaintColorKeyMap()

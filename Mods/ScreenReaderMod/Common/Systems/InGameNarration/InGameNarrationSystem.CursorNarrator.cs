@@ -115,6 +115,7 @@ public sealed partial class InGameNarrationSystem
             public readonly bool IsWallFullbright;
             public readonly bool IsToggleableOn;
             public readonly bool IsToggleableTile;
+            public readonly int JunctionBoxMode;
 
             public TileStateSignature(int tileX, int tileY)
             {
@@ -135,6 +136,7 @@ public sealed partial class InGameNarrationSystem
                     IsWallFullbright = false;
                     IsToggleableOn = false;
                     IsToggleableTile = false;
+                    JunctionBoxMode = -1;
                     return;
                 }
 
@@ -155,6 +157,11 @@ public sealed partial class InGameNarrationSystem
 
                 // Track lever/switch toggle state
                 (IsToggleableTile, IsToggleableOn) = GetToggleState(tile);
+
+                // Track Junction Box mode (TileID 424 = WirePipe)
+                JunctionBoxMode = (tile.HasTile && tile.TileType == TileID.WirePipe)
+                    ? tile.TileFrameX / 18
+                    : -1;
             }
 
             private static (bool isToggleable, bool isOn) GetToggleState(Tile tile)
@@ -195,7 +202,8 @@ public sealed partial class InGameNarrationSystem
                 IsTileFullbright == other.IsTileFullbright &&
                 IsWallFullbright == other.IsWallFullbright &&
                 IsToggleableOn == other.IsToggleableOn &&
-                IsToggleableTile == other.IsToggleableTile;
+                IsToggleableTile == other.IsToggleableTile &&
+                JunctionBoxMode == other.JunctionBoxMode;
 
             public override bool Equals(object? obj) => obj is TileStateSignature other && Equals(other);
 
@@ -217,6 +225,7 @@ public sealed partial class InGameNarrationSystem
                 hash.Add(IsWallFullbright);
                 hash.Add(IsToggleableOn);
                 hash.Add(IsToggleableTile);
+                hash.Add(JunctionBoxMode);
                 return hash.ToHashCode();
             }
 
@@ -367,7 +376,8 @@ public sealed partial class InGameNarrationSystem
                     currentStateSignature.TileColor, currentStateSignature.WallColor,
                     currentStateSignature.IsTileInvisible, currentStateSignature.IsWallInvisible,
                     currentStateSignature.IsTileFullbright, currentStateSignature.IsWallFullbright,
-                    currentStateSignature.IsToggleableTile, currentStateSignature.IsToggleableOn);
+                    currentStateSignature.IsToggleableTile, currentStateSignature.IsToggleableOn,
+                    _lastTileStateSignature.JunctionBoxMode, currentStateSignature.JunctionBoxMode);
 
                 if (stateChanges.Count > 0)
                 {

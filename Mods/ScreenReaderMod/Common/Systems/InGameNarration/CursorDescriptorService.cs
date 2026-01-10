@@ -38,12 +38,19 @@ internal sealed class CursorDescriptorService
     /// <summary>
     /// Tile types that use frameX / 18 to determine their style variant.
     /// </summary>
-    private static readonly HashSet<int> FrameBasedStyleTileTypes = new()
+    private static readonly HashSet<int> FrameXBasedStyleTileTypes = new()
+    {
+        TileID.Timers,
+    };
+
+    /// <summary>
+    /// Tile types that use frameY / 18 to determine their style variant.
+    /// </summary>
+    private static readonly HashSet<int> FrameYBasedStyleTileTypes = new()
     {
         TileID.Traps,
         TileID.PressurePlates,
         TileID.WeightedPressurePlate,
-        TileID.Timers,
     };
 
     private static readonly Dictionary<int, Dictionary<int, int>> TileStyleToItemType = BuildTileStyleMap();
@@ -166,6 +173,13 @@ internal sealed class CursorDescriptorService
             name = $"{name}, {toggleStateLabel}";
         }
 
+        // Add junction box mode
+        string? junctionBoxLabel = GetJunctionBoxModeLabel(tile);
+        if (!string.IsNullOrEmpty(junctionBoxLabel))
+        {
+            name = $"{name}, {junctionBoxLabel}";
+        }
+
         if (tile.HasActuator)
         {
             string actuatorLabel = GetLocalizedWithFallback("Mods.ScreenReaderMod.TileStates.HasActuator", "has actuator");
@@ -209,6 +223,33 @@ internal sealed class CursorDescriptorService
         return null;
     }
 
+    /// <summary>
+    /// Gets the mode label for Junction Box tiles.
+    /// Junction boxes have 3 modes that control how wire signals are routed.
+    /// </summary>
+    private static string? GetJunctionBoxModeLabel(Tile tile)
+    {
+        if (!tile.HasTile || tile.TileType != TileID.WirePipe)
+        {
+            return null;
+        }
+
+        int mode = tile.TileFrameX / 18;
+        return mode switch
+        {
+            0 => GetLocalizedWithFallback(
+                "Mods.ScreenReaderMod.TileStates.JunctionBoxStraight",
+                "straight mode, wires pass through in the same direction"),
+            1 => GetLocalizedWithFallback(
+                "Mods.ScreenReaderMod.TileStates.JunctionBoxCrossA",
+                "cross mode A, down connects to left, up connects to right"),
+            2 => GetLocalizedWithFallback(
+                "Mods.ScreenReaderMod.TileStates.JunctionBoxCrossB",
+                "cross mode B, down connects to right, up connects to left"),
+            _ => null,
+        };
+    }
+
     internal static int ResolveAnnouncementKey(int tileType)
     {
         if (tileType >= 0 && tileType < TileID.Sets.Conversion.Grass.Length &&
@@ -239,6 +280,13 @@ internal sealed class CursorDescriptorService
         {
             bool isOn = tile.TileFrameY != 0;
             return isOn ? (baseKey | 0x10000) : baseKey;
+        }
+
+        // Junction Box: include mode in key so mode changes trigger re-announcement
+        if (tileType == TileID.WirePipe)
+        {
+            int mode = tile.TileFrameX / 18;
+            return baseKey | (mode << 16);
         }
 
         return baseKey;
@@ -337,11 +385,15 @@ internal sealed class CursorDescriptorService
     {
         name = null;
 
-        // Use frame-based style for tile types that use frameX / 18 for variant determination
+        // Use frame-based style for tile types that use frame position for variant determination
         int style;
-        if (FrameBasedStyleTileTypes.Contains(tileType))
+        if (FrameXBasedStyleTileTypes.Contains(tileType))
         {
             style = tile.TileFrameX / 18;
+        }
+        else if (FrameYBasedStyleTileTypes.Contains(tileType))
+        {
+            style = tile.TileFrameY / 18;
         }
         else
         {
