@@ -1398,13 +1398,16 @@ internal sealed class ModConfigMenuNarrator
 
         // Check if we should skip adding the value to avoid duplication
         // This happens when:
-        // 1. The label already contains the value (common for sliders/floats where TextDisplayFunction returns "Label: value")
-        // 2. The label already has a colon (indicating TextDisplayFunction already formatted with value)
+        // 1. The label already has a colon (indicating TextDisplayFunction already formatted with value)
+        // 2. The label ends with the value as a separate word after a colon (e.g., "Setting: On")
         // 3. The value looks like it contains the label (extraction got confused)
+        // Note: We use EndsWith check after colon, not Contains, because short values like "On"
+        // can appear as substrings in labels (e.g., "Edge Detecti*On*") causing false positives.
         bool labelAlreadyHasValue = cleanLabel.Contains(':');
-        bool labelContainsValue = !string.IsNullOrWhiteSpace(cleanValue) &&
+        bool labelEndsWithValue = !string.IsNullOrWhiteSpace(cleanValue) &&
                                    !string.IsNullOrWhiteSpace(cleanLabel) &&
-                                   cleanLabel.Contains(cleanValue, StringComparison.OrdinalIgnoreCase);
+                                   labelAlreadyHasValue &&
+                                   cleanLabel.EndsWith(cleanValue, StringComparison.OrdinalIgnoreCase);
         bool valueContainsLabel = !string.IsNullOrWhiteSpace(cleanValue) &&
                                    !string.IsNullOrWhiteSpace(cleanLabel) &&
                                    cleanValue.Contains(cleanLabel, StringComparison.OrdinalIgnoreCase);
@@ -1412,7 +1415,7 @@ internal sealed class ModConfigMenuNarrator
         // Build description - don't duplicate value if already in label
         if (!string.IsNullOrWhiteSpace(cleanLabel))
         {
-            if (labelAlreadyHasValue || labelContainsValue || valueContainsLabel || string.IsNullOrWhiteSpace(cleanValue))
+            if (labelAlreadyHasValue || labelEndsWithValue || valueContainsLabel || string.IsNullOrWhiteSpace(cleanValue))
             {
                 // Label already has the value, or value extraction returned garbage
                 return cleanLabel;

@@ -32,12 +32,11 @@ public sealed partial class InGameNarrationSystem
         private SoundEffectInstance? _harmfulLoopInstance;
         private float _lastHarmfulFrequency;
 
-        // Edge static state
-        private const float StaticVolume = 0.22f;        // Fixed volume (about half of main sounds)
-        private const float StaticMaxDistanceTiles = 18f; // Same as scan range
-        private SoundEffectInstance? _edgeStaticInstance;
-        private float _lastEdgeStaticVolume;
-        private float _lastEdgeStaticPan;
+        // Edge beep state
+        private const float EdgeBeepVolume = 0.35f;       // Volume for edge beeps
+        private const float EdgeBeepFrequency = 3000f;    // High-pitched pure tone
+        private const int EdgeBeepIntervalFrames = 12;    // Consistent beep rate (~5 beeps/sec)
+        private int _edgeBeepTimer;
 
         private readonly record struct EdgeScanResult(Vector2 WorldPosition, bool IsPlatform, float DistancePixels);
 
@@ -54,11 +53,11 @@ public sealed partial class InGameNarrationSystem
             // Handle edge detection
             if (edgeEnabled)
             {
-                UpdateEdgeStatic(player);
+                UpdateEdgeBeep(player);
             }
             else
             {
-                StopEdgeStatic();
+                ResetEdgeBeep();
             }
 
             bool grounded = IsGrounded(player);
@@ -67,7 +66,7 @@ public sealed partial class InGameNarrationSystem
                 TrackAirborneDisplacement(player);
                 _lastFootX = float.NaN;
                 StopHarmfulTone();
-                StopEdgeStatic();
+                ResetEdgeBeep();
                 return;
             }
 
@@ -159,7 +158,7 @@ public sealed partial class InGameNarrationSystem
             _airborneStartY = 0f;
             _maxAirborneDisplacement = 0f;
             StopHarmfulTone();
-            StopEdgeStatic();
+            ResetEdgeBeep();
         }
 
         private void TrackAirborneDisplacement(Player player)
@@ -390,11 +389,11 @@ public sealed partial class InGameNarrationSystem
             _harmfulLoopInstance = null;
         }
 
-        private void UpdateEdgeStatic(Player player)
+        private void UpdateEdgeBeep(Player player)
         {
             if (!IsGrounded(player))
             {
-                StopEdgeStatic();
+                ResetEdgeBeep();
                 return;
             }
 
@@ -403,7 +402,7 @@ public sealed partial class InGameNarrationSystem
             if (moveDirection == 0)
             {
                 // Not pressing movement keys - stop edge warning immediately
-                StopEdgeStatic();
+                ResetEdgeBeep();
                 return;
             }
 
@@ -412,45 +411,31 @@ public sealed partial class InGameNarrationSystem
 
             if (!edge.HasValue)
             {
-                StopEdgeStatic();
+                ResetEdgeBeep();
                 return;
             }
 
             EdgeScanResult nearestEdge = edge.Value;
 
-            // Fixed volume for edge detection
-            float volume = StaticVolume;
-
-            // Compute pan based on actual world position of edge relative to player
-            Vector2 playerCenter = player.Center;
-            float offsetX = nearestEdge.WorldPosition.X - playerCenter.X;
-            float pan = MathHelper.Clamp(offsetX / PanScalePixels, -1f, 1f);
-
-            // Create or update the static sound
-            if (_edgeStaticInstance is null || _edgeStaticInstance.IsDisposed || _edgeStaticInstance.State == SoundState.Stopped)
+            // Increment timer and check if it's time to beep
+            _edgeBeepTimer++;
+            if (_edgeBeepTimer >= EdgeBeepIntervalFrames)
             {
-                _edgeStaticInstance = FootstepToneProvider.PlayLoopingWhiteNoise(volume, pan);
-                _lastEdgeStaticVolume = volume;
-                _lastEdgeStaticPan = pan;
-                return;
-            }
+                _edgeBeepTimer = 0;
 
-            // Update volume and pan in realtime as player moves
-            _edgeStaticInstance.Volume = MathHelper.Clamp(volume, 0f, 1f) * Main.soundVolume * AudioVolumeDefaults.WorldCueVolumeScale;
-            _edgeStaticInstance.Pan = MathHelper.Clamp(pan, -1f, 1f);
-            _lastEdgeStaticVolume = volume;
-            _lastEdgeStaticPan = pan;
+                // Compute pan based on actual world position of edge relative to player
+                Vector2 playerCenter = player.Center;
+                float offsetX = nearestEdge.WorldPosition.X - playerCenter.X;
+                float pan = MathHelper.Clamp(offsetX / PanScalePixels, -1f, 1f);
+
+                // Play a beep (pure sine wave)
+                FootstepToneProvider.Play(EdgeBeepFrequency, EdgeBeepVolume, useTriangleWave: false, pan);
+            }
         }
 
-        private void StopEdgeStatic()
+        private void ResetEdgeBeep()
         {
-            if (_edgeStaticInstance is null)
-            {
-                return;
-            }
-
-            FootstepToneProvider.StopInstance(_edgeStaticInstance);
-            _edgeStaticInstance = null;
+            _edgeBeepTimer = 0;
         }
     }
 }

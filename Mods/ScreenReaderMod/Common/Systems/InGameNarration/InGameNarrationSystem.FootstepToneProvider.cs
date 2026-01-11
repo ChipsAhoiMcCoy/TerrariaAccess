@@ -76,7 +76,7 @@ public sealed partial class InGameNarrationSystem
 
         private static SoundEffect EnsureTone(float frequencyHz, bool useTriangleWave)
         {
-            int cacheKey = Math.Clamp((int)MathF.Round(frequencyHz), 50, 2000);
+            int cacheKey = Math.Clamp((int)MathF.Round(frequencyHz), 50, 12000);
             var key = (cacheKey, useTriangleWave);
             if (ToneCache.TryGetValue(key, out SoundEffect? cached) && cached is { IsDisposed: false })
             {
