@@ -2,27 +2,27 @@
 using Microsoft.Xna.Framework;
 using Microsoft.Xna.Framework.Input;
 using Terraria;
+using Terraria.Audio;
 using Terraria.GameInput;
+using Terraria.ID;
 using Terraria.UI.Gamepad;
 using Terraria.WorldBuilding;
 
 namespace ScreenReaderMod.Common.Systems.GamepadEmulation;
 
 /// <summary>
-/// Handles housing query detection and triggering for gamepad emulation mode.
+/// Handles housing query detection and NPC housing assignment for gamepad emulation mode.
 /// Replicates the gamepad behavior where pressing X on the housing query button
-/// checks housing viability at the player's current tile location.
+/// checks housing viability, or on an NPC icon moves that NPC to the player's location.
 /// </summary>
 internal sealed class HousingQueryHandler
 {
     private int _lastMouseNpcType = -1;
     private int _lastHousingQueryPoint = -1;
-    private bool _wasEnterOrSpaceDown;
-    private bool _wasMouseLeftDown;
-    private bool _wasIKeyDown;
+    private bool _wasInteractKeyDown;
 
     /// <summary>
-    /// Checks for housing query button activation and triggers housing check when appropriate.
+    /// Checks for housing interactions and triggers appropriate actions.
     /// Should be called during PostUpdateInput.
     /// </summary>
     internal void Update()
@@ -61,51 +61,40 @@ internal sealed class HousingQueryHandler
             return;
         }
 
-        // Case 2: User is on the housing query button (UILinkPoint 600) and presses
-        // an interact key. This allows the user to check housing status using
-        // their standard interact key while focused on the button.
         int currentPoint = UILinkPointNavigator.CurrentPoint;
-        bool onHousingButton = currentPoint == 600;
+        bool onHousingQueryButton = currentPoint == 600;
+        bool onNpcIcon = currentPoint > 600 && currentPoint <= 650;
         bool onNpcHousingTab = Main.EquipPage == 1;
 
-        if (GamepadEmulationState.Enabled && onNpcHousingTab && onHousingButton)
+        if (!GamepadEmulationState.Enabled || !onNpcHousingTab)
         {
-            TriggersSet justPressed = PlayerInput.Triggers.JustPressed;
+            ResetKeyTracking();
+            _lastHousingQueryPoint = currentPoint;
+            return;
+        }
 
-            // Check triggers that might be used for interaction
-            bool triggerPressed = justPressed.MouseLeft || justPressed.Grapple ||
-                                 justPressed.SmartSelect || justPressed.MouseRight;
+        // Check for interact key press (Enter, Space, I, or mod keybind)
+        bool interactKeyDown = IsInteractKeyDown();
+        bool interactJustPressed = interactKeyDown && !_wasInteractKeyDown;
+        _wasInteractKeyDown = interactKeyDown;
 
-            // Check the mod keybinds directly
-            bool keybindPressed = GamepadEmulationKeybinds.InventorySelect?.JustPressed ?? false;
-
-            // Check for Enter/Space which are common confirm keys on keyboard
-            KeyboardState kbState = Keyboard.GetState();
-            bool enterOrSpaceDown = kbState.IsKeyDown(Keys.Enter) || kbState.IsKeyDown(Keys.Space);
-            bool enterJustPressed = enterOrSpaceDown && !_wasEnterOrSpaceDown;
-            _wasEnterOrSpaceDown = enterOrSpaceDown;
-
-            // Check for actual mouse left button
-            bool mouseLeftDown = Main.mouseLeft;
-            bool mouseLeftJustPressed = mouseLeftDown && !_wasMouseLeftDown;
-            _wasMouseLeftDown = mouseLeftDown;
-
-            // Check for I key directly (the default InventorySelect key)
-            bool iKeyDown = kbState.IsKeyDown(Keys.I);
-            bool iKeyJustPressed = iKeyDown && !_wasIKeyDown;
-            _wasIKeyDown = iKeyDown;
-
-            if (triggerPressed || keybindPressed || enterJustPressed || mouseLeftJustPressed || iKeyJustPressed)
+        if (onHousingQueryButton)
+        {
+            // Case 2: On housing query button - check if location is valid for housing
+            if (interactJustPressed)
             {
                 TriggerHousingCheckAtPlayerPosition();
             }
         }
-        else
+        else if (onNpcIcon)
         {
-            // Reset tracking when not on point 600
-            _wasEnterOrSpaceDown = false;
-            _wasMouseLeftDown = false;
-            _wasIKeyDown = false;
+            // Case 3: On an NPC icon - move that NPC to player's location
+            int hoveredNpcIndex = UILinkPointNavigator.Shortcuts.NPCS_LastHovered;
+
+            if (interactJustPressed && hoveredNpcIndex >= 0)
+            {
+                TriggerNpcMoveToPlayerPosition(hoveredNpcIndex);
+            }
         }
 
         _lastHousingQueryPoint = currentPoint;
@@ -119,9 +108,43 @@ internal sealed class HousingQueryHandler
     {
         _lastMouseNpcType = -1;
         _lastHousingQueryPoint = -1;
-        _wasEnterOrSpaceDown = false;
-        _wasMouseLeftDown = false;
-        _wasIKeyDown = false;
+        ResetKeyTracking();
+    }
+
+    private void ResetKeyTracking()
+    {
+        _wasInteractKeyDown = false;
+    }
+
+    private static bool IsInteractKeyDown()
+    {
+        // Check mod keybind
+        if (GamepadEmulationKeybinds.InventorySelect?.Current ?? false)
+        {
+            return true;
+        }
+
+        // Check triggers
+        TriggersSet current = PlayerInput.Triggers.Current;
+        if (current.MouseLeft || current.Grapple)
+        {
+            return true;
+        }
+
+        // Check keyboard keys (Enter, Space, I)
+        KeyboardState kbState = Keyboard.GetState();
+        if (kbState.IsKeyDown(Keys.Enter) || kbState.IsKeyDown(Keys.Space) || kbState.IsKeyDown(Keys.I))
+        {
+            return true;
+        }
+
+        // Check actual mouse left button
+        if (Main.mouseLeft)
+        {
+            return true;
+        }
+
+        return false;
     }
 
     private static bool IsActualGamepadGrapplePressed()
@@ -152,7 +175,6 @@ internal sealed class HousingQueryHandler
         }
 
         // Use player's center position, matching gamepad behavior
-        // (see UILinksInitializer.cs line ~720: Main.player[Main.myPlayer].Center.ToTileCoordinates())
         Point tilePos = player.Center.ToTileCoordinates();
         int tileX = tilePos.X;
         int tileY = tilePos.Y;
@@ -166,5 +188,32 @@ internal sealed class HousingQueryHandler
         // Trigger the housing query - this will output the result via Main.NewText,
         // which is hooked by TryAnnounceHousingQuery in InGameNarrationSystem
         WorldGen.MoveTownNPC(tileX, tileY, -1);
+    }
+
+    private static void TriggerNpcMoveToPlayerPosition(int npcIndex)
+    {
+        Player player = Main.LocalPlayer;
+        if (player is null || !player.active)
+        {
+            return;
+        }
+
+        Point tilePos = player.Center.ToTileCoordinates();
+        int tileX = tilePos.X;
+        int tileY = tilePos.Y;
+
+        if (!WorldGen.InWorld(tileX, tileY, 1))
+        {
+            return;
+        }
+
+        // First validate the location is suitable for housing with this NPC
+        // MoveTownNPC returns true if valid, and outputs error messages via Main.NewText if not
+        if (WorldGen.MoveTownNPC(tileX, tileY, npcIndex))
+        {
+            // Location is valid - actually move the NPC
+            WorldGen.moveRoom(tileX, tileY, npcIndex);
+            SoundEngine.PlaySound(SoundID.MenuTick);
+        }
     }
 }

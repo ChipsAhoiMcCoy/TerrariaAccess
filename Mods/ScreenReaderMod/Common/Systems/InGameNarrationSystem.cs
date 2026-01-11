@@ -242,6 +242,8 @@ public sealed partial class InGameNarrationSystem : ModSystem
         On_IngameOptions.Draw += HandleIngameOptionsDraw;
         On_IngameOptions.DrawLeftSide += CaptureIngameOptionsLeft;
         On_IngameOptions.DrawRightSide += CaptureIngameOptionsRight;
+        On_WorldGen.moveRoom += HandleNpcMoveRoom;
+        On_WorldGen.kickOut += HandleNpcKickOut;
     }
 
     private void ConfigureNarrationScheduler()
@@ -333,6 +335,8 @@ public sealed partial class InGameNarrationSystem : ModSystem
         On_IngameOptions.Draw -= HandleIngameOptionsDraw;
         On_IngameOptions.DrawLeftSide -= CaptureIngameOptionsLeft;
         On_IngameOptions.DrawRightSide -= CaptureIngameOptionsRight;
+        On_WorldGen.moveRoom -= HandleNpcMoveRoom;
+        On_WorldGen.kickOut -= HandleNpcKickOut;
     }
 
     private void ResetSharedResources()
@@ -613,6 +617,53 @@ public sealed partial class InGameNarrationSystem : ModSystem
         }
 
         ScreenReaderService.Announce("Type the new chest name, then press Enter to save or Escape to cancel.", force: true);
+    }
+
+    private static void HandleNpcMoveRoom(On_WorldGen.orig_moveRoom orig, int x, int y, int n)
+    {
+        // Get NPC name before the move operation
+        string? npcName = null;
+        if (n >= 0 && n < Main.maxNPCs)
+        {
+            NPC npc = Main.npc[n];
+            if (npc is not null && npc.active && npc.townNPC)
+            {
+                npcName = npc.GivenOrTypeName;
+            }
+        }
+
+        orig(x, y, n);
+
+        // Announce the move if we have a valid NPC name
+        if (!string.IsNullOrWhiteSpace(npcName))
+        {
+            string announcement = $"{npcName} has been assigned to this house";
+            ScreenReaderService.Announce(announcement, force: true);
+        }
+    }
+
+    private static void HandleNpcKickOut(On_WorldGen.orig_kickOut orig, int n)
+    {
+        // Get NPC name before the kick operation
+        string? npcName = null;
+        if (n >= 0 && n < Main.maxNPCs)
+        {
+            NPC npc = Main.npc[n];
+            if (npc is not null && npc.active && npc.townNPC)
+            {
+                npcName = npc.GivenOrTypeName;
+            }
+        }
+
+        orig(n);
+
+        // Play tick sound and announce the eviction if we have a valid NPC name
+        if (!string.IsNullOrWhiteSpace(npcName))
+        {
+            SoundEngine.PlaySound(SoundID.MenuTick);
+            string announcement = $"{npcName} has been evicted";
+            ScreenReaderService.Announce(announcement, force: true);
+        }
     }
 
         private void HandleIngameOptionsDraw(On_IngameOptions.orig_Draw orig, Main self, SpriteBatch spriteBatch)
