@@ -17,4 +17,9 @@ internal static class BuildModeNarrationCatalog
     public static string CannotPlaceTiles() => "Build mode: could not place tiles in the selected area.";
     public static string PlacedWalls(int count, string wallName) => $"Build mode: placed {count} walls of {TextSanitizer.Clean(wallName)}.";
     public static string CannotPlaceWalls() => "Build mode: could not place walls in the selected area.";
+
+    // Housing announcements
+    public static string HousingSuitable() => "Suitable housing.";
+    public static string HousingOccupied(string npcName) => $"{TextSanitizer.Clean(npcName)}'s house.";
+    public static string HousingMissingFurniture(string missingItems) => $"Unsuitable housing: missing {missingItems}.";
 }

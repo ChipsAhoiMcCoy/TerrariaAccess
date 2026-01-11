@@ -50,6 +50,7 @@ public sealed class BuildModePlayer : ModPlayer
     private SelectionIterator _selectionIterator;
     private readonly List<ContextualHotkey> _hotkeys = new();
     private readonly BuildModeRangeManager _rangeManager = new();
+    private readonly BuildModeHousingAnnouncer _housingAnnouncer = new();
 
     private bool BuildModeActive => _state != BuildModeState.Inactive;
 
@@ -123,6 +124,11 @@ public sealed class BuildModePlayer : ModPlayer
         {
             RestorePlacementRangeIfNeeded();
         }
+        else
+        {
+            // Check housing suitability while walking in build mode
+            _housingAnnouncer.Update(Player);
+        }
 
         if (!BuildModeActive || !HasSelection)
         {
@@ -187,11 +193,13 @@ public sealed class BuildModePlayer : ModPlayer
             _state = BuildModeState.Inactive;
             RestorePlacementRangeIfNeeded();
             ResetSelection();
+            _housingAnnouncer.Reset();
             ScreenReaderService.Announce(BuildModeNarrationCatalog.Disabled());
             return;
         }
 
         ResetSelection();
+        _housingAnnouncer.Reset();
         _state = BuildModeState.AwaitingFirstCorner;
         ScreenReaderService.Announce(BuildModeNarrationCatalog.Enabled());
     }
@@ -205,6 +213,7 @@ public sealed class BuildModePlayer : ModPlayer
         _lastAnnouncedCursor = Point.Zero;
         ResetActiveAction();
         _hurtGraceTicks = 0;
+        _housingAnnouncer.Reset();
     }
 
     private void ResetActiveAction()
