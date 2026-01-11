@@ -344,7 +344,7 @@ internal sealed class CursorDescriptorService
             return;
         }
 
-        int chestIndex = Chest.FindChestByGuessing(tileX, tileY);
+        int chestIndex = FindChestAtTile(tileX, tileY, tileType);
         if (chestIndex < 0 || chestIndex >= Main.chest.Length)
         {
             return;
@@ -368,6 +368,69 @@ internal sealed class CursorDescriptorService
         }
 
         name = $"\"{sanitized}\" {name}";
+    }
+
+    private static int FindChestAtTile(int tileX, int tileY, int tileType)
+    {
+        // First try the standard guessing method
+        int chestIndex = Chest.FindChestByGuessing(tileX, tileY);
+        if (chestIndex >= 0)
+        {
+            return chestIndex;
+        }
+
+        // Fallback: Find origin tile using TileObjectData and search directly
+        if (!WorldGen.InWorld(tileX, tileY))
+        {
+            return -1;
+        }
+
+        Tile tile = Main.tile[tileX, tileY];
+        if (!tile.HasTile)
+        {
+            return -1;
+        }
+
+        TileObjectData? tileData = TileObjectData.GetTileData(tileType, 0);
+        if (tileData is null)
+        {
+            return -1;
+        }
+
+        // Calculate origin from frame coordinates
+        int frameX = tile.TileFrameX;
+        int frameY = tile.TileFrameY;
+        int tileWidth = tileData.CoordinateWidth + tileData.CoordinatePadding;
+        int tileHeight = tileData.CoordinateHeights[0] + tileData.CoordinatePadding;
+
+        // Determine which sub-tile we're on
+        int subX = (tileWidth > 0) ? (frameX % (tileData.Width * tileWidth)) / tileWidth : 0;
+        int subY = (tileHeight > 0) ? (frameY % (tileData.Height * tileHeight)) / tileHeight : 0;
+
+        int originX = tileX - subX;
+        int originY = tileY - subY;
+
+        // Try finding chest at calculated origin
+        chestIndex = Chest.FindChest(originX, originY);
+        if (chestIndex >= 0)
+        {
+            return chestIndex;
+        }
+
+        // Last resort: scan nearby for matching chest
+        for (int dx = -2; dx <= 2; dx++)
+        {
+            for (int dy = -2; dy <= 2; dy++)
+            {
+                chestIndex = Chest.FindChest(tileX + dx, tileY + dy);
+                if (chestIndex >= 0)
+                {
+                    return chestIndex;
+                }
+            }
+        }
+
+        return -1;
     }
 
     private static bool IsChestTile(int tileType)

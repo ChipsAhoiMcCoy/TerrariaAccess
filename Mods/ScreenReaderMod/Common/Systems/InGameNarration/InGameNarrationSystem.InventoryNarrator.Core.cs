@@ -46,6 +46,7 @@ public sealed partial class InGameNarrationSystem
         private bool _wasInventoryOpen;
         private int _lastChestIndex = -1;
         private static InventoryRegion _lastAnnouncedRegion = InventoryRegion.None;
+        private static string? _lastAnnouncedStorageContainer;
         private const UiNarrationArea InventoryNarrationAreas =
             UiNarrationArea.Inventory |
             UiNarrationArea.Storage |
@@ -359,10 +360,34 @@ public sealed partial class InGameNarrationSystem
             }
 
             string? regionPrefix = null;
-            if (currentRegion != InventoryRegion.None && currentRegion != _lastAnnouncedRegion)
+            if (currentRegion == InventoryRegion.Storage)
             {
-                regionPrefix = GetRegionDisplayName(currentRegion);
-                _lastAnnouncedRegion = currentRegion;
+                // For storage, use the specific container name instead of generic "Storage"
+                string? containerName = TryGetStorageContainerName(target.Focus, player);
+                if (!string.IsNullOrWhiteSpace(containerName))
+                {
+                    // Announce if region changed OR container changed
+                    bool regionChanged = currentRegion != _lastAnnouncedRegion;
+                    bool containerChanged = !string.Equals(containerName, _lastAnnouncedStorageContainer, StringComparison.Ordinal);
+
+                    if (regionChanged || containerChanged)
+                    {
+                        regionPrefix = containerName;
+                        _lastAnnouncedRegion = currentRegion;
+                        _lastAnnouncedStorageContainer = containerName;
+                    }
+                }
+            }
+            else
+            {
+                if (currentRegion != InventoryRegion.None && currentRegion != _lastAnnouncedRegion)
+                {
+                    regionPrefix = GetRegionDisplayName(currentRegion);
+                    _lastAnnouncedRegion = currentRegion;
+                }
+
+                // Clear storage container tracking when leaving storage
+                _lastAnnouncedStorageContainer = null;
             }
 
             string label = NarrationTextFormatter.ComposeItemLabel(target.Item);
@@ -421,7 +446,8 @@ public sealed partial class InGameNarrationSystem
             }
 
             // Determine current region and check for change
-            InventoryRegion currentRegion = ResolveRegion(target.Focus, Main.LocalPlayer);
+            Player player = Main.LocalPlayer;
+            InventoryRegion currentRegion = ResolveRegion(target.Focus, player);
 
             // Fallback: check gamepad link point for crafting list when no slot focus
             if (currentRegion == InventoryRegion.None && PlayerInput.UsingGamepadUI)
@@ -430,10 +456,34 @@ public sealed partial class InGameNarrationSystem
             }
 
             string? regionPrefix = null;
-            if (currentRegion != InventoryRegion.None && currentRegion != _lastAnnouncedRegion)
+            if (currentRegion == InventoryRegion.Storage)
             {
-                regionPrefix = GetRegionDisplayName(currentRegion);
-                _lastAnnouncedRegion = currentRegion;
+                // For storage, use the specific container name instead of generic "Storage"
+                string? containerName = TryGetStorageContainerName(target.Focus, player);
+                if (!string.IsNullOrWhiteSpace(containerName))
+                {
+                    // Announce if region changed OR container changed
+                    bool regionChanged = currentRegion != _lastAnnouncedRegion;
+                    bool containerChanged = !string.Equals(containerName, _lastAnnouncedStorageContainer, StringComparison.Ordinal);
+
+                    if (regionChanged || containerChanged)
+                    {
+                        regionPrefix = containerName;
+                        _lastAnnouncedRegion = currentRegion;
+                        _lastAnnouncedStorageContainer = containerName;
+                    }
+                }
+            }
+            else
+            {
+                if (currentRegion != InventoryRegion.None && currentRegion != _lastAnnouncedRegion)
+                {
+                    regionPrefix = GetRegionDisplayName(currentRegion);
+                    _lastAnnouncedRegion = currentRegion;
+                }
+
+                // Clear storage container tracking when leaving storage
+                _lastAnnouncedStorageContainer = null;
             }
 
             string message = $"Empty, {target.Location}";
@@ -556,6 +606,7 @@ public sealed partial class InGameNarrationSystem
             _inventoryOpenGraceFrames = 0;
             _lastChestIndex = -1;
             _lastAnnouncedRegion = InventoryRegion.None;
+            _lastAnnouncedStorageContainer = null;
         }
 
         private static void OnInventoryJustOpened()
@@ -718,22 +769,22 @@ public sealed partial class InGameNarrationSystem
             {
                 if (inventoryIndex < 10)
                 {
-                    return $"Hotbar slot {inventoryIndex + 1}";
+                    return $"Slot {inventoryIndex + 1}";
                 }
 
                 if (inventoryIndex < 50)
                 {
-                    return $"Inventory slot {inventoryIndex - 9}";
+                    return $"Slot {inventoryIndex - 9}";
                 }
 
                 if (inventoryIndex < 54)
                 {
-                    return $"Coin slot {inventoryIndex - 49}";
+                    return $"Slot {inventoryIndex - 49}";
                 }
 
                 if (inventoryIndex < 58)
                 {
-                    return $"Ammo slot {inventoryIndex - 53}";
+                    return $"Slot {inventoryIndex - 53}";
                 }
             }
 
@@ -765,11 +816,10 @@ public sealed partial class InGameNarrationSystem
             int chestIndex = player.chest;
             if (chestIndex != -1)
             {
-                string container = SlotContextFormatter.DescribeContainer(chestIndex);
                 Item[]? containerItems = GetContainerItems(player, chestIndex);
                 if (containerItems is not null && TryMatch(containerItems, identity, out int containerSlot))
                 {
-                    return $"{container} slot {containerSlot + 1}";
+                    return $"Slot {containerSlot + 1}";
                 }
 
                 // Fallback: try to infer slot from gamepad link point (400-439 are chest slots)
@@ -779,11 +829,11 @@ public sealed partial class InGameNarrationSystem
                     if (currentPoint >= 400 && currentPoint < 440)
                     {
                         int slotFromPoint = currentPoint - 400;
-                        return $"{container} slot {slotFromPoint + 1}";
+                        return $"Slot {slotFromPoint + 1}";
                     }
                 }
 
-                return container;
+                return string.Empty;
             }
 
             if (Main.npcShop > 0)
@@ -794,7 +844,7 @@ public sealed partial class InGameNarrationSystem
                     Item[]? shopItems = shops[Main.npcShop]?.item;
                     if (shopItems is not null && TryMatch(shopItems, identity, out int shopSlot))
                     {
-                        return $"Shop slot {shopSlot + 1}";
+                        return $"Slot {shopSlot + 1}";
                     }
                 }
             }
@@ -818,22 +868,22 @@ public sealed partial class InGameNarrationSystem
 
                 if (ReferenceEquals(items, player.bank.item))
                 {
-                    return $"Piggy bank slot {focus.Slot + 1}";
+                    return $"Slot {focus.Slot + 1}";
                 }
 
                 if (ReferenceEquals(items, player.bank2.item))
                 {
-                    return $"Safe slot {focus.Slot + 1}";
+                    return $"Slot {focus.Slot + 1}";
                 }
 
                 if (ReferenceEquals(items, player.bank3.item))
                 {
-                    return $"Defender's forge slot {focus.Slot + 1}";
+                    return $"Slot {focus.Slot + 1}";
                 }
 
                 if (ReferenceEquals(items, player.bank4.item))
                 {
-                    return $"Void vault slot {focus.Slot + 1}";
+                    return $"Slot {focus.Slot + 1}";
                 }
 
                 if (ReferenceEquals(items, player.armor))
@@ -862,8 +912,7 @@ public sealed partial class InGameNarrationSystem
                     {
                         if (ReferenceEquals(Main.chest[i]?.item, items))
                         {
-                            string container = SlotContextFormatter.DescribeContainer(i);
-                            return focus.Slot >= 0 ? $"{container} slot {focus.Slot + 1}" : container;
+                            return focus.Slot >= 0 ? $"Slot {focus.Slot + 1}" : "Slot";
                         }
                     }
                 }
@@ -875,7 +924,7 @@ public sealed partial class InGameNarrationSystem
                     {
                         if (ReferenceEquals(shops[i]?.item, items))
                         {
-                            return focus.Slot >= 0 ? $"Shop slot {focus.Slot + 1}" : "Shop slot";
+                            return focus.Slot >= 0 ? $"Slot {focus.Slot + 1}" : "Slot";
                         }
                     }
                 }
@@ -1451,6 +1500,79 @@ public sealed partial class InGameNarrationSystem
                     "Mods.ScreenReaderMod.InventoryRegions.Shop", "Shop"),
                 _ => null,
             };
+        }
+
+        private static string? TryGetStorageContainerName(SlotFocus? focus, Player player)
+        {
+            if (!focus.HasValue)
+            {
+                // Fallback to player's current chest index
+                int chestIndex = player.chest;
+                if (chestIndex == -1)
+                {
+                    return null;
+                }
+
+                return SlotContextFormatter.DescribeContainer(chestIndex);
+            }
+
+            SlotFocus f = focus.Value;
+
+            // Check if focus is on a storage container by examining the items array
+            if (f.Items is Item[] items)
+            {
+                if (ReferenceEquals(items, player.bank.item))
+                {
+                    return SlotContextFormatter.DescribeContainer(-2);
+                }
+
+                if (ReferenceEquals(items, player.bank2.item))
+                {
+                    return SlotContextFormatter.DescribeContainer(-3);
+                }
+
+                if (ReferenceEquals(items, player.bank3.item))
+                {
+                    return SlotContextFormatter.DescribeContainer(-4);
+                }
+
+                if (ReferenceEquals(items, player.bank4.item))
+                {
+                    return SlotContextFormatter.DescribeContainer(-5);
+                }
+
+                // Check world chests
+                if (Main.chest is not null)
+                {
+                    for (int i = 0; i < Main.chest.Length; i++)
+                    {
+                        if (ReferenceEquals(Main.chest[i]?.item, items))
+                        {
+                            return SlotContextFormatter.DescribeContainer(i);
+                        }
+                    }
+                }
+            }
+
+            // Fallback based on context
+            int context = Math.Abs(f.Context);
+            if (context == ItemSlot.Context.BankItem)
+            {
+                // Could be any bank, use player's chest index
+                return SlotContextFormatter.DescribeContainer(player.chest);
+            }
+
+            if (context == ItemSlot.Context.ChestItem)
+            {
+                return SlotContextFormatter.DescribeContainer(player.chest);
+            }
+
+            if (context == ItemSlot.Context.VoidItem)
+            {
+                return SlotContextFormatter.DescribeContainer(-5);
+            }
+
+            return null;
         }
 
         private static string? TryGetMouseText()

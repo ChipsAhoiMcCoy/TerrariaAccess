@@ -14,22 +14,22 @@ internal static class SlotContextFormatter
 
         if (slot < 10)
         {
-            return $"Hotbar slot {slot + 1}";
+            return $"Slot {slot + 1}";
         }
 
         if (slot < 50)
         {
-            return $"Inventory slot {slot - 9}";
+            return $"Slot {slot - 9}";
         }
 
         if (slot < 54)
         {
-            return $"Coin slot {slot - 49}";
+            return $"Slot {slot - 49}";
         }
 
         if (slot < 58)
         {
-            return $"Ammo slot {slot - 53}";
+            return $"Slot {slot - 53}";
         }
 
         return string.Empty;
@@ -53,13 +53,27 @@ internal static class SlotContextFormatter
 
     public static string DescribeContainer(int chestIndex)
     {
+        if (chestIndex >= 0)
+        {
+            // Check for custom chest name
+            if (Main.chest is not null && chestIndex < Main.chest.Length)
+            {
+                Chest? chest = Main.chest[chestIndex];
+                if (chest is not null && !string.IsNullOrWhiteSpace(chest.name))
+                {
+                    return chest.name;
+                }
+            }
+
+            return "Chest";
+        }
+
         return chestIndex switch
         {
-            >= 0 => "Chest",
-            -2 => "Piggy bank",
+            -2 => "Piggy Bank",
             -3 => "Safe",
-            -4 => "Defender's forge",
-            -5 => "Void vault",
+            -4 => "Defender's Forge",
+            -5 => "Void Vault",
             _ => "Chest",
         };
     }
