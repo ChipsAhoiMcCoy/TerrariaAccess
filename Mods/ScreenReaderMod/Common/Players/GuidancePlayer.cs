@@ -29,10 +29,8 @@ public sealed class GuidancePlayer : ModPlayer
             return;
         }
 
-        if (GuidanceSystem.CanUseNetworkSync() || GuidanceSystem.HasWaypointState)
-        {
-            return;
-        }
+        // Reset any stale state from previous world before loading cache
+        GuidanceSystem.ResetTrackingState();
 
         string cacheKey = BuildWorldCacheKey();
         if (_waypointCache.TryGetValue(cacheKey, out TagCompound? cached) && cached is not null)

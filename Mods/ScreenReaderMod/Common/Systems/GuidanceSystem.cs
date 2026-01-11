@@ -95,6 +95,13 @@ public sealed partial class GuidanceSystem : ModSystem
 
     public override void LoadWorldData(TagCompound tag)
     {
+        // Multiplayer clients use per-player cache via GuidancePlayer.OnEnterWorld
+        // instead of world data (which won't exist since mod is client-side only)
+        if (Main.netMode == NetmodeID.MultiplayerClient)
+        {
+            return;
+        }
+
         ResetTrackingState();
         LoadWaypointData(tag, "world save", announceSelection: false);
     }
@@ -562,7 +569,7 @@ public sealed partial class GuidanceSystem : ModSystem
 
         if (Main.netMode == NetmodeID.MultiplayerClient)
         {
-            NetMessage.SendData(MessageID.TeleportEntity, -1, -1, null, player.whoAmI, destination.X, destination.Y, target.Style);
+            NetMessage.SendData(MessageID.TeleportEntity, -1, -1, null, 0, player.whoAmI, destination.X, destination.Y, target.Style);
         }
 
         _arrivalAnnounced = false;

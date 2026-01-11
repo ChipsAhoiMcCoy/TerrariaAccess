@@ -102,7 +102,7 @@ public sealed partial class GuidanceSystem
 
     internal static bool IsExplorationTrackingEnabled => _selectionMode == SelectionMode.Exploration;
 
-    private static void ResetTrackingState()
+    internal static void ResetTrackingState()
     {
         Waypoints.Clear();
         NearbyNpcs.Clear();
