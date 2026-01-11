@@ -950,7 +950,7 @@ public sealed partial class GuidanceSystem : ModSystem
                     _selectedInteractableIndex = -1;
                     ClearCategoryAnnouncement();
                     RescheduleGuidancePing(player);
-                    AnnounceCategorySelection("Crafting guidance", "No crafting stations detected nearby.");
+                    AnnounceCategorySelection("Crafting", "No crafting stations detected nearby.");
                     return;
                 }
 
@@ -971,7 +971,7 @@ public sealed partial class GuidanceSystem : ModSystem
                     ClearCategoryAnnouncement();
                     RescheduleGuidancePing(player);
                     int rangeTiles = (int)MathF.Round(DistanceReferenceTiles);
-                    AnnounceCategorySelection("NPC guidance", $"No nearby NPCs within {rangeTiles} tiles.");
+                    AnnounceCategorySelection("NPCs", $"No nearby NPCs within {rangeTiles} tiles.");
                     return;
                 }
 
@@ -985,7 +985,7 @@ public sealed partial class GuidanceSystem : ModSystem
             case SelectionMode.Player:
                 if (Main.netMode == NetmodeID.SinglePlayer)
                 {
-                    ScreenReaderService.Announce("Player guidance is available only in multiplayer.");
+                    ScreenReaderService.Announce("Players is available only in multiplayer.");
                     return;
                 }
 
@@ -997,7 +997,7 @@ public sealed partial class GuidanceSystem : ModSystem
                     _selectedPlayerIndex = -1;
                     ClearCategoryAnnouncement();
                     RescheduleGuidancePing(player);
-                    AnnounceCategorySelection("Player guidance", "No other active players detected.");
+                    AnnounceCategorySelection("Players", "No other active players detected.");
                     return;
                 }
 
@@ -1020,11 +1020,13 @@ public sealed partial class GuidanceSystem : ModSystem
                     return;
                 }
 
-                _selectedIndex = -1;
+                // Waypoints don't have an "All" mode - start at first waypoint
+                _selectedIndex = 0;
 
                 BeginCategoryAnnouncement(SelectionMode.Waypoint);
                 RescheduleGuidancePing(player);
-                AnnounceWaypointEntry(player, Waypoints.Count);
+                AnnounceWaypointSelection(player);
+                EmitCurrentGuidancePing(player);
                 return;
             case SelectionMode.DroppedItem:
                 _selectionMode = SelectionMode.DroppedItem;
@@ -1035,7 +1037,7 @@ public sealed partial class GuidanceSystem : ModSystem
                     _selectedDroppedItemIndex = -1;
                     ClearCategoryAnnouncement();
                     RescheduleGuidancePing(player);
-                    AnnounceCategorySelection("Dropped items", "No dropped items on screen.");
+                    AnnounceCategorySelection("Items", "No dropped items on screen.");
                     return;
                 }
 
@@ -1055,7 +1057,7 @@ public sealed partial class GuidanceSystem : ModSystem
                     ClearCategoryAnnouncement();
                     RescheduleGuidancePing(player);
                     int rangeTiles = (int)MathF.Round(DistanceReferenceTiles);
-                    AnnounceCategorySelection("Critter guidance", $"No critters within {rangeTiles} tiles.");
+                    AnnounceCategorySelection("Critters", $"No critters within {rangeTiles} tiles.");
                     return;
                 }
 
@@ -1074,7 +1076,7 @@ public sealed partial class GuidanceSystem : ModSystem
                     _selectedPlantlifeIndex = -1;
                     ClearCategoryAnnouncement();
                     RescheduleGuidancePing(player);
-                    AnnounceCategorySelection("Plantlife guidance", "No harvestable plants nearby.");
+                    AnnounceCategorySelection("Plants", "No harvestable plants nearby.");
                     return;
                 }
 
@@ -1108,9 +1110,9 @@ public sealed partial class GuidanceSystem : ModSystem
                     return;
                 }
 
+                // Waypoints don't have an "All" mode - wrap directly between first and last
                 if (_selectedIndex < 0)
                 {
-                    // On "All" - always go to first item (index 0) regardless of direction
                     _selectedIndex = 0;
                 }
                 else
@@ -1118,22 +1120,19 @@ public sealed partial class GuidanceSystem : ModSystem
                     _selectedIndex += direction;
                     if (_selectedIndex < 0)
                     {
-                        // Wrapped past first - go to "All"
-                        _selectedIndex = -1;
+                        // Wrap to last waypoint
+                        _selectedIndex = totalWaypoints - 1;
                     }
                     else if (_selectedIndex >= totalWaypoints)
                     {
-                        // Wrapped past last - go to "All"
-                        _selectedIndex = -1;
+                        // Wrap to first waypoint
+                        _selectedIndex = 0;
                     }
                 }
 
                 RescheduleGuidancePing(player);
-                AnnounceWaypointEntry(player, totalWaypoints);
-                if (_selectedIndex >= 0)
-                {
-                    EmitCurrentGuidancePing(player);
-                }
+                AnnounceWaypointSelection(player);
+                EmitCurrentGuidancePing(player);
                 return;
             }
             case SelectionMode.Npc:
@@ -1145,7 +1144,7 @@ public sealed partial class GuidanceSystem : ModSystem
                     ClearCategoryAnnouncement();
                     RescheduleGuidancePing(player);
                     int rangeTiles = (int)MathF.Round(DistanceReferenceTiles);
-                    AnnounceCategorySelection("NPC guidance", $"No NPCs within {rangeTiles} tiles.");
+                    AnnounceCategorySelection("NPCs", $"No NPCs within {rangeTiles} tiles.");
                     return;
                 }
 
@@ -1162,7 +1161,7 @@ public sealed partial class GuidanceSystem : ModSystem
                     _selectedInteractableIndex = -1;
                     ClearCategoryAnnouncement();
                     RescheduleGuidancePing(player);
-                    AnnounceCategorySelection("Crafting guidance", "No crafting stations detected nearby.");
+                    AnnounceCategorySelection("Crafting", "No crafting stations detected nearby.");
                     return;
                 }
 
@@ -1175,7 +1174,7 @@ public sealed partial class GuidanceSystem : ModSystem
             {
                 if (Main.netMode == NetmodeID.SinglePlayer)
                 {
-                    ScreenReaderService.Announce("Player guidance is available only in multiplayer.");
+                    ScreenReaderService.Announce("Players is available only in multiplayer.");
                     return;
                 }
 
@@ -1185,7 +1184,7 @@ public sealed partial class GuidanceSystem : ModSystem
                     _selectedPlayerIndex = -1;
                     ClearCategoryAnnouncement();
                     RescheduleGuidancePing(player);
-                    AnnounceCategorySelection("Player guidance", "No other active players detected.");
+                    AnnounceCategorySelection("Players", "No other active players detected.");
                     return;
                 }
 
@@ -1201,7 +1200,7 @@ public sealed partial class GuidanceSystem : ModSystem
                 if (totalExploration == 0)
                 {
                     ClearCategoryAnnouncement();
-                    AnnounceCategorySelection("Exploration mode", "No exploration targets detected nearby.");
+                    AnnounceCategorySelection("Explore", "No exploration targets detected nearby.");
                     return;
                 }
 
@@ -1234,7 +1233,7 @@ public sealed partial class GuidanceSystem : ModSystem
                     _selectedDroppedItemIndex = -1;
                     ClearCategoryAnnouncement();
                     RescheduleGuidancePing(player);
-                    AnnounceCategorySelection("Dropped items", "No dropped items on screen.");
+                    AnnounceCategorySelection("Items", "No dropped items on screen.");
                     return;
                 }
 
@@ -1271,7 +1270,7 @@ public sealed partial class GuidanceSystem : ModSystem
                     ClearCategoryAnnouncement();
                     RescheduleGuidancePing(player);
                     int rangeTiles = (int)MathF.Round(DistanceReferenceTiles);
-                    AnnounceCategorySelection("Critter guidance", $"No critters within {rangeTiles} tiles.");
+                    AnnounceCategorySelection("Critters", $"No critters within {rangeTiles} tiles.");
                     return;
                 }
 
@@ -1313,7 +1312,7 @@ public sealed partial class GuidanceSystem : ModSystem
                     _selectedPlantlifeIndex = -1;
                     ClearCategoryAnnouncement();
                     RescheduleGuidancePing(player);
-                    AnnounceCategorySelection("Plantlife guidance", "No harvestable plants nearby.");
+                    AnnounceCategorySelection("Plants", "No harvestable plants nearby.");
                     return;
                 }
 
@@ -1369,14 +1368,14 @@ public sealed partial class GuidanceSystem : ModSystem
         {
             int rangeTiles = (int)MathF.Round(DistanceReferenceTiles);
             ClearCategoryAnnouncement();
-            AnnounceCategorySelection("NPC guidance", $"No nearby NPCs within {rangeTiles} tiles.");
+            AnnounceCategorySelection("NPCs", $"No nearby NPCs within {rangeTiles} tiles.");
             return;
         }
 
         int totalEntries = NearbyNpcs.Count;
         int position = _selectedNpcIndex + 1;
         string announcement = ComposeNpcAnnouncement(entry, player, npc.Center, position, totalEntries);
-        AnnounceSelectedEntry(SelectionMode.Npc, "NPC guidance", announcement);
+        AnnounceSelectedEntry(SelectionMode.Npc, "NPCs", announcement);
     }
 
     private static void AnnounceInteractableSelection(Player player)
@@ -1389,14 +1388,14 @@ public sealed partial class GuidanceSystem : ModSystem
         if (!TryGetSelectedInteractable(player, out InteractableGuidanceEntry entry))
         {
             ClearCategoryAnnouncement();
-            AnnounceCategorySelection("Crafting guidance", "No crafting stations detected nearby.");
+            AnnounceCategorySelection("Crafting", "No crafting stations detected nearby.");
             return;
         }
 
         int totalEntries = NearbyInteractables.Count;
         int position = _selectedInteractableIndex + 1;
         string announcement = ComposeEntityAnnouncement(entry.DisplayName, player, entry.WorldPosition, position, totalEntries);
-        AnnounceSelectedEntry(SelectionMode.Interactable, "Crafting guidance", announcement);
+        AnnounceSelectedEntry(SelectionMode.Interactable, "Crafting", announcement);
     }
 
     private static void AnnouncePlayerSelection(Player player)
@@ -1409,14 +1408,14 @@ public sealed partial class GuidanceSystem : ModSystem
         if (!TryGetSelectedPlayer(player, out Player targetPlayer, out PlayerGuidanceEntry entry))
         {
             ClearCategoryAnnouncement();
-            AnnounceCategorySelection("Player guidance", "No other active players detected.");
+            AnnounceCategorySelection("Players", "No other active players detected.");
             return;
         }
 
         int totalEntries = NearbyPlayers.Count;
         int position = _selectedPlayerIndex + 1;
         string announcement = ComposePlayerAnnouncement(entry, player, targetPlayer.Center, position, totalEntries);
-        AnnounceSelectedEntry(SelectionMode.Player, "Player guidance", announcement);
+        AnnounceSelectedEntry(SelectionMode.Player, "Players", announcement);
     }
 
     private static void AnnounceDroppedItemSelection(Player player)
@@ -1426,17 +1425,24 @@ public sealed partial class GuidanceSystem : ModSystem
             return;
         }
 
-        if (!TryGetSelectedDroppedItem(player, out DroppedItemGuidanceEntry entry))
+        if (_selectedDroppedItemIndex < 0)
         {
-            ClearCategoryAnnouncement();
-            AnnounceCategorySelection("Dropped items", "No dropped items on screen.");
+            int total = NearbyDroppedItems.Count + 1; // +1 for "All" option
+            AnnounceCategorySelection("Items", $"All, 1 of {total}");
             return;
         }
 
-        int totalEntries = NearbyDroppedItems.Count;
-        int position = _selectedDroppedItemIndex + 1;
+        if (!TryGetSelectedDroppedItem(player, out DroppedItemGuidanceEntry entry))
+        {
+            ClearCategoryAnnouncement();
+            AnnounceCategorySelection("Items", "No dropped items on screen.");
+            return;
+        }
+
+        int totalEntries = NearbyDroppedItems.Count + 1; // +1 for "All" option
+        int position = _selectedDroppedItemIndex + 2; // +2 because "All" is position 1
         string announcement = ComposeEntityAnnouncement(entry.DisplayName, player, entry.WorldPosition, position, totalEntries);
-        AnnounceSelectedEntry(SelectionMode.DroppedItem, "Dropped items", announcement);
+        AnnounceSelectedEntry(SelectionMode.DroppedItem, "Items", announcement);
     }
 
     private static void AnnounceExplorationEntry(Player player, int totalEntries)
@@ -1458,25 +1464,6 @@ public sealed partial class GuidanceSystem : ModSystem
         AnnounceSelectedEntry(SelectionMode.Exploration, string.Empty, announcement);
     }
 
-    private static void AnnounceWaypointEntry(Player player, int totalEntries)
-    {
-        if (_selectionMode != SelectionMode.Waypoint)
-        {
-            return;
-        }
-
-        if (_selectedIndex < 0)
-        {
-            string detail = totalEntries == 1
-                ? "All waypoints. Tracking 1 waypoint."
-                : $"All waypoints. Tracking {totalEntries} waypoints.";
-            AnnounceSelectedEntry(SelectionMode.Waypoint, string.Empty, detail);
-            return;
-        }
-
-        AnnounceWaypointSelection(player);
-    }
-
     private static void AnnounceDroppedItemEntry(Player player, int totalEntries)
     {
         if (_selectionMode != SelectionMode.DroppedItem)
@@ -1486,10 +1473,8 @@ public sealed partial class GuidanceSystem : ModSystem
 
         if (_selectedDroppedItemIndex < 0)
         {
-            string detail = totalEntries == 1
-                ? "All items. Tracking 1 dropped item."
-                : $"All items. Tracking {totalEntries} dropped items.";
-            AnnounceSelectedEntry(SelectionMode.DroppedItem, string.Empty, detail);
+            int total = totalEntries + 1; // +1 for "All" option
+            AnnounceSelectedEntry(SelectionMode.DroppedItem, "Items", $"All, 1 of {total}");
             return;
         }
 
@@ -1505,11 +1490,8 @@ public sealed partial class GuidanceSystem : ModSystem
 
         if (_selectedCritterIndex < 0)
         {
-            int count = NearbyCritters.Count;
-            string detail = count == 1
-                ? "Tracking 1 critter. Use Page Up and Page Down to cycle specific targets."
-                : $"Tracking all {count} critters. Use Page Up and Page Down to cycle specific targets.";
-            AnnounceCategorySelection("Critter guidance", detail);
+            int total = NearbyCritters.Count + 1; // +1 for "All" option
+            AnnounceCategorySelection("Critters", $"All, 1 of {total}");
             return;
         }
 
@@ -1517,14 +1499,14 @@ public sealed partial class GuidanceSystem : ModSystem
         {
             int rangeTiles = (int)MathF.Round(DistanceReferenceTiles);
             ClearCategoryAnnouncement();
-            AnnounceCategorySelection("Critter guidance", $"No critters within {rangeTiles} tiles.");
+            AnnounceCategorySelection("Critters", $"No critters within {rangeTiles} tiles.");
             return;
         }
 
-        int totalEntries = NearbyCritters.Count;
-        int position = _selectedCritterIndex + 1;
+        int totalEntries = NearbyCritters.Count + 1; // +1 for "All" option
+        int position = _selectedCritterIndex + 2; // +2 because "All" is position 1
         string announcement = ComposeEntityAnnouncement(entry.DisplayName, player, entry.WorldPosition, position, totalEntries);
-        AnnounceSelectedEntry(SelectionMode.Critter, "Critter guidance", announcement);
+        AnnounceSelectedEntry(SelectionMode.Critter, "Critters", announcement);
     }
 
     private static void AnnounceCritterEntry(Player player, int totalEntries)
@@ -1536,10 +1518,8 @@ public sealed partial class GuidanceSystem : ModSystem
 
         if (_selectedCritterIndex < 0)
         {
-            string detail = totalEntries == 1
-                ? "All critters. Tracking 1 critter."
-                : $"All critters. Tracking {totalEntries} critters.";
-            AnnounceSelectedEntry(SelectionMode.Critter, string.Empty, detail);
+            int total = totalEntries + 1; // +1 for "All" option
+            AnnounceSelectedEntry(SelectionMode.Critter, "Critters", $"All, 1 of {total}");
             return;
         }
 
@@ -1555,25 +1535,22 @@ public sealed partial class GuidanceSystem : ModSystem
 
         if (_selectedPlantlifeIndex < 0)
         {
-            int count = NearbyPlantlife.Count;
-            string detail = count == 1
-                ? "Tracking 1 plant. Use Page Up and Page Down to cycle specific targets."
-                : $"Tracking all {count} plants. Use Page Up and Page Down to cycle specific targets.";
-            AnnounceCategorySelection("Plantlife guidance", detail);
+            int total = NearbyPlantlife.Count + 1; // +1 for "All" option
+            AnnounceCategorySelection("Plants", $"All, 1 of {total}");
             return;
         }
 
         if (!TryGetSelectedPlantlife(player, out PlantlifeGuidanceEntry entry))
         {
             ClearCategoryAnnouncement();
-            AnnounceCategorySelection("Plantlife guidance", "No harvestable plants nearby.");
+            AnnounceCategorySelection("Plants", "No harvestable plants nearby.");
             return;
         }
 
-        int totalEntries = NearbyPlantlife.Count;
-        int position = _selectedPlantlifeIndex + 1;
+        int totalEntries = NearbyPlantlife.Count + 1; // +1 for "All" option
+        int position = _selectedPlantlifeIndex + 2; // +2 because "All" is position 1
         string announcement = ComposeEntityAnnouncement(entry.DisplayName, player, entry.WorldPosition, position, totalEntries);
-        AnnounceSelectedEntry(SelectionMode.Plantlife, "Plantlife guidance", announcement);
+        AnnounceSelectedEntry(SelectionMode.Plantlife, "Plants", announcement);
     }
 
     private static void AnnouncePlantlifeEntry(Player player, int totalEntries)
@@ -1585,10 +1562,8 @@ public sealed partial class GuidanceSystem : ModSystem
 
         if (_selectedPlantlifeIndex < 0)
         {
-            string detail = totalEntries == 1
-                ? "All plants. Tracking 1 plant."
-                : $"All plants. Tracking {totalEntries} plants.";
-            AnnounceSelectedEntry(SelectionMode.Plantlife, string.Empty, detail);
+            int total = totalEntries + 1; // +1 for "All" option
+            AnnounceSelectedEntry(SelectionMode.Plantlife, "Plants", $"All, 1 of {total}");
             return;
         }
 
@@ -1738,13 +1713,13 @@ public sealed partial class GuidanceSystem : ModSystem
     private static void AnnounceDisabledSelection()
     {
         ClearCategoryAnnouncement();
-        AnnounceCategorySelection("Guidance disabled", string.Empty);
+        AnnounceCategorySelection("Off", string.Empty);
     }
 
     private static void AnnounceExplorationSelection()
     {
         ClearCategoryAnnouncement();
-        AnnounceCategorySelection("Exploration mode", "Tracking all nearby interactables. Use Page Up and Page Down to cycle specific targets.");
+        AnnounceCategorySelection("Explore", "All nearby interactables");
         ExplorationTargetRegistry.SetSelectedTarget(null);
     }
 
