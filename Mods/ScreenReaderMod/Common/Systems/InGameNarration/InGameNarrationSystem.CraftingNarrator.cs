@@ -360,10 +360,11 @@ public sealed partial class InGameNarrationSystem
                 return Main.recBigList;
             }
 
-            // Crafting list (normal view): 1500-1999
+            // Crafting list (normal view): 1500-1999, but exclude special inventory points
+            // (e.g., PvP toggle, team buttons, defense counter) that overlap this range
             if (point >= CraftingListLinkPointStart && point < CraftingListLinkPointEnd)
             {
-                return true;
+                return !InventoryNarrator.IsSpecialInventoryPoint(point);
             }
 
             return false;

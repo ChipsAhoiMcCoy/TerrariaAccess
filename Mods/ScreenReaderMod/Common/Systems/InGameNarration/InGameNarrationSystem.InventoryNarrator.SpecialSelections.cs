@@ -72,6 +72,7 @@ public sealed partial class InGameNarrationSystem
                 1550 => Button(GetPvpToggleText()),
                 int teamButton when teamButton >= 1551 && teamButton <= 1556 => Button(GetTeamButtonText(teamButton)),
                 1557 => DescribeDefenseCounter(),
+                1570 => FormatButtonLabel(LocalizationHelper.GetTextOrFallback("Mods.ScreenReaderMod.InventorySpecial.AchievementAdvisor", "Achievement Advisor")),
                 _ => null,
             };
 
@@ -140,7 +141,7 @@ public sealed partial class InGameNarrationSystem
             return null;
         }
 
-        private static bool IsSpecialInventoryPoint(int point)
+        internal static bool IsSpecialInventoryPoint(int point)
         {
             return point switch
             {
@@ -150,6 +151,7 @@ public sealed partial class InGameNarrationSystem
                 1550 => true,
                 >= 1551 and <= 1556 => true,
                 1557 => true,
+                1570 => true, // Achievement Advisor
                 _ => false,
             };
         }
@@ -168,8 +170,10 @@ public sealed partial class InGameNarrationSystem
                 >= 312 and <= 320 => InventoryRegion.CharacterPanel,
                 // Chest buttons
                 >= 500 and <= 505 => InventoryRegion.Storage,
-                // PvP and team buttons
+                // PvP and team buttons, defense counter
                 >= 1550 and <= 1557 => InventoryRegion.CharacterPanel,
+                // Achievement Advisor
+                1570 => InventoryRegion.CharacterPanel,
                 _ => InventoryRegion.None,
             };
         }

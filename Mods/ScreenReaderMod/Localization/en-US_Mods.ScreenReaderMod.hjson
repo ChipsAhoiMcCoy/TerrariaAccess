@@ -48,6 +48,16 @@ Mods: {
 					Label: Experimental Spatial Inventory Audio
 					Tooltip: Experimental feature. When enabled, inventory navigation clicks use panning (left/right) and pitch (high/low) to indicate slot position.
 				}
+
+				MultiplayerFootstepsEnabled: {
+					Label: Multiplayer Footsteps
+					Tooltip: When enabled, plays spatialized footstep sounds for other players in multiplayer. The sounds use panning and pitch to indicate player positions relative to you.
+				}
+
+				MultiplayerFootstepVolume: {
+					Label: Multiplayer Footstep Volume
+					Tooltip: Adjusts the volume of footstep sounds for other players in multiplayer.
+				}
 			}
 		}
 
@@ -145,8 +155,6 @@ Mods: {
 			SensorOff: inactive
 			ToggledOn: on
 			ToggledOff: off
-			DoorOpen: open
-			DoorClosed: closed
 			JunctionBoxStraight: straight mode, wires pass through in the same direction
 			JunctionBoxCrossA: cross mode A, down connects to left, up connects to right
 			JunctionBoxCrossB: cross mode B, down connects to right, up connects to left
@@ -492,6 +500,16 @@ Configs: {
 
 		SpatialInventoryAudio: {
 			Label: Experimental Spatial Inventory Audio
+			Tooltip: ""
+		}
+
+		MultiplayerFootstepsEnabled: {
+			Label: Multiplayer Footsteps Enabled
+			Tooltip: ""
+		}
+
+		MultiplayerFootstepVolume: {
+			Label: Multiplayer Footstep Volume
 			Tooltip: ""
 		}
 	}

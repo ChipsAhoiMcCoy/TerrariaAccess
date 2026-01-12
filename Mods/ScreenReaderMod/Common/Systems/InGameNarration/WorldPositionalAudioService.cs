@@ -15,6 +15,7 @@ public sealed partial class InGameNarrationSystem
         private readonly FootstepAudioEmitter _footstepAudioEmitter;
         private readonly ClimbAudioEmitter _climbAudioEmitter;
         private readonly BiomeAnnouncementEmitter _biomeAnnouncementEmitter;
+        private readonly MultiplayerFootstepAudioEmitter _multiplayerFootstepAudioEmitter;
         private readonly CadenceGate _cadenceGate = new();
 
         public WorldPositionalAudioService(
@@ -22,13 +23,15 @@ public sealed partial class InGameNarrationSystem
             HostileStaticAudioEmitter hostileStaticAudioEmitter,
             FootstepAudioEmitter footstepAudioEmitter,
             ClimbAudioEmitter climbAudioEmitter,
-            BiomeAnnouncementEmitter biomeAnnouncementEmitter)
+            BiomeAnnouncementEmitter biomeAnnouncementEmitter,
+            MultiplayerFootstepAudioEmitter multiplayerFootstepAudioEmitter)
         {
             _treasureBagBeaconEmitter = treasureBagBeaconEmitter;
             _hostileStaticAudioEmitter = hostileStaticAudioEmitter;
             _footstepAudioEmitter = footstepAudioEmitter;
             _climbAudioEmitter = climbAudioEmitter;
             _biomeAnnouncementEmitter = biomeAnnouncementEmitter;
+            _multiplayerFootstepAudioEmitter = multiplayerFootstepAudioEmitter;
         }
 
         public void Update(NarrationServiceContext context)
@@ -45,6 +48,7 @@ public sealed partial class InGameNarrationSystem
             Run("footstep", 1, () => _footstepAudioEmitter.Update(player));
             Run("climb", 1, () => _climbAudioEmitter.Update(player));
             Run("biome", 12, () => _biomeAnnouncementEmitter.Update(player));
+            Run("multiplayer-footstep", 1, () => _multiplayerFootstepAudioEmitter.Update(player));
         }
 
         public void Reset()
@@ -54,6 +58,7 @@ public sealed partial class InGameNarrationSystem
             _footstepAudioEmitter.Reset();
             _climbAudioEmitter.Reset();
             _biomeAnnouncementEmitter.Reset();
+            _multiplayerFootstepAudioEmitter.Reset();
             _cadenceGate.Reset();
         }
 

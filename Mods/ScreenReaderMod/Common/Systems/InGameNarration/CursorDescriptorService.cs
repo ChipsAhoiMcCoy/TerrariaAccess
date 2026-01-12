@@ -35,6 +35,12 @@ internal sealed class CursorDescriptorService
         TileID.WeightedPressurePlate,
         TileID.Timers,
         TileID.LogicSensor,
+        TileID.ClosedDoor,
+        TileID.OpenDoor,
+        TileID.TrapdoorClosed,
+        TileID.TrapdoorOpen,
+        TileID.TallGateClosed,
+        TileID.TallGateOpen,
     };
 
     /// <summary>
@@ -188,13 +194,6 @@ internal sealed class CursorDescriptorService
             name = $"{name}, {toggleStateLabel}";
         }
 
-        // Add door open/closed state
-        string? doorStateLabel = GetDoorStateLabel(tile);
-        if (!string.IsNullOrEmpty(doorStateLabel))
-        {
-            name = $"{name}, {doorStateLabel}";
-        }
-
         // Add junction box mode
         string? junctionBoxLabel = GetJunctionBoxModeLabel(tile);
         if (!string.IsNullOrEmpty(junctionBoxLabel))
@@ -249,34 +248,6 @@ internal sealed class CursorDescriptorService
             return GetLocalizedWithFallback(
                 isOn ? "Mods.ScreenReaderMod.TileStates.SensorOn" : "Mods.ScreenReaderMod.TileStates.SensorOff",
                 isOn ? "active" : "inactive");
-        }
-
-        return null;
-    }
-
-    /// <summary>
-    /// Gets the open/closed state label for door tiles.
-    /// Doors include regular doors, trapdoors, and tall gates.
-    /// </summary>
-    private static string? GetDoorStateLabel(Tile tile)
-    {
-        if (!tile.HasTile)
-        {
-            return null;
-        }
-
-        int tileType = tile.TileType;
-
-        // Closed door types
-        if (tileType == TileID.ClosedDoor || tileType == TileID.TrapdoorClosed || tileType == TileID.TallGateClosed)
-        {
-            return GetLocalizedWithFallback("Mods.ScreenReaderMod.TileStates.DoorClosed", "closed");
-        }
-
-        // Open door types
-        if (tileType == TileID.OpenDoor || tileType == TileID.TrapdoorOpen || tileType == TileID.TallGateOpen)
-        {
-            return GetLocalizedWithFallback("Mods.ScreenReaderMod.TileStates.DoorOpen", "open");
         }
 
         return null;
@@ -574,7 +545,18 @@ internal sealed class CursorDescriptorService
     private static bool TryResolveStyleItemType(int tileType, int style, out int itemType)
     {
         itemType = ItemID.None;
-        if (!TileStyleToItemType.TryGetValue(tileType, out Dictionary<int, int>? map))
+
+        // Map open door types to their closed equivalents for item lookup
+        // (door items create closed door tiles, so open doors aren't in the mapping)
+        int lookupTileType = tileType switch
+        {
+            TileID.OpenDoor => TileID.ClosedDoor,
+            TileID.TrapdoorOpen => TileID.TrapdoorClosed,
+            TileID.TallGateOpen => TileID.TallGateClosed,
+            _ => tileType
+        };
+
+        if (!TileStyleToItemType.TryGetValue(lookupTileType, out Dictionary<int, int>? map))
         {
             return false;
         }

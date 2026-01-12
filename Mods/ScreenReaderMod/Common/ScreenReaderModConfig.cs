@@ -47,6 +47,14 @@ public class ScreenReaderModConfig : ModConfig
     [DefaultValue(true)]
     public bool SpatialInventoryAudio { get; set; } = true;
 
+    [DefaultValue(true)]
+    public bool MultiplayerFootstepsEnabled { get; set; } = true;
+
+    [DefaultValue(50)]
+    [Range(0, 100)]
+    [Slider]
+    public int MultiplayerFootstepVolume { get; set; } = 50;
+
     public override void OnLoaded()
     {
         Instance = this;

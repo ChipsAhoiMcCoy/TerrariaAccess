@@ -50,6 +50,7 @@ public sealed partial class InGameNarrationSystem : ModSystem
     private readonly FootstepAudioEmitter _footstepAudioEmitter;
     private readonly ClimbAudioEmitter _climbAudioEmitter;
     private readonly BiomeAnnouncementEmitter _biomeAnnouncementEmitter;
+    private readonly MultiplayerFootstepAudioEmitter _multiplayerFootstepAudioEmitter;
     private readonly WorldPositionalAudioService _worldPositionalAudioService;
     private readonly LockOnNarrator _lockOnNarrator;
     private readonly ChatInputNarrator _chatInputNarrator;
@@ -135,12 +136,14 @@ public sealed partial class InGameNarrationSystem : ModSystem
         _footstepAudioEmitter = new FootstepAudioEmitter();
         _climbAudioEmitter = new ClimbAudioEmitter();
         _biomeAnnouncementEmitter = new BiomeAnnouncementEmitter();
+        _multiplayerFootstepAudioEmitter = new MultiplayerFootstepAudioEmitter();
         _worldPositionalAudioService = new WorldPositionalAudioService(
             _treasureBagBeaconEmitter,
             _hostileStaticAudioEmitter,
             _footstepAudioEmitter,
             _climbAudioEmitter,
-            _biomeAnnouncementEmitter);
+            _biomeAnnouncementEmitter,
+            _multiplayerFootstepAudioEmitter);
         _lockOnNarrator = new LockOnNarrator();
         _chatInputNarrator = new ChatInputNarrator();
         _wireColorMenuNarrator = new WireColorMenuNarrator();
