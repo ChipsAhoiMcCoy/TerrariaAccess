@@ -5,8 +5,8 @@ namespace ScreenReaderMod.Common.Systems.BuildMode;
 
 internal static class BuildModeNarrationCatalog
 {
-    public static string Enabled() => "Build mode enabled. Mark two corners, then hold use to act.";
-    public static string Disabled() => "Build mode disabled.";
+    public static string Enabled(bool outlineMode) => outlineMode ? "Build Mode: Outline." : "Build Mode: Fill.";
+    public static string Disabled() => "Build Mode: Disabled.";
     public static string CursorOutOfBounds() => "Build mode: cursor is out of world bounds.";
     public static string PointOneSet() => "Build mode: point one set.";
     public static string SelectionReset() => "Build mode: selection reset. Point one set.";

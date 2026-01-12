@@ -91,7 +91,7 @@ public sealed class BuildModePlayer : ModPlayer
         bool togglePressed = BuildModeKeybinds.Toggle?.JustPressed ?? false;
         if (togglePressed)
         {
-            ToggleBuildMode();
+            CycleBuildMode();
         }
 
         EnsureHotkeysInitialized();
@@ -186,22 +186,36 @@ public sealed class BuildModePlayer : ModPlayer
         }
     }
 
-    private void ToggleBuildMode()
+    private void CycleBuildMode()
     {
-        if (BuildModeActive)
+        // Cycle: Disabled -> Fill -> Outline -> Disabled
+        if (!BuildModeActive)
         {
-            _state = BuildModeState.Inactive;
-            RestorePlacementRangeIfNeeded();
+            // Disabled -> Fill
+            BuildModeKeybinds.OutlineModeEnabled = false;
             ResetSelection();
             _housingAnnouncer.Reset();
-            ScreenReaderService.Announce(BuildModeNarrationCatalog.Disabled());
+            _state = BuildModeState.AwaitingFirstCorner;
+            ScreenReaderService.Announce(BuildModeNarrationCatalog.Enabled(outlineMode: false));
             return;
         }
 
+        if (!BuildModeKeybinds.OutlineModeEnabled)
+        {
+            // Fill -> Outline
+            BuildModeKeybinds.OutlineModeEnabled = true;
+            ResetSelection();
+            ScreenReaderService.Announce(BuildModeNarrationCatalog.Enabled(outlineMode: true));
+            return;
+        }
+
+        // Outline -> Disabled
+        BuildModeKeybinds.OutlineModeEnabled = false;
+        _state = BuildModeState.Inactive;
+        RestorePlacementRangeIfNeeded();
         ResetSelection();
         _housingAnnouncer.Reset();
-        _state = BuildModeState.AwaitingFirstCorner;
-        ScreenReaderService.Announce(BuildModeNarrationCatalog.Enabled());
+        ScreenReaderService.Announce(BuildModeNarrationCatalog.Disabled());
     }
 
     private void ResetState()
@@ -965,6 +979,7 @@ public sealed class BuildModePlayer : ModPlayer
         public Rectangle Selection { get; private set; }
         private int _index;
         private int _total;
+        private bool _outlineMode;
 
         public bool Completed => HasSelection && _index >= _total;
 
@@ -973,7 +988,8 @@ public sealed class BuildModePlayer : ModPlayer
         public void Reset(Rectangle selection)
         {
             Selection = selection;
-            _total = selection.Width * selection.Height;
+            _outlineMode = BuildModeKeybinds.OutlineModeEnabled;
+            _total = _outlineMode ? CalculateOutlineTotal(selection) : selection.Width * selection.Height;
             _index = 0;
         }
 
@@ -986,9 +1002,17 @@ public sealed class BuildModePlayer : ModPlayer
                 return false;
             }
 
-            int offset = _index++;
-            x = Selection.Left + offset % Selection.Width;
-            y = Selection.Top + offset / Selection.Width;
+            if (_outlineMode)
+            {
+                GetOutlinePosition(_index++, out x, out y);
+            }
+            else
+            {
+                int offset = _index++;
+                x = Selection.Left + offset % Selection.Width;
+                y = Selection.Top + offset / Selection.Width;
+            }
+
             return true;
         }
 
@@ -1002,7 +1026,8 @@ public sealed class BuildModePlayer : ModPlayer
 
         public bool IsSameSelection(Rectangle selection)
         {
-            return HasSelection && Selection == selection;
+            bool currentOutlineMode = BuildModeKeybinds.OutlineModeEnabled;
+            return HasSelection && Selection == selection && _outlineMode == currentOutlineMode;
         }
 
         public void Clear()
@@ -1010,6 +1035,79 @@ public sealed class BuildModePlayer : ModPlayer
             Selection = Rectangle.Empty;
             _index = 0;
             _total = 0;
+            _outlineMode = false;
+        }
+
+        private static int CalculateOutlineTotal(Rectangle selection)
+        {
+            if (selection.Width <= 0 || selection.Height <= 0)
+            {
+                return 0;
+            }
+
+            if (selection.Width == 1 || selection.Height == 1)
+            {
+                return selection.Width * selection.Height;
+            }
+
+            // Perimeter: 2*width + 2*height - 4 corners (counted twice)
+            return 2 * selection.Width + 2 * selection.Height - 4;
+        }
+
+        private void GetOutlinePosition(int index, out int x, out int y)
+        {
+            int w = Selection.Width;
+            int h = Selection.Height;
+
+            // Handle degenerate cases (1-wide or 1-tall selections)
+            if (w == 1)
+            {
+                x = Selection.Left;
+                y = Selection.Top + index;
+                return;
+            }
+
+            if (h == 1)
+            {
+                x = Selection.Left + index;
+                y = Selection.Top;
+                return;
+            }
+
+            // Walk the perimeter: top edge -> right edge -> bottom edge -> left edge
+            // Top edge: (0 to w-1)
+            if (index < w)
+            {
+                x = Selection.Left + index;
+                y = Selection.Top;
+                return;
+            }
+
+            index -= w;
+
+            // Right edge (excluding top corner): (1 to h-1)
+            if (index < h - 1)
+            {
+                x = Selection.Left + w - 1;
+                y = Selection.Top + 1 + index;
+                return;
+            }
+
+            index -= h - 1;
+
+            // Bottom edge (excluding right corner, going right to left): (w-2 to 0)
+            if (index < w - 1)
+            {
+                x = Selection.Left + w - 2 - index;
+                y = Selection.Top + h - 1;
+                return;
+            }
+
+            index -= w - 1;
+
+            // Left edge (excluding bottom and top corners): (h-2 to 1)
+            x = Selection.Left;
+            y = Selection.Top + h - 2 - index;
         }
     }
 }

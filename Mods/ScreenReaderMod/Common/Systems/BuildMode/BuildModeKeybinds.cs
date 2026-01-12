@@ -9,6 +9,12 @@ internal static class BuildModeKeybinds
     internal static ModKeybind? Toggle { get; private set; }
     internal static ModKeybind? Place { get; private set; }
 
+    /// <summary>
+    /// When true, build mode only affects the outline (perimeter) of the selection.
+    /// When false, build mode fills the entire selection.
+    /// </summary>
+    internal static bool OutlineModeEnabled { get; set; }
+
     internal static void EnsureInitialized(Mod mod)
     {
         if (Toggle is not null)
@@ -24,5 +30,6 @@ internal static class BuildModeKeybinds
     {
         Toggle = null;
         Place = null;
+        OutlineModeEnabled = false;
     }
 }

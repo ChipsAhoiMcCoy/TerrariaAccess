@@ -398,7 +398,7 @@ Mods: {
 			GuidanceEntryPrevious.DisplayName: Previous Guidance Entry
 			GuidanceTeleport.DisplayName: Teleport to Guidance Target
 			SpeechInterrupt.DisplayName: Toggle Speech Interrupt
-			BuildModeToggle.DisplayName: Toggle Build Mode
+			BuildModeToggle.DisplayName: Cycle Build Mode
 			BuildModePlace.DisplayName: Set Build Point
 			GamepadEmulationInventorySelect.DisplayName: Gamepad Emulation Inventory Select
 			GamepadEmulationInventoryInteract.DisplayName: Gamepad Emulation Inventory Interact
@@ -434,7 +434,7 @@ Keybinds: {
 	GuidanceEntryNext.DisplayName: Next Guidance Entry
 	GuidanceEntryPrevious.DisplayName: Previous Guidance Entry
 	GuidanceTeleport.DisplayName: Teleport to Guidance Target
-	BuildModeToggle.DisplayName: Toggle Build Mode
+	BuildModeToggle.DisplayName: Cycle Build Mode
 	BuildModePlace.DisplayName: Set Build Point
 	GamepadEmulationInventorySelect.DisplayName: Gamepad Emulation Inventory Select
 	GamepadEmulationInventoryInteract.DisplayName: Gamepad Emulation Inventory Interact
