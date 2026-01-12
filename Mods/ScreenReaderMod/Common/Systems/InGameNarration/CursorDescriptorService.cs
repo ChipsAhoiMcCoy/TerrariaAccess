@@ -188,6 +188,13 @@ internal sealed class CursorDescriptorService
             name = $"{name}, {toggleStateLabel}";
         }
 
+        // Add door open/closed state
+        string? doorStateLabel = GetDoorStateLabel(tile);
+        if (!string.IsNullOrEmpty(doorStateLabel))
+        {
+            name = $"{name}, {doorStateLabel}";
+        }
+
         // Add junction box mode
         string? junctionBoxLabel = GetJunctionBoxModeLabel(tile);
         if (!string.IsNullOrEmpty(junctionBoxLabel))
@@ -245,6 +252,57 @@ internal sealed class CursorDescriptorService
         }
 
         return null;
+    }
+
+    /// <summary>
+    /// Gets the open/closed state label for door tiles.
+    /// Doors include regular doors, trapdoors, and tall gates.
+    /// </summary>
+    private static string? GetDoorStateLabel(Tile tile)
+    {
+        if (!tile.HasTile)
+        {
+            return null;
+        }
+
+        int tileType = tile.TileType;
+
+        // Closed door types
+        if (tileType == TileID.ClosedDoor || tileType == TileID.TrapdoorClosed || tileType == TileID.TallGateClosed)
+        {
+            return GetLocalizedWithFallback("Mods.ScreenReaderMod.TileStates.DoorClosed", "closed");
+        }
+
+        // Open door types
+        if (tileType == TileID.OpenDoor || tileType == TileID.TrapdoorOpen || tileType == TileID.TallGateOpen)
+        {
+            return GetLocalizedWithFallback("Mods.ScreenReaderMod.TileStates.DoorOpen", "open");
+        }
+
+        return null;
+    }
+
+    /// <summary>
+    /// Checks if a tile type is any kind of door (regular, trapdoor, or tall gate).
+    /// </summary>
+    internal static bool IsDoorTile(int tileType)
+    {
+        return tileType == TileID.ClosedDoor ||
+               tileType == TileID.OpenDoor ||
+               tileType == TileID.TrapdoorClosed ||
+               tileType == TileID.TrapdoorOpen ||
+               tileType == TileID.TallGateClosed ||
+               tileType == TileID.TallGateOpen;
+    }
+
+    /// <summary>
+    /// Checks if a door tile type represents an open door.
+    /// </summary>
+    internal static bool IsDoorOpen(int tileType)
+    {
+        return tileType == TileID.OpenDoor ||
+               tileType == TileID.TrapdoorOpen ||
+               tileType == TileID.TallGateOpen;
     }
 
     /// <summary>

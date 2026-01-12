@@ -292,8 +292,9 @@ public sealed partial class InGameNarrationSystem
                 if (isToggleable && samePosition && isOn != _lastIsToggleOn)
                 {
                     _lastIsToggleOn = isOn;
+                    _lastInteractTileType = tile.TileType;
                     category = AnnouncementCategory.Tile;
-                    return isOn ? "on" : "off";
+                    return GetToggleStateAnnouncement(isOn);
                 }
 
                 if (!_descriptorService.TryDescribe(tileX, tileY, out var descriptor))
@@ -360,8 +361,9 @@ public sealed partial class InGameNarrationSystem
             if (isToggleable && samePosition && isOn != _lastIsToggleOn)
             {
                 _lastIsToggleOn = isOn;
+                _lastCursorTileType = tile.TileType;
                 category = AnnouncementCategory.Tile;
-                return isOn ? "on" : "off";
+                return GetToggleStateAnnouncement(isOn);
             }
 
             int announcementKey = CursorDescriptorService.ResolveAnnouncementKey(descriptor.TileType, tile);
@@ -480,7 +482,8 @@ public sealed partial class InGameNarrationSystem
 
         /// <summary>
         /// Gets the toggle state for a tile. Returns (isToggleable, isOn).
-        /// Only levers and timers are tracked - switches are simple buttons.
+        /// Handles levers and timers. Doors are excluded since they have audible
+        /// sound effects in-game; their state is still shown when focused.
         /// </summary>
         private static (bool isToggleable, bool isOn) GetToggleState(Tile tile)
         {
@@ -502,6 +505,14 @@ public sealed partial class InGameNarrationSystem
             }
 
             return (false, false);
+        }
+
+        /// <summary>
+        /// Gets the appropriate toggle state announcement for toggleable tiles like levers and timers.
+        /// </summary>
+        private static string GetToggleStateAnnouncement(bool isOn)
+        {
+            return isOn ? "on" : "off";
         }
 
         private static string GetLocalized(string key)
