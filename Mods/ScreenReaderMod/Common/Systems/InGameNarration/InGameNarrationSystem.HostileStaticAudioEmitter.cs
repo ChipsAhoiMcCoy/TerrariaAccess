@@ -167,7 +167,7 @@ public sealed partial class InGameNarrationSystem
                 return false;
             }
 
-            if (npc.aiStyle == 25 && npc.ai.Length > 0 && npc.ai[0] == 0f)
+            if (npc.aiStyle == NPCAIStyleID.Mimic && npc.ai.Length > 0 && npc.ai[0] == 0f)
             {
                 return false;
             }

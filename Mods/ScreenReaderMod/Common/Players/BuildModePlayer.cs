@@ -332,7 +332,7 @@ public sealed class BuildModePlayer : ModPlayer
         }
 
         Tile tile = Framing.GetTileSafely(x, y);
-        if (!tile.HasTile && tile.WallType == 0)
+        if (!tile.HasTile && tile.WallType == WallID.None)
         {
             return true;
         }
@@ -370,11 +370,11 @@ public sealed class BuildModePlayer : ModPlayer
             }
         }
 
-        if (held.hammer > 0 && tile.WallType > 0)
+        if (held.hammer > 0 && tile.WallType > WallID.None)
         {
             int beforeWall = tile.WallType;
             Player.PickWall(x, y, held.hammer);
-            if (beforeWall != 0 && Main.tile[x, y].WallType == 0)
+            if (beforeWall != WallID.None && Main.tile[x, y].WallType == WallID.None)
             {
                 _wallsCleared++;
                 if (Main.netMode == NetmodeID.MultiplayerClient)
@@ -382,7 +382,7 @@ public sealed class BuildModePlayer : ModPlayer
                     NetMessage.SendData(MessageID.TileManipulation, -1, -1, null, 2, x, y);
                 }
             }
-            else if (Main.tile[x, y].WallType != 0)
+            else if (Main.tile[x, y].WallType != WallID.None)
             {
                 advanced = false;
             }
@@ -677,7 +677,7 @@ public sealed class BuildModePlayer : ModPlayer
 
     private static bool RequiresAxe(Tile tile)
     {
-        return tile.HasTile && tile.TileType >= 0 && tile.TileType < Main.tileAxe.Length && Main.tileAxe[tile.TileType];
+        return tile.HasTile && tile.TileType < Main.tileAxe.Length && Main.tileAxe[tile.TileType];
     }
 
     private int GetAdjustedMiningDelay(Item held)

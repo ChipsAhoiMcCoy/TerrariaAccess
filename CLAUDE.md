@@ -4,109 +4,111 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Project Overview
 
-Terraria Access is a tModLoader mod that makes Terraria playable for blind and low-vision players. It provides NVDA-driven speech narration for menus and in-game UI, plus synthesized positional audio cues for spatial awareness.
+Terraria Access is a tModLoader mod that makes Terraria playable for blind and low-vision players. It provides NVDA-driven speech narration for menus and in-game UI, plus positional audio cues for spatial awareness.
+
+**Key technologies:** C# (.NET 8.0), tModLoader, NVDA screen reader integration via nvdaControllerClient64.dll
 
 ## Build Commands
 
-```bash
-# Build the mod and deploy to tModLoader Mods folder
+```powershell
+# Build and deploy to local tModLoader Mods folder
 pwsh -NoProfile -ExecutionPolicy Bypass -File Tools/build.ps1
 
-# Build without deploying
+# Build only (no deployment)
 pwsh -NoProfile -ExecutionPolicy Bypass -File Tools/build.ps1 -SkipDeploy
 
-# Lint client.log for NVDA failures or missing narration after playtest
+# Build with narration lint (checks client.log for NVDA failures)
 pwsh -NoProfile -ExecutionPolicy Bypass -File Tools/build.ps1 -NarrationLint
 ```
 
-The build script produces `ScreenReaderMod.tmod` and copies it to `%USERPROFILE%\Documents\My Games\Terraria\tModLoader\Mods`.
-
-## Debugging
-
-Logs are in `C:\Program Files (x86)\Steam\steamapps\common\tModLoader\tModLoader-Logs\client.log`. Key log tags:
-- `[Narration]`, `[WorldNarration]`, `[MenuNarration]` - speech events
-- `[NVDA]` - NVDA controller API calls
-- `[NarrationScheduler][Timing]` - scheduler performance (when trace enabled)
-
-Environment variables for debugging:
-- `SCREENREADERMOD_TRACE=1` - verbose speech/narration breadcrumbs
-- `SCREENREADERMOD_SPEECH_LOG_ONLY=1` - log announcements without speaking
-- `SCREENREADERMOD_SCHEDULER_TRACE_ONLY=1` - scheduler trace-only mode
-- `SRM_DEBUG_NARRATION=1` - dump inventory narration focus history
-- `SRM_NARRATION_HISTORY_DISABLED=1` - disable hover deduplication
-- `SRM_NARRATION_HISTORY_MAX_AGE=<frames>` - adjust dedupe window
+The build script invokes tModLoader's build system (`dotnet tModLoader.dll -build`), not MSBuild directly. Output is `ScreenReaderMod.tmod`.
 
 ## Architecture
 
-The mod lives in `Mods/ScreenReaderMod/` with this structure:
+### Core Systems (Mods/ScreenReaderMod/Common/)
 
-### Speech Pipeline (`Common/Services/`)
-- `ISpeechProvider` - interface for speech backends
-- `NvdaSpeechProvider` - NVDA integration via `nvdaControllerClient64.dll`
-- `SpeechController` - throttling and interrupt handling
-- `WorldAnnouncementService` - SAPI fallback for world events
-- `ScreenReaderService` - provider registration and lifecycle
+**Entry Point:** `ScreenReaderMod.cs` - Initializes services and keybinds on mod load.
 
-### Menu Narration (`Common/Systems/MenuNarration/`)
-- `MenuNarrationController` - main menu narration coordinator
-- `IMenuNarrationHandler` / `MenuNarrationHandlerRegistry` - handler pattern for different menus
-- `MenuNarrationCatalog.*` - lookup tables for menu labels (MainMenus, Settings, Multiplayer)
-- `MenuUiSelectionTracker` - captures keyboard/gamepad focus across menu types (character creation, world creation, mod browser)
+**Services Layer (`Services/`):**
+- `ScreenReaderService` - Central speech API. Manages announcement categories (Default, Tile, Wall, Pickup, World) with per-category rate limiting. Routes to `SpeechController` -> `NvdaSpeechProvider`.
+- `SpatialAudioPanner` - Calculates stereo panning/pitch based on world position relative to player.
+- `WorldAnnouncementService` - Handles world event announcements (blood moon, invasions, biome changes).
 
-### In-Game Narration (`Common/Systems/InGameNarration/`)
-- `InGameNarrationSystem` - entry point, configures the scheduler
-- `NarrationScheduler` - coordinates multiple narrator services with gating rules
-- Partial classes for each narrator domain:
-  - `InventoryNarrator.*` (Core, Focus, Models, Tooltips, SpecialSelections)
-  - `CraftingNarrator`, `HotbarNarrator`, `CursorNarrator`, `SmartCursorNarrator`
-  - `NpcDialogueNarrator`, `LockOnNarrator`, `ControlsMenuNarrator`, `IngameSettingsNarrator`
-  - `WorldInteractableTracker` - tile/item scanning for exploration mode
-  - Audio emitters: `FootstepAudioEmitter`, `BiomeAnnouncementEmitter`, `HostileStaticAudioEmitter`, `TreasureBagBeaconEmitter`, `ClimbAudioEmitter`
+**Systems Layer (`Systems/`):**
+- `InGameNarrationSystem` - Partial class coordinating all in-game narrators via `NarrationScheduler`. Hooks into Terraria's ItemSlot, Main.NewText, PopupText, IngameOptions, etc.
+- `MenuNarrationSystem` - Hooks into `Main.DrawMenu` to narrate main menu UI states.
+- `GuidanceSystem` - Waypoint/target tracking with audio pings. Partial class split across:
+  - `.cs` - Core logic, category cycling, waypoint management
+  - `.Audio.cs` - Ping emission, tone generation
+  - `.Scan.cs` - NPC/Player/Interactable/DroppedItem/Critter/Plantlife scanning
+  - `.State.cs` - Selection mode state, waypoint storage
+  - `.Networking.cs` - Multiplayer sync
 
-### Guidance System (`Common/Systems/Guidance/` and `Common/Systems/GuidanceSystem*.cs`)
-- Waypoint management, category cycling (None/Exploration/Interactable/NPC/Player/Waypoint)
-- `GuidanceSystem.State.cs` - state machine for active target
-- `GuidanceSystem.Audio.cs` - positional tone synthesis
-- `GuidanceSystem.Scan.cs` - entity scanning
-- `GuidanceKeybinds` - keybind registration
+**Narrators (nested in InGameNarrationSystem):**
+- `HotbarNarrator`, `InventoryNarrator`, `CraftingNarrator` - UI slot navigation
+- `CursorNarrator`, `SmartCursorNarrator` - Tile/cursor position narration
+- `NpcDialogueNarrator` - NPC chat and shop interactions
+- `IngameSettingsNarrator`, `ControlsMenuNarrator`, `ModConfigMenuNarrator` - Settings UI
+- Various audio emitters: `FootstepAudioEmitter`, `BiomeAnnouncementEmitter`, `HostileStaticAudioEmitter`, `TreasureBagBeaconEmitter`
 
-### Build Mode (`Common/Systems/BuildMode/`)
-- `BuildModePlayer` - selection marking and batch tile/wall operations
-- `BuildModeKeybinds` - toggle and corner placement bindings
-- `BuildModeRangeManager` - viewport range extension
-- `BuildModeNarrationCatalog` - completion/progress announcements
+**Players (`Players/`):**
+- `BuildModePlayer` - Keyboard-driven tile placement mode
+- `DamageAnnouncementPlayer` - Combat damage narration
 
-### Utilities (`Common/Utilities/`)
-- `TextSanitizer` - clean text for speech
-- `GlyphTagFormatter` - convert glyph tags to readable text
-- `SliderNarrationHelper` - format slider values
-- `CoinFormatter`, `SlotContextFormatter` - item/slot formatting
-- `LocalizationHelper` - localization key resolution
+**Build Mode (`Systems/BuildMode/`):**
+- Provides keyboard-based cursor movement for placing/breaking tiles without mouse
 
-## Extension Points
+**Gamepad Emulation (`Systems/GamepadEmulation/`):**
+- Allows keyboard users to trigger gamepad-only UI navigation
 
-**Speech providers:** Implement `ISpeechProvider`, register in `ScreenReaderService`. Populate `Name`, `Initialized`, `Available`, `LastMessage`, `LastError`.
+### Key Patterns
 
-**Menu handlers:** Implement `IMenuNarrationHandler`, add to `MenuNarrationHandlerRegistry`. Use `MenuNarrationCatalog` resolvers over reflection.
+1. **Hook-based architecture**: Uses tModLoader's `On_*` detours to intercept Terraria methods
+2. **Narration scheduling**: `NarrationScheduler` coordinates multiple narrators, handles rate limiting per category
+3. **Partial classes**: Large systems split across multiple files by concern (GuidanceSystem, InGameNarrationSystem)
+4. **Reflection for private access**: Many narrators use reflection to access Terraria's internal UI state
 
-**In-game narrators:** Wrap in `DelegatedNarrationService`, register in `InGameNarrationSystem.ConfigureNarrationScheduler` with `NarrationServiceGating`.
+### Configuration
 
-**Interactables:** Register sources via `WorldInteractableTracker.RegisterSource`. Use `TileInteractableDefinition` with `InteractableCueProfile` for new tile types, or subclass `WorldInteractableSource` for custom scans.
+- `ScreenReaderModConfig.cs` - Client-side mod settings (volumes, toggles)
+- `Localization/en-US_Mods.ScreenReaderMod.hjson` - All user-facing strings
 
-## Decompiled Source References
+### Keybinds
 
-Decompiled source code for investigating Terraria and tModLoader internals:
+Defined in multiple `*Keybinds.cs` files:
+- `GuidanceKeybinds` - Waypoint navigation
+- `BuildModeKeybinds` - Build mode controls
+- `GamepadEmulationKeybinds` - Virtual gamepad
+- `SpeechInterruptKeybinds` - Speech control
+- `StatusCheckKeybinds` - Status announcements
+
+## Testing
+
+No automated test suite. Manual testing requires:
+1. Terraria + tModLoader installed
+2. NVDA screen reader running
+3. `nvdaControllerClient64.dll` in tModLoader directory
+
+Use `-NarrationLint` flag to scan client.log for NVDA communication failures after gameplay sessions.
+
+## Code Intelligence
+
+C# LSP is configured for this project. Prefer using LSP operations over grep/search when working with C# code:
+- Use `goToDefinition` to navigate to symbol definitions instead of searching for class/method names
+- Use `findReferences` to find all usages of a symbol
+- Use `hover` to get type information and documentation
+- Use `documentSymbol` to list all symbols in a file
+
+## Decompiled Sources
+
+When you need to reference Terraria or tModLoader internals, decompiled sources are available:
 
 - **tModLoader:** `C:\Program Files (x86)\Steam\steamapps\common\tModLoader\TModLoaderDecompiled\`
-- **Terraria (vanilla):** `C:\Program Files (x86)\Steam\steamapps\common\Terraria\Decompilations\Terraria-2025-11-17\`
+- **Terraria:** `C:\Program Files (x86)\Steam\steamapps\common\Terraria\Decompilations\`
 
-To re-decompile tModLoader after an update:
-```bash
-pwsh -NoProfile -ExecutionPolicy Bypass -File Tools/decompile-tmodloader.ps1
-```
+Use these to understand Terraria's internal APIs, find hook points, or verify method signatures.
 
-## Key Files
+## Mod Metadata
 
-- `ScreenReaderMod.cs` - mod entry point
-- `Localization/en-US_Mods.ScreenReaderMod.hjson` - all user-facing strings
-- `build.txt` - tModLoader mod metadata
+- Version defined in `Mods/ScreenReaderMod/build.txt`
+- Client-side only (`side = Client`)

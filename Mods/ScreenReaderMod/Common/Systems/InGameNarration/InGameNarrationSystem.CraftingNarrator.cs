@@ -954,7 +954,7 @@ public sealed partial class InGameNarrationSystem
                     continue;
                 }
 
-                if (ingredient.type == 0)
+                if (ingredient.type == ItemID.None)
                 {
                     break;
                 }
@@ -1145,7 +1145,7 @@ public sealed partial class InGameNarrationSystem
         {
             if (recipe is null ||
                 ingredient is null ||
-                ingredient.type == 0 ||
+                ingredient.type == ItemID.None ||
                 ingredient.stack <= 0 ||
                 ingredient.IsAir)
             {

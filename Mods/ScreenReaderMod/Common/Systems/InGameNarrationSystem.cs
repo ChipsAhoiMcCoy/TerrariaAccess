@@ -1329,7 +1329,7 @@ public sealed partial class InGameNarrationSystem : ModSystem
         var currentTotals = new Dictionary<int, int>(_inventoryStacksByType.Count);
         foreach (Item item in player.inventory)
         {
-            if (item is null || item.IsAir || item.type <= 0 || item.stack <= 0)
+            if (item is null || item.IsAir || item.type <= ItemID.None || item.stack <= 0)
             {
                 continue;
             }
