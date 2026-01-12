@@ -56,6 +56,10 @@ public sealed partial class InGameNarrationSystem
         private TileContentSignature _lastTileContentSignature;
         private TileStateSignature _lastTileStateSignature;
 
+        // Entity hover tracking
+        private int _lastHoveredNpcIndex = -1;
+        private int _lastHoveredOtherPlayerIndex = -1;
+
         private enum PlayerBodyPart
         {
             Head,
@@ -367,6 +371,47 @@ public sealed partial class InGameNarrationSystem
             _wasHoveringPlayer = false;
             _lastHoveredBodyPart = null;
 
+            // Check for hovering over other players (multiplayer)
+            if (!smartCursorActive)
+            {
+                int hoveredOtherPlayerIndex = GetHoveredOtherPlayerIndex(player, cursorWorld);
+                if (hoveredOtherPlayerIndex >= 0)
+                {
+                    if (hoveredOtherPlayerIndex != _lastHoveredOtherPlayerIndex || _justTransitionedToTileByTile)
+                    {
+                        Player otherPlayer = Main.player[hoveredOtherPlayerIndex];
+                        AnnounceOtherPlayer(otherPlayer);
+                        _lastHoveredOtherPlayerIndex = hoveredOtherPlayerIndex;
+                        _lastHoveredNpcIndex = -1;
+                        _justTransitionedToTileByTile = false;
+                    }
+
+                    return;
+                }
+            }
+
+            _lastHoveredOtherPlayerIndex = -1;
+
+            // Check for hovering over NPCs
+            if (!smartCursorActive)
+            {
+                int hoveredNpcIndex = GetHoveredNpcIndex(cursorWorld);
+                if (hoveredNpcIndex >= 0)
+                {
+                    if (hoveredNpcIndex != _lastHoveredNpcIndex || _justTransitionedToTileByTile)
+                    {
+                        NPC npc = Main.npc[hoveredNpcIndex];
+                        AnnounceNpc(npc);
+                        _lastHoveredNpcIndex = hoveredNpcIndex;
+                        _justTransitionedToTileByTile = false;
+                    }
+
+                    return;
+                }
+            }
+
+            _lastHoveredNpcIndex = -1;
+
             // Handle state-only changes (e.g., slope changed, wire added, paint applied, lever toggled)
             if (stateOnlyChanged)
             {
@@ -535,6 +580,8 @@ public sealed partial class InGameNarrationSystem
             _lastTileAnnouncementKey = int.MinValue;
             _lastTileContentSignature = default;
             _lastTileStateSignature = default;
+            _lastHoveredNpcIndex = -1;
+            _lastHoveredOtherPlayerIndex = -1;
         }
 
         private static bool IsHoveringPlayer(Player player, Vector2 cursorWorld)
@@ -564,6 +611,185 @@ public sealed partial class InGameNarrationSystem
             {
                 return PlayerBodyPart.Legs;
             }
+        }
+
+        /// <summary>
+        /// Checks if the cursor is hovering over any NPC and returns the index if found.
+        /// </summary>
+        private static int GetHoveredNpcIndex(Vector2 cursorWorld)
+        {
+            for (int i = 0; i < Main.maxNPCs; i++)
+            {
+                NPC npc = Main.npc[i];
+                if (!npc.active)
+                {
+                    continue;
+                }
+
+                Rectangle bounds = npc.getRect();
+                bounds.Inflate(4, 4);
+                if (bounds.Contains((int)cursorWorld.X, (int)cursorWorld.Y))
+                {
+                    return i;
+                }
+            }
+
+            return -1;
+        }
+
+        /// <summary>
+        /// Checks if the cursor is hovering over any other player (not the local player) and returns the index if found.
+        /// </summary>
+        private static int GetHoveredOtherPlayerIndex(Player localPlayer, Vector2 cursorWorld)
+        {
+            if (Main.netMode == NetmodeID.SinglePlayer)
+            {
+                return -1;
+            }
+
+            for (int i = 0; i < Main.maxPlayers; i++)
+            {
+                Player other = Main.player[i];
+                if (!other.active || other.dead || other.ghost || other == localPlayer)
+                {
+                    continue;
+                }
+
+                Rectangle bounds = other.getRect();
+                bounds.Inflate(4, 4);
+                if (bounds.Contains((int)cursorWorld.X, (int)cursorWorld.Y))
+                {
+                    return i;
+                }
+            }
+
+            return -1;
+        }
+
+        /// <summary>
+        /// Announces information about the NPC under the cursor.
+        /// </summary>
+        private void AnnounceNpc(NPC npc)
+        {
+            string name = ResolveNpcDisplayName(npc);
+            List<string> parts = new() { name };
+
+            // Add health info for non-critters that have health
+            if (npc.lifeMax > 0 && !NPCID.Sets.CountsAsCritter[npc.type])
+            {
+                string healthText = LocalizationHelper.GetTextOrFallback(
+                    "Mods.ScreenReaderMod.EntityInfo.Health",
+                    "{0} of {1} health");
+                parts.Add(string.Format(healthText, npc.life, npc.lifeMax));
+            }
+
+            // Indicate if friendly or hostile (for non-town NPCs)
+            if (!npc.townNPC && !NPCID.Sets.ActsLikeTownNPC[npc.type] && !NPCID.Sets.IsTownPet[npc.type])
+            {
+                if (npc.friendly)
+                {
+                    parts.Add(LocalizationHelper.GetTextOrFallback(
+                        "Mods.ScreenReaderMod.EntityInfo.Friendly",
+                        "friendly"));
+                }
+                else
+                {
+                    parts.Add(LocalizationHelper.GetTextOrFallback(
+                        "Mods.ScreenReaderMod.EntityInfo.Hostile",
+                        "hostile"));
+                }
+            }
+
+            string announcement = string.Join(", ", parts);
+
+            if (SmartCursorNarrator.TryDequeuePendingPrefix(out string smartCursorPrefix))
+            {
+                announcement = $"{smartCursorPrefix}. {announcement}";
+            }
+
+            ScreenReaderService.Announce(announcement, force: true);
+        }
+
+        /// <summary>
+        /// Announces information about another player under the cursor (multiplayer only).
+        /// </summary>
+        private void AnnounceOtherPlayer(Player other)
+        {
+            string name = !string.IsNullOrWhiteSpace(other.name) ? other.name : "Player";
+            List<string> parts = new() { name };
+
+            // Health
+            string healthText = LocalizationHelper.GetTextOrFallback(
+                "Mods.ScreenReaderMod.EntityInfo.Health",
+                "{0} of {1} health");
+            parts.Add(string.Format(healthText, other.statLife, other.statLifeMax2));
+
+            // Mana (only if they have mana)
+            if (other.statManaMax2 > 0)
+            {
+                string manaText = LocalizationHelper.GetTextOrFallback(
+                    "Mods.ScreenReaderMod.EntityInfo.Mana",
+                    "{0} of {1} mana");
+                parts.Add(string.Format(manaText, other.statMana, other.statManaMax2));
+            }
+
+            // Defense
+            string defenseText = LocalizationHelper.GetTextOrFallback(
+                "Mods.ScreenReaderMod.EntityInfo.Defense",
+                "{0} defense");
+            parts.Add(string.Format(defenseText, other.statDefense));
+
+            // Team (if on a team)
+            if (other.team > 0)
+            {
+                string? teamName = other.team switch
+                {
+                    1 => LocalizationHelper.GetTextOrFallback("Mods.ScreenReaderMod.InventorySpecial.TeamRed", "Red team"),
+                    2 => LocalizationHelper.GetTextOrFallback("Mods.ScreenReaderMod.InventorySpecial.TeamGreen", "Green team"),
+                    3 => LocalizationHelper.GetTextOrFallback("Mods.ScreenReaderMod.InventorySpecial.TeamBlue", "Blue team"),
+                    4 => LocalizationHelper.GetTextOrFallback("Mods.ScreenReaderMod.InventorySpecial.TeamYellow", "Yellow team"),
+                    5 => LocalizationHelper.GetTextOrFallback("Mods.ScreenReaderMod.InventorySpecial.TeamPink", "Pink team"),
+                    _ => null
+                };
+
+                if (teamName != null)
+                {
+                    parts.Add(teamName);
+                }
+            }
+
+            string announcement = string.Join(", ", parts);
+
+            if (SmartCursorNarrator.TryDequeuePendingPrefix(out string smartCursorPrefix))
+            {
+                announcement = $"{smartCursorPrefix}. {announcement}";
+            }
+
+            ScreenReaderService.Announce(announcement, force: true);
+        }
+
+        /// <summary>
+        /// Resolves the display name for an NPC.
+        /// </summary>
+        private static string ResolveNpcDisplayName(NPC npc)
+        {
+            if (!string.IsNullOrWhiteSpace(npc.FullName))
+            {
+                return npc.FullName;
+            }
+
+            if (!string.IsNullOrWhiteSpace(npc.GivenName))
+            {
+                return npc.GivenName;
+            }
+
+            string localized = Lang.GetNPCNameValue(npc.type);
+            if (!string.IsNullOrWhiteSpace(localized))
+            {
+                return localized;
+            }
+
+            return "NPC";
         }
 
         private void AnnouncePlayer(Player player, PlayerBodyPart bodyPart, Vector2 cursorWorld)
