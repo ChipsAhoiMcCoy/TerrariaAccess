@@ -1,8 +1,10 @@
 #nullable enable
 using System;
+using System.Collections.Generic;
 using ScreenReaderMod.Common.Services;
 using ScreenReaderMod.Common.Utilities;
 using Terraria;
+using Terraria.ID;
 
 namespace ScreenReaderMod.Common.Systems;
 
@@ -39,8 +41,8 @@ internal static class StatusCheckSystem
         new("Underground", "Underground", static player => player.ZoneDirtLayerHeight),
     };
 
-    // Status items in order: Health, Mana, Armor, Biome, Time
-    private const int StatusItemCount = 5;
+    // Status items in order: Health, Mana, Armor, Biome, Time, Buffs
+    private const int StatusItemCount = 6;
 
     internal static void AnnounceStatus(Player player)
     {
@@ -74,6 +76,7 @@ internal static class StatusCheckSystem
             2 => GetArmorString(player),
             3 => GetBiomeString(player),
             4 => GetTimeString(),
+            5 => GetBuffStringDetailed(player),
             _ => string.Empty,
         };
     }
@@ -85,8 +88,9 @@ internal static class StatusCheckSystem
         string armor = GetArmorString(player);
         string biome = GetBiomeString(player);
         string time = GetTimeString();
+        string buffs = GetBuffString(player);
 
-        return $"{health}. {mana}. {armor}. {biome}. {time}.";
+        return $"{health}. {mana}. {armor}. {biome}. {time}. {buffs}.";
     }
 
     private static string GetHealthString(Player player)
@@ -120,6 +124,100 @@ internal static class StatusCheckSystem
     {
         string timeDesc = DescribeTime();
         return $"Time: {timeDesc}";
+    }
+
+    private static string GetBuffString(Player player)
+    {
+        int buffCount = CountActiveBuffs(player);
+        return buffCount == 1 ? "1 buff" : $"{buffCount} buffs";
+    }
+
+    private static string GetBuffStringDetailed(Player player)
+    {
+        List<string> buffNames = GetActiveBuffNames(player);
+
+        if (buffNames.Count == 0)
+        {
+            return "No buffs";
+        }
+
+        string buffList = string.Join(", ", buffNames);
+        string countLabel = buffNames.Count == 1 ? "buff" : "buffs";
+        return $"{buffNames.Count} {countLabel}: {buffList}";
+    }
+
+    private static int CountActiveBuffs(Player player)
+    {
+        int count = 0;
+        for (int i = 0; i < Player.MaxBuffs; i++)
+        {
+            int buffType = player.buffType[i];
+            if (buffType > 0 && player.buffTime[i] > 0 && buffType != BuffID.MonsterBanner)
+            {
+                count++;
+            }
+        }
+        return count;
+    }
+
+    private static List<string> GetActiveBuffNames(Player player)
+    {
+        List<string> names = new();
+        for (int i = 0; i < Player.MaxBuffs; i++)
+        {
+            int buffType = player.buffType[i];
+            int buffTime = player.buffTime[i];
+            if (buffType > 0 && buffTime > 0 && buffType != BuffID.MonsterBanner)
+            {
+                string buffName = Lang.GetBuffName(buffType);
+                if (!string.IsNullOrEmpty(buffName))
+                {
+                    string timeString = FormatBuffTime(buffTime);
+                    if (!string.IsNullOrEmpty(timeString))
+                    {
+                        names.Add($"{buffName} {timeString}");
+                    }
+                    else
+                    {
+                        names.Add(buffName);
+                    }
+                }
+            }
+        }
+        return names;
+    }
+
+    private static string FormatBuffTime(int buffTimeInTicks)
+    {
+        // Infinite buffs have very high tick values or special handling
+        // Terraria uses int.MaxValue or similar for infinite buffs
+        if (buffTimeInTicks <= 0 || buffTimeInTicks >= 3600 * 60 * 24) // More than 24 hours = effectively infinite
+        {
+            return string.Empty;
+        }
+
+        int totalSeconds = buffTimeInTicks / 60; // 60 ticks per second
+        int minutes = totalSeconds / 60;
+        int seconds = totalSeconds % 60;
+
+        if (minutes > 0 && seconds > 0)
+        {
+            string minLabel = minutes == 1 ? "minute" : "minutes";
+            string secLabel = seconds == 1 ? "second" : "seconds";
+            return $"{minutes} {minLabel} {seconds} {secLabel}";
+        }
+        else if (minutes > 0)
+        {
+            string minLabel = minutes == 1 ? "minute" : "minutes";
+            return $"{minutes} {minLabel}";
+        }
+        else if (seconds > 0)
+        {
+            string secLabel = seconds == 1 ? "second" : "seconds";
+            return $"{seconds} {secLabel}";
+        }
+
+        return string.Empty;
     }
 
     private static string DetermineBiomeName(Player player)
