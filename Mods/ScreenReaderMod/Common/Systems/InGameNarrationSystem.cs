@@ -244,6 +244,7 @@ public sealed partial class InGameNarrationSystem : ModSystem
         On_IngameOptions.DrawRightSide += CaptureIngameOptionsRight;
         On_WorldGen.moveRoom += HandleNpcMoveRoom;
         On_WorldGen.kickOut += HandleNpcKickOut;
+        On_Player.TileInteractionsUse += HandleTileInteractionsUse;
     }
 
     private void ConfigureNarrationScheduler()
@@ -337,6 +338,7 @@ public sealed partial class InGameNarrationSystem : ModSystem
         On_IngameOptions.DrawRightSide -= CaptureIngameOptionsRight;
         On_WorldGen.moveRoom -= HandleNpcMoveRoom;
         On_WorldGen.kickOut -= HandleNpcKickOut;
+        On_Player.TileInteractionsUse -= HandleTileInteractionsUse;
     }
 
     private void ResetSharedResources()
