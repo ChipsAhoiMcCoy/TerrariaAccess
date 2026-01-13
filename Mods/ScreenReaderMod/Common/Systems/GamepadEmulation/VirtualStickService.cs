@@ -2,6 +2,7 @@
 using System;
 using Microsoft.Xna.Framework;
 using Microsoft.Xna.Framework.Input;
+using ScreenReaderMod.Common.Systems.FirstLetterNavigation;
 using Terraria;
 using Terraria.GameInput;
 using Terraria.ModLoader;
@@ -37,7 +38,13 @@ internal static class VirtualStickService
         }
 
         KeyboardState state = Main.keyState;
-        bool movementOverride = TryReadStick(state, Keys.W, Keys.S, Keys.A, Keys.D, out Vector2 movement);
+
+        // Suppress WASD movement input when first letter navigation is active in inventory.
+        // This prevents letter keys from being interpreted as both navigation AND item search.
+        bool suppressWasdMovement = Main.playerInventory && FirstLetterNavigationManager.IsEnabled;
+        Vector2 movement = Vector2.Zero;
+        bool movementOverride = !suppressWasdMovement &&
+            TryReadStick(state, Keys.W, Keys.S, Keys.A, Keys.D, out movement);
 
         // When Smart Cursor is off, right stick keys (OKLS) are used for cursor nudge instead.
         // Arrow keys behave inversely: analog stick when Smart Cursor is off, D-pad when on.

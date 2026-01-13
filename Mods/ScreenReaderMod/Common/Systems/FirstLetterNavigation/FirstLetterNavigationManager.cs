@@ -1,12 +1,15 @@
 #nullable enable
 using System;
 using System.Collections.Generic;
+using Microsoft.Xna.Framework;
 using Microsoft.Xna.Framework.Input;
 using ScreenReaderMod.Common.Services;
 using ScreenReaderMod.Common.Utilities;
 using Terraria;
 using Terraria.Audio;
+using Terraria.GameInput;
 using Terraria.ID;
+using Terraria.ModLoader;
 using Terraria.UI.Gamepad;
 
 // Note: Spatial audio feedback is handled automatically by InventoryNarrator
@@ -88,6 +91,8 @@ internal static class FirstLetterNavigationManager
         }
 
         // Process letter keys when enabled
+        // Note: Navigation trigger suppression is handled by SuppressNavigationTriggers()
+        // which runs in PostUpdateInput, BEFORE UILinkPointNavigator.Update()
         if (_isEnabled)
         {
             ProcessLetterKeys(player);
@@ -135,7 +140,9 @@ internal static class FirstLetterNavigationManager
             if (pressed && !wasPressed)
             {
                 char letter = (char)('A' + i);
+                LogDebug($"Letter key '{letter}' just pressed, CurrentPoint before={UILinkPointNavigator.CurrentPoint}");
                 ProcessLetter(player, letter);
+                LogDebug($"After ProcessLetter, CurrentPoint={UILinkPointNavigator.CurrentPoint}");
                 break; // Only process one letter per frame
             }
         }
@@ -152,6 +159,7 @@ internal static class FirstLetterNavigationManager
         if (upperLetter == _currentLetter && _currentMatches.Count > 0)
         {
             _currentMatchIndex = (_currentMatchIndex + 1) % _currentMatches.Count;
+            LogDebug($"Cycling to next match for '{upperLetter}': index={_currentMatchIndex}/{_currentMatches.Count}");
             NavigateToCurrentMatch();
             return;
         }
@@ -160,6 +168,12 @@ internal static class FirstLetterNavigationManager
         _currentLetter = upperLetter;
         _currentMatchIndex = 0;
         _currentMatches = CollectMatches(player, upperLetter);
+
+        LogDebug($"Collected {_currentMatches.Count} matches for '{upperLetter}'");
+        foreach (var match in _currentMatches)
+        {
+            LogDebug($"  Match: '{match.Name}' at linkPoint={match.LinkPointId} ({match.Location})");
+        }
 
         if (_currentMatches.Count == 0)
         {
@@ -271,28 +285,56 @@ internal static class FirstLetterNavigationManager
     /// </summary>
     private static void MoveFocusToSlot(int linkPointId)
     {
-        if (!UILinkPointNavigator.Points.ContainsKey(linkPointId))
+        // Validate this is an actual inventory/storage slot link point
+        if (!IsValidSlotLinkPoint(linkPointId))
         {
+            LogDebug($"Rejected invalid slot link point: {linkPointId}");
             return;
         }
 
+        if (!UILinkPointNavigator.Points.ContainsKey(linkPointId))
+        {
+            LogDebug($"Link point {linkPointId} does not exist in navigator");
+            return;
+        }
+
+        int beforePoint = UILinkPointNavigator.CurrentPoint;
         UILinkPointNavigator.ChangePoint(linkPointId);
+        int afterPoint = UILinkPointNavigator.CurrentPoint;
+
+        LogDebug($"Navigation: requested={linkPointId}, before={beforePoint}, after={afterPoint}");
     }
 
     /// <summary>
-    /// Announces the match count when there are multiple matches.
-    /// The item name and location are announced by InventoryNarrator when focus changes.
+    /// Checks if the link point ID corresponds to a valid inventory or storage slot.
+    /// This prevents accidentally navigating to UI buttons like Sort Inventory.
+    /// </summary>
+    private static bool IsValidSlotLinkPoint(int linkPointId)
+    {
+        // Inventory slots: 0-57 (hotbar 0-9, main 10-49, coins 50-53, ammo 54-57)
+        if (linkPointId >= 0 && linkPointId <= 57)
+        {
+            return true;
+        }
+
+        // Chest/storage slots: 400-439
+        if (linkPointId >= 400 && linkPointId <= 439)
+        {
+            return true;
+        }
+
+        return false;
+    }
+
+    /// <summary>
+    /// Announces the match. Currently a no-op since InventoryNarrator handles
+    /// announcing the item name and location when focus changes.
     /// </summary>
     private static void AnnounceMatch(ItemMatch match, int index, int total)
     {
-        // Only announce the count when there are multiple matches.
         // The InventoryNarrator handles announcing the item name and location
         // when focus changes via UILinkPointNavigator.ChangePoint().
-        if (total > 1)
-        {
-            string message = $"{index + 1} of {total}";
-            ScreenReaderService.Announce(message, force: true);
-        }
+        // No additional announcement needed here.
     }
 
     /// <summary>
@@ -359,5 +401,88 @@ internal static class FirstLetterNavigationManager
         _wasInventoryOpen = false;
         ClearMatches();
         Array.Clear(_letterKeyStates, 0, _letterKeyStates.Length);
+    }
+
+    /// <summary>
+    /// Suppresses navigation triggers that would interfere with first letter navigation.
+    /// Must be called from PostUpdateInput, BEFORE UILinkPointNavigator.Update() runs.
+    /// </summary>
+    internal static void SuppressNavigationTriggers()
+    {
+        if (!_isEnabled || !Main.playerInventory)
+        {
+            return;
+        }
+
+        // Skip when in text input mode
+        if (Main.drawingPlayerChat || Main.editSign || Main.editChest)
+        {
+            return;
+        }
+
+        // Force XBoxGamepadUI mode so UILinkPointNavigator processes our ChangePoint calls
+        // and doesn't fall back to keyboard-based navigation
+        PlayerInput.CurrentInputMode = InputMode.XBoxGamepadUI;
+
+        var current = PlayerInput.Triggers.Current;
+        var justPressed = PlayerInput.Triggers.JustPressed;
+
+        // Block navigation triggers that GetNavigatorDirections() reads
+        // These are what actually move the selection cursor in XBoxGamepadUI mode
+        ClearTrigger(current, justPressed, "Up");
+        ClearTrigger(current, justPressed, "Down");
+        ClearTrigger(current, justPressed, "Left");
+        ClearTrigger(current, justPressed, "Right");
+        ClearTrigger(current, justPressed, "MenuUp");
+        ClearTrigger(current, justPressed, "MenuDown");
+        ClearTrigger(current, justPressed, "MenuLeft");
+        ClearTrigger(current, justPressed, "MenuRight");
+
+        // Block all triggers that could cause unintended actions while typing letters.
+        // Users expect letter keys to ONLY search for items, not trigger game actions.
+
+        // Throw (T) - would junk/drop items
+        ClearTrigger(current, justPressed, "Throw");
+
+        // SmartSelect (F) - drops held items in inventory
+        ClearTrigger(current, justPressed, "SmartSelect");
+
+        // Grapple (E) - triggers crafting in crafting UI
+        ClearTrigger(current, justPressed, "Grapple");
+
+        // Inventory (I) - would close the inventory
+        ClearTrigger(current, justPressed, "Inventory");
+
+        // Quick actions that would use consumables or trigger abilities
+        ClearTrigger(current, justPressed, "QuickHeal");   // H - uses healing item
+        ClearTrigger(current, justPressed, "QuickMana");   // J - uses mana item
+        ClearTrigger(current, justPressed, "QuickBuff");   // B - uses buff items
+        ClearTrigger(current, justPressed, "QuickMount");  // R - mounts/dismounts
+
+        // Map (M) - would open fullscreen map
+        ClearTrigger(current, justPressed, "MapFull");
+
+        // Creative menu toggle
+        ClearTrigger(current, justPressed, "ToggleCreativeMenu");
+
+        // Also clear the thumbstick to prevent any residual analog navigation
+        PlayerInput.GamepadThumbstickLeft = Vector2.Zero;
+    }
+
+    /// <summary>
+    /// Clears a trigger from both Current and JustPressed trigger sets.
+    /// </summary>
+    private static void ClearTrigger(TriggersSet current, TriggersSet justPressed, string triggerName)
+    {
+        current.KeyStatus[triggerName] = false;
+        justPressed.KeyStatus[triggerName] = false;
+    }
+
+    /// <summary>
+    /// Logs debug information to the mod logger.
+    /// </summary>
+    private static void LogDebug(string message)
+    {
+        ScreenReaderMod.Instance?.Logger.Info($"[FirstLetterNav] {message}");
     }
 }

@@ -86,6 +86,44 @@ internal static class VirtualTriggerService
     }
 
     /// <summary>
+    /// Checks if a ModKeybind is bound to any letter key (A-Z).
+    /// Used to determine if first letter navigation should suppress this keybind.
+    /// </summary>
+    internal static bool IsKeybindBoundToLetterKey(ModKeybind? keybind)
+    {
+        if (keybind is null)
+        {
+            return false;
+        }
+
+        try
+        {
+            List<string> assignedKeys = keybind.GetAssignedKeys();
+            if (assignedKeys is null || assignedKeys.Count == 0)
+            {
+                return false;
+            }
+
+            foreach (string keyName in assignedKeys)
+            {
+                if (Enum.TryParse<Keys>(keyName, ignoreCase: true, out Keys key))
+                {
+                    if (key >= Keys.A && key <= Keys.Z)
+                    {
+                        return true;
+                    }
+                }
+            }
+        }
+        catch
+        {
+            // Ignore errors
+        }
+
+        return false;
+    }
+
+    /// <summary>
     /// Checks if a ModKeybind's assigned keys are pressed using raw keyboard state.
     /// This is a fallback for when ModKeybind.Current doesn't work correctly in gamepad modes.
     /// </summary>
