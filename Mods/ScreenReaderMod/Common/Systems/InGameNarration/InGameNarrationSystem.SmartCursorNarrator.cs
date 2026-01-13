@@ -322,7 +322,8 @@ public sealed partial class InGameNarrationSystem
                 if (!string.IsNullOrWhiteSpace(descriptor.Name))
                 {
                     category = descriptor.Category;
-                    return descriptor.Name;
+                    // Strip shape suffix to prevent slope-only changes from triggering re-announcements
+                    return StripShapeSuffix(descriptor.Name);
                 }
             }
 
@@ -422,11 +423,14 @@ public sealed partial class InGameNarrationSystem
                 {
                     // Strip redundant "has actuator" suffix if we're showing the prefix
                     string tileName = hasActuatorPrefix ? StripActuatorSuffix(descriptor.Name) : descriptor.Name;
+                    // Strip shape suffix to prevent slope-only changes from triggering re-announcements
+                    tileName = StripShapeSuffix(tileName);
                     return $"{mechanicsPrefix}, {tileName}";
                 }
             }
 
-            return descriptor.Name;
+            // Strip shape suffix to prevent slope-only changes from triggering re-announcements
+            return StripShapeSuffix(descriptor.Name);
         }
 
         private void AnnouncePendingStateIfAny(bool force = false)
@@ -476,6 +480,35 @@ public sealed partial class InGameNarrationSystem
             if (name.EndsWith(suffix, StringComparison.OrdinalIgnoreCase))
             {
                 return name[..^suffix.Length];
+            }
+            return name;
+        }
+
+        /// <summary>
+        /// Tile shape suffixes to strip from smart cursor announcements.
+        /// Shape changes (solid vs sloped) shouldn't trigger re-announcements.
+        /// </summary>
+        private static readonly string[] ShapeSuffixes =
+        {
+            ", half block",
+            ", sloped down-left",
+            ", sloped down-right",
+            ", sloped up-left",
+            ", sloped up-right",
+        };
+
+        /// <summary>
+        /// Strips tile shape suffixes (slope/half-block info) from a tile name.
+        /// This prevents shape-only changes from triggering re-announcements.
+        /// </summary>
+        private static string StripShapeSuffix(string name)
+        {
+            foreach (string suffix in ShapeSuffixes)
+            {
+                if (name.EndsWith(suffix, StringComparison.OrdinalIgnoreCase))
+                {
+                    return name[..^suffix.Length];
+                }
             }
             return name;
         }
