@@ -236,12 +236,9 @@ public sealed partial class GuidanceSystem : ModSystem
         if (_sweepCursor >= SweepOrder.Count)
         {
             _sweepCursor = 0;
-            _nextSweepFrame = (int)Main.GameUpdateCount + SweepCycleDelayFrames;
         }
-        else
-        {
-            _nextSweepFrame = (int)Main.GameUpdateCount + SweepIntervalFrames;
-        }
+
+        _nextSweepFrame = (int)Main.GameUpdateCount + SweepIntervalFrames;
     }
 
     private static void RefreshSweepOrder(Player player)

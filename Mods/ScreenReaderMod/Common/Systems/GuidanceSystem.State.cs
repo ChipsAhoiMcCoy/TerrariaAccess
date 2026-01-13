@@ -44,7 +44,6 @@ public sealed partial class GuidanceSystem
     private static int _sweepCursor;
     private static int _nextSweepFrame;
     private const int SweepIntervalFrames = 10;
-    private const int SweepCycleDelayFrames = 54;
 
     private readonly struct SweepTarget
     {
