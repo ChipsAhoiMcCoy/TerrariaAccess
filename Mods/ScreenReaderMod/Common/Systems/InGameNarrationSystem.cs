@@ -9,6 +9,7 @@ using Microsoft.Xna.Framework;
 using Microsoft.Xna.Framework.Audio;
 using Microsoft.Xna.Framework.Graphics;
 using ScreenReaderMod.Common.Services;
+using ScreenReaderMod.Common.Systems.FirstLetterNavigation;
 using ScreenReaderMod.Common.Systems.MenuNarration;
 using ScreenReaderMod.Common.Utilities;
 using Terraria;
@@ -370,6 +371,7 @@ public sealed partial class InGameNarrationSystem : ModSystem
         _inLowLight = false;
         _lastLowLightAnnouncementAt = DateTime.MinValue;
         InventoryNarrator.ResetStaticCaches();
+        FirstLetterNavigationManager.Reset();
     }
 
     public override void UpdateUI(GameTime gameTime)
@@ -416,6 +418,7 @@ public sealed partial class InGameNarrationSystem : ModSystem
 
         DetectInventoryGains(player);
         RunNarrationScheduler(runtime, player, isPaused, requirePaused);
+        FirstLetterNavigationManager.Update();
         _modConfigMenuNarrator.TryHandleIngameUi(Main.InGameUI, isPaused);
     }
 

@@ -283,6 +283,12 @@ Mods: {
 			SearchEnabled: Search mode. Type to filter mods. Press Tab to return to navigation.
 		}
 
+		FirstLetterNavigation: {
+			Enabled: First Letter Navigation Enabled. Press a letter to find items.
+			Disabled: First Letter Navigation Disabled
+			NoMatches: No items starting with {0}
+		}
+
 		WorldAnnouncements: {
 			BloodMoonStart: The Blood Moon is rising.
 			BloodMoonEnd: The Blood Moon has ended.

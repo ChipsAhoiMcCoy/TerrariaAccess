@@ -8,6 +8,7 @@ using Mono.Cecil.Cil;
 using MonoMod.Cil;
 using MonoMod.RuntimeDetour;
 using ScreenReaderMod.Common.Services;
+using ScreenReaderMod.Common.Systems.FirstLetterNavigation;
 using ScreenReaderMod.Common.Systems.GamepadEmulation;
 using ScreenReaderMod.Common.Utilities;
 using Terraria;
@@ -26,6 +27,11 @@ namespace ScreenReaderMod.Common.Systems;
 public sealed class GamepadEmulationSystem : ModSystem
 {
     private const int ControllerExtrasGroupIndex = 3;
+
+    // Debug logging for input state - enable via SRM_DEBUG_INPUT environment variable
+    private static readonly bool InputDebugEnabled = !string.IsNullOrEmpty(Environment.GetEnvironmentVariable("SRM_DEBUG_INPUT"));
+    private static int _lastLoggedLinkPoint = -999;
+    private static InputMode _lastLoggedInputMode = (InputMode)(-1);
 
     private static readonly string[] ControllerExclusiveBindingIds = {
         TriggerNames.LockOn,
@@ -366,6 +372,8 @@ public sealed class GamepadEmulationSystem : ModSystem
             return;
         }
 
+        LogInputDebugState("PostUpdateInput");
+
         HandleFeatureToggleHotkey();
         SuppressShiftSmartSelect();
 
@@ -423,7 +431,13 @@ public sealed class GamepadEmulationSystem : ModSystem
             return;
         }
 
-        VirtualTriggerService.InjectFromKeybind(GamepadEmulationKeybinds.LockOn, TriggerNames.LockOn);
+        // Skip LockOn (Tab) injection when first-letter navigation is active in inventory
+        // to prevent Tab from triggering both features simultaneously
+        bool skipLockOn = Main.playerInventory && FirstLetterNavigationManager.IsEnabled;
+        if (!skipLockOn)
+        {
+            VirtualTriggerService.InjectFromKeybind(GamepadEmulationKeybinds.LockOn, TriggerNames.LockOn);
+        }
 
         // SmartSelect: Inject the SmartSelect trigger for in-world auto-tool selection
         // When pressed, Terraria auto-selects the best tool for the targeted tile
@@ -565,6 +579,83 @@ public sealed class GamepadEmulationSystem : ModSystem
         string fallback = enabled ? "Gamepad Emulation Enabled" : "Gamepad Emulation Disabled";
         string announcement = LocalizationHelper.GetTextOrFallback(key, fallback);
         ScreenReaderService.Announce(announcement, force: true);
+    }
+
+    #endregion
+
+    #region Debug Logging
+
+    /// <summary>
+    /// Logs diagnostic information about input state. Enable with SRM_DEBUG_INPUT env var.
+    /// Only logs when state changes to avoid log spam.
+    /// </summary>
+    private static void LogInputDebugState(string context)
+    {
+        if (!InputDebugEnabled)
+        {
+            return;
+        }
+
+        int currentLinkPoint = UILinkPointNavigator.CurrentPoint;
+        InputMode currentInputMode = PlayerInput.CurrentInputMode;
+
+        // Only log on state changes
+        bool linkPointChanged = currentLinkPoint != _lastLoggedLinkPoint;
+        bool inputModeChanged = currentInputMode != _lastLoggedInputMode;
+
+        if (!linkPointChanged && !inputModeChanged)
+        {
+            return;
+        }
+
+        _lastLoggedLinkPoint = currentLinkPoint;
+        _lastLoggedInputMode = currentInputMode;
+
+        Player? player = Main.LocalPlayer;
+        bool inventoryOpen = Main.playerInventory;
+        bool usingGamepadUi = PlayerInput.UsingGamepadUI;
+        bool emulationEnabled = GamepadEmulationState.Enabled;
+        bool textInputActive = InputStateHelper.IsTextInputActive();
+        int chestIndex = player?.chest ?? -1;
+        bool firstLetterNavEnabled = FirstLetterNavigation.FirstLetterNavigationManager.IsEnabled;
+
+        // Get trigger states for key binds
+        TriggersPack pack = PlayerInput.Triggers;
+        bool mouseLeftActive = pack.Current.MouseLeft;
+        bool mouseRightActive = pack.Current.MouseRight;
+        bool smartSelectActive = pack.Current.KeyStatus.TryGetValue(TriggerNames.SmartSelect, out bool ss) && ss;
+
+        string message = $"[InputDebug] {context}: " +
+            $"linkPoint={currentLinkPoint} " +
+            $"inputMode={currentInputMode} " +
+            $"inventory={inventoryOpen} " +
+            $"usingGamepadUi={usingGamepadUi} " +
+            $"emulation={emulationEnabled} " +
+            $"textInput={textInputActive} " +
+            $"chest={chestIndex} " +
+            $"firstLetterNav={firstLetterNavEnabled} " +
+            $"mouseL={mouseLeftActive} " +
+            $"mouseR={mouseRightActive} " +
+            $"smartSelect={smartSelectActive}";
+
+        global::ScreenReaderMod.ScreenReaderMod.Instance?.Logger.Info(message);
+    }
+
+    /// <summary>
+    /// Logs when virtual triggers are injected. Enable with SRM_DEBUG_INPUT env var.
+    /// </summary>
+    private static void LogTriggerInjection(string triggerName, string source)
+    {
+        if (!InputDebugEnabled)
+        {
+            return;
+        }
+
+        int linkPoint = UILinkPointNavigator.CurrentPoint;
+        InputMode mode = PlayerInput.CurrentInputMode;
+
+        string message = $"[InputDebug] TriggerInjected: trigger={triggerName} source={source} linkPoint={linkPoint} mode={mode}";
+        global::ScreenReaderMod.ScreenReaderMod.Instance?.Logger.Info(message);
     }
 
     #endregion

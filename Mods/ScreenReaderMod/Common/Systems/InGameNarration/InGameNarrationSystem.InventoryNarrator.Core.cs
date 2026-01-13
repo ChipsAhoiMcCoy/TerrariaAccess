@@ -56,6 +56,9 @@ public sealed partial class InGameNarrationSystem
             UiNarrationArea.Guide;
 
         private static readonly bool NarrationDebugEnabled = !string.IsNullOrEmpty(Environment.GetEnvironmentVariable("SRM_DEBUG_NARRATION"));
+        private static readonly bool InputDebugEnabled = !string.IsNullOrEmpty(Environment.GetEnvironmentVariable("SRM_DEBUG_INPUT"));
+        private static int _lastLoggedFocusLinkPoint = -999;
+        private static string? _lastLoggedFocusItemName;
 
         private static readonly Lazy<FieldInfo?> MouseTextCacheField = new(() =>
             typeof(Main).GetField("_mouseTextCache", BindingFlags.Instance | BindingFlags.NonPublic));
@@ -190,6 +193,8 @@ public sealed partial class InGameNarrationSystem
             SlotFocus? nextFocus = _focusTracker.Consume(usingGamepad);
 
             _currentFocus = nextFocus.HasValue && IsFocusValid(nextFocus.Value) ? nextFocus : null;
+
+            LogFocusDebugState(usingGamepad, nextFocus);
 
             HandleMouseItem();
             HandleHoverItem(player);
@@ -1744,6 +1749,58 @@ public sealed partial class InGameNarrationSystem
             }
 
             return normalized;
+        }
+
+        /// <summary>
+        /// Logs diagnostic information about focus state. Enable with SRM_DEBUG_INPUT env var.
+        /// Only logs when focus changes to avoid log spam.
+        /// </summary>
+        private static void LogFocusDebugState(bool usingGamepad, SlotFocus? focus)
+        {
+            if (!InputDebugEnabled)
+            {
+                return;
+            }
+
+            int currentLinkPoint = UILinkPointNavigator.CurrentPoint;
+            string? itemName = null;
+
+            if (focus.HasValue)
+            {
+                Item? item = GetItemFromFocus(focus);
+                if (item is not null && !item.IsAir)
+                {
+                    itemName = NarrationTextFormatter.ComposeItemName(item);
+                }
+            }
+
+            // Only log on changes
+            bool linkPointChanged = currentLinkPoint != _lastLoggedFocusLinkPoint;
+            bool itemChanged = !string.Equals(itemName, _lastLoggedFocusItemName, StringComparison.Ordinal);
+
+            if (!linkPointChanged && !itemChanged)
+            {
+                return;
+            }
+
+            _lastLoggedFocusLinkPoint = currentLinkPoint;
+            _lastLoggedFocusItemName = itemName;
+
+            int context = focus?.Context ?? -1;
+            int slot = focus?.Slot ?? -1;
+            bool hasPendingFocus = focus.HasValue;
+            InputMode inputMode = PlayerInput.CurrentInputMode;
+
+            string message = $"[FocusDebug] " +
+                $"linkPoint={currentLinkPoint} " +
+                $"item='{itemName ?? "none"}' " +
+                $"context={context} " +
+                $"slot={slot} " +
+                $"hasFocus={hasPendingFocus} " +
+                $"usingGamepad={usingGamepad} " +
+                $"inputMode={inputMode}";
+
+            global::ScreenReaderMod.ScreenReaderMod.Instance?.Logger.Info(message);
         }
 
     }
