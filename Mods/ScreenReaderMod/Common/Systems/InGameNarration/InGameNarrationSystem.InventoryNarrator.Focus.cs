@@ -34,7 +34,15 @@ public sealed partial class InGameNarrationSystem
                 SlotFocus? focus = ConsumePending();
                 if (!focus.HasValue && usingGamepad)
                 {
+                    // Try cached link point data first
                     focus = ResolveFocusFromLinkPoint();
+
+                    // Fallback: directly compute focus from link point ID
+                    // This handles cases where ItemSlot.MouseHover hooks don't fire
+                    if (!focus.HasValue)
+                    {
+                        focus = TryResolveFocusDirectly();
+                    }
                 }
 
                 return focus;
@@ -185,6 +193,100 @@ public sealed partial class InGameNarrationSystem
                 }
 
                 return focus;
+            }
+
+            /// <summary>
+            /// Directly computes focus from the current link point ID without relying on cached data.
+            /// This is a fallback for when ItemSlot.MouseHover hooks don't fire.
+            /// </summary>
+            private static SlotFocus? TryResolveFocusDirectly()
+            {
+                int point = UILinkPointNavigator.CurrentPoint;
+                if (point < 0)
+                {
+                    return null;
+                }
+
+                Player? player = Main.LocalPlayer;
+                if (player is null)
+                {
+                    return null;
+                }
+
+                // Link point ranges for inventory slots:
+                // 0-9: Hotbar (inventory[0-9])
+                // 10-49: Main inventory (inventory[10-49])
+                // 50-53: Coins (inventory[50-53])
+                // 54-57: Ammo (inventory[54-57])
+                // 400-439: Chest slots
+                // 500-505: Equipment and other special slots
+
+                Item[]? items = null;
+                int slot = -1;
+                int context = -1;
+
+                if (point >= 0 && point < 10)
+                {
+                    // Hotbar: 0-9
+                    items = player.inventory;
+                    slot = point;
+                    context = ItemSlot.Context.InventoryItem;
+                }
+                else if (point >= 10 && point < 50)
+                {
+                    // Main inventory: 10-49
+                    items = player.inventory;
+                    slot = point;
+                    context = ItemSlot.Context.InventoryItem;
+                }
+                else if (point >= 50 && point < 54)
+                {
+                    // Coins: 50-53
+                    items = player.inventory;
+                    slot = point;
+                    context = ItemSlot.Context.InventoryCoin;
+                }
+                else if (point >= 54 && point < 58)
+                {
+                    // Ammo: 54-57
+                    items = player.inventory;
+                    slot = point;
+                    context = ItemSlot.Context.InventoryAmmo;
+                }
+                else if (point >= 400 && point < 440)
+                {
+                    // Chest slots: 400-439
+                    slot = point - 400;
+                    context = ItemSlot.Context.ChestItem;
+
+                    if (player.chest >= 0 && player.chest < Main.chest.Length)
+                    {
+                        items = Main.chest[player.chest]?.item;
+                    }
+                    else if (player.chest == -2)
+                    {
+                        items = player.bank.item;
+                    }
+                    else if (player.chest == -3)
+                    {
+                        items = player.bank2.item;
+                    }
+                    else if (player.chest == -4)
+                    {
+                        items = player.bank3.item;
+                    }
+                    else if (player.chest == -5)
+                    {
+                        items = player.bank4.item;
+                    }
+                }
+
+                if (items is null || slot < 0 || (uint)slot >= (uint)items.Length)
+                {
+                    return null;
+                }
+
+                return new SlotFocus(items, null, context, slot);
             }
 
             private static bool IsCaptureFresh(FocusCapture capture)

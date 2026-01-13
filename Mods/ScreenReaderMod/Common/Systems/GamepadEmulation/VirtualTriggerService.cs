@@ -13,6 +13,7 @@ namespace ScreenReaderMod.Common.Systems.GamepadEmulation;
 /// </summary>
 internal static class VirtualTriggerService
 {
+    private static bool _wasMouseLeftTriggerActive;
     private static bool _wasMouseRightTriggerActive;
 
     /// <summary>
@@ -153,11 +154,46 @@ internal static class VirtualTriggerService
     }
 
     /// <summary>
-    /// Resets the mouse right trigger tracking state.
+    /// When the MouseLeft trigger is active (from keyboard InventorySelect key), ensure Main.mouseLeft
+    /// and Main.mouseLeftRelease are set so ItemSlot.LeftClick can process the action.
+    /// This is needed because forced gamepad UI mode may interfere with normal keyboard trigger processing.
+    /// </summary>
+    internal static void ApplyMouseLeftFromTrigger()
+    {
+        // Check both the trigger and the keybind directly as a fallback
+        bool triggerActive = PlayerInput.Triggers.Current.MouseLeft;
+
+        // Also check the InventorySelect keybind directly in case trigger injection timing is off
+        ModKeybind? selectKeybind = GamepadEmulationKeybinds.InventorySelect;
+        if (selectKeybind is not null)
+        {
+            bool keybindPressed = selectKeybind.Current || IsKeybindPressedRaw(selectKeybind);
+            triggerActive = triggerActive || keybindPressed;
+        }
+
+        bool justPressed = triggerActive && !_wasMouseLeftTriggerActive;
+        _wasMouseLeftTriggerActive = triggerActive;
+
+        if (justPressed)
+        {
+            // Set the mouse flags so ItemSlot.LeftClick can process the action
+            Main.mouseLeft = true;
+            Main.mouseLeftRelease = true;
+        }
+        else if (triggerActive)
+        {
+            // Continue holding mouseLeft for held actions
+            Main.mouseLeft = true;
+        }
+    }
+
+    /// <summary>
+    /// Resets the mouse trigger tracking state.
     /// Call this when the feature is disabled or during cleanup.
     /// </summary>
     internal static void ResetState()
     {
+        _wasMouseLeftTriggerActive = false;
         _wasMouseRightTriggerActive = false;
     }
 

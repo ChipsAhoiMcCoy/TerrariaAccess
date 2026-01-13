@@ -458,6 +458,9 @@ public sealed class GamepadEmulationSystem : ModSystem
 
         VirtualTriggerService.InjectFromKeybind(GamepadEmulationKeybinds.InventorySelect, TriggerNames.MouseLeft);
 
+        // Ensure Main.mouseLeft and Main.mouseLeftRelease are set for ItemSlot.LeftClick
+        VirtualTriggerService.ApplyMouseLeftFromTrigger();
+
         // SmartSelect: Inject the SmartSelect trigger to mimic gamepad Select button behavior
         // In inventory, this drops held items or performs Shift+Click depending on context
         VirtualTriggerService.InjectFromKeybind(GamepadEmulationKeybinds.SmartSelect, TriggerNames.SmartSelect);

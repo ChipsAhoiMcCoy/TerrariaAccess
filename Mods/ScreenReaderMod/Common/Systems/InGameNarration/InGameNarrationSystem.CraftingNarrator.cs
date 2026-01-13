@@ -471,10 +471,11 @@ public sealed partial class InGameNarrationSystem
             // causing the region prefix to be skipped when first navigating to the grid.
             string? regionPrefix = InventoryNarrator.TryGetAndUpdateCraftingRegionPrefix(linkPointGridMode);
 
-            // On first entry to crafting (from inventory/hotbar), always announce the region prefix
-            // even if the region tracking thinks we're already in that region. This handles cases
-            // where _lastAnnouncedRegion wasn't properly reset between crafting visits.
-            if (isFirstEntry && string.IsNullOrWhiteSpace(regionPrefix))
+            // On first entry to crafting (from inventory/hotbar) or when mode changes (grid <-> list),
+            // always announce the region prefix even if the region tracking thinks we're already
+            // in that region. This handles cases where _lastAnnouncedRegion was updated by
+            // InventoryNarrator before CraftingNarrator had a chance to announce.
+            if ((modeChanged || isFirstEntry) && string.IsNullOrWhiteSpace(regionPrefix))
             {
                 regionPrefix = InventoryNarrator.GetCraftingRegionDisplayName(linkPointGridMode);
             }
