@@ -12,9 +12,10 @@ public sealed partial class InGameNarrationSystem
 {
     private sealed class LockOnNarrator
     {
+        private const int HealthPercentStep = 10;
+
         private int _lastNpcId = -1;
-        private int _lastNpcLife = -1;
-        private int _lastAnnouncedLife = -1;
+        private int _lastAnnouncedPercent = -1;
 
         public void Update()
         {
@@ -33,21 +34,20 @@ public sealed partial class InGameNarrationSystem
 
             int npcId = target.whoAmI;
             int hp = Math.Max(0, target.life);
+            int percent = GetHealthPercent(target);
 
             if (npcId != _lastNpcId)
             {
                 _lastNpcId = npcId;
-                _lastNpcLife = hp;
-                _lastAnnouncedLife = hp;
+                _lastAnnouncedPercent = percent;
                 AnnounceLockOn(target, hp);
                 return;
             }
 
-            if (hp != _lastNpcLife)
+            if (percent < _lastAnnouncedPercent && _lastAnnouncedPercent - percent >= HealthPercentStep)
             {
-                int previousLife = _lastNpcLife;
-                _lastNpcLife = hp;
-                AnnounceHealthChange(hp, previousLife);
+                _lastAnnouncedPercent = percent;
+                ScreenReaderService.Announce($"{hp} health", force: true);
             }
         }
 
@@ -59,8 +59,7 @@ public sealed partial class InGameNarrationSystem
             }
 
             _lastNpcId = -1;
-            _lastNpcLife = -1;
-            _lastAnnouncedLife = -1;
+            _lastAnnouncedPercent = -1;
             ScreenReaderService.Announce("No longer targeting", force: true);
         }
 
@@ -70,49 +69,15 @@ public sealed partial class InGameNarrationSystem
             ScreenReaderService.Announce($"Locked on to {name}, {hp} health", force: true);
         }
 
-        private void AnnounceHealthChange(int hp, int previousLife)
+        private static int GetHealthPercent(NPC target)
         {
-            if (previousLife == -1)
+            if (target.lifeMax <= 0)
             {
-                _lastAnnouncedLife = hp;
-                ScreenReaderService.Announce($"{hp} health", force: true);
-                return;
+                return 0;
             }
 
-            if (hp > previousLife)
-            {
-                if (hp > _lastAnnouncedLife)
-                {
-                    _lastAnnouncedLife = hp;
-                }
-
-                return;
-            }
-
-            int step = GetHealthNarrationStep(hp);
-            if (_lastAnnouncedLife - hp >= step)
-            {
-                _lastAnnouncedLife = hp;
-                ScreenReaderService.Announce($"{hp} health", force: true);
-            }
-        }
-
-        private static int GetHealthNarrationStep(int hp)
-        {
-            // 4+ digits (1000+): announce every 500 health lost
-            // 2-3 digits (10-999): announce every 50 health lost
-            // 1 digit (1-9): announce every health point
-            if (hp >= 1000)
-            {
-                return 500;
-            }
-
-            if (hp >= 10)
-            {
-                return 50;
-            }
-
-            return 1;
+            int life = Math.Max(0, target.life);
+            return (int)Math.Round(100.0 * life / target.lifeMax);
         }
 
         private static string GetNpcName(NPC target)
