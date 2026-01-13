@@ -55,6 +55,9 @@ public class ScreenReaderModConfig : ModConfig
     [Slider]
     public int MultiplayerFootstepVolume { get; set; } = 50;
 
+    [DefaultValue(true)]
+    public bool GamepadEmulationEnabled { get; set; } = true;
+
     public override void OnLoaded()
     {
         Instance = this;

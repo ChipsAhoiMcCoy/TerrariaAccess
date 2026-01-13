@@ -58,6 +58,11 @@ Mods: {
 					Label: Multiplayer Footstep Volume
 					Tooltip: Adjusts the volume of footstep sounds for other players in multiplayer.
 				}
+
+				GamepadEmulationEnabled: {
+					Label: Gamepad Emulation
+					Tooltip: When enabled, keyboard inputs are translated to gamepad inputs for UI navigation. Disable this if you are using a physical controller. Toggle with F6.
+				}
 			}
 		}
 
@@ -510,6 +515,11 @@ Configs: {
 
 		MultiplayerFootstepVolume: {
 			Label: Multiplayer Footstep Volume
+			Tooltip: ""
+		}
+
+		GamepadEmulationEnabled: {
+			Label: Gamepad Emulation Enabled
 			Tooltip: ""
 		}
 	}

@@ -67,8 +67,9 @@ public sealed class GamepadEmulationSystem : ModSystem
         _shiftInUseHook = TryCreateHook(EmulationReflectionCache.ShiftInUseGetter, OverrideShiftInUse, "ItemSlot.ShiftInUse");
 
         GamepadEmulationState.StateChanged += OnFeatureToggleStateChanged;
-        // Force parity on at startup so the game always sees a controller and the virtual sticks/keybinds stay active.
-        GamepadEmulationState.SetEnabled(true);
+        // Restore saved state silently (no announcement on load)
+        bool savedState = ScreenReaderModConfig.Instance?.GamepadEmulationEnabled ?? true;
+        GamepadEmulationState.SetEnabledSilent(savedState);
     }
 
     public override void Unload()
@@ -549,6 +550,13 @@ public sealed class GamepadEmulationSystem : ModSystem
         {
             PlayerInput.SettingsForUI.TryRevertingToMouseMode();
             VirtualStickService.ResetState();
+        }
+
+        // Save the state to config for persistence
+        if (ScreenReaderModConfig.Instance is { } config)
+        {
+            config.GamepadEmulationEnabled = enabled;
+            config.SaveChanges(silent: true);
         }
 
         string key = enabled
