@@ -256,19 +256,19 @@ public sealed partial class GuidanceSystem : ModSystem
                 }
                 break;
             case SelectionMode.DroppedItem when _selectedDroppedItemIndex < 0:
-                foreach (DroppedItemGuidanceEntry entry in NearbyDroppedItems)
+                foreach (GuidanceEntry entry in NearbyDroppedItems)
                 {
                     SweepOrder.Add(new SweepTarget(entry.WorldPosition, entry.DistanceTiles));
                 }
                 break;
             case SelectionMode.Critter when _selectedCritterIndex < 0:
-                foreach (CritterGuidanceEntry entry in NearbyCritters)
+                foreach (GuidanceEntry entry in NearbyCritters)
                 {
                     SweepOrder.Add(new SweepTarget(entry.WorldPosition, entry.DistanceTiles));
                 }
                 break;
             case SelectionMode.Plantlife when _selectedPlantlifeIndex < 0:
-                foreach (PlantlifeGuidanceEntry entry in NearbyPlantlife)
+                foreach (GuidanceEntry entry in NearbyPlantlife)
                 {
                     SweepOrder.Add(new SweepTarget(entry.WorldPosition, entry.DistanceTiles));
                 }
@@ -1361,7 +1361,7 @@ public sealed partial class GuidanceSystem : ModSystem
             return;
         }
 
-        if (!TryGetSelectedNpc(player, out NPC npc, out NpcGuidanceEntry entry))
+        if (!TryGetSelectedNpc(player, out NPC npc, out GuidanceEntry entry))
         {
             int rangeTiles = (int)MathF.Round(DistanceReferenceTiles);
             ClearCategoryAnnouncement();
@@ -1382,7 +1382,7 @@ public sealed partial class GuidanceSystem : ModSystem
             return;
         }
 
-        if (!TryGetSelectedInteractable(player, out InteractableGuidanceEntry entry))
+        if (!TryGetSelectedInteractable(player, out GuidanceEntry entry))
         {
             ClearCategoryAnnouncement();
             AnnounceCategorySelection("Crafting", "No crafting stations detected nearby.");
@@ -1402,7 +1402,7 @@ public sealed partial class GuidanceSystem : ModSystem
             return;
         }
 
-        if (!TryGetSelectedPlayer(player, out Player targetPlayer, out PlayerGuidanceEntry entry))
+        if (!TryGetSelectedPlayer(player, out Player targetPlayer, out GuidanceEntry entry))
         {
             ClearCategoryAnnouncement();
             AnnounceCategorySelection("Players", "No other active players detected.");
@@ -1429,7 +1429,7 @@ public sealed partial class GuidanceSystem : ModSystem
             return;
         }
 
-        if (!TryGetSelectedDroppedItem(player, out DroppedItemGuidanceEntry entry))
+        if (!TryGetSelectedDroppedItem(player, out GuidanceEntry entry))
         {
             ClearCategoryAnnouncement();
             AnnounceCategorySelection("Items", "No dropped items on screen.");
@@ -1492,7 +1492,7 @@ public sealed partial class GuidanceSystem : ModSystem
             return;
         }
 
-        if (!TryGetSelectedCritter(player, out CritterGuidanceEntry entry))
+        if (!TryGetSelectedCritter(player, out GuidanceEntry entry))
         {
             int rangeTiles = (int)MathF.Round(DistanceReferenceTiles);
             ClearCategoryAnnouncement();
@@ -1537,7 +1537,7 @@ public sealed partial class GuidanceSystem : ModSystem
             return;
         }
 
-        if (!TryGetSelectedPlantlife(player, out PlantlifeGuidanceEntry entry))
+        if (!TryGetSelectedPlantlife(player, out GuidanceEntry entry))
         {
             ClearCategoryAnnouncement();
             AnnounceCategorySelection("Plants", "No harvestable plants nearby.");
@@ -1567,7 +1567,7 @@ public sealed partial class GuidanceSystem : ModSystem
         AnnouncePlantlifeSelection(player);
     }
 
-    private static bool TryGetSelectedCritter(Player player, out CritterGuidanceEntry entry)
+    private static bool TryGetSelectedCritter(Player player, out GuidanceEntry entry)
     {
         entry = default;
         if (_selectionMode != SelectionMode.Critter)
@@ -1586,7 +1586,7 @@ public sealed partial class GuidanceSystem : ModSystem
         return true;
     }
 
-    private static bool TryGetSelectedPlantlife(Player player, out PlantlifeGuidanceEntry entry)
+    private static bool TryGetSelectedPlantlife(Player player, out GuidanceEntry entry)
     {
         entry = default;
         if (_selectionMode != SelectionMode.Plantlife)
@@ -1605,12 +1605,12 @@ public sealed partial class GuidanceSystem : ModSystem
         return true;
     }
 
-    private static string ComposeNpcAnnouncement(NpcGuidanceEntry entry, Player player, Vector2 npcPosition, int position, int total)
+    private static string ComposeNpcAnnouncement(GuidanceEntry entry, Player player, Vector2 npcPosition, int position, int total)
     {
         return ComposeEntityAnnouncement(entry.DisplayName, player, npcPosition, position, total);
     }
 
-    private static string ComposePlayerAnnouncement(PlayerGuidanceEntry entry, Player player, Vector2 targetPlayerPosition, int position, int total)
+    private static string ComposePlayerAnnouncement(GuidanceEntry entry, Player player, Vector2 targetPlayerPosition, int position, int total)
     {
         return ComposeEntityAnnouncement(entry.DisplayName, player, targetPlayerPosition, position, total);
     }
@@ -1747,7 +1747,7 @@ public sealed partial class GuidanceSystem : ModSystem
         return $"Created waypoint {sanitizedName}, {relative}";
     }
 
-    private static bool TryGetSelectedNpc(Player player, out NPC npc, out NpcGuidanceEntry entry)
+    private static bool TryGetSelectedNpc(Player player, out NPC npc, out GuidanceEntry entry)
     {
         entry = default;
         npc = default!;
@@ -1764,12 +1764,12 @@ public sealed partial class GuidanceSystem : ModSystem
         }
 
         entry = NearbyNpcs[_selectedNpcIndex];
-        if (entry.NpcIndex < 0 || entry.NpcIndex >= Main.maxNPCs)
+        if (entry.Index < 0 || entry.Index >= Main.maxNPCs)
         {
             return false;
         }
 
-        npc = Main.npc[entry.NpcIndex];
+        npc = Main.npc[entry.Index];
         if (!IsTrackableNpc(npc))
         {
             RefreshNpcEntries(player);
@@ -1780,12 +1780,12 @@ public sealed partial class GuidanceSystem : ModSystem
             }
 
             entry = NearbyNpcs[_selectedNpcIndex];
-            if (entry.NpcIndex < 0 || entry.NpcIndex >= Main.maxNPCs)
+            if (entry.Index < 0 || entry.Index >= Main.maxNPCs)
             {
                 return false;
             }
 
-            npc = Main.npc[entry.NpcIndex];
+            npc = Main.npc[entry.Index];
             if (!IsTrackableNpc(npc))
             {
                 return false;
@@ -1795,7 +1795,7 @@ public sealed partial class GuidanceSystem : ModSystem
         return true;
     }
 
-    private static bool TryGetSelectedPlayer(Player owner, out Player target, out PlayerGuidanceEntry entry)
+    private static bool TryGetSelectedPlayer(Player owner, out Player target, out GuidanceEntry entry)
     {
         entry = default;
         target = default!;
@@ -1818,12 +1818,12 @@ public sealed partial class GuidanceSystem : ModSystem
         }
 
         entry = NearbyPlayers[_selectedPlayerIndex];
-        if (entry.PlayerIndex < 0 || entry.PlayerIndex >= Main.maxPlayers)
+        if (entry.Index < 0 || entry.Index >= Main.maxPlayers)
         {
             return false;
         }
 
-        target = Main.player[entry.PlayerIndex];
+        target = Main.player[entry.Index];
         if (!IsTrackablePlayer(target, owner))
         {
             RefreshPlayerEntries(owner);
@@ -1834,12 +1834,12 @@ public sealed partial class GuidanceSystem : ModSystem
             }
 
             entry = NearbyPlayers[_selectedPlayerIndex];
-            if (entry.PlayerIndex < 0 || entry.PlayerIndex >= Main.maxPlayers)
+            if (entry.Index < 0 || entry.Index >= Main.maxPlayers)
             {
                 return false;
             }
 
-            target = Main.player[entry.PlayerIndex];
+            target = Main.player[entry.Index];
             if (!IsTrackablePlayer(target, owner))
             {
                 return false;
@@ -1869,7 +1869,7 @@ public sealed partial class GuidanceSystem : ModSystem
         return true;
     }
 
-    private static bool TryGetSelectedInteractable(Player player, out InteractableGuidanceEntry entry)
+    private static bool TryGetSelectedInteractable(Player player, out GuidanceEntry entry)
     {
         entry = default;
         if (_selectionMode != SelectionMode.Interactable)
@@ -1888,7 +1888,7 @@ public sealed partial class GuidanceSystem : ModSystem
         return true;
     }
 
-    private static bool TryGetSelectedDroppedItem(Player player, out DroppedItemGuidanceEntry entry)
+    private static bool TryGetSelectedDroppedItem(Player player, out GuidanceEntry entry)
     {
         entry = default;
         if (_selectionMode != SelectionMode.DroppedItem)
@@ -1906,12 +1906,12 @@ public sealed partial class GuidanceSystem : ModSystem
         entry = NearbyDroppedItems[_selectedDroppedItemIndex];
 
         // Validate the item still exists and is active
-        if (entry.ItemIndex < 0 || entry.ItemIndex >= Main.maxItems)
+        if (entry.Index < 0 || entry.Index >= Main.maxItems)
         {
             return false;
         }
 
-        Item item = Main.item[entry.ItemIndex];
+        Item item = Main.item[entry.Index];
         if (!item.active || item.stack <= 0)
         {
             RefreshDroppedItemEntries(player);
@@ -2094,27 +2094,27 @@ public sealed partial class GuidanceSystem : ModSystem
                 worldPosition = exploration.WorldPosition;
                 label = SanitizeLabel(exploration.Label);
                 return true;
-            case SelectionMode.Npc when TryGetSelectedNpc(player, out NPC npc, out NpcGuidanceEntry entry):
+            case SelectionMode.Npc when TryGetSelectedNpc(player, out NPC npc, out GuidanceEntry entry):
                 worldPosition = npc.Bottom;
                 label = SanitizeLabel(entry.DisplayName);
                 return true;
-            case SelectionMode.Interactable when TryGetSelectedInteractable(player, out InteractableGuidanceEntry interactable):
+            case SelectionMode.Interactable when TryGetSelectedInteractable(player, out GuidanceEntry interactable):
                 worldPosition = interactable.WorldPosition;
                 label = SanitizeLabel(interactable.DisplayName);
                 return true;
-            case SelectionMode.Player when TryGetSelectedPlayer(player, out Player targetPlayer, out PlayerGuidanceEntry playerEntry):
+            case SelectionMode.Player when TryGetSelectedPlayer(player, out Player targetPlayer, out GuidanceEntry playerEntry):
                 worldPosition = targetPlayer.Bottom;
                 label = SanitizeLabel(playerEntry.DisplayName);
                 return true;
-            case SelectionMode.DroppedItem when TryGetSelectedDroppedItem(player, out DroppedItemGuidanceEntry droppedItem):
+            case SelectionMode.DroppedItem when TryGetSelectedDroppedItem(player, out GuidanceEntry droppedItem):
                 worldPosition = droppedItem.WorldPosition;
                 label = SanitizeLabel(droppedItem.DisplayName);
                 return true;
-            case SelectionMode.Critter when TryGetSelectedCritter(player, out CritterGuidanceEntry critter):
+            case SelectionMode.Critter when TryGetSelectedCritter(player, out GuidanceEntry critter):
                 worldPosition = critter.WorldPosition;
                 label = SanitizeLabel(critter.DisplayName);
                 return true;
-            case SelectionMode.Plantlife when TryGetSelectedPlantlife(player, out PlantlifeGuidanceEntry plantlife):
+            case SelectionMode.Plantlife when TryGetSelectedPlantlife(player, out GuidanceEntry plantlife):
                 worldPosition = plantlife.WorldPosition;
                 label = SanitizeLabel(plantlife.DisplayName);
                 return true;
@@ -2201,21 +2201,21 @@ public sealed partial class GuidanceSystem : ModSystem
         return _selectionMode switch
         {
             SelectionMode.Waypoint => new ProximityTargetKey(SelectionMode.Waypoint, _selectedIndex),
-            SelectionMode.Npc when TryGetSelectedNpc(player, out _, out NpcGuidanceEntry npcEntry)
-                => new ProximityTargetKey(SelectionMode.Npc, npcEntry.NpcIndex),
-            SelectionMode.Player when TryGetSelectedPlayer(player, out _, out PlayerGuidanceEntry playerEntry)
-                => new ProximityTargetKey(SelectionMode.Player, playerEntry.PlayerIndex),
-            SelectionMode.Interactable when TryGetSelectedInteractable(player, out InteractableGuidanceEntry interactableEntry)
+            SelectionMode.Npc when TryGetSelectedNpc(player, out _, out GuidanceEntry npcEntry)
+                => new ProximityTargetKey(SelectionMode.Npc, npcEntry.Index),
+            SelectionMode.Player when TryGetSelectedPlayer(player, out _, out GuidanceEntry playerEntry)
+                => new ProximityTargetKey(SelectionMode.Player, playerEntry.Index),
+            SelectionMode.Interactable when TryGetSelectedInteractable(player, out GuidanceEntry interactableEntry)
                 => new ProximityTargetKey(SelectionMode.Interactable, HashCode.Combine(interactableEntry.Anchor.X, interactableEntry.Anchor.Y)),
             SelectionMode.Exploration when TryGetSelectedExploration(out ExplorationTargetRegistry.ExplorationTarget explorationEntry)
                 => new ProximityTargetKey(
                     SelectionMode.Exploration,
                     HashCode.Combine(explorationEntry.Key.SourceId, explorationEntry.Key.LocalId)),
-            SelectionMode.DroppedItem when TryGetSelectedDroppedItem(player, out DroppedItemGuidanceEntry droppedItemEntry)
-                => new ProximityTargetKey(SelectionMode.DroppedItem, droppedItemEntry.ItemIndex),
-            SelectionMode.Critter when TryGetSelectedCritter(player, out CritterGuidanceEntry critterEntry)
-                => new ProximityTargetKey(SelectionMode.Critter, critterEntry.NpcIndex),
-            SelectionMode.Plantlife when TryGetSelectedPlantlife(player, out PlantlifeGuidanceEntry plantlifeEntry)
+            SelectionMode.DroppedItem when TryGetSelectedDroppedItem(player, out GuidanceEntry droppedItemEntry)
+                => new ProximityTargetKey(SelectionMode.DroppedItem, droppedItemEntry.Index),
+            SelectionMode.Critter when TryGetSelectedCritter(player, out GuidanceEntry critterEntry)
+                => new ProximityTargetKey(SelectionMode.Critter, critterEntry.Index),
+            SelectionMode.Plantlife when TryGetSelectedPlantlife(player, out GuidanceEntry plantlifeEntry)
                 => new ProximityTargetKey(SelectionMode.Plantlife, HashCode.Combine(plantlifeEntry.Anchor.X, plantlifeEntry.Anchor.Y)),
             _ => new ProximityTargetKey(SelectionMode.None, -1)
         };

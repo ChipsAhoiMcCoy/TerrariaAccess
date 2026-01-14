@@ -1,9 +1,6 @@
 #nullable enable
 using System;
-using System.Collections;
 using System.Reflection;
-using Terraria.Localization;
-using ScreenReaderMod.Common.Utilities;
 using Terraria;
 
 namespace ScreenReaderMod.Common.Systems.MenuNarration;
@@ -13,8 +10,6 @@ internal sealed class MenuFocusResolver
     private static readonly FieldInfo? FocusMenuField = typeof(Main).GetField("focusMenu", BindingFlags.NonPublic | BindingFlags.Instance);
     private static readonly FieldInfo? SelectedMenuField = typeof(Main).GetField("selectedMenu", BindingFlags.NonPublic | BindingFlags.Instance);
     private static readonly FieldInfo? MenuItemScaleField = typeof(Main).GetField("menuItemScale", BindingFlags.NonPublic | BindingFlags.Instance);
-    private static readonly FieldInfo? MenuItemsField = typeof(Main).GetField("menuItems", BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Static);
-
     private float[]? _previousMenuScales;
     private int _lastMenuFocus = -1;
     private const int PlayerSelectMenuMode = 1;
@@ -81,12 +76,6 @@ internal sealed class MenuFocusResolver
         Snapshot(scales);
         focus = default;
         return false;
-    }
-
-    private void SeedEmptyPlayerMenuIfNeeded(Main main)
-    {
-        // Deprecated seeding removed; retaining method to avoid reordering field declarations.
-        // Intentionally left blank.
     }
 
     private static float[]? ExtractMenuScales(Main main)
@@ -169,17 +158,6 @@ internal sealed class MenuFocusResolver
         }
 
         Array.Copy(scales, _previousMenuScales, scales.Length);
-    }
-
-    private static int TryGetMenuItemCount()
-    {
-        object? raw = MenuItemsField?.GetValue(null);
-        return raw switch
-        {
-            Array array => array.Length,
-            IList list => list.Count,
-            _ => 0
-        };
     }
 }
 

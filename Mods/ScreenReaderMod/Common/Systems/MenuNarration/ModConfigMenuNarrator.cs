@@ -31,107 +31,61 @@ internal sealed class ModConfigMenuNarrator
     /// </summary>
     public static bool IsHandlingGamepadInput { get; private set; }
 
-    // Type references for tModLoader config UI
-    private static readonly Type? ModConfigListType = Type.GetType("Terraria.ModLoader.Config.UI.UIModConfigList, tModLoader");
-    private static readonly Type? ModConfigStateType = Type.GetType("Terraria.ModLoader.Config.UI.UIModConfig, tModLoader");
-    private static readonly Type? ModType = Type.GetType("Terraria.ModLoader.Mod, tModLoader");
-    private static readonly Type? ModConfigType = Type.GetType("Terraria.ModLoader.Config.ModConfig, tModLoader");
-    private static readonly Type? ConfigElementType = Type.GetType("Terraria.ModLoader.Config.UI.ConfigElement, tModLoader");
-    private static readonly Type? UIModConfigItemType = Type.GetType("Terraria.ModLoader.UI.UIModConfigItem, tModLoader");
-    private static readonly Type? UIButtonType = Type.GetType("Terraria.ModLoader.UI.UIButton`1, tModLoader");
-
-    // Field accessors for UIModConfigList
-    private static readonly FieldInfo? SelectedModField = ModConfigListType?.GetField("selectedMod", BindingFlags.Instance | BindingFlags.NonPublic);
-    private static readonly FieldInfo? ModListField = ModConfigListType?.GetField("modList", BindingFlags.Instance | BindingFlags.NonPublic);
-    private static readonly FieldInfo? ConfigListField = ModConfigListType?.GetField("configList", BindingFlags.Instance | BindingFlags.NonPublic);
-
-    // Field accessors for UIModConfig
-    private static readonly FieldInfo? EditingModField = ModConfigStateType?.GetField("mod", BindingFlags.Instance | BindingFlags.NonPublic);
-    private static readonly FieldInfo? ActiveConfigField = ModConfigStateType?.GetField("modConfig", BindingFlags.Instance | BindingFlags.NonPublic);
-    private static readonly FieldInfo? MainConfigListField = ModConfigStateType?.GetField("mainConfigList", BindingFlags.Instance | BindingFlags.NonPublic);
-    private static readonly FieldInfo? UiListField = ModConfigStateType?.GetField("uIList", BindingFlags.Instance | BindingFlags.NonPublic);
-
-    // Field accessors for UIModConfig action buttons
-    private static readonly FieldInfo? SaveConfigButtonField = ModConfigStateType?.GetField("saveConfigButton", BindingFlags.Instance | BindingFlags.NonPublic);
-    private static readonly FieldInfo? BackButtonField = ModConfigStateType?.GetField("backButton", BindingFlags.Instance | BindingFlags.NonPublic);
-    private static readonly FieldInfo? RevertConfigButtonField = ModConfigStateType?.GetField("revertConfigButton", BindingFlags.Instance | BindingFlags.NonPublic);
-    private static readonly FieldInfo? RestoreDefaultsButtonField = ModConfigStateType?.GetField("restoreDefaultsConfigButton", BindingFlags.Instance | BindingFlags.NonPublic);
-
-    // Property accessors
-    private static readonly PropertyInfo? ModDisplayNameProperty = ModType?.GetProperty("DisplayName", BindingFlags.Public | BindingFlags.Instance);
-    private static readonly PropertyInfo? ModInternalNameProperty = ModType?.GetProperty("Name", BindingFlags.Public | BindingFlags.Instance);
-    private static readonly PropertyInfo? ModConfigDisplayNameProperty = ModConfigType?.GetProperty("DisplayName", BindingFlags.Public | BindingFlags.Instance);
-    private static readonly PropertyInfo? ModConfigFullNameProperty = ModConfigType?.GetProperty("FullName", BindingFlags.Public | BindingFlags.Instance);
-    private static readonly PropertyInfo? LocalizedValueProperty = typeof(LocalizedText).GetProperty("Value", BindingFlags.Public | BindingFlags.Instance);
+    // Reflection handles are now centralized in ReflectionCache (Common/Utilities/ReflectionCache.cs)
 
     // Cached reflection info for config elements
     private static readonly Dictionary<Type, ConfigElementAccessors> ConfigElementAccessorCache = new();
     private static bool _loggedTypes;
     private static bool _loggedTypeResolution;
 
-    // Navigation state
-    private UIState? _lastState;
+    // State machine for managing narrator state transitions
+    private readonly ModConfigNarrationStateMachine _stateMachine = new();
+    private readonly NarrationFrameTimers _frameTimers = new();
+    private readonly SliderRepeatState _sliderState = new();
+
+    // Navigation state that persists across state changes
     private string? _lastModName;
     private string? _lastConfigLabel;
-    private bool _listIntroAnnounced;
-    private bool _detailIntroAnnounced;
     private string? _lastHoverAnnouncement;
+
+    // Config editing state (UIModConfig)
     private int _currentElementIndex = -1;
     private List<UIElement>? _navigableElements;
     private UIElement? _lastNavigatedElement;
-    private bool _stateChanged;
-    private int _suppressHoverFrames; // Frames to suppress hover announcements after keyboard nav
     private int _configElementCount; // Number of config elements (excluding action buttons)
-    private int _skipInputFrames; // Frames to skip input processing after entering a new screen
 
     // Dual-list navigation state for UIModConfigList (mod list on left, config list on right)
-    private enum ListFocus { ModList, ConfigList }
-    private ListFocus _currentListFocus = ListFocus.ModList;
     private int _modListIndex = -1;
     private int _configListIndex = -1;
     private List<UIElement>? _modListElements;
     private List<UIElement>? _configListElements;
     private bool _pendingConfigListNavigation; // Set when a mod is selected, cleared after navigating to config list
 
-    // Slider tracking state - mimics behavior of main menu settings sliders
-    private int _lastSliderElementIndex = -1;
-    private float _lastSliderValue = -1f;
-
-    // Hold-to-repeat state for slider adjustment
-    private int _sliderRepeatDirection; // -1 = left, 0 = none, 1 = right
-    private int _sliderRepeatTimer;
-    private const int SliderRepeatDelay = 25; // Frames before repeat starts (~0.4 sec at 60fps)
-    private const int SliderRepeatRate = 3;   // Frames between repeats (~20 adjustments/sec)
-
     public void Reset()
     {
-        _lastState = null;
+        // Reset state machine and timers
+        _stateMachine.Reset();
+        _frameTimers.Reset();
+        _sliderState.Reset();
+        _uiTracker.Reset();
+
+        // Reset navigation state
         _lastModName = null;
         _lastConfigLabel = null;
-        _listIntroAnnounced = false;
-        _detailIntroAnnounced = false;
         _lastHoverAnnouncement = null;
+
+        // Reset config editing state
         _currentElementIndex = -1;
         _navigableElements = null;
         _lastNavigatedElement = null;
-        _stateChanged = false;
-        _suppressHoverFrames = 0;
-        _skipInputFrames = 0;
-        _uiTracker.Reset();
+        _configElementCount = 0;
 
         // Reset dual-list state
-        _currentListFocus = ListFocus.ModList;
         _modListIndex = -1;
         _configListIndex = -1;
         _modListElements = null;
         _configListElements = null;
         _pendingConfigListNavigation = false;
-
-        // Reset slider tracking state
-        _lastSliderElementIndex = -1;
-        _lastSliderValue = -1f;
-        _sliderRepeatDirection = 0;
-        _sliderRepeatTimer = 0;
 
         // Clear the flag so DefaultMenuNarrationHandler knows we're not handling input
         IsHandlingGamepadInput = false;
@@ -160,7 +114,7 @@ internal sealed class ModConfigMenuNarrator
 
         if (!isValidMenuMode)
         {
-            if (_lastState is not null)
+            if (_stateMachine.IsActive)
             {
                 ScreenReaderMod.Instance?.Logger.Debug("[ModConfig] Menu mode changed, calling Reset()");
             }
@@ -187,8 +141,8 @@ internal sealed class ModConfigMenuNarrator
 
         // Check if we're on a mod config screen - these should work even without pause (for multiplayer)
         Type stateType = currentState.GetType();
-        bool isModConfigScreen = (ModConfigListType is not null && ModConfigListType.IsAssignableFrom(stateType)) ||
-                                  (ModConfigStateType is not null && ModConfigStateType.IsAssignableFrom(stateType));
+        bool isModConfigScreen = (ReflectionCache.UIModConfigList.Type is not null && ReflectionCache.UIModConfigList.Type.IsAssignableFrom(stateType)) ||
+                                  (ReflectionCache.UIModConfig.Type is not null && ReflectionCache.UIModConfig.Type.IsAssignableFrom(stateType));
 
         if (!isModConfigScreen)
         {
@@ -226,6 +180,9 @@ internal sealed class ModConfigMenuNarrator
         bool enableNavigation,
         Action<string, bool, MenuNarrationEventKind> announce)
     {
+        // Tick frame timers each frame
+        _frameTimers.Tick();
+
         if (state is null)
         {
             Reset();
@@ -234,23 +191,21 @@ internal sealed class ModConfigMenuNarrator
 
         Type stateType = state.GetType();
 
-        if (ModConfigListType is not null && ModConfigListType.IsAssignableFrom(stateType))
+        if (ReflectionCache.UIModConfigList.Type is not null && ReflectionCache.UIModConfigList.Type.IsAssignableFrom(stateType))
         {
             // Set flag so DefaultMenuNarrationHandler suppresses hover announcements
             IsHandlingGamepadInput = enableNavigation && PlayerInput.UsingGamepadUI;
-            _stateChanged = PrepareForState(state, alignCursor);
+            PrepareForListState(state, alignCursor);
             HandleListState(state, uiContext, announce, enableNavigation);
-            _lastState = state;
             return true;
         }
 
-        if (ModConfigStateType is not null && ModConfigStateType.IsAssignableFrom(stateType))
+        if (ReflectionCache.UIModConfig.Type is not null && ReflectionCache.UIModConfig.Type.IsAssignableFrom(stateType))
         {
             // Set flag so DefaultMenuNarrationHandler suppresses hover announcements
             IsHandlingGamepadInput = enableNavigation && PlayerInput.UsingGamepadUI;
-            _stateChanged = PrepareForState(state, alignCursor);
+            PrepareForConfigState(state, alignCursor);
             HandleConfigState(state, uiContext, announce, enableNavigation);
-            _lastState = state;
             return true;
         }
 
@@ -258,15 +213,19 @@ internal sealed class ModConfigMenuNarrator
         return false;
     }
 
-    private bool PrepareForState(UIState state, bool alignCursor)
+    private void PrepareForListState(UIState state, bool alignCursor)
     {
-        bool stateChanged = !ReferenceEquals(_lastState, state);
+        // Determine the appropriate list state based on current focus
+        ModConfigNarrationState targetState = _stateMachine.Current == ModConfigNarrationState.ConfigListFocused
+            ? ModConfigNarrationState.ConfigListFocused
+            : ModConfigNarrationState.ModListFocused;
 
-        if (stateChanged)
+        bool isNewScreen = !ReferenceEquals(_stateMachine.UiState, state);
+
+        if (isNewScreen)
         {
-            string lastTypeName = _lastState?.GetType().Name ?? "null";
-            string currentTypeName = state?.GetType().Name ?? "null";
-            ScreenReaderMod.Instance?.Logger.Debug($"[ModConfig] PrepareForState: state changed from {lastTypeName} to {currentTypeName}");
+            ScreenReaderMod.Instance?.Logger.Debug(
+                $"[ModConfig] PrepareForListState: entering list screen from {_stateMachine.Current}");
 
             _uiTracker.Reset();
             _lastHoverAnnouncement = null;
@@ -274,26 +233,51 @@ internal sealed class ModConfigMenuNarrator
             _navigableElements = null;
             _lastNavigatedElement = null;
 
-            if (alignCursor && state is not null)
+            // Always start in mod list when entering a new list screen
+            targetState = ModConfigNarrationState.ModListFocused;
+
+            if (alignCursor)
             {
                 PositionCursorAtStateCenter(state);
             }
         }
 
-        return stateChanged;
+        _stateMachine.TransitionTo(targetState, state);
+    }
+
+    private void PrepareForConfigState(UIState state, bool alignCursor)
+    {
+        bool isNewScreen = !ReferenceEquals(_stateMachine.UiState, state);
+
+        if (isNewScreen)
+        {
+            ScreenReaderMod.Instance?.Logger.Debug(
+                $"[ModConfig] PrepareForConfigState: entering config screen from {_stateMachine.Current}");
+
+            _uiTracker.Reset();
+            _lastHoverAnnouncement = null;
+            _currentElementIndex = -1;
+            _navigableElements = null;
+            _lastNavigatedElement = null;
+
+            if (alignCursor)
+            {
+                PositionCursorAtStateCenter(state);
+            }
+        }
+
+        _stateMachine.TransitionTo(ModConfigNarrationState.ConfigElementsFocused, state);
     }
 
     #region Mod List State (UIModConfigList)
 
     private void HandleListState(UIState state, UserInterface? uiContext, Action<string, bool, MenuNarrationEventKind> announce, bool enableNavigation)
     {
-        if (!_listIntroAnnounced || _stateChanged)
-        {
-            // Skip title announcement - the first item will be announced by navigation
-            _listIntroAnnounced = true;
-            _detailIntroAnnounced = false;
+        bool justEnteredListScreen = _stateMachine.JustTransitioned && _stateMachine.IsInListScreen;
 
-            // Log type resolution for debugging
+        if (justEnteredListScreen)
+        {
+            // Log type resolution for debugging on first entry
             LogTypeResolutionStatus();
         }
 
@@ -309,9 +293,13 @@ internal sealed class ModConfigMenuNarrator
 
     private void HandleListNavigation(UIState state, Action<string, bool, MenuNarrationEventKind> announce)
     {
+        bool justEnteredScreen = _stateMachine.JustTransitioned;
+        bool isModListFocused = _stateMachine.Current == ModConfigNarrationState.ModListFocused;
+        bool isConfigListFocused = _stateMachine.Current == ModConfigNarrationState.ConfigListFocused;
+
         // Get both list elements
-        UIElement? modList = ModListField?.GetValue(state) as UIElement;
-        UIElement? configList = ConfigListField?.GetValue(state) as UIElement;
+        UIElement? modList = ReflectionCache.UIModConfigList.ModList?.GetValue(state) as UIElement;
+        UIElement? configList = ReflectionCache.UIModConfigList.ConfigList?.GetValue(state) as UIElement;
 
         if (modList is null)
         {
@@ -320,19 +308,18 @@ internal sealed class ModConfigMenuNarrator
         }
 
         // Collect navigable items from both lists if needed
-        if (_modListElements is null || _stateChanged)
+        if (_modListElements is null || justEnteredScreen)
         {
             _modListElements = CollectNavigableElements(modList);
-            ScreenReaderMod.Instance?.Logger.Debug($"[ModConfig] Collected {_modListElements.Count} navigable elements from modList (stateChanged={_stateChanged})");
+            ScreenReaderMod.Instance?.Logger.Debug($"[ModConfig] Collected {_modListElements.Count} navigable elements from modList (justEntered={justEnteredScreen})");
             _modListIndex = _modListElements.Count > 0 ? 0 : -1;
-            _currentListFocus = ListFocus.ModList;
 
             // Move cursor to and announce first item on entry if there are items
-            if (_modListIndex >= 0 && _stateChanged)
+            if (_modListIndex >= 0 && justEnteredScreen)
             {
                 MoveCursorToElement(_modListElements[_modListIndex]);
                 AnnounceModListElement(_modListIndex, announce);
-                _suppressHoverFrames = 30; // Suppress hover to prevent double announcement
+                _frameTimers.SuppressHover(30); // Suppress hover to prevent double announcement
 
                 // Skip input processing on the first frame to avoid the A button press
                 // that was used to enter the menu from triggering a mod selection
@@ -357,7 +344,7 @@ internal sealed class ModConfigMenuNarrator
                 ScreenReaderMod.Instance?.Logger.Debug($"[ModConfig] Collected {_configListElements.Count} navigable elements from configList");
 
                 // If we were focused on config list and it's now populated, reset index
-                if (_currentListFocus == ListFocus.ConfigList && _configListElements.Count > 0)
+                if (isConfigListFocused && _configListElements.Count > 0)
                 {
                     _configListIndex = 0;
                 }
@@ -375,7 +362,7 @@ internal sealed class ModConfigMenuNarrator
                 {
                     ScreenReaderMod.Instance?.Logger.Debug($"[ModConfig] Auto-navigating to config list with {_configListElements.Count} configs");
                     _pendingConfigListNavigation = false;
-                    _currentListFocus = ListFocus.ConfigList;
+                    _stateMachine.TransitionTo(ModConfigNarrationState.ConfigListFocused, state);
                     _configListIndex = 0;
                     MoveCursorToElement(_configListElements[0]);
 
@@ -397,10 +384,10 @@ internal sealed class ModConfigMenuNarrator
         TriggersSet justPressed = PlayerInput.Triggers.JustPressed;
 
         // Handle left/right to switch between lists
-        if (justPressed.MenuLeft && _currentListFocus == ListFocus.ConfigList)
+        if (justPressed.MenuLeft && isConfigListFocused)
         {
             // Switch to mod list
-            _currentListFocus = ListFocus.ModList;
+            _stateMachine.TransitionTo(ModConfigNarrationState.ModListFocused, state);
             if (_modListIndex >= 0 && _modListElements is not null && _modListIndex < _modListElements.Count)
             {
                 MoveCursorToElement(_modListElements[_modListIndex]);
@@ -412,12 +399,12 @@ internal sealed class ModConfigMenuNarrator
             return;
         }
 
-        if (justPressed.MenuRight && _currentListFocus == ListFocus.ModList)
+        if (justPressed.MenuRight && isModListFocused)
         {
             // Switch to config list if it has items
             if (_configListElements is not null && _configListElements.Count > 0)
             {
-                _currentListFocus = ListFocus.ConfigList;
+                _stateMachine.TransitionTo(ModConfigNarrationState.ConfigListFocused, state);
                 if (_configListIndex < 0)
                 {
                     _configListIndex = 0;
@@ -437,7 +424,7 @@ internal sealed class ModConfigMenuNarrator
         }
 
         // Handle up/down navigation within current list
-        if (_currentListFocus == ListFocus.ModList)
+        if (isModListFocused)
         {
             if (HandleModListDpadNavigation(announce))
             {
@@ -593,7 +580,7 @@ internal sealed class ModConfigMenuNarrator
 
             // Skip input processing for a few frames to prevent the A button from
             // being detected on the config edit screen immediately after opening
-            _skipInputFrames = 5;
+            _frameTimers.SkipInput(5);
 
             return true;
         }
@@ -640,7 +627,7 @@ internal sealed class ModConfigMenuNarrator
     private void TryAnnounceListHover(UIState state, UserInterface? uiContext, Action<string, bool, MenuNarrationEventKind> announce)
     {
         // Track selected mod internally without announcing - gamepad navigation already announces the focused mod
-        object? selectedMod = SelectedModField?.GetValue(state);
+        object? selectedMod = ReflectionCache.UIModConfigList.SelectedMod?.GetValue(state);
         string modName = DescribeMod(selectedMod);
 
         if (!string.IsNullOrWhiteSpace(modName))
@@ -655,13 +642,14 @@ internal sealed class ModConfigMenuNarrator
 
     private void HandleConfigState(UIState state, UserInterface? uiContext, Action<string, bool, MenuNarrationEventKind> announce, bool enableNavigation)
     {
-        object? config = ActiveConfigField?.GetValue(state);
+        object? config = ReflectionCache.UIModConfig.ModConfig?.GetValue(state);
         string configName = DescribeConfig(config);
 
-        // Track state changes without announcing title - the first config element will be announced by navigation
-        if (!_detailIntroAnnounced || _stateChanged || !string.Equals(configName, _lastConfigLabel, StringComparison.OrdinalIgnoreCase))
+        bool justEnteredConfigScreen = _stateMachine.JustTransitioned && _stateMachine.IsInConfigScreen;
+
+        // Track config name changes
+        if (justEnteredConfigScreen || !string.Equals(configName, _lastConfigLabel, StringComparison.OrdinalIgnoreCase))
         {
-            _detailIntroAnnounced = true;
             _lastConfigLabel = configName;
 
             // Log available types for debugging on first run
@@ -671,8 +659,6 @@ internal sealed class ModConfigMenuNarrator
                 _loggedTypes = true;
             }
         }
-
-        _listIntroAnnounced = false;
 
         // Handle gamepad navigation
         if (enableNavigation)
@@ -686,9 +672,11 @@ internal sealed class ModConfigMenuNarrator
 
     private void HandleConfigNavigation(UIState state, Action<string, bool, MenuNarrationEventKind> announce)
     {
+        bool justEnteredScreen = _stateMachine.JustTransitioned;
+
         // Get the main config list containing all config elements
-        UIElement? configList = MainConfigListField?.GetValue(state) as UIElement
-                              ?? UiListField?.GetValue(state) as UIElement;
+        UIElement? configList = ReflectionCache.UIModConfig.MainConfigList?.GetValue(state) as UIElement
+                              ?? ReflectionCache.UIModConfig.UIList?.GetValue(state) as UIElement;
 
         if (configList is null)
         {
@@ -702,7 +690,7 @@ internal sealed class ModConfigMenuNarrator
         }
 
         // Collect navigable config elements if not already done
-        if (_navigableElements is null || _stateChanged)
+        if (_navigableElements is null || justEnteredScreen)
         {
             _navigableElements = CollectConfigElements(configList);
             _configElementCount = _navigableElements.Count;
@@ -722,15 +710,15 @@ internal sealed class ModConfigMenuNarrator
                 MoveCursorToElement(_navigableElements[0]);
 
                 // Announce first item on entry
-                if (_stateChanged)
+                if (justEnteredScreen)
                 {
                     ScreenReaderMod.Instance?.Logger.Debug($"[ModConfig] Announcing first element on entry, index=0, type={_navigableElements[0].GetType().Name}");
                     AnnounceConfigElementAtIndex(_currentElementIndex, announce);
-                    _suppressHoverFrames = 30; // Suppress hover to prevent double announcement
+                    _frameTimers.SuppressHover(30); // Suppress hover to prevent double announcement
 
                     // Skip input processing for a few frames to prevent the A button
                     // that was used to enter this screen from triggering actions
-                    _skipInputFrames = 5;
+                    _frameTimers.SkipInput(5);
                 }
             }
             else
@@ -745,9 +733,8 @@ internal sealed class ModConfigMenuNarrator
         }
 
         // Skip input processing if we're in the cooldown period after entering the screen
-        if (_skipInputFrames > 0)
+        if (_frameTimers.ShouldSkipInput)
         {
-            _skipInputFrames--;
             return;
         }
 
@@ -765,22 +752,22 @@ internal sealed class ModConfigMenuNarrator
         // Collect action buttons in order: Back, Save Config, Revert Changes, Restore Defaults
         // Note: Save Config and Revert Changes only appear when there are pending changes
 
-        if (BackButtonField?.GetValue(state) is UIElement backButton && IsButtonVisible(backButton))
+        if (ReflectionCache.UIModConfig.BackButton?.GetValue(state) is UIElement backButton && IsButtonVisible(backButton))
         {
             buttons.Add(backButton);
         }
 
-        if (SaveConfigButtonField?.GetValue(state) is UIElement saveButton && IsButtonVisible(saveButton))
+        if (ReflectionCache.UIModConfig.SaveConfigButton?.GetValue(state) is UIElement saveButton && IsButtonVisible(saveButton))
         {
             buttons.Add(saveButton);
         }
 
-        if (RevertConfigButtonField?.GetValue(state) is UIElement revertButton && IsButtonVisible(revertButton))
+        if (ReflectionCache.UIModConfig.RevertConfigButton?.GetValue(state) is UIElement revertButton && IsButtonVisible(revertButton))
         {
             buttons.Add(revertButton);
         }
 
-        if (RestoreDefaultsButtonField?.GetValue(state) is UIElement restoreButton && IsButtonVisible(restoreButton))
+        if (ReflectionCache.UIModConfig.RestoreDefaultsConfigButton?.GetValue(state) is UIElement restoreButton && IsButtonVisible(restoreButton))
         {
             buttons.Add(restoreButton);
         }
@@ -865,32 +852,7 @@ internal sealed class ModConfigMenuNarrator
 
         if (currentDirection != 0 && _currentElementIndex >= 0 && _currentElementIndex < _navigableElements.Count)
         {
-            bool shouldAdjust = false;
-
-            if (currentDirection != _sliderRepeatDirection)
-            {
-                // Direction changed or just started - immediate first adjustment
-                _sliderRepeatDirection = currentDirection;
-                _sliderRepeatTimer = 0;
-                shouldAdjust = true;
-            }
-            else
-            {
-                // Same direction held - check repeat timing
-                _sliderRepeatTimer++;
-
-                if (_sliderRepeatTimer >= SliderRepeatDelay)
-                {
-                    // Past initial delay - repeat at fast rate
-                    int framesSinceDelay = _sliderRepeatTimer - SliderRepeatDelay;
-                    if (framesSinceDelay % SliderRepeatRate == 0)
-                    {
-                        shouldAdjust = true;
-                    }
-                }
-            }
-
-            if (shouldAdjust)
+            if (_sliderState.UpdateAndCheckShouldAdjust(currentDirection))
             {
                 TryAdjustConfigValue(_navigableElements[_currentElementIndex], currentDirection, announce);
             }
@@ -898,9 +860,8 @@ internal sealed class ModConfigMenuNarrator
         }
         else
         {
-            // No left/right held - reset repeat state
-            _sliderRepeatDirection = 0;
-            _sliderRepeatTimer = 0;
+            // No left/right held - reset repeat state via UpdateAndCheckShouldAdjust(0)
+            _sliderState.UpdateAndCheckShouldAdjust(0);
         }
 
         if (justPressed.MenuUp)
@@ -918,8 +879,7 @@ internal sealed class ModConfigMenuNarrator
             UIElement element = _navigableElements[newIndex];
 
             // Reset slider tracking when navigating to a new element
-            _lastSliderElementIndex = -1;
-            _lastSliderValue = -1f;
+            _sliderState.ClearElementTracking();
 
             // Move cursor to the element
             MoveCursorToElement(element);
@@ -931,7 +891,7 @@ internal sealed class ModConfigMenuNarrator
             AnnounceConfigElementAtIndex(newIndex, announce);
 
             // Suppress hover announcements for a short time to prevent double-speak
-            _suppressHoverFrames = 15;
+            _frameTimers.SuppressHover(15);
 
             // Play tick sound
             SoundEngine.PlaySound(SoundID.MenuTick);
@@ -951,13 +911,8 @@ internal sealed class ModConfigMenuNarrator
 
     private void TryAnnounceConfigHover(UserInterface? uiContext, Action<string, bool, MenuNarrationEventKind> announce)
     {
-        // Decrement and check suppression counter
-        if (_suppressHoverFrames > 0)
-        {
-            _suppressHoverFrames--;
-            return;
-        }
-        if (uiContext is null)
+        // Check suppression flag (timers are ticked in TryHandleState)
+        if (_frameTimers.ShouldSuppressHover || uiContext is null)
         {
             return;
         }
@@ -1153,7 +1108,7 @@ internal sealed class ModConfigMenuNarrator
         }
 
         // Check if it's a ConfigElement or derived type
-        if (ConfigElementType is not null && ConfigElementType.IsAssignableFrom(type))
+        if (ReflectionCache.ConfigElement.Type is not null && ReflectionCache.ConfigElement.Type.IsAssignableFrom(type))
         {
             return true;
         }
@@ -1801,7 +1756,7 @@ internal sealed class ModConfigMenuNarrator
         if (TryToggleConfigElement(element, announce))
         {
             // Suppress hover announcements after toggle to prevent "Revert Changes" etc.
-            _suppressHoverFrames = 30;
+            _frameTimers.SuppressHover(30);
             return;
         }
 
@@ -1809,7 +1764,7 @@ internal sealed class ModConfigMenuNarrator
         if (TryCycleEnumElement(element, announce))
         {
             // Suppress hover announcements after cycle to prevent "Revert Changes" etc.
-            _suppressHoverFrames = 30;
+            _frameTimers.SuppressHover(30);
             return;
         }
 
@@ -1819,7 +1774,7 @@ internal sealed class ModConfigMenuNarrator
             SoundEngine.PlaySound(SoundID.MenuTick);
 
             // Suppress hover announcements after click
-            _suppressHoverFrames = 30;
+            _frameTimers.SuppressHover(30);
 
             // Re-announce with potentially new state
             string description = DescribeConfigElement(element);
@@ -2157,8 +2112,7 @@ internal sealed class ModConfigMenuNarrator
             string valueOnly = $"{newPercent:0} percent";
             announce(valueOnly, true, MenuNarrationEventKind.ModConfig);
 
-            _lastSliderElementIndex = _currentElementIndex;
-            _lastSliderValue = newPercent;
+            _sliderState.TrackElement(_currentElementIndex, newPercent);
             SoundEngine.PlaySound(SoundID.MenuTick);
             return;
         }
@@ -2373,14 +2327,14 @@ internal sealed class ModConfigMenuNarrator
 
         try
         {
-            object? localized = ModDisplayNameProperty?.GetValue(mod);
+            object? localized = ReflectionCache.Mod.DisplayName?.GetValue(mod);
             string display = ExtractLocalized(localized);
             if (!string.IsNullOrWhiteSpace(display))
             {
                 return display;
             }
 
-            if (ModInternalNameProperty?.GetValue(mod) is string name && !string.IsNullOrWhiteSpace(name))
+            if (ReflectionCache.Mod.Name?.GetValue(mod) is string name && !string.IsNullOrWhiteSpace(name))
             {
                 return TextSanitizer.Clean(name);
             }
@@ -2402,14 +2356,14 @@ internal sealed class ModConfigMenuNarrator
 
         try
         {
-            object? localized = ModConfigDisplayNameProperty?.GetValue(config);
+            object? localized = ReflectionCache.ModConfigDef.DisplayName?.GetValue(config);
             string display = ExtractLocalized(localized);
             if (!string.IsNullOrWhiteSpace(display))
             {
                 return display;
             }
 
-            if (ModConfigFullNameProperty?.GetValue(config) is string fullName && !string.IsNullOrWhiteSpace(fullName))
+            if (ReflectionCache.ModConfigDef.FullName?.GetValue(config) is string fullName && !string.IsNullOrWhiteSpace(fullName))
             {
                 return TextSanitizer.Clean(fullName);
             }
@@ -2434,11 +2388,11 @@ internal sealed class ModConfigMenuNarrator
             return TextSanitizer.Clean(localized.Value ?? string.Empty);
         }
 
-        if (LocalizedValueProperty is not null && value.GetType() == typeof(LocalizedText))
+        if (ReflectionCache.LocalizedTextRef.Value is not null && value.GetType() == typeof(LocalizedText))
         {
             try
             {
-                object? textValue = LocalizedValueProperty.GetValue(value);
+                object? textValue = ReflectionCache.LocalizedTextRef.Value.GetValue(value);
                 if (textValue is string str)
                 {
                     return TextSanitizer.Clean(str);
@@ -2466,12 +2420,12 @@ internal sealed class ModConfigMenuNarrator
         _loggedTypeResolution = true;
 
         ScreenReaderMod.Instance?.Logger.Info("[ModConfig] Type resolution status:");
-        ScreenReaderMod.Instance?.Logger.Info($"  ModConfigListType: {(ModConfigListType is not null ? "resolved" : "NULL")}");
-        ScreenReaderMod.Instance?.Logger.Info($"  ModConfigStateType: {(ModConfigStateType is not null ? "resolved" : "NULL")}");
-        ScreenReaderMod.Instance?.Logger.Info($"  ModType: {(ModType is not null ? "resolved" : "NULL")}");
-        ScreenReaderMod.Instance?.Logger.Info($"  UIButtonType: {(UIButtonType is not null ? "resolved" : "NULL")}");
-        ScreenReaderMod.Instance?.Logger.Info($"  ModListField: {(ModListField is not null ? "resolved" : "NULL")}");
-        ScreenReaderMod.Instance?.Logger.Info($"  SelectedModField: {(SelectedModField is not null ? "resolved" : "NULL")}");
+        ScreenReaderMod.Instance?.Logger.Info($"  ReflectionCache.UIModConfigList.Type: {(ReflectionCache.UIModConfigList.Type is not null ? "resolved" : "NULL")}");
+        ScreenReaderMod.Instance?.Logger.Info($"  ReflectionCache.UIModConfig.Type: {(ReflectionCache.UIModConfig.Type is not null ? "resolved" : "NULL")}");
+        ScreenReaderMod.Instance?.Logger.Info($"  ReflectionCache.Mod.Type: {(ReflectionCache.Mod.Type is not null ? "resolved" : "NULL")}");
+        ScreenReaderMod.Instance?.Logger.Info($"  ReflectionCache.UIButton.Type: {(ReflectionCache.UIButton.Type is not null ? "resolved" : "NULL")}");
+        ScreenReaderMod.Instance?.Logger.Info($"  ReflectionCache.UIModConfigList.ModList: {(ReflectionCache.UIModConfigList.ModList is not null ? "resolved" : "NULL")}");
+        ScreenReaderMod.Instance?.Logger.Info($"  ReflectionCache.UIModConfigList.SelectedMod: {(ReflectionCache.UIModConfigList.SelectedMod is not null ? "resolved" : "NULL")}");
     }
 
     private static void LogConfigElementTypes(UIState state)

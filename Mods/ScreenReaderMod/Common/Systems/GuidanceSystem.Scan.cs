@@ -2,6 +2,7 @@
 using System;
 using System.Collections.Generic;
 using Microsoft.Xna.Framework;
+using ScreenReaderMod.Common.Systems.Guidance;
 using Terraria;
 using Terraria.ID;
 
@@ -9,37 +10,7 @@ namespace ScreenReaderMod.Common.Systems;
 
 public sealed partial class GuidanceSystem
 {
-    private readonly struct NpcGuidanceEntry
-    {
-        public readonly int NpcIndex;
-        public readonly string DisplayName;
-        public readonly float DistanceTiles;
-
-        public NpcGuidanceEntry(int npcIndex, string displayName, float distanceTiles)
-        {
-            NpcIndex = npcIndex;
-            DisplayName = displayName;
-            DistanceTiles = distanceTiles;
-        }
-    }
-
-    private static readonly List<NpcGuidanceEntry> NearbyNpcs = new();
-
-    private readonly struct InteractableGuidanceEntry
-    {
-        public readonly Point Anchor;
-        public readonly string DisplayName;
-        public readonly Vector2 WorldPosition;
-        public readonly float DistanceTiles;
-
-        public InteractableGuidanceEntry(Point anchor, string displayName, Vector2 worldPosition, float distanceTiles)
-        {
-            Anchor = anchor;
-            DisplayName = displayName;
-            WorldPosition = worldPosition;
-            DistanceTiles = distanceTiles;
-        }
-    }
+    private static readonly List<GuidanceEntry> NearbyNpcs = new();
 
     private readonly struct InteractableDefinition
     {
@@ -61,7 +32,7 @@ public sealed partial class GuidanceSystem
         }
     }
 
-    private static readonly List<InteractableGuidanceEntry> NearbyInteractables = new();
+    private static readonly List<GuidanceEntry> NearbyInteractables = new();
     private static readonly HashSet<Point> InteractableAnchorScratch = new();
     private static readonly InteractableDefinition[] InteractableDefinitions =
     {
@@ -86,76 +57,14 @@ public sealed partial class GuidanceSystem
 
     private static readonly Dictionary<int, List<InteractableDefinition>> InteractableDefinitionsByTileType = BuildInteractableDefinitionMap();
 
-    private readonly struct PlayerGuidanceEntry
-    {
-        public readonly int PlayerIndex;
-        public readonly string DisplayName;
-        public readonly float DistanceTiles;
-
-        public PlayerGuidanceEntry(int playerIndex, string displayName, float distanceTiles)
-        {
-            PlayerIndex = playerIndex;
-            DisplayName = displayName;
-            DistanceTiles = distanceTiles;
-        }
-    }
-
-    private static readonly List<PlayerGuidanceEntry> NearbyPlayers = new();
+    private static readonly List<GuidanceEntry> NearbyPlayers = new();
     private static readonly List<ExplorationTargetRegistry.ExplorationTarget> NearbyExplorationTargets = new();
 
-    private readonly struct DroppedItemGuidanceEntry
-    {
-        public readonly int ItemIndex;
-        public readonly string DisplayName;
-        public readonly Vector2 WorldPosition;
-        public readonly float DistanceTiles;
+    private static readonly List<GuidanceEntry> NearbyDroppedItems = new();
 
-        public DroppedItemGuidanceEntry(int itemIndex, string displayName, Vector2 worldPosition, float distanceTiles)
-        {
-            ItemIndex = itemIndex;
-            DisplayName = displayName;
-            WorldPosition = worldPosition;
-            DistanceTiles = distanceTiles;
-        }
-    }
+    private static readonly List<GuidanceEntry> NearbyCritters = new();
 
-    private static readonly List<DroppedItemGuidanceEntry> NearbyDroppedItems = new();
-
-    private readonly struct CritterGuidanceEntry
-    {
-        public readonly int NpcIndex;
-        public readonly string DisplayName;
-        public readonly Vector2 WorldPosition;
-        public readonly float DistanceTiles;
-
-        public CritterGuidanceEntry(int npcIndex, string displayName, Vector2 worldPosition, float distanceTiles)
-        {
-            NpcIndex = npcIndex;
-            DisplayName = displayName;
-            WorldPosition = worldPosition;
-            DistanceTiles = distanceTiles;
-        }
-    }
-
-    private static readonly List<CritterGuidanceEntry> NearbyCritters = new();
-
-    private readonly struct PlantlifeGuidanceEntry
-    {
-        public readonly Point Anchor;
-        public readonly string DisplayName;
-        public readonly Vector2 WorldPosition;
-        public readonly float DistanceTiles;
-
-        public PlantlifeGuidanceEntry(Point anchor, string displayName, Vector2 worldPosition, float distanceTiles)
-        {
-            Anchor = anchor;
-            DisplayName = displayName;
-            WorldPosition = worldPosition;
-            DistanceTiles = distanceTiles;
-        }
-    }
-
-    private static readonly List<PlantlifeGuidanceEntry> NearbyPlantlife = new();
+    private static readonly List<GuidanceEntry> NearbyPlantlife = new();
     private static readonly HashSet<Point> PlantlifeAnchorScratch = new();
 
     private static readonly int[] PlantlifeTileTypes =
@@ -188,7 +97,7 @@ public sealed partial class GuidanceSystem
         int preservedNpcIndex = -1;
         if (_selectedNpcIndex >= 0 && _selectedNpcIndex < NearbyNpcs.Count)
         {
-            preservedNpcIndex = NearbyNpcs[_selectedNpcIndex].NpcIndex;
+            preservedNpcIndex = NearbyNpcs[_selectedNpcIndex].Index;
         }
 
         NearbyNpcs.Clear();
@@ -201,15 +110,15 @@ public sealed partial class GuidanceSystem
         Vector2 origin = player.Center;
         for (int i = 0; i < Main.maxNPCs; i++)
         {
-            if (TryCreateNpcEntry(i, origin, includeOutOfRange: false, out NpcGuidanceEntry entry))
+            if (TryCreateNpcEntry(i, origin, includeOutOfRange: false, out GuidanceEntry entry))
             {
                 NearbyNpcs.Add(entry);
             }
         }
 
-        if (preservedNpcIndex >= 0 && !NearbyNpcs.Exists(entry => entry.NpcIndex == preservedNpcIndex))
+        if (preservedNpcIndex >= 0 && !NearbyNpcs.Exists(entry => entry.Index == preservedNpcIndex))
         {
-            if (TryCreateNpcEntry(preservedNpcIndex, origin, includeOutOfRange: true, out NpcGuidanceEntry preservedEntry))
+            if (TryCreateNpcEntry(preservedNpcIndex, origin, includeOutOfRange: true, out GuidanceEntry preservedEntry))
             {
                 NearbyNpcs.Add(preservedEntry);
             }
@@ -229,7 +138,7 @@ public sealed partial class GuidanceSystem
 
         if (preservedNpcIndex >= 0)
         {
-            int restoredIndex = NearbyNpcs.FindIndex(entry => entry.NpcIndex == preservedNpcIndex);
+            int restoredIndex = NearbyNpcs.FindIndex(entry => entry.Index == preservedNpcIndex);
             if (restoredIndex >= 0)
             {
                 _selectedNpcIndex = restoredIndex;
@@ -248,7 +157,7 @@ public sealed partial class GuidanceSystem
         int preservedPlayerIndex = -1;
         if (_selectedPlayerIndex >= 0 && _selectedPlayerIndex < NearbyPlayers.Count)
         {
-            preservedPlayerIndex = NearbyPlayers[_selectedPlayerIndex].PlayerIndex;
+            preservedPlayerIndex = NearbyPlayers[_selectedPlayerIndex].Index;
         }
 
         NearbyPlayers.Clear();
@@ -260,7 +169,7 @@ public sealed partial class GuidanceSystem
 
         for (int i = 0; i < Main.maxPlayers; i++)
         {
-            if (TryCreatePlayerEntry(i, player, out PlayerGuidanceEntry entry))
+            if (TryCreatePlayerEntry(i, player, out GuidanceEntry entry))
             {
                 NearbyPlayers.Add(entry);
             }
@@ -276,7 +185,7 @@ public sealed partial class GuidanceSystem
 
         if (preservedPlayerIndex >= 0)
         {
-            int restoredIndex = NearbyPlayers.FindIndex(entry => entry.PlayerIndex == preservedPlayerIndex);
+            int restoredIndex = NearbyPlayers.FindIndex(entry => entry.Index == preservedPlayerIndex);
             if (restoredIndex >= 0)
             {
                 _selectedPlayerIndex = restoredIndex;
@@ -453,7 +362,7 @@ public sealed partial class GuidanceSystem
                         continue;
                     }
 
-                    if (TryCreateInteractableEntry(definition, anchor, origin, isPreservedAnchor, out InteractableGuidanceEntry entry))
+                    if (TryCreateInteractableEntry(definition, anchor, origin, isPreservedAnchor, out GuidanceEntry entry))
                     {
                         NearbyInteractables.Add(entry);
                         if (isPreservedAnchor)
@@ -465,7 +374,7 @@ public sealed partial class GuidanceSystem
             }
         }
 
-        if (hasPreservedAnchor && !preservedIncluded && TryCreateInteractableEntryForAnchor(preservedAnchor, origin, includeOutOfRange: true, out InteractableGuidanceEntry preservedEntry))
+        if (hasPreservedAnchor && !preservedIncluded && TryCreateInteractableEntryForAnchor(preservedAnchor, origin, includeOutOfRange: true, out GuidanceEntry preservedEntry))
         {
             NearbyInteractables.Add(preservedEntry);
         }
@@ -494,7 +403,7 @@ public sealed partial class GuidanceSystem
         }
     }
 
-    private static bool TryCreateNpcEntry(int npcIndex, Vector2 origin, bool includeOutOfRange, out NpcGuidanceEntry entry)
+    private static bool TryCreateNpcEntry(int npcIndex, Vector2 origin, bool includeOutOfRange, out GuidanceEntry entry)
     {
         entry = default;
         if (npcIndex < 0 || npcIndex >= Main.maxNPCs)
@@ -515,11 +424,11 @@ public sealed partial class GuidanceSystem
         }
 
         string displayName = ResolveNpcDisplayName(npc);
-        entry = new NpcGuidanceEntry(npcIndex, displayName, distanceTiles);
+        entry = GuidanceEntry.CreateNpc(npcIndex, displayName, npc.Center, distanceTiles);
         return true;
     }
 
-    private static bool TryCreatePlayerEntry(int playerIndex, Player owner, out PlayerGuidanceEntry entry)
+    private static bool TryCreatePlayerEntry(int playerIndex, Player owner, out GuidanceEntry entry)
     {
         entry = default;
         if (playerIndex < 0 || playerIndex >= Main.maxPlayers)
@@ -535,11 +444,11 @@ public sealed partial class GuidanceSystem
 
         float distanceTiles = Vector2.Distance(owner.Center, candidate.Center) / 16f;
         string displayName = ResolvePlayerDisplayName(candidate, playerIndex);
-        entry = new PlayerGuidanceEntry(playerIndex, displayName, distanceTiles);
+        entry = GuidanceEntry.CreatePlayer(playerIndex, displayName, candidate.Center, distanceTiles);
         return true;
     }
 
-    private static bool TryCreateInteractableEntry(InteractableDefinition definition, Point anchor, Vector2 origin, bool includeOutOfRange, out InteractableGuidanceEntry entry)
+    private static bool TryCreateInteractableEntry(InteractableDefinition definition, Point anchor, Vector2 origin, bool includeOutOfRange, out GuidanceEntry entry)
     {
         entry = default;
         if (!IsWithinWorld(anchor))
@@ -560,11 +469,11 @@ public sealed partial class GuidanceSystem
             return false;
         }
 
-        entry = new InteractableGuidanceEntry(anchor, definition.DisplayName, worldPosition, distanceTiles);
+        entry = GuidanceEntry.CreateInteractable(anchor, definition.DisplayName, worldPosition, distanceTiles);
         return true;
     }
 
-    private static bool TryCreateInteractableEntryForAnchor(Point anchor, Vector2 origin, bool includeOutOfRange, out InteractableGuidanceEntry entry)
+    private static bool TryCreateInteractableEntryForAnchor(Point anchor, Vector2 origin, bool includeOutOfRange, out GuidanceEntry entry)
     {
         entry = default;
         if (!IsWithinWorld(anchor))
@@ -720,7 +629,7 @@ public sealed partial class GuidanceSystem
         int preservedItemIndex = -1;
         if (_selectedDroppedItemIndex >= 0 && _selectedDroppedItemIndex < NearbyDroppedItems.Count)
         {
-            preservedItemIndex = NearbyDroppedItems[_selectedDroppedItemIndex].ItemIndex;
+            preservedItemIndex = NearbyDroppedItems[_selectedDroppedItemIndex].Index;
         }
 
         NearbyDroppedItems.Clear();
@@ -748,7 +657,7 @@ public sealed partial class GuidanceSystem
 
             float distanceTiles = Vector2.Distance(origin, itemCenter) / 16f;
             string displayName = ResolveDroppedItemDisplayName(item);
-            NearbyDroppedItems.Add(new DroppedItemGuidanceEntry(i, displayName, itemCenter, distanceTiles));
+            NearbyDroppedItems.Add(GuidanceEntry.CreateDroppedItem(i, displayName, itemCenter, distanceTiles));
         }
 
         NearbyDroppedItems.Sort((left, right) => left.DistanceTiles.CompareTo(right.DistanceTiles));
@@ -761,7 +670,7 @@ public sealed partial class GuidanceSystem
 
         if (preservedItemIndex >= 0)
         {
-            int restoredIndex = NearbyDroppedItems.FindIndex(entry => entry.ItemIndex == preservedItemIndex);
+            int restoredIndex = NearbyDroppedItems.FindIndex(entry => entry.Index == preservedItemIndex);
             if (restoredIndex >= 0)
             {
                 _selectedDroppedItemIndex = restoredIndex;
@@ -792,7 +701,7 @@ public sealed partial class GuidanceSystem
         int preservedNpcIndex = -1;
         if (_selectedCritterIndex >= 0 && _selectedCritterIndex < NearbyCritters.Count)
         {
-            preservedNpcIndex = NearbyCritters[_selectedCritterIndex].NpcIndex;
+            preservedNpcIndex = NearbyCritters[_selectedCritterIndex].Index;
         }
 
         NearbyCritters.Clear();
@@ -823,7 +732,7 @@ public sealed partial class GuidanceSystem
             }
 
             string displayName = ResolveCritterDisplayName(npc);
-            NearbyCritters.Add(new CritterGuidanceEntry(i, displayName, npc.Center, distanceTiles));
+            NearbyCritters.Add(GuidanceEntry.CreateCritter(i, displayName, npc.Center, distanceTiles));
         }
 
         NearbyCritters.Sort((left, right) => left.DistanceTiles.CompareTo(right.DistanceTiles));
@@ -836,7 +745,7 @@ public sealed partial class GuidanceSystem
 
         if (preservedNpcIndex >= 0)
         {
-            int restoredIndex = NearbyCritters.FindIndex(entry => entry.NpcIndex == preservedNpcIndex);
+            int restoredIndex = NearbyCritters.FindIndex(entry => entry.Index == preservedNpcIndex);
             if (restoredIndex >= 0)
             {
                 _selectedCritterIndex = restoredIndex;
@@ -915,7 +824,7 @@ public sealed partial class GuidanceSystem
                 }
 
                 string displayName = ResolvePlantDisplayName(tile);
-                NearbyPlantlife.Add(new PlantlifeGuidanceEntry(anchor, displayName, worldPosition, distanceTiles));
+                NearbyPlantlife.Add(GuidanceEntry.CreatePlantlife(anchor, displayName, worldPosition, distanceTiles));
             }
         }
 

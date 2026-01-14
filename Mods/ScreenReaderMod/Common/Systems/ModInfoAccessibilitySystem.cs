@@ -3,17 +3,14 @@ using System;
 using System.Collections.Generic;
 using System.Reflection;
 using Microsoft.Xna.Framework;
-using Microsoft.Xna.Framework.Graphics;
-using Microsoft.Xna.Framework.Input;
 using ScreenReaderMod.Common.Services;
+using ScreenReaderMod.Common.Systems.ModMenuAccessibility;
 using ScreenReaderMod.Common.Utilities;
 using Terraria;
 using Terraria.Audio;
-using Terraria.GameContent.UI.Elements;
-using Terraria.ID;
 using Terraria.GameInput;
+using Terraria.ID;
 using Terraria.Localization;
-using Terraria.ModLoader;
 using Terraria.UI;
 using Terraria.UI.Gamepad;
 
@@ -24,58 +21,29 @@ namespace ScreenReaderMod.Common.Systems;
 /// This screen is shown when clicking "More Info" on a mod in the Manage Mods menu.
 /// Uses reflection since UIModInfo is an internal type.
 /// </summary>
-public sealed class ModInfoAccessibilitySystem : ModSystem
+public sealed class ModInfoAccessibilitySystem : ModMenuAccessibilityBase
 {
-    private const int BaseLinkId = 3300;
-    private const int MenuModeModInfo = 10008;
+    #region Base Class Implementation
 
-    private static int _lastAnnouncedPointId = -1;
-    private static int _lastSeenPointId = -1;
-    private static object? _lastModInfo;
-    private static int _initialFocusFramesRemaining;
+    protected override int BaseLinkId => LinkIdRegistry.ModInfo;
+    protected override string MenuTypeName => "Terraria.ModLoader.UI.UIModInfo";
+    protected override string SystemLogName => "ModInfo";
 
-    // Navigation state tracking
-    private static int _currentFocusIndex;
-    private static bool _leftWasPressed;
-    private static bool _rightWasPressed;
-    private static bool _upWasPressed;
-    private static bool _downWasPressed;
-    private static bool _aButtonWasPressed;
-    private static bool _bButtonWasPressed;
+    #endregion
 
-    // Analog stick state for debouncing
-    private static bool _stickLeftWasPressed;
-    private static bool _stickRightWasPressed;
-    private static bool _stickUpWasPressed;
-    private static bool _stickDownWasPressed;
+    #region Menu-Specific State
 
-    // Cached bindings for navigation
-    private static readonly List<PointBinding> TopRowBindings = new();
-    private static readonly List<PointBinding> BottomRowBindings = new();
-    private static readonly Dictionary<int, PointBinding> BindingById = new();
-
-    // Whether we're in top row (true) or bottom row (false)
-    private static bool _inTopRow;
-
-    // Type references
-    private static Type? _uiModInfoType;
-
-    // UIModInfo field references
-    private static FieldInfo? _modInfoField; // UIMessageBox with description
-    private static FieldInfo? _uITextPanelField; // Header panel
-    private static FieldInfo? _modHomepageButtonField;
-    private static FieldInfo? _modSteamButtonField;
-    private static FieldInfo? _extractLocalizationButtonField;
-    private static FieldInfo? _fakeExtractLocalizationButtonField;
-    private static FieldInfo? _extractButtonField;
-    private static FieldInfo? _deleteButtonField;
-    private static FieldInfo? _fakeDeleteButtonField;
-    private static FieldInfo? _uIElementField; // Main container
-    private static FieldInfo? _modDisplayNameField;
-    private static FieldInfo? _infoField; // Mod description text
+    // Navigation state for two-row layout
+    private readonly List<PointBinding> _topRowBindings = new();
+    private readonly List<PointBinding> _bottomRowBindings = new();
+    private bool _inTopRow;
 
     // Track if description was announced
-    private static bool _descriptionAnnounced;
+    private bool _descriptionAnnounced;
+
+    #endregion
+
+    #region Public Properties
 
     /// <summary>
     /// Returns true if the Mod Info menu is currently active and handling gamepad input.
@@ -91,8 +59,7 @@ public sealed class ModInfoAccessibilitySystem : ModSystem
                 return false;
             }
 
-            // Check the UI state directly, not relying on _lastModInfo being set
-            // This prevents MenuNarration from announcing before we're ready
+            // Check the UI state directly
             object? currentState = Main.MenuUI?.CurrentState;
             if (currentState is null)
             {
@@ -101,14 +68,13 @@ public sealed class ModInfoAccessibilitySystem : ModSystem
 
             // Check by type name since we might not have the type reference yet
             string? typeName = currentState.GetType().FullName;
-            if (typeName == "Terraria.ModLoader.UI.UIModInfo")
-            {
-                return true;
-            }
-
-            return false;
+            return typeName == "Terraria.ModLoader.UI.UIModInfo";
         }
     }
+
+    #endregion
+
+    #region Lifecycle
 
     public override void Load()
     {
@@ -117,33 +83,17 @@ public sealed class ModInfoAccessibilitySystem : ModSystem
             return;
         }
 
-        // Get type reference via reflection
-        _uiModInfoType = Type.GetType("Terraria.ModLoader.UI.UIModInfo, tModLoader");
+        // Log type availability (types are now cached in ReflectionCache)
+        Mod.Logger.Info($"[ModInfo] Load: UIModInfo type found: {ReflectionCache.UIModInfo.Type is not null}");
 
-        Mod.Logger.Info($"[ModInfo] Load: UIModInfo type found: {_uiModInfoType is not null}");
-
-        if (_uiModInfoType is null)
+        if (ReflectionCache.UIModInfo.Type is null)
         {
             Mod.Logger.Warn("[ModInfo] Could not find UIModInfo type");
             return;
         }
 
-        // Hook into DrawMenu to process during menu rendering
-        On_Main.DrawMenu += HandleDrawMenu;
-
-        // Get UIModInfo fields
-        _modInfoField = _uiModInfoType.GetField("_modInfo", BindingFlags.NonPublic | BindingFlags.Instance);
-        _uITextPanelField = _uiModInfoType.GetField("_uITextPanel", BindingFlags.NonPublic | BindingFlags.Instance);
-        _modHomepageButtonField = _uiModInfoType.GetField("_modHomepageButton", BindingFlags.NonPublic | BindingFlags.Instance);
-        _modSteamButtonField = _uiModInfoType.GetField("_modSteamButton", BindingFlags.NonPublic | BindingFlags.Instance);
-        _extractLocalizationButtonField = _uiModInfoType.GetField("extractLocalizationButton", BindingFlags.NonPublic | BindingFlags.Instance);
-        _fakeExtractLocalizationButtonField = _uiModInfoType.GetField("fakeExtractLocalizationButton", BindingFlags.NonPublic | BindingFlags.Instance);
-        _extractButtonField = _uiModInfoType.GetField("_extractButton", BindingFlags.NonPublic | BindingFlags.Instance);
-        _deleteButtonField = _uiModInfoType.GetField("_deleteButton", BindingFlags.NonPublic | BindingFlags.Instance);
-        _fakeDeleteButtonField = _uiModInfoType.GetField("_fakeDeleteButton", BindingFlags.NonPublic | BindingFlags.Instance);
-        _uIElementField = _uiModInfoType.GetField("_uIElement", BindingFlags.NonPublic | BindingFlags.Instance);
-        _modDisplayNameField = _uiModInfoType.GetField("_modDisplayName", BindingFlags.NonPublic | BindingFlags.Instance);
-        _infoField = _uiModInfoType.GetField("_info", BindingFlags.NonPublic | BindingFlags.Instance);
+        // Let base class set up the DrawMenu hook
+        base.Load();
     }
 
     public override void Unload()
@@ -153,116 +103,51 @@ public sealed class ModInfoAccessibilitySystem : ModSystem
             return;
         }
 
-        if (_uiModInfoType is not null)
-        {
-            On_Main.DrawMenu -= HandleDrawMenu;
-        }
-
-        BindingById.Clear();
-        TopRowBindings.Clear();
-        BottomRowBindings.Clear();
-        _lastAnnouncedPointId = -1;
-        _lastSeenPointId = -1;
-        _lastModInfo = null;
-        _initialFocusFramesRemaining = 0;
-        _currentFocusIndex = 0;
+        // Clear menu-specific state
+        _topRowBindings.Clear();
+        _bottomRowBindings.Clear();
         _inTopRow = false;
+        _descriptionAnnounced = false;
+
+        base.Unload();
+    }
+
+    #endregion
+
+    #region Abstract Method Implementations
+
+    protected override void OnMenuEntered(object menuState)
+    {
+        _inTopRow = false; // Start on bottom row (Back button)
         _descriptionAnnounced = false;
     }
 
-    private void HandleDrawMenu(On_Main.orig_DrawMenu orig, Main self, GameTime gameTime)
+    protected override void OnMenuExited()
     {
-        orig(self, gameTime);
-        TryProcessModInfoMenu();
+        _topRowBindings.Clear();
+        _bottomRowBindings.Clear();
+        _descriptionAnnounced = false;
     }
 
-    private void TryProcessModInfoMenu()
-    {
-        if (_uiModInfoType is null)
-        {
-            return;
-        }
-
-        object? currentState = Main.MenuUI?.CurrentState;
-
-        // Check if we're in the UIModInfo state
-        bool isUIModInfo = currentState is not null &&
-                           currentState.GetType().FullName == "Terraria.ModLoader.UI.UIModInfo";
-
-        if (!isUIModInfo)
-        {
-            // Clear menu reference if we've left UIModInfo
-            if (_lastModInfo is not null)
-            {
-                Mod.Logger.Info("[ModInfo] Left Mod Info menu");
-                _lastModInfo = null;
-                _lastAnnouncedPointId = -1;
-                _lastSeenPointId = -1;
-                TopRowBindings.Clear();
-                BottomRowBindings.Clear();
-                BindingById.Clear();
-                _descriptionAnnounced = false;
-            }
-            return;
-        }
-
-        // Track menu state
-        bool menuChanged = !ReferenceEquals(currentState, _lastModInfo);
-        if (menuChanged)
-        {
-            _lastModInfo = currentState;
-            _lastAnnouncedPointId = -1;
-            _lastSeenPointId = -1;
-            _initialFocusFramesRemaining = 10;
-            _currentFocusIndex = 0;
-            _inTopRow = false; // Start on bottom row (Back button)
-            _descriptionAnnounced = false;
-            _aButtonWasPressed = true; // Prevent A button from immediately triggering on menu entry
-            _bButtonWasPressed = true; // Prevent B button from immediately triggering on menu entry
-            Mod.Logger.Info("[ModInfo] Entered Mod Info menu");
-        }
-
-        // Process gamepad navigation
-        bool hasGamepadInput = PlayerInput.UsingGamepadUI ||
-                               GamePad.GetState(PlayerIndex.One).IsConnected;
-
-        if (!hasGamepadInput)
-        {
-            return;
-        }
-
-        try
-        {
-            ConfigureGamepadPoints(currentState!);
-            HandleManualNavigation(currentState!);
-            HandleActionButton(currentState!);
-            AnnounceCurrentFocus(currentState!);
-        }
-        catch (Exception ex)
-        {
-            Mod.Logger.Warn($"[ModInfo] Failed to configure gamepad points: {ex}");
-        }
-    }
-
-    private static void ConfigureGamepadPoints(object modInfo)
+    protected override void ConfigureGamepadPoints(object menuState)
     {
         BindingById.Clear();
-        TopRowBindings.Clear();
-        BottomRowBindings.Clear();
+        _topRowBindings.Clear();
+        _bottomRowBindings.Clear();
 
         int nextId = BaseLinkId;
 
         // Get the main container element to check which buttons are attached
-        UIElement? mainContainer = _uIElementField?.GetValue(modInfo) as UIElement;
+        UIElement? mainContainer = ReflectionCache.UIModInfo.UIElement?.GetValue(menuState) as UIElement;
 
         // Get button references
-        UIElement? homepageButton = _modHomepageButtonField?.GetValue(modInfo) as UIElement;
-        UIElement? steamButton = _modSteamButtonField?.GetValue(modInfo) as UIElement;
-        UIElement? extractLocButton = _extractLocalizationButtonField?.GetValue(modInfo) as UIElement;
-        UIElement? fakeExtractLocButton = _fakeExtractLocalizationButtonField?.GetValue(modInfo) as UIElement;
-        UIElement? extractButton = _extractButtonField?.GetValue(modInfo) as UIElement;
-        UIElement? deleteButton = _deleteButtonField?.GetValue(modInfo) as UIElement;
-        UIElement? fakeDeleteButton = _fakeDeleteButtonField?.GetValue(modInfo) as UIElement;
+        UIElement? homepageButton = ReflectionCache.UIModInfo.ModHomepageButton?.GetValue(menuState) as UIElement;
+        UIElement? steamButton = ReflectionCache.UIModInfo.ModSteamButton?.GetValue(menuState) as UIElement;
+        UIElement? extractLocButton = ReflectionCache.UIModInfo.ExtractLocalizationButton?.GetValue(menuState) as UIElement;
+        UIElement? fakeExtractLocButton = ReflectionCache.UIModInfo.FakeExtractLocalizationButton?.GetValue(menuState) as UIElement;
+        UIElement? extractButton = ReflectionCache.UIModInfo.ExtractButton?.GetValue(menuState) as UIElement;
+        UIElement? deleteButton = ReflectionCache.UIModInfo.DeleteButton?.GetValue(menuState) as UIElement;
+        UIElement? fakeDeleteButton = ReflectionCache.UIModInfo.FakeDeleteButton?.GetValue(menuState) as UIElement;
 
         // Top row buttons (at Top = -65f): Homepage (center), Steam (left), Extract Localization (right)
         // These are conditionally shown based on mod properties
@@ -270,34 +155,34 @@ public sealed class ModInfoAccessibilitySystem : ModSystem
         // Check if homepage button is visible (has a parent = is attached to UI)
         if (homepageButton is not null && IsElementVisible(mainContainer, homepageButton))
         {
-            var binding = CreateButtonBinding(ref nextId, homepageButton,
+            var binding = CreateBinding(ref nextId, homepageButton,
                 Language.GetTextValue("tModLoader.ModInfoVisitHomepage"), PointType.ActionButton);
-            TopRowBindings.Add(binding);
+            _topRowBindings.Add(binding);
             BindingById[binding.Id] = binding;
         }
 
         // Steam button
         if (steamButton is not null && IsElementVisible(mainContainer, steamButton))
         {
-            var binding = CreateButtonBinding(ref nextId, steamButton,
+            var binding = CreateBinding(ref nextId, steamButton,
                 Language.GetTextValue("tModLoader.ModInfoVisitSteampage"), PointType.ActionButton);
-            TopRowBindings.Add(binding);
+            _topRowBindings.Add(binding);
             BindingById[binding.Id] = binding;
         }
 
         // Extract Localization button (either active or fake/disabled version)
         if (extractLocButton is not null && IsElementVisible(mainContainer, extractLocButton))
         {
-            var binding = CreateButtonBinding(ref nextId, extractLocButton,
+            var binding = CreateBinding(ref nextId, extractLocButton,
                 Language.GetTextValue("tModLoader.ModInfoExtractLocalization"), PointType.ActionButton);
-            TopRowBindings.Add(binding);
+            _topRowBindings.Add(binding);
             BindingById[binding.Id] = binding;
         }
         else if (fakeExtractLocButton is not null && IsElementVisible(mainContainer, fakeExtractLocButton))
         {
-            var binding = CreateButtonBinding(ref nextId, fakeExtractLocButton,
+            var binding = CreateBinding(ref nextId, fakeExtractLocButton,
                 Language.GetTextValue("tModLoader.ModInfoExtractLocalization") + " (disabled)", PointType.DisabledButton);
-            TopRowBindings.Add(binding);
+            _topRowBindings.Add(binding);
             BindingById[binding.Id] = binding;
         }
 
@@ -306,40 +191,40 @@ public sealed class ModInfoAccessibilitySystem : ModSystem
         UIElement? backButton = FindBackButton(mainContainer);
         if (backButton is not null)
         {
-            var binding = CreateButtonBinding(ref nextId, backButton,
+            var binding = CreateBinding(ref nextId, backButton,
                 Language.GetTextValue("UI.Back"), PointType.BackButton);
-            BottomRowBindings.Add(binding);
+            _bottomRowBindings.Add(binding);
             BindingById[binding.Id] = binding;
         }
 
         // Extract button
         if (extractButton is not null && IsElementVisible(mainContainer, extractButton))
         {
-            var binding = CreateButtonBinding(ref nextId, extractButton,
+            var binding = CreateBinding(ref nextId, extractButton,
                 Language.GetTextValue("tModLoader.ModInfoExtract"), PointType.ActionButton);
-            BottomRowBindings.Add(binding);
+            _bottomRowBindings.Add(binding);
             BindingById[binding.Id] = binding;
         }
 
         // Delete button (either active or fake/disabled version)
         if (deleteButton is not null && IsElementVisible(mainContainer, deleteButton))
         {
-            var binding = CreateButtonBinding(ref nextId, deleteButton,
+            var binding = CreateBinding(ref nextId, deleteButton,
                 Language.GetTextValue("UI.Delete"), PointType.ActionButton);
-            BottomRowBindings.Add(binding);
+            _bottomRowBindings.Add(binding);
             BindingById[binding.Id] = binding;
         }
         else if (fakeDeleteButton is not null && IsElementVisible(mainContainer, fakeDeleteButton))
         {
-            var binding = CreateButtonBinding(ref nextId, fakeDeleteButton,
+            var binding = CreateBinding(ref nextId, fakeDeleteButton,
                 Language.GetTextValue("UI.Delete") + " (disabled)", PointType.DisabledButton);
-            BottomRowBindings.Add(binding);
+            _bottomRowBindings.Add(binding);
             BindingById[binding.Id] = binding;
         }
 
         // Sort bindings by X position for proper left/right navigation
-        TopRowBindings.Sort((a, b) => a.Position.X.CompareTo(b.Position.X));
-        BottomRowBindings.Sort((a, b) => a.Position.X.CompareTo(b.Position.X));
+        _topRowBindings.Sort((a, b) => a.Position.X.CompareTo(b.Position.X));
+        _bottomRowBindings.Sort((a, b) => a.Position.X.CompareTo(b.Position.X));
 
         if (BindingById.Count == 0)
         {
@@ -348,35 +233,33 @@ public sealed class ModInfoAccessibilitySystem : ModSystem
 
         // Create all link points
         var allBindings = new List<PointBinding>();
-        allBindings.AddRange(TopRowBindings);
-        allBindings.AddRange(BottomRowBindings);
+        allBindings.AddRange(_topRowBindings);
+        allBindings.AddRange(_bottomRowBindings);
 
         foreach (PointBinding binding in allBindings)
         {
-            UILinkPoint linkPoint = EnsureLinkPoint(binding.Id);
-            UILinkPointNavigator.SetPosition(binding.Id, binding.Position);
-            linkPoint.Unlink();
+            SetupLinkPoint(binding);
         }
 
         // Connect top row horizontally
-        for (int i = 0; i < TopRowBindings.Count - 1; i++)
+        for (int i = 0; i < _topRowBindings.Count - 1; i++)
         {
-            ConnectHorizontal(TopRowBindings[i], TopRowBindings[i + 1]);
+            ConnectHorizontal(_topRowBindings[i], _topRowBindings[i + 1]);
         }
 
         // Connect bottom row horizontally
-        for (int i = 0; i < BottomRowBindings.Count - 1; i++)
+        for (int i = 0; i < _bottomRowBindings.Count - 1; i++)
         {
-            ConnectHorizontal(BottomRowBindings[i], BottomRowBindings[i + 1]);
+            ConnectHorizontal(_bottomRowBindings[i], _bottomRowBindings[i + 1]);
         }
 
         // Connect rows vertically
-        if (TopRowBindings.Count > 0 && BottomRowBindings.Count > 0)
+        if (_topRowBindings.Count > 0 && _bottomRowBindings.Count > 0)
         {
             // Connect each top row button to nearest bottom row button
-            foreach (var topBinding in TopRowBindings)
+            foreach (var topBinding in _topRowBindings)
             {
-                var nearest = FindNearestHorizontal(topBinding, BottomRowBindings);
+                var nearest = FindNearestHorizontal(topBinding, _bottomRowBindings);
                 if (nearest.HasValue)
                 {
                     UILinkPoint topPoint = EnsureLinkPoint(topBinding.Id);
@@ -391,15 +274,179 @@ public sealed class ModInfoAccessibilitySystem : ModSystem
         UILinkPointNavigator.Shortcuts.FANCYUI_HIGHEST_INDEX = nextId - 1;
 
         // Force initial focus to Back button
-        if (PlayerInput.UsingGamepadUI && _initialFocusFramesRemaining > 0)
+        if (PlayerInput.UsingGamepadUI && InitialFocusFramesRemaining > 0)
         {
-            int defaultPointId = BottomRowBindings.Count > 0 ? BottomRowBindings[0].Id :
-                                 TopRowBindings.Count > 0 ? TopRowBindings[0].Id :
+            int defaultPointId = _bottomRowBindings.Count > 0 ? _bottomRowBindings[0].Id :
+                                 _topRowBindings.Count > 0 ? _topRowBindings[0].Id :
                                  BaseLinkId;
 
             UILinkPointNavigator.ChangePoint(defaultPointId);
-            _initialFocusFramesRemaining--;
+            InitialFocusFramesRemaining--;
         }
+    }
+
+    protected override void HandleNavigation(object menuState)
+    {
+        if (!CurrentInput.HasNavigation)
+        {
+            return;
+        }
+
+        var currentList = _inTopRow ? _topRowBindings : _bottomRowBindings;
+
+        bool navigated = false;
+
+        if (CurrentInput.Left && CurrentFocusIndex > 0)
+        {
+            CurrentFocusIndex--;
+            navigated = true;
+        }
+        else if (CurrentInput.Right && CurrentFocusIndex < currentList.Count - 1)
+        {
+            CurrentFocusIndex++;
+            navigated = true;
+        }
+        else if (CurrentInput.Up && !_inTopRow && _topRowBindings.Count > 0)
+        {
+            _inTopRow = true;
+            CurrentFocusIndex = Math.Min(CurrentFocusIndex, _topRowBindings.Count - 1);
+            navigated = true;
+        }
+        else if (CurrentInput.Down && _inTopRow && _bottomRowBindings.Count > 0)
+        {
+            _inTopRow = false;
+            CurrentFocusIndex = Math.Min(CurrentFocusIndex, _bottomRowBindings.Count - 1);
+            navigated = true;
+        }
+
+        if (navigated)
+        {
+            int? newPointId = GetCurrentPointId();
+            if (newPointId.HasValue)
+            {
+                UILinkPointNavigator.ChangePoint(newPointId.Value);
+                Mod.Logger.Info($"[ModInfo] Navigated to row {(_inTopRow ? "top" : "bottom")}, index {CurrentFocusIndex}, point {newPointId.Value}");
+            }
+        }
+    }
+
+    protected override void HandleAction(object menuState)
+    {
+        if (CurrentInput.ActionPressed)
+        {
+            int? currentPointId = GetCurrentPointId();
+            if (currentPointId.HasValue && BindingById.TryGetValue(currentPointId.Value, out var binding))
+            {
+                // Don't click disabled buttons
+                if (binding.Type == PointType.DisabledButton)
+                {
+                    Mod.Logger.Info($"[ModInfo] Button is disabled: {binding.Label}");
+                    ScreenReaderService.Announce("Button disabled", force: true);
+                    return;
+                }
+
+                if (binding.Element is UIElement buttonElement)
+                {
+                    Mod.Logger.Info($"[ModInfo] Clicking button: {binding.Label}");
+                    SoundEngine.PlaySound(SoundID.MenuTick);
+
+                    try
+                    {
+                        var clickEvent = new UIMouseEvent(buttonElement, Main.MouseScreen);
+                        buttonElement.LeftClick(clickEvent);
+                    }
+                    catch (Exception ex)
+                    {
+                        Mod.Logger.Warn($"[ModInfo] Button click failed: {ex.Message}");
+                    }
+                }
+            }
+        }
+
+        // B button goes back
+        if (CurrentInput.BackPressed)
+        {
+            // Find and click the Back button
+            foreach (var binding in _bottomRowBindings)
+            {
+                if (binding.Type == PointType.BackButton && binding.Element is UIElement backButton)
+                {
+                    Mod.Logger.Info("[ModInfo] B button pressed, clicking Back");
+                    SoundEngine.PlaySound(SoundID.MenuTick);
+
+                    try
+                    {
+                        var clickEvent = new UIMouseEvent(backButton, Main.MouseScreen);
+                        backButton.LeftClick(clickEvent);
+                    }
+                    catch (Exception ex)
+                    {
+                        Mod.Logger.Warn($"[ModInfo] Back button click failed: {ex.Message}");
+                    }
+                    return;
+                }
+            }
+        }
+    }
+
+    protected override int? GetCurrentPointId()
+    {
+        var currentList = _inTopRow ? _topRowBindings : _bottomRowBindings;
+        if (currentList.Count == 0 || CurrentFocusIndex < 0 || CurrentFocusIndex >= currentList.Count)
+        {
+            return null;
+        }
+
+        return currentList[CurrentFocusIndex].Id;
+    }
+
+    protected override string BuildAnnouncement(PointBinding binding, object menuState)
+    {
+        string label = TextSanitizer.Clean(binding.Label);
+        if (string.IsNullOrWhiteSpace(label))
+        {
+            return string.Empty;
+        }
+
+        // On first focus, announce the mod name and description
+        if (!_descriptionAnnounced)
+        {
+            _descriptionAnnounced = true;
+
+            string? modDisplayName = ReflectionCache.UIModInfo.ModDisplayName?.GetValue(menuState) as string;
+            string? description = ReflectionCache.UIModInfo.Info?.GetValue(menuState) as string;
+
+            if (!string.IsNullOrEmpty(modDisplayName))
+            {
+                string header = $"Mod Info: {modDisplayName}";
+                if (!string.IsNullOrEmpty(description))
+                {
+                    // Truncate very long descriptions
+                    if (description.Length > 500)
+                    {
+                        description = description.Substring(0, 500) + "...";
+                    }
+                    header = $"{header}. {TextSanitizer.Clean(description)}";
+                }
+                return $"{header}. {label}";
+            }
+        }
+
+        return label;
+    }
+
+    #endregion
+
+    #region Helper Methods
+
+    /// <summary>
+    /// Creates a button binding with centered position (adapts to base class PointBinding).
+    /// </summary>
+    private static PointBinding CreateBinding(ref int nextId, UIElement element, string label, PointType type)
+    {
+        CalculatedStyle dims = element.GetDimensions();
+        Vector2 center = new(dims.X + dims.Width / 2f, dims.Y + dims.Height / 2f);
+        return new PointBinding(nextId++, center, label, string.Empty, element, type);
     }
 
     private static bool IsElementVisible(UIElement? parent, UIElement element)
@@ -501,294 +548,5 @@ public sealed class ModInfoAccessibilitySystem : ModSystem
         return nearest;
     }
 
-    private static PointBinding CreateButtonBinding(ref int nextId, UIElement element, string label, PointType type)
-    {
-        CalculatedStyle dims = element.GetDimensions();
-        Vector2 center = new(dims.X + dims.Width / 2f, dims.Y + dims.Height / 2f);
-        return new PointBinding(nextId++, center, label, element, type);
-    }
-
-    private static void HandleManualNavigation(object modInfo)
-    {
-        GamePadState gpState = GamePad.GetState(PlayerIndex.One);
-
-        if (!gpState.IsConnected)
-        {
-            return;
-        }
-
-        // Detect new presses for D-pad
-        bool leftPressed = gpState.DPad.Left == ButtonState.Pressed && !_leftWasPressed;
-        bool rightPressed = gpState.DPad.Right == ButtonState.Pressed && !_rightWasPressed;
-        bool upPressed = gpState.DPad.Up == ButtonState.Pressed && !_upWasPressed;
-        bool downPressed = gpState.DPad.Down == ButtonState.Pressed && !_downWasPressed;
-
-        // Update D-pad previous state
-        _leftWasPressed = gpState.DPad.Left == ButtonState.Pressed;
-        _rightWasPressed = gpState.DPad.Right == ButtonState.Pressed;
-        _upWasPressed = gpState.DPad.Up == ButtonState.Pressed;
-        _downWasPressed = gpState.DPad.Down == ButtonState.Pressed;
-
-        // Check analog stick with deadzone and debouncing
-        Vector2 stick = gpState.ThumbSticks.Left;
-        const float threshold = 0.5f;
-
-        bool stickLeftNow = stick.X < -threshold;
-        bool stickRightNow = stick.X > threshold;
-        bool stickUpNow = stick.Y > threshold;
-        bool stickDownNow = stick.Y < -threshold;
-
-        if (!leftPressed && stickLeftNow && !_stickLeftWasPressed)
-        {
-            leftPressed = true;
-        }
-        if (!rightPressed && stickRightNow && !_stickRightWasPressed)
-        {
-            rightPressed = true;
-        }
-        if (!upPressed && stickUpNow && !_stickUpWasPressed)
-        {
-            upPressed = true;
-        }
-        if (!downPressed && stickDownNow && !_stickDownWasPressed)
-        {
-            downPressed = true;
-        }
-
-        _stickLeftWasPressed = stickLeftNow;
-        _stickRightWasPressed = stickRightNow;
-        _stickUpWasPressed = stickUpNow;
-        _stickDownWasPressed = stickDownNow;
-
-        if (!leftPressed && !rightPressed && !upPressed && !downPressed)
-        {
-            return;
-        }
-
-        var currentList = _inTopRow ? TopRowBindings : BottomRowBindings;
-
-        bool navigated = false;
-
-        if (leftPressed && _currentFocusIndex > 0)
-        {
-            _currentFocusIndex--;
-            navigated = true;
-        }
-        else if (rightPressed && _currentFocusIndex < currentList.Count - 1)
-        {
-            _currentFocusIndex++;
-            navigated = true;
-        }
-        else if (upPressed && !_inTopRow && TopRowBindings.Count > 0)
-        {
-            _inTopRow = true;
-            _currentFocusIndex = Math.Min(_currentFocusIndex, TopRowBindings.Count - 1);
-            navigated = true;
-        }
-        else if (downPressed && _inTopRow && BottomRowBindings.Count > 0)
-        {
-            _inTopRow = false;
-            _currentFocusIndex = Math.Min(_currentFocusIndex, BottomRowBindings.Count - 1);
-            navigated = true;
-        }
-
-        if (navigated)
-        {
-            int? newPointId = GetCurrentPointId();
-            if (newPointId.HasValue)
-            {
-                UILinkPointNavigator.ChangePoint(newPointId.Value);
-                ScreenReaderMod.Instance?.Logger.Info($"[ModInfo] Navigated to row {(_inTopRow ? "top" : "bottom")}, index {_currentFocusIndex}, point {newPointId.Value}");
-            }
-        }
-    }
-
-    private static void HandleActionButton(object modInfo)
-    {
-        GamePadState gpState = GamePad.GetState(PlayerIndex.One);
-
-        if (!gpState.IsConnected)
-        {
-            return;
-        }
-
-        bool aPressed = gpState.Buttons.A == ButtonState.Pressed;
-        bool aJustPressed = aPressed && !_aButtonWasPressed;
-        _aButtonWasPressed = aPressed;
-
-        bool bPressed = gpState.Buttons.B == ButtonState.Pressed;
-        bool bJustPressed = bPressed && !_bButtonWasPressed;
-        _bButtonWasPressed = bPressed;
-
-        if (aJustPressed)
-        {
-            int? currentPointId = GetCurrentPointId();
-            if (currentPointId.HasValue && BindingById.TryGetValue(currentPointId.Value, out var binding))
-            {
-                // Don't click disabled buttons
-                if (binding.Type == PointType.DisabledButton)
-                {
-                    ScreenReaderMod.Instance?.Logger.Info($"[ModInfo] Button is disabled: {binding.Label}");
-                    ScreenReaderService.Announce("Button disabled", force: true);
-                    return;
-                }
-
-                if (binding.Element is UIElement buttonElement)
-                {
-                    ScreenReaderMod.Instance?.Logger.Info($"[ModInfo] Clicking button: {binding.Label}");
-                    SoundEngine.PlaySound(SoundID.MenuTick);
-
-                    try
-                    {
-                        var clickEvent = new UIMouseEvent(buttonElement, Main.MouseScreen);
-                        buttonElement.LeftClick(clickEvent);
-                    }
-                    catch (Exception ex)
-                    {
-                        ScreenReaderMod.Instance?.Logger.Warn($"[ModInfo] Button click failed: {ex.Message}");
-                    }
-                }
-            }
-        }
-
-        // B button goes back
-        if (bJustPressed)
-        {
-            // Find and click the Back button
-            foreach (var binding in BottomRowBindings)
-            {
-                if (binding.Type == PointType.BackButton && binding.Element is UIElement backButton)
-                {
-                    ScreenReaderMod.Instance?.Logger.Info("[ModInfo] B button pressed, clicking Back");
-                    SoundEngine.PlaySound(SoundID.MenuTick);
-
-                    try
-                    {
-                        var clickEvent = new UIMouseEvent(backButton, Main.MouseScreen);
-                        backButton.LeftClick(clickEvent);
-                    }
-                    catch (Exception ex)
-                    {
-                        ScreenReaderMod.Instance?.Logger.Warn($"[ModInfo] Back button click failed: {ex.Message}");
-                    }
-                    return;
-                }
-            }
-        }
-    }
-
-    private static int? GetCurrentPointId()
-    {
-        var currentList = _inTopRow ? TopRowBindings : BottomRowBindings;
-        if (currentList.Count == 0 || _currentFocusIndex < 0 || _currentFocusIndex >= currentList.Count)
-        {
-            return null;
-        }
-
-        return currentList[_currentFocusIndex].Id;
-    }
-
-    private static void AnnounceCurrentFocus(object modInfo)
-    {
-        int? expectedPoint = GetCurrentPointId();
-        int currentPoint = expectedPoint ?? UILinkPointNavigator.CurrentPoint;
-
-        if (currentPoint < BaseLinkId)
-        {
-            return;
-        }
-
-        bool isStable = currentPoint == _lastSeenPointId;
-        bool alreadyAnnounced = currentPoint == _lastAnnouncedPointId;
-
-        _lastSeenPointId = currentPoint;
-
-        if (!isStable || alreadyAnnounced)
-        {
-            return;
-        }
-
-        if (!BindingById.TryGetValue(currentPoint, out PointBinding binding))
-        {
-            ScreenReaderMod.Instance?.Logger.Debug($"[ModInfo] No binding found for point {currentPoint}");
-            return;
-        }
-
-        string announcement = BuildAnnouncement(binding, modInfo);
-        if (string.IsNullOrWhiteSpace(announcement))
-        {
-            return;
-        }
-
-        _lastAnnouncedPointId = currentPoint;
-
-        SoundEngine.PlaySound(SoundID.MenuTick);
-
-        ScreenReaderMod.Instance?.Logger.Info($"[ModInfo] Announcing: {announcement}");
-        ScreenReaderService.Announce(announcement, force: true);
-    }
-
-    private static string BuildAnnouncement(PointBinding binding, object modInfo)
-    {
-        string label = TextSanitizer.Clean(binding.Label);
-        if (string.IsNullOrWhiteSpace(label))
-        {
-            return string.Empty;
-        }
-
-        // On first focus, announce the mod name and description
-        if (!_descriptionAnnounced)
-        {
-            _descriptionAnnounced = true;
-
-            string? modDisplayName = _modDisplayNameField?.GetValue(modInfo) as string;
-            string? description = _infoField?.GetValue(modInfo) as string;
-
-            if (!string.IsNullOrEmpty(modDisplayName))
-            {
-                string header = $"Mod Info: {modDisplayName}";
-                if (!string.IsNullOrEmpty(description))
-                {
-                    // Truncate very long descriptions
-                    if (description.Length > 500)
-                    {
-                        description = description.Substring(0, 500) + "...";
-                    }
-                    header = $"{header}. {TextSanitizer.Clean(description)}";
-                }
-                return $"{header}. {label}";
-            }
-        }
-
-        return label;
-    }
-
-    private static void ConnectHorizontal(PointBinding left, PointBinding right)
-    {
-        UILinkPoint leftPoint = EnsureLinkPoint(left.Id);
-        UILinkPoint rightPoint = EnsureLinkPoint(right.Id);
-
-        leftPoint.Right = right.Id;
-        rightPoint.Left = left.Id;
-    }
-
-    private static UILinkPoint EnsureLinkPoint(int id)
-    {
-        if (!UILinkPointNavigator.Points.TryGetValue(id, out UILinkPoint? linkPoint))
-        {
-            linkPoint = new UILinkPoint(id, true, -1, -1, -1, -1);
-            UILinkPointNavigator.Points[id] = linkPoint;
-        }
-
-        return linkPoint;
-    }
-
-    private enum PointType
-    {
-        ActionButton,
-        BackButton,
-        DisabledButton
-    }
-
-    private readonly record struct PointBinding(int Id, Vector2 Position, string Label, UIElement? Element, PointType Type);
+    #endregion
 }

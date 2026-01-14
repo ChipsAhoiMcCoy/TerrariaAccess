@@ -45,7 +45,15 @@ The build script invokes tModLoader's build system (`dotnet tModLoader.dll -buil
   - `.Networking.cs` - Multiplayer sync
 
 **Narrators (nested in InGameNarrationSystem):**
-- `HotbarNarrator`, `InventoryNarrator`, `CraftingNarrator` - UI slot navigation
+- `HotbarNarrator` - Hotbar slot navigation
+- `InventoryNarrator` - Inventory navigation, split across partials:
+  - `.Core.cs` - Main logic and slot focus tracking
+  - `.Regions.cs` - Region detection and display names
+  - `.Focus.cs`, `.Models.cs`, `.Tooltips.cs`, `.SpecialSelections.cs` - Supporting concerns
+- `CraftingNarrator` - Recipe navigation, split across partials:
+  - `.cs` - Core crafting UI handling
+  - `.Guide.cs` - Guide menu and Goblin Tinkerer reforge
+  - `.Recipe.cs` - Recipe types, resolution, and requirement building
 - `CursorNarrator`, `SmartCursorNarrator` - Tile/cursor position narration
 - `NpcDialogueNarrator` - NPC chat and shop interactions
 - `IngameSettingsNarrator`, `ControlsMenuNarrator`, `ModConfigMenuNarrator` - Settings UI
@@ -66,7 +74,39 @@ The build script invokes tModLoader's build system (`dotnet tModLoader.dll -buil
 1. **Hook-based architecture**: Uses tModLoader's `On_*` detours to intercept Terraria methods
 2. **Narration scheduling**: `NarrationScheduler` coordinates multiple narrators, handles rate limiting per category
 3. **Partial classes**: Large systems split across multiple files by concern (GuidanceSystem, InGameNarrationSystem)
-4. **Reflection for private access**: Many narrators use reflection to access Terraria's internal UI state
+4. **Reflection for private access**: Uses `ReflectionCache` (`Utilities/ReflectionCache.cs`) for centralized, lazy-initialized reflection handles to tModLoader internals
+5. **State machine pattern**: `MenuNarration/NarrationStateMachine.cs` contains:
+   - `ModConfigNarrationStateMachine` - explicit state transitions for config menu narrator
+   - `NarrationFrameTimers` - frame-based suppression for hover/input
+   - `SliderRepeatState` - hold-to-repeat slider adjustment
+6. **Base class extraction**: `ModMenuAccessibilityBase` (`ModMenuAccessibility/`) provides shared navigation infrastructure for mod menu screens
+
+### Utilities (`Utilities/`)
+
+- `ReflectionCache` - Centralized lazy reflection handles organized by source type (UIMods, UIModBrowser, UIModConfig, etc.). All reflection access should go through this cache.
+
+### InGameNarration Helpers (`Systems/InGameNarration/`)
+
+- `SlotNavigationHelper` - Shared utilities for UI slot navigation, link point resolution, and chest/inventory slot mapping
+- `NarrationScheduler` - Coordinates multiple narrators with rate limiting per category
+- `NarrationTextFormatter` - Item label composition and text formatting
+
+### Mod Menu Accessibility (`ModMenuAccessibility/`)
+
+- `ModMenuAccessibilityBase` - Abstract base class providing common navigation infrastructure (input handling, UILinkPoint management, announcement patterns)
+- `LinkIdRegistry` - Central registry of base link IDs to prevent UILinkPointNavigator collisions
+
+**Inheritance hierarchy:**
+```
+ModMenuAccessibilityBase (abstract)
+├── ManageModsAccessibilitySystem  (LinkId: 3100)
+├── DownloadModsAccessibilitySystem (LinkId: 3200)
+└── ModInfoAccessibilitySystem      (LinkId: 3300)
+```
+
+### Guidance System Types (`Guidance/`)
+
+- `GuidanceEntry` - Unified struct for all scannable targets (NPC, Player, Interactable, DroppedItem, Critter, Plantlife) with factory methods for each category
 
 ### Configuration
 
