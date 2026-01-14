@@ -24,6 +24,7 @@ namespace ScreenReaderMod.Common.Systems.MenuNarration;
 internal sealed class ModConfigMenuNarrator
 {
     private readonly MenuUiSelectionTracker _uiTracker = new();
+    private readonly string _instanceId = Guid.NewGuid().ToString().Substring(0, 8);
 
     /// <summary>
     /// Returns true if this narrator is currently handling a mod config screen.
@@ -98,6 +99,7 @@ internal sealed class ModConfigMenuNarrator
             return;
         }
 
+        ScreenReaderMod.Instance?.Logger.Info($"[ModConfig][MenuPath] Queuing: '{text}'");
         target.Add(new MenuNarrationEvent(text, force, kind));
     }
 
@@ -107,6 +109,8 @@ internal sealed class ModConfigMenuNarrator
 
     public bool TryBuildMenuEvents(MenuNarrationContext context, List<MenuNarrationEvent> events)
     {
+        ScreenReaderMod.Instance?.Logger.Debug($"[ModConfig][PathDiag][{_instanceId}] TryBuildMenuEvents called, menuMode={context.MenuMode}");
+
         // Accept FancyUI (in-game settings overlay) or the mod config menu modes from main menu
         bool isValidMenuMode = context.MenuMode == MenuID.FancyUI ||
                                context.MenuMode == ModConfigListMenuMode ||
@@ -122,6 +126,8 @@ internal sealed class ModConfigMenuNarrator
             return false;
         }
 
+        ScreenReaderMod.Instance?.Logger.Debug($"[ModConfig][PathDiag][{_instanceId}] MenuPath PROCEEDING with navigation");
+
         return TryHandleState(
             context.UiState,
             Main.MenuUI,
@@ -132,6 +138,8 @@ internal sealed class ModConfigMenuNarrator
 
     public bool TryHandleIngameUi(UserInterface? inGameUi, bool requiresPause)
     {
+        ScreenReaderMod.Instance?.Logger.Debug($"[ModConfig][PathDiag][{_instanceId}] TryHandleIngameUi called, menuMode={Main.menuMode}");
+
         UIState? currentState = inGameUi?.CurrentState;
         if (currentState is null)
         {
@@ -144,6 +152,8 @@ internal sealed class ModConfigMenuNarrator
         bool isModConfigScreen = (ReflectionCache.UIModConfigList.Type is not null && ReflectionCache.UIModConfigList.Type.IsAssignableFrom(stateType)) ||
                                   (ReflectionCache.UIModConfig.Type is not null && ReflectionCache.UIModConfig.Type.IsAssignableFrom(stateType));
 
+        ScreenReaderMod.Instance?.Logger.Debug($"[ModConfig][PathDiag][{_instanceId}] InGamePath: isModConfigScreen={isModConfigScreen}, stateType={stateType.Name}");
+
         if (!isModConfigScreen)
         {
             // For non-mod-config screens, respect the pause requirement
@@ -154,12 +164,18 @@ internal sealed class ModConfigMenuNarrator
             }
         }
 
-        // Only skip mod config when TryBuildMenuEvents will handle it (when MenuMode is FancyUI)
+        // Skip mod config when TryBuildMenuEvents will handle it (via DefaultMenuNarrationHandler)
         // This prevents double processing from the two ModConfigMenuNarrator instances
-        if (isModConfigScreen && Main.menuMode == MenuID.FancyUI)
+        // TryBuildMenuEvents accepts FancyUI, ModConfigListMenuMode (10027), and ModConfigEditMenuMode (10024)
+        if (isModConfigScreen && (Main.menuMode == MenuID.FancyUI ||
+                                   Main.menuMode == ModConfigListMenuMode ||
+                                   Main.menuMode == ModConfigEditMenuMode))
         {
+            ScreenReaderMod.Instance?.Logger.Debug($"[ModConfig][PathDiag][{_instanceId}] InGamePath SKIPPING - menuMode={Main.menuMode}, deferring to MenuPath");
             return false;
         }
+
+        ScreenReaderMod.Instance?.Logger.Debug($"[ModConfig][PathDiag][{_instanceId}] InGamePath PROCEEDING with navigation");
 
         return TryHandleState(
             currentState,
@@ -168,7 +184,7 @@ internal sealed class ModConfigMenuNarrator
             enableNavigation: true,
             (text, force, kind) =>
             {
-                ScreenReaderMod.Instance?.Logger.Info($"[ModConfig][Speech] Speaking: '{text}' (force={force}, kind={kind})");
+                ScreenReaderMod.Instance?.Logger.Info($"[ModConfig][InGamePath] Speaking: '{text}'");
                 ScreenReaderService.Announce(text, force);
             });
     }
@@ -180,8 +196,8 @@ internal sealed class ModConfigMenuNarrator
         bool enableNavigation,
         Action<string, bool, MenuNarrationEventKind> announce)
     {
-        // Tick frame timers each frame
-        _frameTimers.Tick();
+        // Tick frame timers each frame, passing mouse position for mouse-move detection
+        _frameTimers.Tick(Main.mouseX, Main.mouseY);
 
         if (state is null)
         {
@@ -314,12 +330,10 @@ internal sealed class ModConfigMenuNarrator
             ScreenReaderMod.Instance?.Logger.Debug($"[ModConfig] Collected {_modListElements.Count} navigable elements from modList (justEntered={justEnteredScreen})");
             _modListIndex = _modListElements.Count > 0 ? 0 : -1;
 
-            // Move cursor to and announce first item on entry if there are items
+            // Announce first item on entry if there are items
             if (_modListIndex >= 0 && justEnteredScreen)
             {
-                MoveCursorToElement(_modListElements[_modListIndex]);
                 AnnounceModListElement(_modListIndex, announce);
-                _frameTimers.SuppressHover(30); // Suppress hover to prevent double announcement
 
                 // Skip input processing on the first frame to avoid the A button press
                 // that was used to enter the menu from triggering a mod selection
@@ -364,7 +378,6 @@ internal sealed class ModConfigMenuNarrator
                     _pendingConfigListNavigation = false;
                     _stateMachine.TransitionTo(ModConfigNarrationState.ConfigListFocused, state);
                     _configListIndex = 0;
-                    MoveCursorToElement(_configListElements[0]);
 
                     // Announce the config entry - even single-config mods need feedback
                     AnnounceConfigListElement(0, announce);
@@ -390,7 +403,6 @@ internal sealed class ModConfigMenuNarrator
             _stateMachine.TransitionTo(ModConfigNarrationState.ModListFocused, state);
             if (_modListIndex >= 0 && _modListElements is not null && _modListIndex < _modListElements.Count)
             {
-                MoveCursorToElement(_modListElements[_modListIndex]);
                 string listName = LocalizationHelper.GetTextOrFallback("Mods.ScreenReaderMod.ModConfigMenu.ModListName", "Mod list");
                 announce(listName, false, MenuNarrationEventKind.ModConfig);
                 AnnounceModListElement(_modListIndex, announce);
@@ -409,7 +421,6 @@ internal sealed class ModConfigMenuNarrator
                 {
                     _configListIndex = 0;
                 }
-                MoveCursorToElement(_configListElements[_configListIndex]);
                 // Announce the first item directly (skip title announcement)
                 AnnounceConfigListElement(_configListIndex, announce);
                 SoundEngine.PlaySound(SoundID.MenuTick);
@@ -478,7 +489,6 @@ internal sealed class ModConfigMenuNarrator
         if (newIndex != _modListIndex)
         {
             _modListIndex = newIndex;
-            MoveCursorToElement(_modListElements[newIndex]);
             AnnounceModListElement(newIndex, announce);
             SoundEngine.PlaySound(SoundID.MenuTick);
             return true;
@@ -513,7 +523,6 @@ internal sealed class ModConfigMenuNarrator
         if (newIndex != _configListIndex)
         {
             _configListIndex = newIndex;
-            MoveCursorToElement(_configListElements[newIndex]);
             AnnounceConfigListElement(newIndex, announce);
             SoundEngine.PlaySound(SoundID.MenuTick);
             return true;
@@ -706,15 +715,11 @@ internal sealed class ModConfigMenuNarrator
             {
                 _currentElementIndex = 0;
 
-                // Move cursor to first element
-                MoveCursorToElement(_navigableElements[0]);
-
                 // Announce first item on entry
                 if (justEnteredScreen)
                 {
                     ScreenReaderMod.Instance?.Logger.Debug($"[ModConfig] Announcing first element on entry, index=0, type={_navigableElements[0].GetType().Name}");
                     AnnounceConfigElementAtIndex(_currentElementIndex, announce);
-                    _frameTimers.SuppressHover(30); // Suppress hover to prevent double announcement
 
                     // Skip input processing for a few frames to prevent the A button
                     // that was used to enter this screen from triggering actions
@@ -881,17 +886,14 @@ internal sealed class ModConfigMenuNarrator
             // Reset slider tracking when navigating to a new element
             _sliderState.ClearElementTracking();
 
-            // Move cursor to the element
-            MoveCursorToElement(element);
-
-            // Scroll the element into view
-            ScrollElementIntoView(configList, element);
+            // Note: We intentionally do NOT scroll or move cursor here.
+            // - Scrolling caused hover detection issues (cursor ended up over wrong element)
+            // - Cursor movement is unnecessary because we invoke element clicks directly
+            // - Players can manually scroll with right analog stick if needed
+            // - For accessibility, narration is what matters, not visual position
 
             // Announce the element (full label + value)
             AnnounceConfigElementAtIndex(newIndex, announce);
-
-            // Suppress hover announcements for a short time to prevent double-speak
-            _frameTimers.SuppressHover(15);
 
             // Play tick sound
             SoundEngine.PlaySound(SoundID.MenuTick);
@@ -911,9 +913,13 @@ internal sealed class ModConfigMenuNarrator
 
     private void TryAnnounceConfigHover(UserInterface? uiContext, Action<string, bool, MenuNarrationEventKind> announce)
     {
+        // Log the suppression state check
+        ScreenReaderMod.Instance?.Logger.Debug($"[ModConfig][HoverDiag][{_instanceId}] Checking suppression: ShouldSuppressHover={_frameTimers.ShouldSuppressHover}, mouse=({Main.mouseX}, {Main.mouseY})");
+
         // Check suppression flag (timers are ticked in TryHandleState)
         if (_frameTimers.ShouldSuppressHover || uiContext is null)
         {
+            ScreenReaderMod.Instance?.Logger.Debug($"[ModConfig][HoverDiag][{_instanceId}] Suppressed");
             return;
         }
 
@@ -922,6 +928,8 @@ internal sealed class ModConfigMenuNarrator
             return;
         }
 
+        ScreenReaderMod.Instance?.Logger.Debug($"[ModConfig][HoverDiag][{_instanceId}] Got hover: IsNew={hover.IsNew}, Text='{hover.Text}', Element={hover.Element?.GetType().Name ?? "null"}");
+
         if (!hover.IsNew)
         {
             return;
@@ -929,12 +937,16 @@ internal sealed class ModConfigMenuNarrator
 
         // Skip hover announcements for the element we just navigated to via keyboard/gamepad
         // This prevents double announcements where we say "Edge Detection: Static" followed by "Edge Detection"
-        if (hover.Element is not null && ReferenceEquals(hover.Element, _lastNavigatedElement))
+        // Also check if the hovered element is a child of the navigated element (e.g., label inside a config element)
+        if (hover.Element is not null && _lastNavigatedElement is not null &&
+            (ReferenceEquals(hover.Element, _lastNavigatedElement) || IsDescendantOf(hover.Element, _lastNavigatedElement)))
         {
+            ScreenReaderMod.Instance?.Logger.Debug($"[ModConfig][HoverDiag][{_instanceId}] Skipped - hover element matches/is child of lastNavigatedElement");
             return;
         }
 
         string announcement = BuildHoverAnnouncement(hover);
+        ScreenReaderMod.Instance?.Logger.Debug($"[ModConfig][HoverDiag][{_instanceId}] Built announcement: '{announcement}', lastHover='{_lastHoverAnnouncement}'");
         if (string.IsNullOrWhiteSpace(announcement) || string.Equals(announcement, _lastHoverAnnouncement, StringComparison.Ordinal))
         {
             return;
@@ -947,6 +959,7 @@ internal sealed class ModConfigMenuNarrator
         }
 
         _lastHoverAnnouncement = announcement;
+        ScreenReaderMod.Instance?.Logger.Info($"[ModConfig][HoverDiag][{_instanceId}] *** ANNOUNCING HOVER: '{announcement}' ***");
         announce(announcement, false, MenuNarrationEventKind.Hover);
     }
 
@@ -1228,11 +1241,17 @@ internal sealed class ModConfigMenuNarrator
 
         string description = DescribeConfigElement(element);
 
-        ScreenReaderMod.Instance?.Logger.Debug($"[ModConfig] AnnounceConfigElementAtIndex: index={index}, description='{description}'");
+        ScreenReaderMod.Instance?.Logger.Debug($"[ModConfig] AnnounceConfigElementAtIndex: index={index}, element={element.GetType().Name}, description='{description}'");
 
         if (!string.IsNullOrWhiteSpace(description))
         {
             // Just announce the setting without position info
+            ScreenReaderMod.Instance?.Logger.Info($"[ModConfig][NavDiag][{_instanceId}] *** ANNOUNCING NAVIGATION: '{description}' (index={index}) ***");
+
+            // Also update _lastHoverAnnouncement as backup protection - if hover somehow
+            // bypasses suppression, this prevents re-announcing identical content
+            _lastHoverAnnouncement = description;
+
             announce(description, false, MenuNarrationEventKind.ModConfig);
         }
         else
@@ -1701,6 +1720,25 @@ internal sealed class ModConfigMenuNarrator
     #region Navigation Helpers
 
     /// <summary>
+    /// Checks if the given element is a descendant (child, grandchild, etc.) of the ancestor element.
+    /// </summary>
+    private static bool IsDescendantOf(UIElement element, UIElement ancestor)
+    {
+        UIElement? current = element.Parent;
+        while (current is not null)
+        {
+            if (ReferenceEquals(current, ancestor))
+            {
+                return true;
+            }
+
+            current = current.Parent;
+        }
+
+        return false;
+    }
+
+    /// <summary>
     /// Handles the gamepad A button (select) to click the currently focused element in the mod list.
     /// </summary>
     private bool HandleSelectButton()
@@ -2090,7 +2128,6 @@ internal sealed class ModConfigMenuNarrator
         if (newIndex != _currentElementIndex)
         {
             _currentElementIndex = newIndex;
-            MoveCursorToElement(_navigableElements[newIndex]);
             AnnounceElementAtIndex(newIndex, announce);
             SoundEngine.PlaySound(SoundID.MenuTick);
             return true;

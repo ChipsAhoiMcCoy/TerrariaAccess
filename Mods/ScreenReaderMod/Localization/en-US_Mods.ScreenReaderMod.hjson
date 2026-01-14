@@ -9,8 +9,8 @@ Mods: {
 					Tooltip: When enabled, plays a subtle static sound that gets louder as you approach drop-offs (3+ tiles deep) while walking. The sound indicates direction and stops when you stop moving or become airborne.
 				}
 
-				SmartCursorTileSounds: {
-					Label: Smart Cursor Tile Sounds
+				CursorTileSounds: {
+					Label: Cursor Tile Sounds
 					Tooltip: When enabled, Smart Cursor emits a sound when it focuses a new tile. Disable to silence tile focus sounds.
 				}
 
@@ -479,8 +479,8 @@ Configs: {
 			Tooltip: ""
 		}
 
-		SmartCursorTileSounds: {
-			Label: Smart Cursor Tile Sounds
+		CursorTileSounds: {
+			Label: Cursor Tile Sounds
 			Tooltip: ""
 		}
 

@@ -1,4 +1,5 @@
 #nullable enable
+using System;
 using Terraria.UI;
 
 namespace ScreenReaderMod.Common.Systems.MenuNarration;
@@ -145,6 +146,17 @@ internal sealed class NarrationFrameTimers
 {
     private int _suppressHoverFrames;
     private int _skipInputFrames;
+    private int _navigationSuppressionFrames;
+    private int _lastMouseX;
+    private int _lastMouseY;
+
+    // Minimum frames to suppress hover after navigation, regardless of mouse movement.
+    // This prevents Terraria's per-frame mouse position reset from triggering false "movement".
+    private const int MinNavigationSuppressionFrames = 45; // ~750ms at 60fps
+
+    // Pixels of INTENTIONAL movement required to release suppression early (after minimum period).
+    // This is high because Terraria resets mouse position each frame in main menu, causing large jumps.
+    private const int MouseMoveThreshold = 50;
 
     /// <summary>Remaining frames to suppress hover announcements.</summary>
     public int SuppressHoverFrames => _suppressHoverFrames;
@@ -153,7 +165,7 @@ internal sealed class NarrationFrameTimers
     public int SkipInputFrames => _skipInputFrames;
 
     /// <summary>True if hover announcements should be suppressed this frame.</summary>
-    public bool ShouldSuppressHover => _suppressHoverFrames > 0;
+    public bool ShouldSuppressHover => _suppressHoverFrames > 0 || _navigationSuppressionFrames > 0;
 
     /// <summary>True if input processing should be skipped this frame.</summary>
     public bool ShouldSkipInput => _skipInputFrames > 0;
@@ -164,14 +176,26 @@ internal sealed class NarrationFrameTimers
         _suppressHoverFrames = frames;
     }
 
+    /// <summary>
+    /// Suppress hover announcements after navigation.
+    /// Uses a minimum frame-based suppression that cannot be bypassed by mouse position resets,
+    /// then additionally waits for intentional mouse movement.
+    /// </summary>
+    public void SuppressHoverAfterNavigation(int currentMouseX, int currentMouseY)
+    {
+        _navigationSuppressionFrames = MinNavigationSuppressionFrames;
+        _lastMouseX = currentMouseX;
+        _lastMouseY = currentMouseY;
+    }
+
     /// <summary>Skip input processing for the specified number of frames.</summary>
     public void SkipInput(int frames)
     {
         _skipInputFrames = frames;
     }
 
-    /// <summary>Decrements all timers. Call once per frame.</summary>
-    public void Tick()
+    /// <summary>Decrements all timers and checks for mouse movement. Call once per frame.</summary>
+    public void Tick(int currentMouseX = -1, int currentMouseY = -1)
     {
         if (_suppressHoverFrames > 0)
         {
@@ -182,6 +206,32 @@ internal sealed class NarrationFrameTimers
         {
             _skipInputFrames--;
         }
+
+        // Navigation suppression requires minimum time AND intentional mouse movement
+        if (_navigationSuppressionFrames > 0)
+        {
+            _navigationSuppressionFrames--;
+
+            // After minimum period, check for intentional mouse movement to release early
+            // We DON'T check movement during minimum period because Terraria resets mouse position each frame
+            if (_navigationSuppressionFrames == 0 && currentMouseX >= 0 && currentMouseY >= 0)
+            {
+                int deltaX = Math.Abs(currentMouseX - _lastMouseX);
+                int deltaY = Math.Abs(currentMouseY - _lastMouseY);
+
+                // If no significant movement after minimum period, continue suppressing
+                // until user intentionally moves the mouse
+                if (deltaX <= MouseMoveThreshold && deltaY <= MouseMoveThreshold)
+                {
+                    // Keep suppression active by resetting to 1, will check again next frame
+                    _navigationSuppressionFrames = 1;
+                }
+                else
+                {
+                    ScreenReaderMod.Instance?.Logger.Debug($"[ModConfig] Navigation suppression released: mouse delta ({deltaX}, {deltaY})");
+                }
+            }
+        }
     }
 
     /// <summary>Resets all timers to zero.</summary>
@@ -189,6 +239,7 @@ internal sealed class NarrationFrameTimers
     {
         _suppressHoverFrames = 0;
         _skipInputFrames = 0;
+        _navigationSuppressionFrames = 0;
     }
 }
 

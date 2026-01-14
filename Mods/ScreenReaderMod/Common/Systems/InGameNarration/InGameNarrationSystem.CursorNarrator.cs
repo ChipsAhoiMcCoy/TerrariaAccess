@@ -974,8 +974,8 @@ public sealed partial class InGameNarrationSystem
 
         private static void PlayCursorCue(Player player, Vector2 tileCenterWorld, bool hasTile)
         {
-            // Check if smart cursor tile sounds are enabled in config
-            if (!(ScreenReaderModConfig.Instance?.SmartCursorTileSounds ?? true))
+            // Check if cursor tile sounds are enabled in config
+            if (!(ScreenReaderModConfig.Instance?.CursorTileSounds ?? true))
             {
                 return;
             }

@@ -10,17 +10,42 @@ public class ScreenReaderModConfig : ModConfig
 
     public override ConfigScope Mode => ConfigScope.ClientSide;
 
+    // Core feature toggle
+    [DefaultValue(true)]
+    public bool GamepadEmulationEnabled { get; set; } = true;
+
+    // Narration
+    [DefaultValue(false)]
+    public bool AnnounceDamageNumbers { get; set; }
+
+    // Movement audio cues
     [DefaultValue(true)]
     public bool EdgeDetectionEnabled { get; set; } = true;
-
-    [DefaultValue(true)]
-    public bool SmartCursorTileSounds { get; set; } = true;
 
     [DefaultValue(100)]
     [Range(0, 100)]
     [Slider]
     public int FootstepVolume { get; set; } = 100;
 
+    // Multiplayer footsteps
+    [DefaultValue(true)]
+    public bool MultiplayerFootstepsEnabled { get; set; } = true;
+
+    [DefaultValue(50)]
+    [Range(0, 100)]
+    [Slider]
+    public int MultiplayerFootstepVolume { get; set; } = 50;
+
+    // Cursor audio cues
+    [DefaultValue(true)]
+    public bool CursorTileSounds { get; set; } = true;
+
+    [DefaultValue(100)]
+    [Range(0, 100)]
+    [Slider]
+    public int CursorVolume { get; set; } = 100;
+
+    // Other audio cue volumes
     [DefaultValue(100)]
     [Range(0, 100)]
     [Slider]
@@ -36,27 +61,9 @@ public class ScreenReaderModConfig : ModConfig
     [Slider]
     public int InteractableCueVolume { get; set; } = 100;
 
-    [DefaultValue(100)]
-    [Range(0, 100)]
-    [Slider]
-    public int CursorVolume { get; set; } = 100;
-
-    [DefaultValue(false)]
-    public bool AnnounceDamageNumbers { get; set; }
-
+    // Experimental features
     [DefaultValue(true)]
     public bool SpatialInventoryAudio { get; set; } = true;
-
-    [DefaultValue(true)]
-    public bool MultiplayerFootstepsEnabled { get; set; } = true;
-
-    [DefaultValue(50)]
-    [Range(0, 100)]
-    [Slider]
-    public int MultiplayerFootstepVolume { get; set; } = 50;
-
-    [DefaultValue(true)]
-    public bool GamepadEmulationEnabled { get; set; } = true;
 
     public override void OnLoaded()
     {

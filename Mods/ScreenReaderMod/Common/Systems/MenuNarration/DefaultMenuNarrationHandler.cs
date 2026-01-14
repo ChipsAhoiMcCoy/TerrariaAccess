@@ -123,6 +123,12 @@ internal sealed class DefaultMenuNarrationHandler : IMenuNarrationHandler
             return;
         }
 
+        // Handle mod config screens on first frame too
+        if (_modConfigNarrator.TryBuildMenuEvents(context, events))
+        {
+            return;
+        }
+
         if (!TryHandleFocus(context, currentMode, force: true, timestamp, events))
         {
             AnnounceFallback(context, timestamp, events);
@@ -139,6 +145,7 @@ internal sealed class DefaultMenuNarrationHandler : IMenuNarrationHandler
             DownloadModsAccessibilitySystem.IsHandlingGamepadInput ||
             ModConfigMenuNarrator.IsHandlingGamepadInput)
         {
+            ScreenReaderMod.Instance?.Logger.Debug($"[DefaultHandler][HoverDiag] Suppressed by accessibility flag");
             return false;
         }
 
@@ -146,6 +153,7 @@ internal sealed class DefaultMenuNarrationHandler : IMenuNarrationHandler
         // may not catch the initial transition frame before the narrator sets its flag
         if (context.MenuMode == 10027 || context.MenuMode == 10024) // modConfigListID, modConfigID
         {
+            ScreenReaderMod.Instance?.Logger.Debug($"[DefaultHandler][HoverDiag] Suppressed by menu mode {context.MenuMode}");
             return false;
         }
 
@@ -154,6 +162,7 @@ internal sealed class DefaultMenuNarrationHandler : IMenuNarrationHandler
         if (uiStateName == "Terraria.ModLoader.Config.UI.UIModConfigList" ||
             uiStateName == "Terraria.ModLoader.Config.UI.UIModConfig")
         {
+            ScreenReaderMod.Instance?.Logger.Debug($"[DefaultHandler][HoverDiag] Suppressed by UI state type: {uiStateName}");
             return false;
         }
 
@@ -161,6 +170,8 @@ internal sealed class DefaultMenuNarrationHandler : IMenuNarrationHandler
         {
             return false;
         }
+
+        ScreenReaderMod.Instance?.Logger.Debug($"[DefaultHandler][HoverDiag] Got hover: IsNew={hover.IsNew}, Text='{hover.Text}', menuMode={context.MenuMode}, uiState={uiStateName}");
 
         if (!hover.IsNew)
         {
@@ -179,7 +190,7 @@ internal sealed class DefaultMenuNarrationHandler : IMenuNarrationHandler
             return false;
         }
 
-        ScreenReaderMod.Instance?.Logger.Info($"[MenuNarration] UI hover -> {cleaned}");
+        ScreenReaderMod.Instance?.Logger.Info($"[DefaultHandler][HoverDiag] *** ANNOUNCING HOVER: '{cleaned}' ***");
         events.Add(new MenuNarrationEvent(cleaned, false, MenuNarrationEventKind.Hover));
         _state.LastHoverAnnouncement = cleaned;
         _state.LastHoverAnnouncedAt = timestamp;
@@ -612,7 +623,21 @@ internal sealed class DefaultMenuNarrationHandler : IMenuNarrationHandler
             ManageModsAccessibilitySystem.IsHandlingGamepadInput ||
             ModInfoAccessibilitySystem.IsHandlingGamepadInput ||
             DownloadModsAccessibilitySystem.IsHandlingGamepadInput ||
-            AchievementsMenuGamepadSystem.IsHandlingGamepadInput)
+            AchievementsMenuGamepadSystem.IsHandlingGamepadInput ||
+            ModConfigMenuNarrator.IsHandlingGamepadInput)
+        {
+            return false;
+        }
+
+        // Also suppress focus for mod config screens directly - the mod config narrator handles these
+        if (context.MenuMode == 10027 || context.MenuMode == 10024) // modConfigListID, modConfigID
+        {
+            return false;
+        }
+
+        string? uiStateName = context.UiState?.GetType().FullName;
+        if (uiStateName == "Terraria.ModLoader.Config.UI.UIModConfigList" ||
+            uiStateName == "Terraria.ModLoader.Config.UI.UIModConfig")
         {
             return false;
         }
