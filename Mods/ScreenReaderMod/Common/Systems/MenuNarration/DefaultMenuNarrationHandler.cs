@@ -132,7 +132,7 @@ internal sealed class DefaultMenuNarrationHandler : IMenuNarrationHandler
     private bool TryHandleUiHover(MenuNarrationContext context, DateTime timestamp, List<MenuNarrationEvent> events)
     {
         // Suppress hover announcements when accessibility systems are handling gamepad navigation
-        // to avoid conflicting announcements
+        // to avoid conflicting announcements (achievements menu uses hover for narration, so not included here)
         if (WorkshopHubAccessibilitySystem.IsHandlingGamepadInput ||
             ManageModsAccessibilitySystem.IsHandlingGamepadInput ||
             ModInfoAccessibilitySystem.IsHandlingGamepadInput ||
@@ -611,7 +611,8 @@ internal sealed class DefaultMenuNarrationHandler : IMenuNarrationHandler
         if (WorkshopHubAccessibilitySystem.IsHandlingGamepadInput ||
             ManageModsAccessibilitySystem.IsHandlingGamepadInput ||
             ModInfoAccessibilitySystem.IsHandlingGamepadInput ||
-            DownloadModsAccessibilitySystem.IsHandlingGamepadInput)
+            DownloadModsAccessibilitySystem.IsHandlingGamepadInput ||
+            AchievementsMenuGamepadSystem.IsHandlingGamepadInput)
         {
             return false;
         }
@@ -630,6 +631,13 @@ internal sealed class DefaultMenuNarrationHandler : IMenuNarrationHandler
 
         UIState? uiState = context.UiState;
         if (uiState is not null && !_state.SawHoverThisMode && timestamp - _state.ModeEnteredAt < TimeSpan.FromMilliseconds(250))
+        {
+            return false;
+        }
+
+        // For the title menu, wait a few frames for menu item scales to stabilize before announcing.
+        // This prevents announcing incorrect items (e.g., Settings) before the menu settles on Singleplayer.
+        if (currentMode == MenuID.Title && timestamp - _state.ModeEnteredAt < TimeSpan.FromMilliseconds(150))
         {
             return false;
         }
@@ -696,6 +704,12 @@ internal sealed class DefaultMenuNarrationHandler : IMenuNarrationHandler
         int currentMode = context.MenuMode;
 
         if (IsSettingsMenuMode(currentMode) || currentMode == MenuID.Title)
+        {
+            return;
+        }
+
+        // Suppress fallback when accessibility systems are handling gamepad navigation
+        if (AchievementsMenuGamepadSystem.IsHandlingGamepadInput)
         {
             return;
         }

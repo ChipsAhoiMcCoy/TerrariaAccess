@@ -3,7 +3,9 @@ using System;
 using System.Reflection;
 using Microsoft.Xna.Framework.Graphics;
 using MonoMod.RuntimeDetour;
+using Terraria;
 using Terraria.Audio;
+using Terraria.GameInput;
 using Terraria.ID;
 using Terraria.ModLoader;
 using Terraria.UI;
@@ -12,15 +14,11 @@ using Terraria.UI.Gamepad;
 namespace ScreenReaderMod.Common.Systems;
 
 /// <summary>
-/// Fixes UILinkPoint navigation in the achievements menu.
-/// Terraria's SetupGamepadPoints sets category button Down links to the back button (3000)
-/// instead of the achievements list (3001), causing navigation to skip the list when pressing down.
-/// Also plays the menu tick sound when navigating to the achievements list since it lacks
-/// the OnMouseOver handler that category buttons have.
+/// Fixes UILinkPoint navigation in the achievements menu to start on the achievements list
+/// instead of the category filter buttons.
 /// </summary>
 public sealed class AchievementsMenuGamepadSystem : ModSystem
 {
-    private const int BackButtonLinkId = 3000;
     private const int AchievementsListLinkId = 3001;
     private const int FirstCategoryButtonLinkId = 3002;
     private const int MaxCategoryButtons = 5;
@@ -29,9 +27,42 @@ public sealed class AchievementsMenuGamepadSystem : ModSystem
         ?? Type.GetType("Terraria.GameContent.UI.States.UIAchievementsMenu, Terraria");
 
     private delegate void DrawDelegate(UIState self, SpriteBatch spriteBatch);
+    private delegate void OnActivateDelegate(UIState self);
+
     private static Hook? _drawHook;
+    private static Hook? _onActivateHook;
+    private static Hook? _changePointHook;
+
+    /// <summary>
+    /// Number of frames to redirect ChangePoint calls from category buttons to achievements list.
+    /// </summary>
+    private static int _redirectFramesRemaining;
 
     private static int _lastCurrentPoint = -1;
+    private static bool _playedInitialSound;
+
+    /// <summary>
+    /// Returns true if the achievements menu is currently active and handling gamepad input.
+    /// Used by MenuNarration to suppress hover/focus announcements that would conflict.
+    /// </summary>
+    public static bool IsHandlingGamepadInput
+    {
+        get
+        {
+            if (!PlayerInput.UsingGamepadUI)
+            {
+                return false;
+            }
+
+            UIState? currentState = Main.MenuUI?.CurrentState;
+            if (currentState is null || AchievementsMenuType is null)
+            {
+                return false;
+            }
+
+            return currentState.GetType() == AchievementsMenuType;
+        }
+    }
 
     public override void Load()
     {
@@ -41,52 +72,77 @@ public sealed class AchievementsMenuGamepadSystem : ModSystem
         }
 
         MethodInfo? drawMethod = AchievementsMenuType.GetMethod("Draw", BindingFlags.Instance | BindingFlags.Public, null, new[] { typeof(SpriteBatch) }, null);
-        if (drawMethod is null)
+        if (drawMethod is not null)
         {
-            ScreenReaderMod.Instance?.Logger.Warn("[AchievementsMenuGamepad] Could not find UIAchievementsMenu.Draw method");
-            return;
+            _drawHook = new Hook(drawMethod, OnDraw);
         }
 
-        _drawHook = new Hook(drawMethod, OnDraw);
+        MethodInfo? onActivateMethod = AchievementsMenuType.GetMethod("OnActivate", BindingFlags.Instance | BindingFlags.Public);
+        if (onActivateMethod is not null)
+        {
+            _onActivateHook = new Hook(onActivateMethod, OnActivate);
+        }
+
+        // Hook ChangePoint to intercept focus changes during activation
+        MethodInfo? changePointMethod = typeof(UILinkPointNavigator).GetMethod(
+            "ChangePoint",
+            BindingFlags.Static | BindingFlags.Public,
+            null,
+            new[] { typeof(int) },
+            null);
+        if (changePointMethod is not null)
+        {
+            _changePointHook = new Hook(changePointMethod, OnChangePoint);
+        }
     }
 
     public override void Unload()
     {
         _drawHook?.Dispose();
         _drawHook = null;
+        _onActivateHook?.Dispose();
+        _onActivateHook = null;
+        _changePointHook?.Dispose();
+        _changePointHook = null;
+        _redirectFramesRemaining = 0;
         _lastCurrentPoint = -1;
+        _playedInitialSound = false;
+    }
+
+    private static void OnChangePoint(Action<int> orig, int id)
+    {
+        // During activation window, redirect category button focus to achievements list
+        if (_redirectFramesRemaining > 0 && id == FirstCategoryButtonLinkId)
+        {
+            id = AchievementsListLinkId;
+        }
+        orig(id);
+    }
+
+    private static void OnActivate(OnActivateDelegate orig, UIState self)
+    {
+        // Redirect ChangePoint(3002) calls to 3001 for several frames after activation
+        _redirectFramesRemaining = 10;
+        _lastCurrentPoint = -1;
+        _playedInitialSound = false;
+        orig(self);
+
+        // Prevent residual directional input from navigating away from achievements list
+        // The achievements list (3001) has Up=3002, so any Up input would move to category buttons
+        UILinkPointNavigator.ForceMovementCooldown(15);
     }
 
     private static void OnDraw(DrawDelegate orig, UIState self, SpriteBatch spriteBatch)
     {
-        // Call original Draw which includes SetupGamepadPoints
         orig(self, spriteBatch);
 
-        // Now fix the navigation after SetupGamepadPoints has run
-        FixCategoryButtonNavigation();
-
-        // Play tick sound when navigating to achievements list from category buttons
-        PlayNavigationSoundIfNeeded();
-    }
-
-    private static void FixCategoryButtonNavigation()
-    {
-        // Terraria's SetupGamepadPoints sets category button Down to 3000 (back button).
-        // We fix this to point to 3001 (achievements list) so pressing down from filters goes to achievements.
-        for (int i = 0; i < MaxCategoryButtons; i++)
+        // Decrement redirect counter each frame
+        if (_redirectFramesRemaining > 0)
         {
-            int linkId = FirstCategoryButtonLinkId + i;
-            if (!UILinkPointNavigator.Points.TryGetValue(linkId, out UILinkPoint? linkPoint) || linkPoint is null)
-            {
-                continue;
-            }
-
-            // Only fix if Down is currently pointing to back button
-            if (linkPoint.Down == BackButtonLinkId)
-            {
-                linkPoint.Down = AchievementsListLinkId;
-            }
+            _redirectFramesRemaining--;
         }
+
+        PlayNavigationSoundIfNeeded();
     }
 
     private static void PlayNavigationSoundIfNeeded()
@@ -99,13 +155,21 @@ public sealed class AchievementsMenuGamepadSystem : ModSystem
 
         int currentPoint = UILinkPointNavigator.CurrentPoint;
 
-        // Detect navigation from category buttons to achievements list
-        // Category buttons have OnMouseOver handlers that play sounds, but the achievements list doesn't
+        // Play tick sound when navigating to achievements list from category buttons
+        // Only play once per transition to prevent spamming
         if (currentPoint == AchievementsListLinkId &&
             _lastCurrentPoint >= FirstCategoryButtonLinkId &&
-            _lastCurrentPoint < FirstCategoryButtonLinkId + MaxCategoryButtons)
+            _lastCurrentPoint < FirstCategoryButtonLinkId + MaxCategoryButtons &&
+            !_playedInitialSound)
         {
             SoundEngine.PlaySound(SoundID.MenuTick);
+            _playedInitialSound = true;
+        }
+
+        // Reset sound flag when navigating away from achievements list
+        if (currentPoint != AchievementsListLinkId)
+        {
+            _playedInitialSound = false;
         }
 
         _lastCurrentPoint = currentPoint;
