@@ -1,10 +1,12 @@
 #nullable enable
 using System.IO;
+using ScreenReaderMod.Common.Adapters;
 using ScreenReaderMod.Common.Services;
 using ScreenReaderMod.Common.Systems;
 using ScreenReaderMod.Common.Systems.BuildMode;
 using ScreenReaderMod.Common.Systems.Guidance;
 using ScreenReaderMod.Common.Systems.GamepadEmulation;
+using ScreenReaderMod.Common.Utilities;
 using Terraria;
 using Terraria.ModLoader;
 
@@ -24,6 +26,9 @@ public class ScreenReaderMod : Mod
         {
             return;
         }
+
+        // Initialize utility adapters for testability
+        CoinFormatter.DefaultLocalization = new TerrariaLocalizationAdapter();
 
         ScreenReaderService.Initialize();
         WorldAnnouncementService.Initialize();
