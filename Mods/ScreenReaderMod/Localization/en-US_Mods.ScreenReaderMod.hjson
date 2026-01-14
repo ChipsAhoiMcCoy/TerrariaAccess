@@ -107,6 +107,11 @@ Mods: {
 			ToggleOff: Off
 		}
 
+		Achievements: {
+			Completed: Completed
+			Locked: Locked
+		}
+
 		CursorLiquids: {
 			Water: Water
 			Lava: Lava
@@ -279,8 +284,8 @@ Mods: {
 		}
 
 		SearchMode: {
-			NavigationEnabled: Navigation mode. Use arrow keys to browse mods, Enter to select. Press Tab to search.
-			SearchEnabled: Search mode. Type to filter mods. Press Tab to return to navigation.
+			NavigationEnabled: Navigation mode. Use arrow keys to browse, Enter to select. Press Tab to search.
+			SearchEnabled: Search mode. Type to filter. Press Tab to return to navigation.
 		}
 
 		FirstLetterNavigation: {

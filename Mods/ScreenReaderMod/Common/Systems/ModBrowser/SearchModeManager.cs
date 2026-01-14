@@ -44,31 +44,42 @@ internal static class SearchModeManager
 
     /// <summary>
     /// Gets whether the current menu is one where search mode management applies.
-    /// Returns true when in UIModBrowser or UIMods menus.
+    /// Returns true when in UIModBrowser, UIMods, or UIAchievementsMenu.
     /// </summary>
     internal static bool IsRelevantMenu
     {
         get
         {
-            if (!Main.gameMenu)
+            // Check main menu UI
+            if (Main.gameMenu)
             {
-                return false;
+                object? currentState = Main.MenuUI?.CurrentState;
+                if (currentState is not null)
+                {
+                    string? fullName = currentState.GetType().FullName;
+                    if (!string.IsNullOrEmpty(fullName))
+                    {
+                        if (fullName == "Terraria.ModLoader.UI.ModBrowser.UIModBrowser" ||
+                            fullName == "Terraria.ModLoader.UI.UIMods" ||
+                            fullName == "Terraria.GameContent.UI.States.UIAchievementsMenu")
+                        {
+                            return true;
+                        }
+                    }
+                }
             }
 
-            object? currentState = Main.MenuUI?.CurrentState;
-            if (currentState is null)
+            // Check in-game fancy UI (for achievements accessed via pause menu)
+            if (!Main.gameMenu && Main.InGameUI?.CurrentState is not null)
             {
-                return false;
+                string? fullName = Main.InGameUI.CurrentState.GetType().FullName;
+                if (fullName == "Terraria.GameContent.UI.States.UIAchievementsMenu")
+                {
+                    return true;
+                }
             }
 
-            string? fullName = currentState.GetType().FullName;
-            if (string.IsNullOrEmpty(fullName))
-            {
-                return false;
-            }
-
-            return fullName == "Terraria.ModLoader.UI.ModBrowser.UIModBrowser" ||
-                   fullName == "Terraria.ModLoader.UI.UIMods";
+            return false;
         }
     }
 
@@ -191,7 +202,7 @@ internal static class SearchModeManager
     {
         return LocalizationHelper.GetTextOrFallback(
             "Mods.ScreenReaderMod.SearchMode.NavigationEnabled",
-            "Navigation mode. Use arrow keys to browse mods, Enter to select. Press Tab to search.");
+            "Navigation mode. Use arrow keys to browse, Enter to select. Press Tab to search.");
     }
 
     /// <summary>
@@ -201,6 +212,6 @@ internal static class SearchModeManager
     {
         return LocalizationHelper.GetTextOrFallback(
             "Mods.ScreenReaderMod.SearchMode.SearchEnabled",
-            "Search mode. Type to filter mods. Press Tab to return to navigation.");
+            "Search mode. Type to filter. Press Tab to return to navigation.");
     }
 }

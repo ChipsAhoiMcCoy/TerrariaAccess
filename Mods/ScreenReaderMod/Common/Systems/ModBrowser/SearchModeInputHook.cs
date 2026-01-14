@@ -105,6 +105,11 @@ public sealed class SearchModeInputHook : ModSystem
             return;
         }
 
+        // Update search mode state (handles Tab key toggling).
+        // This is called here to support menus without dedicated accessibility systems
+        // (like UIAchievementsMenu) that would otherwise call Update() themselves.
+        SearchModeManager.Update();
+
         // If search mode is active, use original behavior but track text changes for keystroke sound
         if (SearchModeManager.IsSearchModeActive)
         {
