@@ -928,6 +928,14 @@ public sealed partial class InGameNarrationSystem
                 return string.Empty;
             }
 
+            // When build mode is awaiting second corner, use "width by height" format
+            // instead of directional coordinates for easier mental mapping of selection area.
+            var buildModePlayer = Main.LocalPlayer?.GetModPlayer<Players.BuildModePlayer>();
+            if (buildModePlayer?.IsAwaitingSecondCorner == true)
+            {
+                return buildModePlayer.GetSelectionDimensions(tileX, tileY);
+            }
+
             int offsetX = tileX - _originTileX;
             int offsetY = tileY - _originTileY;
 

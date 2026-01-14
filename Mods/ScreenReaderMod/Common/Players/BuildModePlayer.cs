@@ -19,7 +19,6 @@ namespace ScreenReaderMod.Common.Players;
 
 public sealed class BuildModePlayer : ModPlayer
 {
-    private const int CursorAnnouncementCooldownTicks = 6;
     private const int HurtInputGraceTicks = 15;
 
     private enum BuildModeState
@@ -33,8 +32,6 @@ public sealed class BuildModePlayer : ModPlayer
     private BuildModeState _state = BuildModeState.Inactive;
     private Point? _firstCorner;
     private Point? _secondCorner;
-    private Point _lastAnnouncedCursor;
-    private int _cursorAnnounceCooldown;
     private SelectionAction _activeAction;
     private int _activeItemType;
     private int _tilesCleared;
@@ -44,7 +41,6 @@ public sealed class BuildModePlayer : ModPlayer
     private bool _actionCompletedAnnounced;
     private int _actionCooldown;
     private int _autoToolRevertSlot = -1;
-    private string? _lastCursorAnnouncement;
     private bool _wasUseHeld;
     private int _hurtGraceTicks;
     private SelectionIterator _selectionIterator;
@@ -59,8 +55,32 @@ public sealed class BuildModePlayer : ModPlayer
     /// to determine whether extended placement reach should be allowed.
     /// </summary>
     public bool IsBuildModeActive => BuildModeActive;
+
+    /// <summary>
+    /// Returns true if build mode is active and awaiting the second corner selection.
+    /// Used by CursorNarrator to provide "width by height" selection feedback.
+    /// </summary>
+    public bool IsAwaitingSecondCorner => _state == BuildModeState.AwaitingSecondCorner && _firstCorner.HasValue && !_secondCorner.HasValue;
+
+    /// <summary>
+    /// Returns the selection dimensions as "width by height" for the given cursor position.
+    /// Used by CursorNarrator to append to tile announcements during selection.
+    /// </summary>
+    public string GetSelectionDimensions(int cursorTileX, int cursorTileY)
+    {
+        if (!_firstCorner.HasValue)
+        {
+            return string.Empty;
+        }
+
+        int width = Math.Abs(cursorTileX - _firstCorner.Value.X) + 1;
+        int height = Math.Abs(cursorTileY - _firstCorner.Value.Y) + 1;
+
+        return $"{width} by {height}";
+    }
+
     private bool HasSelection => _state == BuildModeState.Executing && _firstCorner.HasValue && _secondCorner.HasValue;
-    private bool AwaitingSecondCorner => _state == BuildModeState.AwaitingSecondCorner && _firstCorner.HasValue && !_secondCorner.HasValue;
+    private bool AwaitingSecondCorner => IsAwaitingSecondCorner;
 
     public override void ResetEffects()
     {
@@ -223,8 +243,6 @@ public sealed class BuildModePlayer : ModPlayer
         _state = BuildModeState.Inactive;
         RestorePlacementRangeIfNeeded();
         ResetSelection();
-        _cursorAnnounceCooldown = 0;
-        _lastAnnouncedCursor = Point.Zero;
         ResetActiveAction();
         _hurtGraceTicks = 0;
         _housingAnnouncer.Reset();
@@ -251,7 +269,6 @@ public sealed class BuildModePlayer : ModPlayer
     {
         _firstCorner = null;
         _secondCorner = null;
-        _lastCursorAnnouncement = null;
         if (_state != BuildModeState.Inactive)
         {
             _state = BuildModeState.AwaitingFirstCorner;
@@ -557,7 +574,6 @@ public sealed class BuildModePlayer : ModPlayer
         if (!_firstCorner.HasValue)
         {
             _firstCorner = tile;
-            _lastAnnouncedCursor = tile;
             _state = BuildModeState.AwaitingSecondCorner;
             ScreenReaderService.Announce(BuildModeNarrationCatalog.PointOneSet());
             return;
@@ -574,7 +590,6 @@ public sealed class BuildModePlayer : ModPlayer
 
         _firstCorner = tile;
         _secondCorner = null;
-        _lastAnnouncedCursor = tile;
         _state = BuildModeState.AwaitingSecondCorner;
         ScreenReaderService.Announce(BuildModeNarrationCatalog.SelectionReset());
     }
@@ -624,69 +639,8 @@ public sealed class BuildModePlayer : ModPlayer
 
     private void AnnounceCursorPositionIfNeeded()
     {
-        if (!BuildModeActive || !_firstCorner.HasValue || _secondCorner.HasValue)
-        {
-            _cursorAnnounceCooldown = 0;
-            return;
-        }
-
-        if (!TryCaptureCursorTileInRange(out Point tile))
-        {
-            _cursorAnnounceCooldown = 0;
-            return;
-        }
-
-        if (_cursorAnnounceCooldown > 0)
-        {
-            _cursorAnnounceCooldown--;
-            return;
-        }
-
-        if (tile == _lastAnnouncedCursor)
-        {
-            return;
-        }
-
-        _lastAnnouncedCursor = tile;
-        _cursorAnnounceCooldown = CursorAnnouncementCooldownTicks;
-
-        string announcement = BuildDirectionalCursorAnnouncement(_firstCorner.Value, tile);
-        if (string.IsNullOrWhiteSpace(announcement))
-        {
-            _lastCursorAnnouncement = null;
-            return;
-        }
-
-        bool suppressRepeats = PlayerInput.UsingGamepad && !IsGamepadDpadPressed();
-        if (suppressRepeats && string.Equals(_lastCursorAnnouncement, announcement, StringComparison.Ordinal))
-        {
-            return;
-        }
-
-        _lastCursorAnnouncement = announcement;
-        ScreenReaderService.Announce(announcement);
-    }
-
-    private string BuildDirectionalCursorAnnouncement(Point origin, Point current)
-    {
-        int deltaX = current.X - origin.X;
-        int deltaY = current.Y - origin.Y;
-
-        List<string> parts = new();
-
-        if (deltaY != 0)
-        {
-            string direction = deltaY > 0 ? "down" : "up";
-            parts.Add($"{Math.Abs(deltaY)} {direction}");
-        }
-
-        if (deltaX != 0)
-        {
-            string direction = deltaX > 0 ? "right" : "left";
-            parts.Add($"{Math.Abs(deltaX)} {direction}");
-        }
-
-        return parts.Count == 0 ? string.Empty : string.Join(", ", parts);
+        // Cursor position announcements during build mode selection are now handled
+        // by CursorNarrator, which appends "width by height" to tile announcements.
     }
 
     private static bool RequiresAxe(Tile tile)
