@@ -1,0 +1,50 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <TargetFramework>net8.0</TargetFramework>
+    <LangVersion>12.0</LangVersion>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <IsPackable>false</IsPackable>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <PackageReference Include="Microsoft.NET.Test.Sdk" Version="17.8.0" />
+    <PackageReference Include="xunit" Version="2.6.6" />
+    <PackageReference Include="xunit.runner.visualstudio" Version="2.5.6">
+      <PrivateAssets>all</PrivateAssets>
+      <IncludeAssets>runtime; build; native; contentfiles; analyzers; buildtransitive</IncludeAssets>
+    </PackageReference>
+    <PackageReference Include="Moq" Version="4.20.70" />
+    <PackageReference Include="FluentAssertions" Version="6.12.0" />
+    <PackageReference Include="coverlet.collector" Version="6.0.0">
+      <PrivateAssets>all</PrivateAssets>
+      <IncludeAssets>runtime; build; native; contentfiles; analyzers; buildtransitive</IncludeAssets>
+    </PackageReference>
+    <!-- MonoGame for Vector2, MathHelper -->
+    <PackageReference Include="MonoGame.Framework.DesktopGL" Version="3.8.1.303" />
+  </ItemGroup>
+
+  <!--
+    Note: We cannot directly reference ScreenReaderMod.csproj because it uses tModLoader targets
+    that require the full Terraria/tModLoader installation. Instead, we'll use source linking
+    or compile the testable files directly.
+  -->
+  <ItemGroup>
+    <!-- Tier 1: Pure functions with no external dependencies -->
+    <Compile Include="..\..\Mods\ScreenReaderMod\Common\Services\SpatialAudioPanner.cs" Link="Sources\SpatialAudioPanner.cs" />
+    <Compile Include="..\..\Mods\ScreenReaderMod\Common\Services\SoundLoudnessUtility.cs" Link="Sources\SoundLoudnessUtility.cs" />
+    <Compile Include="..\..\Mods\ScreenReaderMod\Common\Services\SynthesizedSoundFactory.cs" Link="Sources\SynthesizedSoundFactory.cs" />
+    <Compile Include="..\..\Mods\ScreenReaderMod\Common\Systems\Guidance\GuidanceEntry.cs" Link="Sources\GuidanceEntry.cs" />
+    <Compile Include="..\..\Mods\ScreenReaderMod\Common\Systems\GamepadEmulation\GamepadEmulationState.cs" Link="Sources\GamepadEmulationState.cs" />
+    <!-- Tier 2: Testable with interfaces or stubs -->
+    <Compile Include="..\..\Mods\ScreenReaderMod\Common\Abstractions\ITerrariaLocalization.cs" Link="Sources\ITerrariaLocalization.cs" />
+    <Compile Include="..\..\Mods\ScreenReaderMod\Common\Utilities\CoinFormatter.cs" Link="Sources\CoinFormatter.cs" />
+    <Compile Include="..\..\Mods\ScreenReaderMod\Common\Utilities\TextSanitizer.cs" Link="Sources\TextSanitizer.cs" />
+    <Compile Include="..\..\Mods\ScreenReaderMod\Common\Utilities\GlyphTagFormatter.cs" Link="Sources\GlyphTagFormatter.cs" />
+    <Compile Include="..\..\Mods\ScreenReaderMod\Common\Utilities\ChatLineParser.cs" Link="Sources\ChatLineParser.cs" />
+    <Compile Include="..\..\Mods\ScreenReaderMod\Common\Utilities\NarrationStringCatalog.cs" Link="Sources\NarrationStringCatalog.cs" />
+    <Compile Include="..\..\Mods\ScreenReaderMod\Common\Utilities\SliderNarrationHelper.cs" Link="Sources\SliderNarrationHelper.cs" />
+  </ItemGroup>
+
+</Project>

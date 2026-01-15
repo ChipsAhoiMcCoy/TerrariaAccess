@@ -2,8 +2,10 @@
 using System;
 using System.Collections.Generic;
 using ScreenReaderMod.Common.Systems;
+using ScreenReaderMod.Common.Systems.MenuNarration.ModConfig;
 using ScreenReaderMod.Common.Utilities;
 using Terraria;
+using Terraria.ID;
 using Terraria.GameContent.UI;
 using Terraria.Localization;
 using Terraria.UI;
@@ -15,7 +17,7 @@ internal sealed class DefaultMenuNarrationHandler : IMenuNarrationHandler
 {
     private readonly MenuFocusResolver _focusResolver = new();
     private readonly MenuUiSelectionTracker _uiSelectionTracker = new();
-    private readonly ModConfigMenuNarrator _modConfigNarrator = new();
+    private readonly ModConfigNarrationCoordinator _modConfigCoordinator = new();
     private readonly MenuNarrationState _state = new();
     private MenuUiSelectionTracker.WorldCreationSnapshot _lastWorldCreationSnapshot;
     private bool _modeJustEntered;
@@ -32,7 +34,7 @@ internal sealed class DefaultMenuNarrationHandler : IMenuNarrationHandler
         _state.ModeEnteredAt = context.Timestamp;
         _focusResolver.Reset();
         _uiSelectionTracker.Reset();
-        _modConfigNarrator.Reset();
+        _modConfigCoordinator.Reset();
         _lastWorldCreationSnapshot = default;
     }
 
@@ -40,7 +42,7 @@ internal sealed class DefaultMenuNarrationHandler : IMenuNarrationHandler
     {
         _focusResolver.Reset();
         _uiSelectionTracker.Reset();
-        _modConfigNarrator.Reset();
+        _modConfigCoordinator.Reset();
         _state.ResetAll();
         _lastWorldCreationSnapshot = default;
         _modeJustEntered = false;
@@ -76,14 +78,14 @@ internal sealed class DefaultMenuNarrationHandler : IMenuNarrationHandler
             return events;
         }
 
-        if (_modConfigNarrator.TryBuildMenuEvents(context, events))
+        if (_modConfigCoordinator.TryBuildMenuEvents(context, events))
         {
             return events;
         }
 
         if (!TryHandleFocus(context, currentMode, force: false, now, events))
         {
-            AnnounceFallback(currentMode, now, events);
+            AnnounceFallback(context, now, events);
         }
 
         return events;
@@ -95,12 +97,9 @@ internal sealed class DefaultMenuNarrationHandler : IMenuNarrationHandler
         bool modeRepeat = !string.IsNullOrWhiteSpace(_state.LastModeAnnouncement) &&
             string.Equals(modeLabel, _state.LastModeAnnouncement, StringComparison.OrdinalIgnoreCase) &&
             timestamp - _state.LastModeAnnouncedAt < TimeSpan.FromSeconds(1);
-        if (!modeRepeat)
-        {
-            events.Add(new MenuNarrationEvent($"{modeLabel}.", true, MenuNarrationEventKind.ModeChanged));
-            _state.LastModeAnnouncement = modeLabel;
-            _state.LastModeAnnouncedAt = timestamp;
-        }
+        // Suppress explicit menu title announcements; focus/hover events will provide context.
+        _state.LastModeAnnouncement = modeLabel;
+        _state.LastModeAnnouncedAt = timestamp;
 
         MenuNarrationCatalog.LogMenuSnapshot(currentMode);
 
@@ -125,18 +124,55 @@ internal sealed class DefaultMenuNarrationHandler : IMenuNarrationHandler
             return;
         }
 
+        // Handle mod config screens on first frame too
+        if (_modConfigCoordinator.TryBuildMenuEvents(context, events))
+        {
+            return;
+        }
+
         if (!TryHandleFocus(context, currentMode, force: true, timestamp, events))
         {
-            AnnounceFallback(currentMode, timestamp, events);
+            AnnounceFallback(context, timestamp, events);
         }
     }
 
     private bool TryHandleUiHover(MenuNarrationContext context, DateTime timestamp, List<MenuNarrationEvent> events)
     {
+        // Suppress hover announcements when accessibility systems are handling gamepad navigation
+        // to avoid conflicting announcements (achievements menu uses hover for narration, so not included here)
+        if (WorkshopHubAccessibilitySystem.IsHandlingGamepadInput ||
+            ManageModsAccessibilitySystem.IsHandlingGamepadInput ||
+            ModInfoAccessibilitySystem.IsHandlingGamepadInput ||
+            DownloadModsAccessibilitySystem.IsHandlingGamepadInput ||
+            ModConfigNarrationCoordinator.IsHandlingGamepadInput)
+        {
+            ScreenReaderMod.Instance?.Logger.Debug($"[DefaultHandler][HoverDiag] Suppressed by accessibility flag");
+            return false;
+        }
+
+        // Also suppress hovers for mod config menu modes directly - the flag check above
+        // may not catch the initial transition frame before the narrator sets its flag
+        if (context.MenuMode == 10027 || context.MenuMode == 10024) // modConfigListID, modConfigID
+        {
+            ScreenReaderMod.Instance?.Logger.Debug($"[DefaultHandler][HoverDiag] Suppressed by menu mode {context.MenuMode}");
+            return false;
+        }
+
+        // Suppress hovers when the UI state is a mod config screen (menu mode may be 888/FancyUI)
+        string? uiStateName = context.UiState?.GetType().FullName;
+        if (uiStateName == "Terraria.ModLoader.Config.UI.UIModConfigList" ||
+            uiStateName == "Terraria.ModLoader.Config.UI.UIModConfig")
+        {
+            ScreenReaderMod.Instance?.Logger.Debug($"[DefaultHandler][HoverDiag] Suppressed by UI state type: {uiStateName}");
+            return false;
+        }
+
         if (!_uiSelectionTracker.TryGetHoverLabel(Main.MenuUI, out MenuUiLabel hover))
         {
             return false;
         }
+
+        ScreenReaderMod.Instance?.Logger.Debug($"[DefaultHandler][HoverDiag] Got hover: IsNew={hover.IsNew}, Text='{hover.Text}', menuMode={context.MenuMode}, uiState={uiStateName}");
 
         if (!hover.IsNew)
         {
@@ -149,7 +185,13 @@ internal sealed class DefaultMenuNarrationHandler : IMenuNarrationHandler
             return false;
         }
 
-        ScreenReaderMod.Instance?.Logger.Info($"[MenuNarration] UI hover -> {cleaned}");
+        if (!IsAllowedHover(context.MenuMode, cleaned))
+        {
+            ScreenReaderMod.Instance?.Logger.Info($"[MenuNarration] UI hover suppressed -> {cleaned}");
+            return false;
+        }
+
+        ScreenReaderMod.Instance?.Logger.Info($"[DefaultHandler][HoverDiag] *** ANNOUNCING HOVER: '{cleaned}' ***");
         events.Add(new MenuNarrationEvent(cleaned, false, MenuNarrationEventKind.Hover));
         _state.LastHoverAnnouncement = cleaned;
         _state.LastHoverAnnouncedAt = timestamp;
@@ -183,9 +225,11 @@ internal sealed class DefaultMenuNarrationHandler : IMenuNarrationHandler
         if (!hasSliderIndex && !hasSpecialSlider)
         {
             ResetSliderTracking();
+
             if (audioMenu)
             {
-                _state.ForceNextFocus = true;
+                // Wait for the slider links to appear before narrating to avoid duplicate preamble lines.
+                return true;
             }
 
             return false;
@@ -295,6 +339,93 @@ internal sealed class DefaultMenuNarrationHandler : IMenuNarrationHandler
         ScreenReaderMod.Instance?.Logger.Info($"[MenuNarration] Slider {sliderId} ({kind}) -> {announcement}");
         events.Add(new MenuNarrationEvent(announcement, true, MenuNarrationEventKind.Slider));
         return true;
+    }
+
+    private bool IsAllowedHover(int menuMode, string cleanedLabel)
+    {
+        if (string.IsNullOrWhiteSpace(cleanedLabel))
+        {
+            return false;
+        }
+
+        string lower = cleanedLabel.ToLowerInvariant();
+
+        if (menuMode == MenuID.Title)
+        {
+            // Only allow known main menu entries; suppress stray tooltips like Steam join messages or migration prompts.
+            string[] allowed =
+            {
+                TextSanitizer.Clean(Lang.menu[12].Value), // Single Player
+                TextSanitizer.Clean(Lang.menu[13].Value), // Multiplayer
+                TextSanitizer.Clean(Lang.menu[131].Value), // Achievements
+                TextSanitizer.Clean(Language.GetTextValue("UI.Workshop")),
+                TextSanitizer.Clean(Lang.menu[14].Value), // Settings
+                TextSanitizer.Clean(Language.GetTextValue("UI.Credits")),
+                TextSanitizer.Clean(Lang.menu[15].Value), // Exit
+            };
+
+            foreach (string allowedLabel in allowed)
+            {
+                if (!string.IsNullOrWhiteSpace(allowedLabel) &&
+                    string.Equals(cleanedLabel, allowedLabel, StringComparison.OrdinalIgnoreCase))
+                {
+                    return true;
+                }
+            }
+
+            return false;
+        }
+
+        if (IsSettingsMenuMode(menuMode))
+        {
+            // Filter out header-like audio text and menu titles.
+            if (lower.Contains("volume") || lower.Contains("audio") || lower.Contains("sound"))
+            {
+                return false;
+            }
+        }
+
+        if (menuMode == 10017 && lower.Contains("tmodloader"))
+        {
+            return false;
+        }
+
+        string modeLabel = MenuNarrationCatalog.DescribeMenuMode(menuMode);
+        if (!string.IsNullOrWhiteSpace(modeLabel) &&
+            string.Equals(cleanedLabel, TextSanitizer.Clean(modeLabel), StringComparison.OrdinalIgnoreCase))
+        {
+            return false;
+        }
+
+        return true;
+    }
+
+    private bool ShouldSuppressHover(int menuMode, string cleanedLabel)
+    {
+        if (string.IsNullOrWhiteSpace(cleanedLabel))
+        {
+            return true;
+        }
+
+        string modeLabel = MenuNarrationCatalog.DescribeMenuMode(menuMode);
+        if (!string.IsNullOrWhiteSpace(modeLabel) &&
+            string.Equals(cleanedLabel, TextSanitizer.Clean(modeLabel), StringComparison.OrdinalIgnoreCase))
+        {
+            return true;
+        }
+
+        string lower = cleanedLabel.ToLowerInvariant();
+        if (IsSettingsMenuMode(menuMode) && (lower.Contains("volume") || lower.Contains("audio") || lower.Contains("sound")))
+        {
+            return true;
+        }
+
+        if (menuMode == 10017 && lower.Contains("tmodloader"))
+        {
+            return true;
+        }
+
+        return false;
     }
 
     private static bool IsSettingsMenuMode(int menuMode)
@@ -488,6 +619,30 @@ internal sealed class DefaultMenuNarrationHandler : IMenuNarrationHandler
 
     private bool TryHandleFocus(MenuNarrationContext context, int currentMode, bool force, DateTime timestamp, List<MenuNarrationEvent> events)
     {
+        // Suppress focus announcements when accessibility systems are handling gamepad navigation
+        if (WorkshopHubAccessibilitySystem.IsHandlingGamepadInput ||
+            ManageModsAccessibilitySystem.IsHandlingGamepadInput ||
+            ModInfoAccessibilitySystem.IsHandlingGamepadInput ||
+            DownloadModsAccessibilitySystem.IsHandlingGamepadInput ||
+            AchievementsMenuGamepadSystem.IsHandlingGamepadInput ||
+            ModConfigNarrationCoordinator.IsHandlingGamepadInput)
+        {
+            return false;
+        }
+
+        // Also suppress focus for mod config screens directly - the mod config narrator handles these
+        if (context.MenuMode == 10027 || context.MenuMode == 10024) // modConfigListID, modConfigID
+        {
+            return false;
+        }
+
+        string? uiStateName = context.UiState?.GetType().FullName;
+        if (uiStateName == "Terraria.ModLoader.Config.UI.UIModConfigList" ||
+            uiStateName == "Terraria.ModLoader.Config.UI.UIModConfig")
+        {
+            return false;
+        }
+
         if (!_focusResolver.TryGetFocus(context.Main, out MenuFocus focus))
         {
             if (_state.FocusFailureCount++ < 5)
@@ -502,6 +657,13 @@ internal sealed class DefaultMenuNarrationHandler : IMenuNarrationHandler
 
         UIState? uiState = context.UiState;
         if (uiState is not null && !_state.SawHoverThisMode && timestamp - _state.ModeEnteredAt < TimeSpan.FromMilliseconds(250))
+        {
+            return false;
+        }
+
+        // For the title menu, wait a few frames for menu item scales to stabilize before announcing.
+        // This prevents announcing incorrect items (e.g., Settings) before the menu settles on Singleplayer.
+        if (currentMode == MenuID.Title && timestamp - _state.ModeEnteredAt < TimeSpan.FromMilliseconds(150))
         {
             return false;
         }
@@ -563,8 +725,26 @@ internal sealed class DefaultMenuNarrationHandler : IMenuNarrationHandler
         return true;
     }
 
-    private void AnnounceFallback(int currentMode, DateTime timestamp, List<MenuNarrationEvent> events)
+    private void AnnounceFallback(MenuNarrationContext context, DateTime timestamp, List<MenuNarrationEvent> events)
     {
+        int currentMode = context.MenuMode;
+
+        if (IsSettingsMenuMode(currentMode) || currentMode == MenuID.Title)
+        {
+            return;
+        }
+
+        // Suppress fallback when accessibility systems are handling gamepad navigation
+        if (AchievementsMenuGamepadSystem.IsHandlingGamepadInput)
+        {
+            return;
+        }
+
+        if (context.UiState is not null && !_state.SawHoverThisMode)
+        {
+            return;
+        }
+
         if (_state.AnnouncedFallback)
         {
             return;

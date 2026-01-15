@@ -5,8 +5,8 @@ namespace ScreenReaderMod.Common.Systems.BuildMode;
 
 internal static class BuildModeNarrationCatalog
 {
-    public static string Enabled() => "Build mode enabled. Mark two corners, then hold use to act.";
-    public static string Disabled() => "Build mode disabled.";
+    public static string Enabled(bool outlineMode) => outlineMode ? "Build Mode: Outline." : "Build Mode: Fill.";
+    public static string Disabled() => "Build Mode: Disabled.";
     public static string CursorOutOfBounds() => "Build mode: cursor is out of world bounds.";
     public static string PointOneSet() => "Build mode: point one set.";
     public static string SelectionReset() => "Build mode: selection reset. Point one set.";
@@ -17,4 +17,9 @@ internal static class BuildModeNarrationCatalog
     public static string CannotPlaceTiles() => "Build mode: could not place tiles in the selected area.";
     public static string PlacedWalls(int count, string wallName) => $"Build mode: placed {count} walls of {TextSanitizer.Clean(wallName)}.";
     public static string CannotPlaceWalls() => "Build mode: could not place walls in the selected area.";
+
+    // Housing announcements
+    public static string HousingSuitable() => "Suitable housing.";
+    public static string HousingOccupied(string npcName) => $"{TextSanitizer.Clean(npcName)}'s house.";
+    public static string HousingMissingFurniture(string missingItems) => $"Unsuitable housing: missing {missingItems}.";
 }

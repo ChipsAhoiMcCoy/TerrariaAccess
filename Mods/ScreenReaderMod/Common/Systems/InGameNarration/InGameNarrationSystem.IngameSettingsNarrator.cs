@@ -34,6 +34,10 @@ public sealed partial class InGameNarrationSystem
 {
     private sealed class IngameSettingsNarrator
     {
+        private const int NoFocusAnnouncementDelayTicks = 12;
+        private const int NoFocusRepeatIntervalTicks = 90;
+        private const int MenuOpenSettleDelayTicks = 6;
+
         private static readonly string[] DefaultCategoryLabels =
         {
             TextSanitizer.Clean(Lang.menu[114].Value),
@@ -130,6 +134,7 @@ public sealed partial class InGameNarrationSystem
         private static bool _loggedFieldCatalog;
 
         private int _lastLeftHover = int.MinValue;
+        private int _lastSelectedLeftIndex = int.MinValue;
         private int _lastLoggedLeftHover = int.MinValue;
         private int _lastLoggedRightHover = int.MinValue;
         private int _lastLoggedCategory = int.MinValue;
@@ -148,11 +153,16 @@ public sealed partial class InGameNarrationSystem
         private bool _forceCategoryAnnouncement;
         private string? _lastTickKey;
         private uint _lastTickFrame;
+        private int _noFocusFrameCount;
+        private int _menuOpenSettleFrames;
+        private int _lastRawCategory = int.MinValue;
+        private bool _wasOptionFocused;
 
         public void OnMenuOpened()
         {
             Reset();
             _forceCategoryAnnouncement = true;
+            _menuOpenSettleFrames = MenuOpenSettleDelayTicks;
         }
 
         public void OnMenuClosed()
@@ -179,22 +189,35 @@ public sealed partial class InGameNarrationSystem
 
             LogStateChanges(leftHover, rightHover, rawCategory, special);
 
-            if (leftHover >= 0 && leftHover != _lastLeftHover)
+            bool leftHoverChanged = leftHover >= 0 && leftHover != _lastLeftHover;
+            if (leftHoverChanged)
             {
-                string? label = GetLeftCategoryLabel(leftHover, allowMouseTextFallback: true);
-                if (!string.IsNullOrWhiteSpace(label))
-                {
-                    PlayTickIfNew($"left-{leftHover}");
-                    ScreenReaderService.Announce(label);
-                }
-
                 _lastLeftHover = leftHover;
             }
 
             int selectedLeftIndex = leftLock >= 0 ? leftLock : leftHover;
             int categoryId = ResolveCategoryId(rawCategory, selectedLeftIndex);
 
+            // Detect when rawCategory changed but leftHover hasn't caught up yet.
+            // This happens when navigating up the list - the category updates one frame
+            // before leftHover. Wait for leftHover to sync before announcing to avoid
+            // duplicate announcements (first with wrong label, then with correct label).
+            bool rawCategoryChanged = rawCategory != _lastRawCategory;
+            bool categoryAndHoverOutOfSync = rawCategoryChanged && !leftHoverChanged && leftHover >= 0;
+            _lastRawCategory = rawCategory;
+
             string? categoryLabel = GetCategoryLabelById(categoryId, selectedLeftIndex, leftHover);
+            // Detect returning to category list from option editing.
+            // When user exits an options list back to the category list, re-announce the category.
+            bool noOptionFocused = rightHover < 0 && rightLock < 0;
+            bool returnedToCategoryList = noOptionFocused && _wasOptionFocused && selectedLeftIndex >= 0;
+            _wasOptionFocused = !noOptionFocused;
+
+            if (returnedToCategoryList && !string.IsNullOrWhiteSpace(categoryLabel))
+            {
+                _forceCategoryAnnouncement = true;
+            }
+
             if (!string.IsNullOrWhiteSpace(categoryLabel))
             {
                 bool categoryChanged = categoryId != _lastCategory;
@@ -205,17 +228,61 @@ public sealed partial class InGameNarrationSystem
 
                 if (categoryChanged || _forceCategoryAnnouncement)
                 {
-                    PlayTickIfNew($"cat-{categoryId}");
-                    ScreenReaderService.Announce(categoryLabel);
-                    _lastCategory = categoryId;
-                    _lastCategoryLabel = categoryLabel;
-                    _forceCategoryAnnouncement = false;
+                    // Always announce category on menu open (_forceCategoryAnnouncement),
+                    // or when navigating between categories with no option focused.
+                    // Skip announcement if category and leftHover are out of sync to avoid
+                    // duplicate announcements when navigating up.
+                    bool shouldAnnounce = (noOptionFocused || _forceCategoryAnnouncement) && !categoryAndHoverOutOfSync;
+                    if (shouldAnnounce)
+                    {
+                        PlayTickIfNew($"cat-{categoryId}");
+                        ScreenReaderService.Announce(categoryLabel, force: true);
+                    }
+
+                    // Only update tracking state if we're announcing or if synced.
+                    // If out of sync, don't update so we announce on the next frame when synced.
+                    if (!categoryAndHoverOutOfSync)
+                    {
+                        _lastCategory = categoryId;
+                        _lastCategoryLabel = categoryLabel;
+                        _forceCategoryAnnouncement = false;
+                    }
                 }
+            }
+            _lastSelectedLeftIndex = selectedLeftIndex;
+
+            // Allow UI to settle after menu opens before processing option announcements.
+            // The game's focus can briefly jump to random options during the first few frames.
+            if (_menuOpenSettleFrames > 0)
+            {
+                _menuOpenSettleFrames--;
+                return;
             }
 
             if (rightHover < 0)
             {
                 rightHover = rightLock;
+            }
+
+            bool hasFocus = selectedLeftIndex >= 0 || rightHover >= 0 || rightLock >= 0;
+            if (hasFocus)
+            {
+                _noFocusFrameCount = 0;
+            }
+            else
+            {
+                _noFocusFrameCount++;
+                bool readyToAnnounce = _noFocusFrameCount == NoFocusAnnouncementDelayTicks ||
+                    (_noFocusFrameCount > NoFocusAnnouncementDelayTicks &&
+                        (_noFocusFrameCount - NoFocusAnnouncementDelayTicks) % NoFocusRepeatIntervalTicks == 0);
+
+                if (readyToAnnounce)
+                {
+                    string fallbackLabel = string.IsNullOrWhiteSpace(categoryLabel) ? "Settings" : categoryLabel;
+                    string announcement = $"{fallbackLabel} (no option selected)";
+                    PlayTickIfNew($"cat-stale-{categoryId}");
+                    ScreenReaderService.Announce(announcement, force: true);
+                }
             }
 
             bool optionIndicesChanged = rightHover != _lastRightHover || categoryId != _lastRightLock;
@@ -606,25 +673,24 @@ public sealed partial class InGameNarrationSystem
 
         private string? GetLeftCategoryLabel(int leftIndex, bool allowMouseTextFallback)
         {
+            // Note: allowMouseTextFallback is intentionally unused now.
+            // mouseOverText is unreliable (can contain stale/concatenated data),
+            // so we only use labels captured from the actual draw calls.
+            _ = allowMouseTextFallback;
+
             if (leftIndex < 0)
             {
                 return null;
             }
 
+            // Primary source: labels captured from DrawLeftSide calls
             if (IngameOptionsLabelTracker.TryGetLeftLabel(leftIndex, out string label) && !string.IsNullOrWhiteSpace(label))
             {
                 return label;
             }
 
-            if (allowMouseTextFallback)
-            {
-                string mouseText = ReadString(_mouseOverTextField);
-                if (!string.IsNullOrWhiteSpace(mouseText))
-                {
-                    return TextSanitizer.Clean(mouseText);
-                }
-            }
-
+            // Static fallback arrays for vanilla Terraria menu indices.
+            // Note: These may not match tModLoader's extended menu layout.
             if ((uint)leftIndex < (uint)CategoryLabelOverrides.Length)
             {
                 string overrideLabel = CategoryLabelOverrides[leftIndex];
@@ -636,22 +702,35 @@ public sealed partial class InGameNarrationSystem
 
             if ((uint)leftIndex < (uint)DefaultCategoryLabels.Length)
             {
-                return DefaultCategoryLabels[leftIndex];
+                string defaultLabel = DefaultCategoryLabels[leftIndex];
+                if (!string.IsNullOrWhiteSpace(defaultLabel))
+                {
+                    return defaultLabel;
+                }
             }
 
+            // Don't use mouseOverText as fallback - it's unreliable and causes
+            // stale labels to be announced for multiple different menu items.
             return null;
         }
 
         private string? GetCategoryLabelById(int categoryId, int selectedLeftIndex, int leftHover)
         {
-            if (categoryId >= 0 && IngameOptionsLabelTracker.TryGetCategoryLabel(categoryId, out string label) && !string.IsNullOrWhiteSpace(label))
-            {
-                return label;
-            }
+            // Priority: live left label -> mapped category label -> fallback tables
+            _ = leftHover; // Previously used for mouseOverText fallback, now unused
 
-            if (selectedLeftIndex >= 0 && IngameOptionsLabelTracker.TryGetLeftLabel(selectedLeftIndex, out string leftLabel) && !string.IsNullOrWhiteSpace(leftLabel))
+            if (selectedLeftIndex >= 0 &&
+                IngameOptionsLabelTracker.TryGetLeftLabel(selectedLeftIndex, out string leftLabel) &&
+                !string.IsNullOrWhiteSpace(leftLabel))
             {
                 return leftLabel;
+            }
+
+            if (categoryId >= 0 &&
+                IngameOptionsLabelTracker.TryGetCategoryLabel(categoryId, out string label) &&
+                !string.IsNullOrWhiteSpace(label))
+            {
+                return label;
             }
 
             if (categoryId >= 0 &&
@@ -661,28 +740,29 @@ public sealed partial class InGameNarrationSystem
                 return fallbackLabel;
             }
 
-            if (selectedLeftIndex >= 0)
+            if (selectedLeftIndex < 0)
             {
-                bool allowMouseFallback = leftHover == selectedLeftIndex;
-                return GetLeftCategoryLabel(selectedLeftIndex, allowMouseTextFallback: allowMouseFallback);
+                return null;
             }
 
-            return null;
+            return GetLeftCategoryLabel(selectedLeftIndex, allowMouseTextFallback: false);
         }
 
         private int ResolveCategoryId(int rawCategory, int selectedLeftIndex)
         {
+            if (selectedLeftIndex >= 0 &&
+                IngameOptionsLabelTracker.TryMapLeftToCategory(selectedLeftIndex, out int mappedCategory))
+            {
+                return mappedCategory;
+            }
+
             if (rawCategory >= 0)
             {
                 return rawCategory;
             }
 
-            if (selectedLeftIndex >= 0 && IngameOptionsLabelTracker.TryMapLeftToCategory(selectedLeftIndex, out int mapped))
-            {
-                return mapped;
-            }
-
-            return rawCategory;
+            // Fall back to the left index so we still treat wrap-around as a category change.
+            return selectedLeftIndex;
         }
 
         private string? DescribeOption(int category, int option, string? categoryLabel, bool optionIndicesChanged)
@@ -1176,6 +1256,7 @@ public sealed partial class InGameNarrationSystem
         private void Reset()
         {
             _lastLeftHover = int.MinValue;
+            _lastSelectedLeftIndex = int.MinValue;
             _lastLoggedLeftHover = int.MinValue;
             _lastLoggedRightHover = int.MinValue;
             _lastLoggedCategory = int.MinValue;
@@ -1194,6 +1275,10 @@ public sealed partial class InGameNarrationSystem
             _forceCategoryAnnouncement = false;
             _lastTickKey = null;
             _lastTickFrame = 0;
+            _noFocusFrameCount = 0;
+            _menuOpenSettleFrames = 0;
+            _lastRawCategory = int.MinValue;
+            _wasOptionFocused = false;
         }
 
         private void PlayTickIfNew(string key)

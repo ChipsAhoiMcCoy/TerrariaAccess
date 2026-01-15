@@ -3,6 +3,7 @@ using System;
 using System.Collections.Generic;
 using Microsoft.Xna.Framework;
 using Microsoft.Xna.Framework.Audio;
+using ScreenReaderMod.Common;
 using ScreenReaderMod.Common.Services;
 using Terraria;
 
@@ -12,6 +13,12 @@ public sealed partial class GuidanceSystem
 {
     private static void EmitCurrentGuidancePing(Player player)
     {
+        if (!IsPingEnabledForCurrentSelection())
+        {
+            _nextPingUpdateFrame = -1;
+            return;
+        }
+
         if (TryGetCurrentTrackingTarget(player, out Vector2 targetPosition, out _))
         {
             EmitPing(player, targetPosition);
@@ -20,6 +27,13 @@ public sealed partial class GuidanceSystem
 
     private static void RescheduleGuidancePing(Player player)
     {
+        if (!IsPingEnabledForCurrentSelection())
+        {
+            _nextPingUpdateFrame = -1;
+            _arrivalAnnounced = false;
+            return;
+        }
+
         if (!TryGetCurrentTrackingTarget(player, out Vector2 targetPosition, out _))
         {
             _nextPingUpdateFrame = -1;
@@ -34,6 +48,12 @@ public sealed partial class GuidanceSystem
     private static void EmitPing(Player player, Vector2 worldPosition)
     {
         if (Main.dedServ || Main.soundVolume <= 0f)
+        {
+            return;
+        }
+
+        float configVolume = (ScreenReaderModConfig.Instance?.GuidanceVolume ?? 100) / 100f;
+        if (configVolume <= 0f)
         {
             return;
         }
@@ -57,7 +77,7 @@ public sealed partial class GuidanceSystem
             instance.IsLooped = false;
             instance.Pan = sample.Pan;
             instance.Pitch = sample.Pitch;
-            instance.Volume = MathHelper.Clamp(sample.Volume, 0f, 1f);
+            instance.Volume = MathHelper.Clamp(sample.Volume * AudioVolumeDefaults.WorldCueVolumeScale * configVolume, 0f, 1f);
 
             try
             {
@@ -94,7 +114,7 @@ public sealed partial class GuidanceSystem
             frequency: 720f,
             durationSeconds: 0.13f,
             envelope: SynthesizedSoundFactory.ToneEnvelopes.WaypointPulse,
-            gain: 0.75f);
+            gain: 0.45f);
     }
 
     private static void CleanupFinishedWaypointInstances()
@@ -160,8 +180,7 @@ public sealed partial class GuidanceSystem
             return -1;
         }
 
-        float frames = MathHelper.Clamp(distanceTiles * PingDelayScale, MinPingDelayFrames, MaxPingDelayFrames);
-        return (int)MathF.Round(frames);
+        return MaxPingDelayFrames;
     }
 
     private static int ComputeNextPingFrameFromDelay(int delayFrames)

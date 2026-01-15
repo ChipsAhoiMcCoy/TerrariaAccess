@@ -9,7 +9,9 @@ using Microsoft.Xna.Framework;
 using Microsoft.Xna.Framework.Audio;
 using Microsoft.Xna.Framework.Graphics;
 using Microsoft.Xna.Framework.Input;
+using ScreenReaderMod.Common;
 using ScreenReaderMod.Common.Services;
+using ScreenReaderMod.Common.Systems.GamepadEmulation;
 using ScreenReaderMod.Common.Systems.MenuNarration;
 using ScreenReaderMod.Common.Utilities;
 using AnnouncementCategory = ScreenReaderMod.Common.Services.ScreenReaderService.AnnouncementCategory;
@@ -42,14 +44,204 @@ public sealed partial class InGameNarrationSystem
         private int _lastTileX = int.MinValue;
         private int _lastTileY = int.MinValue;
         private bool _lastSmartCursorActive;
+        private bool _justTransitionedToTileByTile;
         private bool _wasHoveringPlayer;
+        private PlayerBodyPart? _lastHoveredBodyPart;
         private int _originTileX = int.MinValue;
         private int _originTileY = int.MinValue;
-        private static SoundEffect? _cursorTone;
-        private static readonly List<SoundEffectInstance> ActiveInstances = new();
+        private static readonly List<(SoundEffect effect, SoundEffectInstance instance)> ActiveSounds = new();
         private static bool _suppressNextAnnouncement;
         private string? _lastTileAnnouncementName;
         private int _lastTileAnnouncementKey = int.MinValue;
+        private TileContentSignature _lastTileContentSignature;
+        private TileStateSignature _lastTileStateSignature;
+
+        // Entity hover tracking
+        private int _lastHoveredNpcIndex = -1;
+        private int _lastHoveredOtherPlayerIndex = -1;
+
+        private enum PlayerBodyPart
+        {
+            Head,
+            Torso,
+            Legs
+        }
+
+        private readonly struct TileContentSignature : IEquatable<TileContentSignature>
+        {
+            public readonly bool HasTile;
+            public readonly ushort TileType;
+            public readonly byte LiquidType;
+            public readonly ushort WallType;
+
+            public TileContentSignature(int tileX, int tileY)
+            {
+                if (!WorldGen.InWorld(tileX, tileY, 1))
+                {
+                    HasTile = false;
+                    TileType = 0;
+                    LiquidType = 0;
+                    WallType = 0;
+                    return;
+                }
+
+                Tile tile = Main.tile[tileX, tileY];
+                HasTile = tile.HasTile;
+                TileType = HasTile ? tile.TileType : (ushort)0;
+                LiquidType = (byte)tile.LiquidType;
+                WallType = tile.WallType;
+            }
+
+            public bool Equals(TileContentSignature other) =>
+                HasTile == other.HasTile && TileType == other.TileType &&
+                LiquidType == other.LiquidType && WallType == other.WallType;
+
+            public override bool Equals(object? obj) => obj is TileContentSignature other && Equals(other);
+            public override int GetHashCode() => HashCode.Combine(HasTile, TileType, LiquidType, WallType);
+            public static bool operator ==(TileContentSignature left, TileContentSignature right) => left.Equals(right);
+            public static bool operator !=(TileContentSignature left, TileContentSignature right) => !left.Equals(right);
+        }
+
+        private readonly struct TileStateSignature : IEquatable<TileStateSignature>
+        {
+            public readonly BlockType BlockType;
+            public readonly bool IsActuated;
+            public readonly bool HasActuator;
+            public readonly bool RedWire;
+            public readonly bool GreenWire;
+            public readonly bool BlueWire;
+            public readonly bool YellowWire;
+            public readonly byte TileColor;
+            public readonly byte WallColor;
+            public readonly bool IsTileInvisible;
+            public readonly bool IsWallInvisible;
+            public readonly bool IsTileFullbright;
+            public readonly bool IsWallFullbright;
+            public readonly bool IsToggleableOn;
+            public readonly bool IsToggleableTile;
+            public readonly int JunctionBoxMode;
+
+            public TileStateSignature(int tileX, int tileY)
+            {
+                if (!WorldGen.InWorld(tileX, tileY, 1))
+                {
+                    BlockType = BlockType.Solid;
+                    IsActuated = false;
+                    HasActuator = false;
+                    RedWire = false;
+                    GreenWire = false;
+                    BlueWire = false;
+                    YellowWire = false;
+                    TileColor = 0;
+                    WallColor = 0;
+                    IsTileInvisible = false;
+                    IsWallInvisible = false;
+                    IsTileFullbright = false;
+                    IsWallFullbright = false;
+                    IsToggleableOn = false;
+                    IsToggleableTile = false;
+                    JunctionBoxMode = -1;
+                    return;
+                }
+
+                Tile tile = Main.tile[tileX, tileY];
+                BlockType = tile.HasTile ? tile.BlockType : BlockType.Solid;
+                IsActuated = tile.IsActuated;
+                HasActuator = tile.HasActuator;
+                RedWire = tile.RedWire;
+                GreenWire = tile.GreenWire;
+                BlueWire = tile.BlueWire;
+                YellowWire = tile.YellowWire;
+                TileColor = tile.TileColor;
+                WallColor = tile.WallColor;
+                IsTileInvisible = tile.IsTileInvisible;
+                IsWallInvisible = tile.IsWallInvisible;
+                IsTileFullbright = tile.IsTileFullbright;
+                IsWallFullbright = tile.IsWallFullbright;
+
+                // Track lever/switch toggle state
+                (IsToggleableTile, IsToggleableOn) = GetToggleState(tile);
+
+                // Track Junction Box mode (TileID 424 = WirePipe)
+                JunctionBoxMode = (tile.HasTile && tile.TileType == TileID.WirePipe)
+                    ? tile.TileFrameX / 18
+                    : -1;
+            }
+
+            private static (bool isToggleable, bool isOn) GetToggleState(Tile tile)
+            {
+                if (!tile.HasTile)
+                {
+                    return (false, false);
+                }
+
+                // Only track lever state changes - switches are simple buttons
+                // Lever (TileID 132): frameX 0-35 = OFF, frameX 36+ = ON
+                if (tile.TileType == TileID.Lever)
+                {
+                    return (true, tile.TileFrameX >= 36);
+                }
+
+                // Timer (TileID 144): frameY 0 = OFF, frameY 18 = ON (ticking)
+                if (tile.TileType == TileID.Timers)
+                {
+                    return (true, tile.TileFrameY != 0);
+                }
+
+                // Logic Sensor (TileID 423): frameX 0 = OFF, frameX 18 = ON (activated)
+                if (tile.TileType == TileID.LogicSensor)
+                {
+                    return (true, tile.TileFrameX >= 18);
+                }
+
+                return (false, false);
+            }
+
+            public bool Equals(TileStateSignature other) =>
+                BlockType == other.BlockType &&
+                IsActuated == other.IsActuated &&
+                HasActuator == other.HasActuator &&
+                RedWire == other.RedWire &&
+                GreenWire == other.GreenWire &&
+                BlueWire == other.BlueWire &&
+                YellowWire == other.YellowWire &&
+                TileColor == other.TileColor &&
+                WallColor == other.WallColor &&
+                IsTileInvisible == other.IsTileInvisible &&
+                IsWallInvisible == other.IsWallInvisible &&
+                IsTileFullbright == other.IsTileFullbright &&
+                IsWallFullbright == other.IsWallFullbright &&
+                IsToggleableOn == other.IsToggleableOn &&
+                IsToggleableTile == other.IsToggleableTile &&
+                JunctionBoxMode == other.JunctionBoxMode;
+
+            public override bool Equals(object? obj) => obj is TileStateSignature other && Equals(other);
+
+            public override int GetHashCode()
+            {
+                HashCode hash = new();
+                hash.Add(BlockType);
+                hash.Add(IsActuated);
+                hash.Add(HasActuator);
+                hash.Add(RedWire);
+                hash.Add(GreenWire);
+                hash.Add(BlueWire);
+                hash.Add(YellowWire);
+                hash.Add(TileColor);
+                hash.Add(WallColor);
+                hash.Add(IsTileInvisible);
+                hash.Add(IsWallInvisible);
+                hash.Add(IsTileFullbright);
+                hash.Add(IsWallFullbright);
+                hash.Add(IsToggleableOn);
+                hash.Add(IsToggleableTile);
+                hash.Add(JunctionBoxMode);
+                return hash.ToHashCode();
+            }
+
+            public static bool operator ==(TileStateSignature left, TileStateSignature right) => left.Equals(right);
+            public static bool operator !=(TileStateSignature left, TileStateSignature right) => !left.Equals(right);
+        }
 
         public CursorNarrator(CursorDescriptorService descriptorService)
         {
@@ -65,7 +257,8 @@ public sealed partial class InGameNarrationSystem
                 return;
             }
 
-            if (Main.gameMenu || Main.ingameOptionsWindow || Main.InGameUI?.CurrentState is not null || PlayerInput.UsingGamepadUI)
+            if (Main.gameMenu || Main.ingameOptionsWindow || Main.InGameUI?.CurrentState is not null ||
+                PlayerInput.UsingGamepadUI || AccessibleWireColorMenu.Instance.IsOpen)
             {
                 ResetCursorFeedback();
                 return;
@@ -78,6 +271,7 @@ public sealed partial class InGameNarrationSystem
             if (_lastSmartCursorActive && !smartCursorActive && canProvideCursorFeedback)
             {
                 CenterCursorOnPlayer(player);
+                _justTransitionedToTileByTile = true;
             }
 
             _lastSmartCursorActive = smartCursorActive;
@@ -137,6 +331,8 @@ public sealed partial class InGameNarrationSystem
 
                 _lastTileX = tileX;
                 _lastTileY = tileY;
+                _lastTileContentSignature = new TileContentSignature(tileX, tileY);
+                _lastTileStateSignature = new TileStateSignature(tileX, tileY);
             }
 
             bool hoveringPlayer = IsHoveringPlayer(player, cursorWorld);
@@ -145,7 +341,12 @@ public sealed partial class InGameNarrationSystem
                 hoveringPlayer = false;
             }
 
-            if (!PlayerInput.UsingGamepad)
+            TileContentSignature currentSignature = new TileContentSignature(tileX, tileY);
+            TileStateSignature currentStateSignature = new TileStateSignature(tileX, tileY);
+            bool contentChanged = !tileChanged && currentSignature != _lastTileContentSignature;
+            bool stateOnlyChanged = !tileChanged && !contentChanged && currentStateSignature != _lastTileStateSignature;
+
+            if (!PlayerInput.UsingGamepad && !DpadVirtualizationSystem.AreDpadKeysHeld() && !contentChanged && !stateOnlyChanged && !_justTransitionedToTileByTile)
             {
                 _wasHoveringPlayer = hoveringPlayer;
                 return;
@@ -153,9 +354,14 @@ public sealed partial class InGameNarrationSystem
 
             if (hoveringPlayer)
             {
-                if (!wasHoveringPlayer || tileChanged)
+                PlayerBodyPart bodyPart = GetHoveredBodyPart(player, cursorWorld);
+                bool bodyPartChanged = bodyPart != _lastHoveredBodyPart;
+
+                if (!wasHoveringPlayer || bodyPartChanged || _justTransitionedToTileByTile)
                 {
-                    AnnouncePlayer(player);
+                    AnnouncePlayer(player, bodyPart, cursorWorld);
+                    _lastHoveredBodyPart = bodyPart;
+                    _justTransitionedToTileByTile = false;
                 }
 
                 _wasHoveringPlayer = true;
@@ -163,12 +369,85 @@ public sealed partial class InGameNarrationSystem
             }
 
             _wasHoveringPlayer = false;
+            _lastHoveredBodyPart = null;
 
-            bool shouldAnnounceTile = tileChanged || wasHoveringPlayer;
+            // Check for hovering over other players (multiplayer)
+            if (!smartCursorActive)
+            {
+                int hoveredOtherPlayerIndex = GetHoveredOtherPlayerIndex(player, cursorWorld);
+                if (hoveredOtherPlayerIndex >= 0)
+                {
+                    if (hoveredOtherPlayerIndex != _lastHoveredOtherPlayerIndex || _justTransitionedToTileByTile)
+                    {
+                        Player otherPlayer = Main.player[hoveredOtherPlayerIndex];
+                        AnnounceOtherPlayer(otherPlayer);
+                        _lastHoveredOtherPlayerIndex = hoveredOtherPlayerIndex;
+                        _lastHoveredNpcIndex = -1;
+                        _justTransitionedToTileByTile = false;
+                    }
+
+                    return;
+                }
+            }
+
+            _lastHoveredOtherPlayerIndex = -1;
+
+            // Check for hovering over NPCs
+            if (!smartCursorActive)
+            {
+                int hoveredNpcIndex = GetHoveredNpcIndex(cursorWorld);
+                if (hoveredNpcIndex >= 0)
+                {
+                    if (hoveredNpcIndex != _lastHoveredNpcIndex || _justTransitionedToTileByTile)
+                    {
+                        NPC npc = Main.npc[hoveredNpcIndex];
+                        AnnounceNpc(npc);
+                        _lastHoveredNpcIndex = hoveredNpcIndex;
+                        _justTransitionedToTileByTile = false;
+                    }
+
+                    return;
+                }
+            }
+
+            _lastHoveredNpcIndex = -1;
+
+            // Handle state-only changes (e.g., slope changed, wire added, paint applied, lever toggled)
+            if (stateOnlyChanged)
+            {
+                List<string> stateChanges = TileStateDescriptorService.GetStateChanges(
+                    _lastTileStateSignature.BlockType, _lastTileStateSignature.IsActuated, _lastTileStateSignature.HasActuator,
+                    _lastTileStateSignature.RedWire, _lastTileStateSignature.GreenWire, _lastTileStateSignature.BlueWire, _lastTileStateSignature.YellowWire,
+                    _lastTileStateSignature.TileColor, _lastTileStateSignature.WallColor,
+                    _lastTileStateSignature.IsTileInvisible, _lastTileStateSignature.IsWallInvisible,
+                    _lastTileStateSignature.IsTileFullbright, _lastTileStateSignature.IsWallFullbright,
+                    _lastTileStateSignature.IsToggleableTile, _lastTileStateSignature.IsToggleableOn,
+                    currentStateSignature.BlockType, currentStateSignature.IsActuated, currentStateSignature.HasActuator,
+                    currentStateSignature.RedWire, currentStateSignature.GreenWire, currentStateSignature.BlueWire, currentStateSignature.YellowWire,
+                    currentStateSignature.TileColor, currentStateSignature.WallColor,
+                    currentStateSignature.IsTileInvisible, currentStateSignature.IsWallInvisible,
+                    currentStateSignature.IsTileFullbright, currentStateSignature.IsWallFullbright,
+                    currentStateSignature.IsToggleableTile, currentStateSignature.IsToggleableOn,
+                    _lastTileStateSignature.JunctionBoxMode, currentStateSignature.JunctionBoxMode);
+
+                if (stateChanges.Count > 0)
+                {
+                    string stateMessage = string.Join(", ", stateChanges);
+                    AnnounceCursorMessage(stateMessage, force: true, category: AnnouncementCategory.Tile);
+                }
+
+                _lastTileStateSignature = currentStateSignature;
+                return;
+            }
+
+            bool shouldAnnounceTile = tileChanged || wasHoveringPlayer || contentChanged;
             if (!shouldAnnounceTile)
             {
                 return;
             }
+
+            _lastTileContentSignature = currentSignature;
+            _lastTileStateSignature = currentStateSignature;
 
             string coordinates = smartCursorActive ? string.Empty : BuildCoordinateMessage(tileX, tileY);
 
@@ -201,7 +480,9 @@ public sealed partial class InGameNarrationSystem
 
             int announcementKey = CursorDescriptorService.ResolveAnnouncementKey(descriptor.TileType);
 
-            bool suppressRepeats = smartCursorActive || (PlayerInput.UsingGamepad && !IsGamepadDpadPressed());
+            // Skip repeat suppression when holding an axe so the player hears each tree announced
+            bool isHoldingAxe = (player?.HeldItem?.axe ?? 0) > 0;
+            bool suppressRepeats = !isHoldingAxe && (smartCursorActive || (PlayerInput.UsingGamepad && !IsGamepadDpadPressed()));
             if (suppressRepeats &&
                 string.Equals(descriptor.Name, _lastTileAnnouncementName, StringComparison.Ordinal) &&
                 announcementKey == _lastTileAnnouncementKey)
@@ -219,15 +500,67 @@ public sealed partial class InGameNarrationSystem
             _lastTileAnnouncementKey = announcementKey;
             _lastTileAnnouncementName = descriptor.Name;
 
-            string message = string.IsNullOrWhiteSpace(coordinates) ? descriptor.Name : $"{descriptor.Name}, {coordinates}";
+            if (smartCursorActive)
+            {
+                return;
+            }
+
+            // Prepend actuator and wire info when holding wiring tools
+            string? mechanicsPrefix = null;
+            bool hasActuatorPrefix = false;
+            if (IsHoldingWiringTool(player) && WorldGen.InWorld(tileX, tileY, 1))
+            {
+                Tile tile = Main.tile[tileX, tileY];
+                string? actuatorPrefix = TileStateDescriptorService.FormatExistingActuator(tile.HasActuator, tile.IsActuated);
+                string? wirePrefix = TileStateDescriptorService.FormatExistingWires(
+                    tile.RedWire, tile.GreenWire, tile.BlueWire, tile.YellowWire);
+
+                hasActuatorPrefix = !string.IsNullOrEmpty(actuatorPrefix);
+
+                // Combine: "actuator on, Red wire" or just "actuator off" or just "Red wire"
+                if (hasActuatorPrefix && !string.IsNullOrEmpty(wirePrefix))
+                {
+                    mechanicsPrefix = $"{actuatorPrefix}, {wirePrefix}";
+                }
+                else if (hasActuatorPrefix)
+                {
+                    mechanicsPrefix = actuatorPrefix;
+                }
+                else if (!string.IsNullOrEmpty(wirePrefix))
+                {
+                    mechanicsPrefix = wirePrefix;
+                }
+            }
+
+            // Get the tile name, stripping redundant "has actuator" suffix if we're showing the prefix
+            string tileName = descriptor.Name;
+            if (hasActuatorPrefix)
+            {
+                tileName = StripActuatorSuffix(tileName);
+            }
+
+            string message;
+            if (!string.IsNullOrEmpty(mechanicsPrefix))
+            {
+                message = string.IsNullOrWhiteSpace(coordinates)
+                    ? $"{mechanicsPrefix}, {tileName}"
+                    : $"{mechanicsPrefix}, {tileName}, {coordinates}";
+            }
+            else
+            {
+                message = string.IsNullOrWhiteSpace(coordinates) ? tileName : $"{tileName}, {coordinates}";
+            }
+
             AnnouncementCategory category = descriptor.Category;
             AnnounceCursorMessage(message, force: true, category: category);
+            _justTransitionedToTileByTile = false;
         }
 
         private void ResetAll()
         {
             ResetCursorFeedback();
             _lastSmartCursorActive = false;
+            _justTransitionedToTileByTile = false;
         }
 
         private void ResetCursorFeedback()
@@ -240,10 +573,15 @@ public sealed partial class InGameNarrationSystem
             _lastTileX = int.MinValue;
             _lastTileY = int.MinValue;
             _wasHoveringPlayer = false;
+            _lastHoveredBodyPart = null;
             _originTileX = int.MinValue;
             _originTileY = int.MinValue;
             _lastTileAnnouncementName = null;
             _lastTileAnnouncementKey = int.MinValue;
+            _lastTileContentSignature = default;
+            _lastTileStateSignature = default;
+            _lastHoveredNpcIndex = -1;
+            _lastHoveredOtherPlayerIndex = -1;
         }
 
         private static bool IsHoveringPlayer(Player player, Vector2 cursorWorld)
@@ -253,9 +591,242 @@ public sealed partial class InGameNarrationSystem
             return bounds.Contains((int)cursorWorld.X, (int)cursorWorld.Y);
         }
 
-        private void AnnouncePlayer(Player _)
+        private static PlayerBodyPart GetHoveredBodyPart(Player player, Vector2 cursorWorld)
         {
-            ScreenReaderService.Announce("You", force: true);
+            Rectangle bounds = player.getRect();
+            bounds.Inflate(4, 4);
+
+            float relativeY = cursorWorld.Y - bounds.Top;
+            float third = bounds.Height / 3f;
+
+            if (relativeY < third)
+            {
+                return PlayerBodyPart.Head;
+            }
+            else if (relativeY < third * 2)
+            {
+                return PlayerBodyPart.Torso;
+            }
+            else
+            {
+                return PlayerBodyPart.Legs;
+            }
+        }
+
+        /// <summary>
+        /// Checks if the cursor is hovering over any NPC and returns the index if found.
+        /// </summary>
+        private static int GetHoveredNpcIndex(Vector2 cursorWorld)
+        {
+            for (int i = 0; i < Main.maxNPCs; i++)
+            {
+                NPC npc = Main.npc[i];
+                if (!npc.active)
+                {
+                    continue;
+                }
+
+                Rectangle bounds = npc.getRect();
+                bounds.Inflate(4, 4);
+                if (bounds.Contains((int)cursorWorld.X, (int)cursorWorld.Y))
+                {
+                    return i;
+                }
+            }
+
+            return -1;
+        }
+
+        /// <summary>
+        /// Checks if the cursor is hovering over any other player (not the local player) and returns the index if found.
+        /// </summary>
+        private static int GetHoveredOtherPlayerIndex(Player localPlayer, Vector2 cursorWorld)
+        {
+            if (Main.netMode == NetmodeID.SinglePlayer)
+            {
+                return -1;
+            }
+
+            for (int i = 0; i < Main.maxPlayers; i++)
+            {
+                Player other = Main.player[i];
+                if (!other.active || other.dead || other.ghost || other == localPlayer)
+                {
+                    continue;
+                }
+
+                Rectangle bounds = other.getRect();
+                bounds.Inflate(4, 4);
+                if (bounds.Contains((int)cursorWorld.X, (int)cursorWorld.Y))
+                {
+                    return i;
+                }
+            }
+
+            return -1;
+        }
+
+        /// <summary>
+        /// Announces information about the NPC under the cursor.
+        /// </summary>
+        private void AnnounceNpc(NPC npc)
+        {
+            string name = ResolveNpcDisplayName(npc);
+            List<string> parts = new() { name };
+
+            // Add health info for non-critters that have health
+            if (npc.lifeMax > 0 && !NPCID.Sets.CountsAsCritter[npc.type])
+            {
+                string healthText = LocalizationHelper.GetTextOrFallback(
+                    "Mods.ScreenReaderMod.EntityInfo.Health",
+                    "{0} of {1} health");
+                parts.Add(string.Format(healthText, npc.life, npc.lifeMax));
+            }
+
+            // Indicate if friendly or hostile (for non-town NPCs)
+            if (!npc.townNPC && !NPCID.Sets.ActsLikeTownNPC[npc.type] && !NPCID.Sets.IsTownPet[npc.type])
+            {
+                if (npc.friendly)
+                {
+                    parts.Add(LocalizationHelper.GetTextOrFallback(
+                        "Mods.ScreenReaderMod.EntityInfo.Friendly",
+                        "friendly"));
+                }
+                else
+                {
+                    parts.Add(LocalizationHelper.GetTextOrFallback(
+                        "Mods.ScreenReaderMod.EntityInfo.Hostile",
+                        "hostile"));
+                }
+            }
+
+            string announcement = string.Join(", ", parts);
+
+            if (SmartCursorNarrator.TryDequeuePendingPrefix(out string smartCursorPrefix))
+            {
+                announcement = $"{smartCursorPrefix}. {announcement}";
+            }
+
+            ScreenReaderService.Announce(announcement, force: true);
+        }
+
+        /// <summary>
+        /// Announces information about another player under the cursor (multiplayer only).
+        /// </summary>
+        private void AnnounceOtherPlayer(Player other)
+        {
+            string name = !string.IsNullOrWhiteSpace(other.name) ? other.name : "Player";
+            List<string> parts = new() { name };
+
+            // Health
+            string healthText = LocalizationHelper.GetTextOrFallback(
+                "Mods.ScreenReaderMod.EntityInfo.Health",
+                "{0} of {1} health");
+            parts.Add(string.Format(healthText, other.statLife, other.statLifeMax2));
+
+            // Mana (only if they have mana)
+            if (other.statManaMax2 > 0)
+            {
+                string manaText = LocalizationHelper.GetTextOrFallback(
+                    "Mods.ScreenReaderMod.EntityInfo.Mana",
+                    "{0} of {1} mana");
+                parts.Add(string.Format(manaText, other.statMana, other.statManaMax2));
+            }
+
+            // Defense
+            string defenseText = LocalizationHelper.GetTextOrFallback(
+                "Mods.ScreenReaderMod.EntityInfo.Defense",
+                "{0} defense");
+            parts.Add(string.Format(defenseText, other.statDefense));
+
+            // Team (if on a team)
+            if (other.team > 0)
+            {
+                string? teamName = other.team switch
+                {
+                    1 => LocalizationHelper.GetTextOrFallback("Mods.ScreenReaderMod.InventorySpecial.TeamRed", "Red team"),
+                    2 => LocalizationHelper.GetTextOrFallback("Mods.ScreenReaderMod.InventorySpecial.TeamGreen", "Green team"),
+                    3 => LocalizationHelper.GetTextOrFallback("Mods.ScreenReaderMod.InventorySpecial.TeamBlue", "Blue team"),
+                    4 => LocalizationHelper.GetTextOrFallback("Mods.ScreenReaderMod.InventorySpecial.TeamYellow", "Yellow team"),
+                    5 => LocalizationHelper.GetTextOrFallback("Mods.ScreenReaderMod.InventorySpecial.TeamPink", "Pink team"),
+                    _ => null
+                };
+
+                if (teamName != null)
+                {
+                    parts.Add(teamName);
+                }
+            }
+
+            string announcement = string.Join(", ", parts);
+
+            if (SmartCursorNarrator.TryDequeuePendingPrefix(out string smartCursorPrefix))
+            {
+                announcement = $"{smartCursorPrefix}. {announcement}";
+            }
+
+            ScreenReaderService.Announce(announcement, force: true);
+        }
+
+        /// <summary>
+        /// Resolves the display name for an NPC.
+        /// </summary>
+        private static string ResolveNpcDisplayName(NPC npc)
+        {
+            if (!string.IsNullOrWhiteSpace(npc.FullName))
+            {
+                return npc.FullName;
+            }
+
+            if (!string.IsNullOrWhiteSpace(npc.GivenName))
+            {
+                return npc.GivenName;
+            }
+
+            string localized = Lang.GetNPCNameValue(npc.type);
+            if (!string.IsNullOrWhiteSpace(localized))
+            {
+                return localized;
+            }
+
+            return "NPC";
+        }
+
+        private void AnnouncePlayer(Player player, PlayerBodyPart bodyPart, Vector2 cursorWorld)
+        {
+            string partName = bodyPart switch
+            {
+                PlayerBodyPart.Head => "Head",
+                PlayerBodyPart.Torso => "Torso",
+                PlayerBodyPart.Legs => "Legs",
+                _ => "Body"
+            };
+
+            // Calculate vertical offset from ground level
+            string offsetText = "";
+            if (_originTileY != int.MinValue)
+            {
+                int cursorTileY = (int)(cursorWorld.Y / 16f);
+                int verticalOffset = _originTileY - cursorTileY;
+                if (verticalOffset > 0)
+                {
+                    offsetText = $", {verticalOffset} up";
+                }
+                else if (verticalOffset < 0)
+                {
+                    offsetText = $", {Math.Abs(verticalOffset)} down";
+                }
+            }
+
+            string announcement = $"{player.name}'s {partName}{offsetText}";
+
+            // Check for pending "Tile by Tile" prefix from SmartCursorNarrator
+            if (SmartCursorNarrator.TryDequeuePendingPrefix(out string smartCursorPrefix))
+            {
+                announcement = $"{smartCursorPrefix}. {announcement}";
+            }
+
+            ScreenReaderService.Announce(announcement, force: true);
         }
 
         public static void SuppressNextAnnouncement()
@@ -276,7 +847,14 @@ public sealed partial class InGameNarrationSystem
 
         private static void CenterCursorOnPlayer(Player player)
         {
-            Vector2 screenSpace = player.Center - Main.screenPosition;
+            // Calculate tile coordinates at the player's feet (the ground tile they're standing on)
+            int groundTileX = (int)(player.Center.X / 16f);
+            int groundTileY = (int)(player.Bottom.Y / 16f);
+
+            // Position cursor at the center of the ground tile (tiles are always 16x16 world units)
+            Vector2 groundTileCenter = new Vector2(groundTileX * 16f + 8f, groundTileY * 16f + 8f);
+            Vector2 screenSpace = groundTileCenter - Main.screenPosition;
+
             int centeredX = (int)MathHelper.Clamp(screenSpace.X, 0f, Main.screenWidth - 1);
             int centeredY = (int)MathHelper.Clamp(screenSpace.Y, 0f, Main.screenHeight - 1);
 
@@ -288,14 +866,21 @@ public sealed partial class InGameNarrationSystem
 
         private void UpdateOriginFromPlayer(Player player)
         {
-            Vector2 chestWorld = GetPlayerChestWorld(player);
-            _originTileX = (int)(chestWorld.X / 16f);
-            _originTileY = (int)(chestWorld.Y / 16f);
+            // Use the tile below the player's feet as the origin (ground level)
+            _originTileX = (int)(player.Center.X / 16f);
+            _originTileY = (int)(player.Bottom.Y / 16f);
         }
 
         private static void AnnounceCursorMessage(string message, bool force, AnnouncementCategory category = AnnouncementCategory.Default)
         {
             string messageKey = NormalizeKey(message);
+
+            // Check for pending "Tile by Tile" prefix from SmartCursorNarrator
+            if (SmartCursorNarrator.TryDequeuePendingPrefix(out string smartCursorPrefix))
+            {
+                message = $"{smartCursorPrefix}. {message}";
+            }
+
             if (HotbarNarrator.TryDequeuePendingAnnouncement(out string hotbarAnnouncement, out string? hotbarKey))
             {
                 string combined = string.IsNullOrWhiteSpace(hotbarAnnouncement)
@@ -322,11 +907,18 @@ public sealed partial class InGameNarrationSystem
             return normalized;
         }
 
-        private static Vector2 GetPlayerChestWorld(Player player)
+        /// <summary>
+        /// Strips the ", has actuator" suffix from a tile name to avoid redundancy
+        /// when the actuator status is already shown as a prefix.
+        /// </summary>
+        private static string StripActuatorSuffix(string name)
         {
-            const float chestFraction = 0.25f;
-            float verticalOffset = player.height * chestFraction * player.gravDir;
-            return player.Center - new Vector2(0f, verticalOffset);
+            const string suffix = ", has actuator";
+            if (name.EndsWith(suffix, StringComparison.OrdinalIgnoreCase))
+            {
+                return name[..^suffix.Length];
+            }
+            return name;
         }
 
         private string BuildCoordinateMessage(int tileX, int tileY)
@@ -334,6 +926,14 @@ public sealed partial class InGameNarrationSystem
             if (_originTileX == int.MinValue || _originTileY == int.MinValue)
             {
                 return string.Empty;
+            }
+
+            // When build mode is awaiting second corner, use "width by height" format
+            // instead of directional coordinates for easier mental mapping of selection area.
+            var buildModePlayer = Main.LocalPlayer?.GetModPlayer<Players.BuildModePlayer>();
+            if (buildModePlayer?.IsAwaitingSecondCorner == true)
+            {
+                return buildModePlayer.GetSelectionDimensions(tileX, tileY);
             }
 
             int offsetX = tileX - _originTileX;
@@ -355,7 +955,7 @@ public sealed partial class InGameNarrationSystem
 
             if (parts.Count == 0)
             {
-                return "origin";
+                return "ground level";
             }
 
             return string.Join(", ", parts);
@@ -374,38 +974,67 @@ public sealed partial class InGameNarrationSystem
 
         private static void PlayCursorCue(Player player, Vector2 tileCenterWorld, bool hasTile)
         {
+            // Check if cursor tile sounds are enabled in config
+            if (!(ScreenReaderModConfig.Instance?.CursorTileSounds ?? true))
+            {
+                return;
+            }
+
+            float configVolume = (ScreenReaderModConfig.Instance?.CursorVolume ?? 100) / 100f;
+            if (configVolume <= 0f)
+            {
+                return;
+            }
+
             CleanupFinishedInstances();
 
             Vector2 offset = tileCenterWorld - player.Center;
-            SoundEffect tone = EnsureCursorTone();
+
+            // Calculate frequency based on screen position:
+            // - Top of screen: 1000 Hz
+            // - Middle of screen: 440 Hz
+            // - Bottom of screen: 200 Hz
+            // This automatically adapts to any resolution or zoom level
+            Vector2 screenPos = tileCenterWorld - Main.screenPosition;
+            float normalizedScreenY = MathHelper.Clamp(screenPos.Y / Main.screenHeight, 0f, 1f);
+            float frequency;
+            if (normalizedScreenY <= 0.5f)
+            {
+                // Top half of screen: interpolate 1000 Hz down to 440 Hz
+                float t = normalizedScreenY * 2f; // 0 at top, 1 at middle
+                frequency = MathHelper.Lerp(1000f, 440f, t);
+            }
+            else
+            {
+                // Bottom half of screen: interpolate 440 Hz down to 200 Hz
+                float t = (normalizedScreenY - 0.5f) * 2f; // 0 at middle, 1 at bottom
+                frequency = MathHelper.Lerp(440f, 200f, t);
+            }
+
+            SoundEffect tone = CreateCursorTone(frequency);
 
             float pan = MathHelper.Clamp(offset.X / 480f, -1f, 1f);
-            float pitch = MathHelper.Clamp(-offset.Y / 320f, -0.6f, 0.6f);
-            float baseVolume = MathHelper.Clamp(0.35f + Math.Abs(pitch) * 0.2f, 0f, 0.7f);
-            if (!hasTile)
-            {
-                baseVolume *= 0.5f;
-            }
+            float baseVolume = 0.45f;
             float distanceTiles = offset.Length() / 16f;
             float loudness = SoundLoudnessUtility.ApplyDistanceFalloff(
                 baseVolume,
                 distanceTiles,
                 CursorLoudnessReferenceTiles,
                 minFactor: 0.4f);
-            float volume = loudness * Main.soundVolume;
+            float volume = loudness * Main.soundVolume * AudioVolumeDefaults.WorldCueVolumeScale * configVolume;
 
             SoundEffectInstance instance = tone.CreateInstance();
             instance.IsLooped = false;
             instance.Volume = volume;
-            instance.Pitch = pitch;
+            instance.Pitch = 0f;
             instance.Pan = pan;
             instance.Play();
-            ActiveInstances.Add(instance);
+            ActiveSounds.Add((tone, instance));
         }
 
         public static void DisposeStaticResources()
         {
-            foreach (SoundEffectInstance instance in ActiveInstances)
+            foreach (var (effect, instance) in ActiveSounds)
             {
                 try
                 {
@@ -417,33 +1046,16 @@ public sealed partial class InGameNarrationSystem
                 }
 
                 instance.Dispose();
+                effect.Dispose();
             }
 
-            ActiveInstances.Clear();
-
-            if (_cursorTone is not null)
-            {
-                _cursorTone.Dispose();
-                _cursorTone = null;
-            }
+            ActiveSounds.Clear();
         }
 
-        private static SoundEffect EnsureCursorTone()
-        {
-            if (_cursorTone is null || _cursorTone.IsDisposed)
-            {
-                _cursorTone?.Dispose();
-                _cursorTone = CreateCursorTone();
-            }
-
-            return _cursorTone;
-        }
-
-        private static SoundEffect CreateCursorTone()
+        private static SoundEffect CreateCursorTone(float frequency)
         {
             const int sampleRate = 44100;
-            const float durationSeconds = 0.09f;
-            const float frequency = 880f;
+            const float durationSeconds = 0.045f;
             int sampleCount = Math.Max(1, (int)(sampleRate * durationSeconds));
             byte[] buffer = new byte[sampleCount * sizeof(short)];
 
@@ -464,21 +1076,42 @@ public sealed partial class InGameNarrationSystem
 
         private static void CleanupFinishedInstances()
         {
-            for (int i = ActiveInstances.Count - 1; i >= 0; i--)
+            for (int i = ActiveSounds.Count - 1; i >= 0; i--)
             {
-                SoundEffectInstance instance = ActiveInstances[i];
+                var (effect, instance) = ActiveSounds[i];
                 if (instance.State == SoundState.Stopped)
                 {
                     instance.Dispose();
-                    ActiveInstances.RemoveAt(i);
+                    effect.Dispose();
+                    ActiveSounds.RemoveAt(i);
                 }
             }
         }
 
         private static bool IsGamepadDpadPressed()
         {
+            if (DpadVirtualizationSystem.AreDpadKeysHeld())
+            {
+                return true;
+            }
+
             try
             {
+                TriggersSet triggers = PlayerInput.Triggers.Current;
+                if (triggers?.KeyStatus is Dictionary<string, bool> keyStatus &&
+                    (keyStatus.TryGetValue("DpadUp", out bool up) && up ||
+                     keyStatus.TryGetValue("DpadDown", out bool down) && down ||
+                     keyStatus.TryGetValue("DpadLeft", out bool left) && left ||
+                     keyStatus.TryGetValue("DpadRight", out bool right) && right))
+                {
+                    return true;
+                }
+
+                if (!PlayerInput.UsingGamepad)
+                {
+                    return false;
+                }
+
                 GamePadState state = GamePad.GetState(PlayerIndex.One);
                 if (!state.IsConnected)
                 {

@@ -5,7 +5,9 @@ using System.Linq;
 using System.Reflection;
 using System.Text;
 using Terraria;
+using Terraria.Audio;
 using Terraria.GameInput;
+using Terraria.ID;
 using Terraria.IO;
 using Terraria.Localization;
 using Terraria.ModLoader.Core;
@@ -60,6 +62,15 @@ internal sealed partial class MenuUiSelectionTracker
         new(
             static element => HasFullName(element, "Terraria.ModLoader.UI.UICycleImage"),
             static element => DescribeTagFilterToggle(element)),
+        new(
+            static element => IsConfigElement(element),
+            static element => DescribeConfigElement(element)),
+        new(
+            static element => HasFullName(element, "Terraria.GameContent.UI.Elements.UIAchievementListItem"),
+            static element => DescribeAchievementListItem(element)),
+        new(
+            static element => IsAchievementCategoryButton(element),
+            static element => DescribeAchievementCategoryButton(element)),
     };
 
     private UIElement? _lastElement;
@@ -73,6 +84,8 @@ internal sealed partial class MenuUiSelectionTracker
         _lastWorldCreationRoot = null;
         _lastWorldCreationGroup = null;
         _lastWorldCreationElement = null;
+        _lastAchievementCategoryButton = null;
+        _lastAchievementListItem = null;
     }
 
     public bool TryGetHoverLabel(UserInterface? menuUi, out MenuUiLabel label)
@@ -246,6 +259,7 @@ internal sealed partial class MenuUiSelectionTracker
     private static string ExtractSpecializedLabel(Type type, UIElement element)
     {
         ResetWorldCreationContextIfNeeded(element);
+        ResetAchievementContextIfNeeded(element);
 
         foreach (LabelResolver resolver in LabelResolvers)
         {
@@ -715,6 +729,16 @@ internal sealed partial class MenuUiSelectionTracker
         var buttons = new List<UIElement>();
         CollectImageButtonsRecursive(root, buttons);
 
+        // Filter to only include buttons in the bottom action row.
+        // tModLoader adds error/warning buttons at the top (VAlign=0) which would
+        // otherwise shift the indices of the standard action buttons (Play, Favorite, etc.).
+        if (buttons.Count > 0)
+        {
+            float maxY = buttons.Max(static b => b.GetDimensions().Y);
+            const float rowTolerance = 20f;
+            buttons = buttons.Where(b => maxY - b.GetDimensions().Y < rowTolerance).ToList();
+        }
+
         buttons.Sort(static (a, b) =>
         {
             float ax = a.GetDimensions().X;
@@ -922,6 +946,485 @@ internal sealed partial class MenuUiSelectionTracker
 
         return string.Empty;
     }
+
+    #region Config Element Support
+
+    private static readonly Type? ConfigElementType = Type.GetType("Terraria.ModLoader.Config.UI.ConfigElement, tModLoader");
+
+    private static bool IsConfigElement(UIElement element)
+    {
+        if (element is null)
+        {
+            return false;
+        }
+
+        Type type = element.GetType();
+
+        // Check if it's a ConfigElement or derived type
+        if (ConfigElementType is not null && ConfigElementType.IsAssignableFrom(type))
+        {
+            return true;
+        }
+
+        // Check by type name patterns
+        string? typeName = type.FullName;
+        if (typeName is null)
+        {
+            return false;
+        }
+
+        return typeName.Contains("ConfigElement", StringComparison.Ordinal) ||
+               typeName.Contains("BooleanElement", StringComparison.Ordinal) ||
+               typeName.Contains("IntInputElement", StringComparison.Ordinal) ||
+               typeName.Contains("FloatElement", StringComparison.Ordinal) ||
+               typeName.Contains("StringInputElement", StringComparison.Ordinal) ||
+               typeName.Contains("EnumElement", StringComparison.Ordinal) ||
+               typeName.Contains("ColorElement", StringComparison.Ordinal) ||
+               typeName.Contains("ItemDefinitionElement", StringComparison.Ordinal) ||
+               typeName.Contains("HeaderElement", StringComparison.Ordinal);
+    }
+
+    private static string DescribeConfigElement(UIElement element)
+    {
+        if (element is null)
+        {
+            return string.Empty;
+        }
+
+        const BindingFlags flags = BindingFlags.Instance | BindingFlags.Public | BindingFlags.NonPublic;
+        Type type = element.GetType();
+
+        // Try to get Label property
+        string label = TryGetConfigLabel(element, type, flags);
+
+        // Try to get Value
+        string value = TryGetConfigValue(element, type, flags);
+
+        // Build description
+        var parts = new List<string>();
+
+        if (!string.IsNullOrWhiteSpace(label))
+        {
+            parts.Add(TextSanitizer.Clean(label));
+        }
+
+        if (!string.IsNullOrWhiteSpace(value))
+        {
+            parts.Add(TextSanitizer.Clean(value));
+        }
+
+        if (parts.Count == 0)
+        {
+            // Fallback to type name
+            return type.Name;
+        }
+
+        return string.Join(": ", parts);
+    }
+
+    private static string TryGetConfigLabel(UIElement element, Type type, BindingFlags flags)
+    {
+        // Try common label properties/fields
+        string[] memberNames = { "Label", "DisplayName", "Name", "_label", "_text" };
+
+        foreach (string name in memberNames)
+        {
+            PropertyInfo? prop = type.GetProperty(name, flags);
+            if (prop?.GetValue(element) is object propValue)
+            {
+                string text = ConvertConfigValueToText(propValue);
+                if (!string.IsNullOrWhiteSpace(text))
+                {
+                    return text;
+                }
+            }
+
+            FieldInfo? field = type.GetField(name, flags);
+            if (field?.GetValue(element) is object fieldValue)
+            {
+                string text = ConvertConfigValueToText(fieldValue);
+                if (!string.IsNullOrWhiteSpace(text))
+                {
+                    return text;
+                }
+            }
+        }
+
+        // Try TextDisplayFunction delegate
+        FieldInfo? funcField = type.GetField("_TextDisplayFunction", flags) ?? type.GetField("TextDisplayFunction", flags);
+        if (funcField?.GetValue(element) is Delegate textFunc)
+        {
+            try
+            {
+                object? result = textFunc.DynamicInvoke();
+                string text = ConvertConfigValueToText(result);
+                if (!string.IsNullOrWhiteSpace(text))
+                {
+                    return text;
+                }
+            }
+            catch
+            {
+                // Ignore delegate invocation failures
+            }
+        }
+
+        return string.Empty;
+    }
+
+    private static string TryGetConfigValue(UIElement element, Type type, BindingFlags flags)
+    {
+        // Try common value properties/fields
+        string[] memberNames = { "Value", "CurrentValue", "_value" };
+
+        foreach (string name in memberNames)
+        {
+            PropertyInfo? prop = type.GetProperty(name, flags);
+            if (prop?.GetValue(element) is object propValue)
+            {
+                return FormatConfigValueForAnnouncement(propValue);
+            }
+
+            FieldInfo? field = type.GetField(name, flags);
+            if (field?.GetValue(element) is object fieldValue)
+            {
+                return FormatConfigValueForAnnouncement(fieldValue);
+            }
+        }
+
+        // Try GetValue method
+        MethodInfo? getValueMethod = type.GetMethod("GetValue", flags, null, Type.EmptyTypes, null);
+        if (getValueMethod is not null)
+        {
+            try
+            {
+                object? result = getValueMethod.Invoke(element, Array.Empty<object>());
+                return FormatConfigValueForAnnouncement(result);
+            }
+            catch
+            {
+                // Ignore method invocation failures
+            }
+        }
+
+        return string.Empty;
+    }
+
+    private static string ConvertConfigValueToText(object? value)
+    {
+        if (value is null)
+        {
+            return string.Empty;
+        }
+
+        if (value is string s)
+        {
+            return TextSanitizer.Clean(s);
+        }
+
+        if (value is LocalizedText localized)
+        {
+            return TextSanitizer.Clean(localized.Value ?? string.Empty);
+        }
+
+        return TextSanitizer.Clean(value.ToString() ?? string.Empty);
+    }
+
+    private static string FormatConfigValueForAnnouncement(object? value)
+    {
+        if (value is null)
+        {
+            return string.Empty;
+        }
+
+        return value switch
+        {
+            bool b => b ? "On" : "Off",
+            float f => f.ToString("0.##", System.Globalization.CultureInfo.CurrentCulture),
+            double d => d.ToString("0.##", System.Globalization.CultureInfo.CurrentCulture),
+            Enum e => e.ToString(),
+            _ => ConvertConfigValueToText(value),
+        };
+    }
+
+    #endregion
+
+    #region Achievement Menu Support
+
+    private static void ResetAchievementContextIfNeeded(UIElement element)
+    {
+        // If there's no tracked achievement context, nothing to reset
+        if (_lastAchievementListItem is null && _lastAchievementCategoryButton is null)
+        {
+            return;
+        }
+
+        // If navigating to an achievement list item or category button, don't reset
+        if (HasFullName(element, "Terraria.GameContent.UI.Elements.UIAchievementListItem"))
+        {
+            return;
+        }
+
+        if (IsAchievementCategoryButton(element))
+        {
+            return;
+        }
+
+        // Navigating to something else (like the back button), clear the context
+        _lastAchievementListItem = null;
+        _lastAchievementCategoryButton = null;
+    }
+
+    private static string DescribeAchievementListItem(UIElement element)
+    {
+        // Play menu tick sound when navigating to a different achievement
+        if (!ReferenceEquals(element, _lastAchievementListItem))
+        {
+            _lastAchievementListItem = element;
+            SoundEngine.PlaySound(SoundID.MenuTick);
+        }
+
+        const BindingFlags flags = BindingFlags.Instance | BindingFlags.NonPublic | BindingFlags.Public;
+
+        Type type = element.GetType();
+
+        // Get the Achievement via GetAchievement() method or _achievement field
+        object? achievement = null;
+
+        MethodInfo? getAchievementMethod = type.GetMethod("GetAchievement", flags);
+        if (getAchievementMethod is not null)
+        {
+            try
+            {
+                achievement = getAchievementMethod.Invoke(element, Array.Empty<object>());
+            }
+            catch
+            {
+                // Ignore invocation failures
+            }
+        }
+
+        if (achievement is null)
+        {
+            FieldInfo? achievementField = type.GetField("_achievement", flags);
+            achievement = achievementField?.GetValue(element);
+        }
+
+        if (achievement is null)
+        {
+            return string.Empty;
+        }
+
+        Type achievementType = achievement.GetType();
+
+        // Get FriendlyName (it's a readonly field, not a property)
+        string friendlyName = string.Empty;
+        FieldInfo? friendlyNameField = achievementType.GetField("FriendlyName", flags);
+        if (friendlyNameField?.GetValue(achievement) is LocalizedText friendlyNameText)
+        {
+            friendlyName = TextSanitizer.Clean(friendlyNameText.Value ?? string.Empty);
+        }
+
+        // Get Description (it's a readonly field, not a property)
+        string description = string.Empty;
+        FieldInfo? descriptionField = achievementType.GetField("Description", flags);
+        if (descriptionField?.GetValue(achievement) is LocalizedText descriptionText)
+        {
+            description = TextSanitizer.Clean(descriptionText.Value ?? string.Empty);
+        }
+
+        // Get IsCompleted
+        bool isCompleted = false;
+        PropertyInfo? isCompletedProp = achievementType.GetProperty("IsCompleted", flags);
+        if (isCompletedProp?.GetValue(achievement) is bool completed)
+        {
+            isCompleted = completed;
+        }
+
+        // Get Category
+        string categoryName = string.Empty;
+        PropertyInfo? categoryProp = achievementType.GetProperty("Category", flags);
+        if (categoryProp?.GetValue(achievement) is Enum categoryEnum)
+        {
+            int categoryIndex = Convert.ToInt32(categoryEnum);
+            categoryName = categoryIndex switch
+            {
+                0 => Language.GetTextValue("Achievements.SlayerCategory"),
+                1 => Language.GetTextValue("Achievements.CollectorCategory"),
+                2 => Language.GetTextValue("Achievements.ExplorerCategory"),
+                3 => Language.GetTextValue("Achievements.ChallengerCategory"),
+                _ => string.Empty,
+            };
+        }
+
+        // Get progress if available
+        string progressText = string.Empty;
+        PropertyInfo? hasTrackerProp = achievementType.GetProperty("HasTracker", flags);
+        if (hasTrackerProp?.GetValue(achievement) is bool hasTracker && hasTracker && !isCompleted)
+        {
+            progressText = GetAchievementProgress(element, type, flags);
+        }
+
+        // Build the announcement
+        var parts = new List<string>();
+
+        if (!string.IsNullOrWhiteSpace(friendlyName))
+        {
+            parts.Add(friendlyName);
+        }
+
+        string status = isCompleted
+            ? LocalizationHelper.GetTextOrFallback("Mods.ScreenReaderMod.Achievements.Completed", "Completed")
+            : LocalizationHelper.GetTextOrFallback("Mods.ScreenReaderMod.Achievements.Locked", "Locked");
+        parts.Add(status);
+
+        if (!string.IsNullOrWhiteSpace(categoryName))
+        {
+            parts.Add(TextSanitizer.Clean(categoryName));
+        }
+
+        if (!string.IsNullOrWhiteSpace(progressText))
+        {
+            parts.Add(progressText);
+        }
+
+        if (!string.IsNullOrWhiteSpace(description))
+        {
+            parts.Add(description);
+        }
+
+        return TextSanitizer.JoinWithComma(parts.ToArray());
+    }
+
+    private static string GetAchievementProgress(UIElement element, Type type, BindingFlags flags)
+    {
+        // Try to call GetTrackerValues method on the UIAchievementListItem
+        MethodInfo? getTrackerMethod = type.GetMethod("GetTrackerValues", flags);
+        if (getTrackerMethod is null)
+        {
+            return string.Empty;
+        }
+
+        try
+        {
+            object? result = getTrackerMethod.Invoke(element, Array.Empty<object>());
+            if (result is null)
+            {
+                return string.Empty;
+            }
+
+            // Result is Tuple<decimal, decimal>
+            Type resultType = result.GetType();
+            PropertyInfo? item1Prop = resultType.GetProperty("Item1");
+            PropertyInfo? item2Prop = resultType.GetProperty("Item2");
+
+            if (item1Prop?.GetValue(result) is decimal current &&
+                item2Prop?.GetValue(result) is decimal max &&
+                max > 0)
+            {
+                return $"{(int)current}/{(int)max}";
+            }
+        }
+        catch
+        {
+            // Ignore failures
+        }
+
+        return string.Empty;
+    }
+
+    private static bool IsAchievementCategoryButton(UIElement element)
+    {
+        if (!HasFullName(element, "Terraria.GameContent.UI.Elements.UIToggleImage"))
+        {
+            return false;
+        }
+
+        // Check if parent chain contains UIAchievementsMenu
+        UIElement? current = element.Parent;
+        while (current is not null)
+        {
+            string? typeName = current.GetType().FullName;
+            if (typeName == "Terraria.GameContent.UI.States.UIAchievementsMenu")
+            {
+                return true;
+            }
+
+            current = current.Parent;
+        }
+
+        return false;
+    }
+
+    private static UIElement? _lastAchievementCategoryButton;
+    private static UIElement? _lastAchievementListItem;
+
+    private static string DescribeAchievementCategoryButton(UIElement element)
+    {
+        const BindingFlags flags = BindingFlags.Instance | BindingFlags.NonPublic | BindingFlags.Public;
+
+        // Find which category button this is by checking its position among siblings
+        UIElement? parent = element.Parent;
+        if (parent is null)
+        {
+            return string.Empty;
+        }
+
+        // Collect all UIToggleImage siblings
+        var toggleButtons = new List<UIElement>();
+        foreach (UIElement child in parent.Children)
+        {
+            if (HasFullName(child, "Terraria.GameContent.UI.Elements.UIToggleImage"))
+            {
+                toggleButtons.Add(child);
+            }
+        }
+
+        // Sort by X position (left to right)
+        toggleButtons.Sort((a, b) => a.GetDimensions().X.CompareTo(b.GetDimensions().X));
+
+        int index = toggleButtons.IndexOf(element);
+        if (index < 0 || index > 3)
+        {
+            return string.Empty;
+        }
+
+        // Play menu tick sound when navigating to a different button
+        if (!ReferenceEquals(element, _lastAchievementCategoryButton))
+        {
+            _lastAchievementCategoryButton = element;
+            SoundEngine.PlaySound(SoundID.MenuTick);
+        }
+
+        // Get category name based on index
+        string categoryName = index switch
+        {
+            0 => Language.GetTextValue("Achievements.SlayerCategory"),
+            1 => Language.GetTextValue("Achievements.CollectorCategory"),
+            2 => Language.GetTextValue("Achievements.ExplorerCategory"),
+            3 => Language.GetTextValue("Achievements.ChallengerCategory"),
+            _ => string.Empty,
+        };
+
+        // Get the toggle state via IsOn property
+        bool isOn = false;
+        PropertyInfo? isOnProp = element.GetType().GetProperty("IsOn", flags);
+        if (isOnProp?.GetValue(element) is bool state)
+        {
+            isOn = state;
+        }
+
+        string stateText = isOn
+            ? LocalizationHelper.GetTextOrFallback("Mods.ScreenReaderMod.Controls.ToggleOn", "On")
+            : LocalizationHelper.GetTextOrFallback("Mods.ScreenReaderMod.Controls.ToggleOff", "Off");
+
+        int position = index + 1;
+        int total = toggleButtons.Count;
+
+        return TextSanitizer.Clean($"Filter {categoryName} {stateText}, {position} of {total}");
+    }
+
+    #endregion
 
     }
 

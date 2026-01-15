@@ -12,8 +12,10 @@ public sealed partial class InGameNarrationSystem
 {
     private sealed class LockOnNarrator
     {
+        private const int HealthPercentStep = 10;
+
         private int _lastNpcId = -1;
-        private int _lastNpcLife = -1;
+        private int _lastAnnouncedPercent = -1;
 
         public void Update()
         {
@@ -32,19 +34,20 @@ public sealed partial class InGameNarrationSystem
 
             int npcId = target.whoAmI;
             int hp = Math.Max(0, target.life);
+            int percent = GetHealthPercent(target);
 
             if (npcId != _lastNpcId)
             {
                 _lastNpcId = npcId;
-                _lastNpcLife = hp;
+                _lastAnnouncedPercent = percent;
                 AnnounceLockOn(target, hp);
                 return;
             }
 
-            if (hp != _lastNpcLife)
+            if (percent < _lastAnnouncedPercent && _lastAnnouncedPercent - percent >= HealthPercentStep)
             {
-                _lastNpcLife = hp;
-                AnnounceHealthChange(target, hp);
+                _lastAnnouncedPercent = percent;
+                ScreenReaderService.Announce($"{hp} health", force: true);
             }
         }
 
@@ -56,7 +59,7 @@ public sealed partial class InGameNarrationSystem
             }
 
             _lastNpcId = -1;
-            _lastNpcLife = -1;
+            _lastAnnouncedPercent = -1;
             ScreenReaderService.Announce("No longer targeting", force: true);
         }
 
@@ -66,9 +69,15 @@ public sealed partial class InGameNarrationSystem
             ScreenReaderService.Announce($"Locked on to {name}, {hp} health", force: true);
         }
 
-        private static void AnnounceHealthChange(NPC target, int hp)
+        private static int GetHealthPercent(NPC target)
         {
-            ScreenReaderService.Announce($"{hp} health", force: true);
+            if (target.lifeMax <= 0)
+            {
+                return 0;
+            }
+
+            int life = Math.Max(0, target.life);
+            return (int)Math.Round(100.0 * life / target.lifeMax);
         }
 
         private static string GetNpcName(NPC target)

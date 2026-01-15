@@ -1,4 +1,4 @@
-#nullable enable
+﻿#nullable enable
 using System;
 using System.Linq;
 using System.Text;
@@ -74,6 +74,36 @@ internal static class TextSanitizer
             return true;
         }
 
+        if (token.StartsWith("n:", StringComparison.OrdinalIgnoreCase))
+        {
+            string name = token.Length > 2 ? token[2..] : string.Empty;
+            if (!string.IsNullOrEmpty(name))
+            {
+                string resolved = name.Replace("\\[", "[").Replace("\\]", "]");
+                if (!string.IsNullOrWhiteSpace(resolved))
+                {
+                    builder.Append(resolved.Trim());
+                    builder.Append(',');
+                }
+            }
+
+            return true;
+        }
+
+        if (token.StartsWith("a:", StringComparison.OrdinalIgnoreCase))
+        {
+            string achievementName = token.Length > 2 ? token[2..] : string.Empty;
+            if (!string.IsNullOrEmpty(achievementName))
+            {
+                string? resolved = ResolveAchievementText(achievementName);
+                if (!string.IsNullOrWhiteSpace(resolved))
+                {
+                    builder.Append(resolved);
+                }
+            }
+            return true;
+        }
+
         if (token.StartsWith("i:", StringComparison.OrdinalIgnoreCase) ||
             token.StartsWith("rb", StringComparison.OrdinalIgnoreCase) ||
             token.StartsWith("g", StringComparison.OrdinalIgnoreCase) ||
@@ -84,4 +114,35 @@ internal static class TextSanitizer
 
         return false;
     }
+
+    private static string? ResolveAchievementText(string achievementName)
+    {
+        try
+        {
+            var achievement = Terraria.Main.Achievements?.GetAchievement(achievementName);
+            if (achievement is null)
+            {
+                return null;
+            }
+
+            string? name = achievement.FriendlyName?.Value;
+            if (string.IsNullOrWhiteSpace(name))
+            {
+                return null;
+            }
+
+            string? description = achievement.Description?.Value;
+            if (!string.IsNullOrWhiteSpace(description))
+            {
+                return $"{name}. {description}";
+            }
+
+            return name;
+        }
+        catch
+        {
+            return null;
+        }
+    }
 }
+

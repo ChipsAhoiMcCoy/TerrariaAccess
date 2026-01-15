@@ -9,7 +9,11 @@ namespace ScreenReaderMod.Common.Systems;
 
 public sealed partial class GuidanceSystem
 {
+    private readonly record struct ProximityTargetKey(SelectionMode Mode, int Index);
+
     private static readonly List<Waypoint> Waypoints = new();
+
+    internal static bool HasWaypointState => Waypoints.Count > 0 || _selectionMode != SelectionMode.None;
 
     private enum SelectionMode
     {
@@ -18,7 +22,10 @@ public sealed partial class GuidanceSystem
         Interactable,
         Npc,
         Player,
-        Waypoint
+        Waypoint,
+        DroppedItem,
+        Critter,
+        Plantlife
     }
 
     private static SelectionMode _selectionMode = SelectionMode.None;
@@ -27,8 +34,32 @@ public sealed partial class GuidanceSystem
     private static int _selectedPlayerIndex = -1;
     private static int _selectedInteractableIndex = -1;
     private static int _selectedExplorationIndex = -1;
+    private static int _selectedDroppedItemIndex = -1;
+    private static int _selectedCritterIndex = -1;
+    private static int _selectedPlantlifeIndex = -1;
+    private static ExplorationTargetRegistry.ExplorationTarget? _lastExplorationSelection;
+
+    // Sweep state for "All" mode pinging
+    private static readonly List<SweepTarget> SweepOrder = new();
+    private static int _sweepCursor;
+    private static int _nextSweepFrame;
+    private const int SweepIntervalFrames = 10;
+
+    private readonly struct SweepTarget
+    {
+        public readonly Vector2 WorldPosition;
+        public readonly float DistanceTiles;
+
+        public SweepTarget(Vector2 worldPosition, float distanceTiles)
+        {
+            WorldPosition = worldPosition;
+            DistanceTiles = distanceTiles;
+        }
+    }
     private static SelectionMode _categoryAnnouncementMode = SelectionMode.None;
     private static bool _categoryAnnouncementPending;
+    private static ProximityTargetKey _activeProximityTarget = new(SelectionMode.None, -1);
+    private static int _lastProximityStepIndex = int.MaxValue;
 
     private static bool _namingActive;
 
@@ -39,6 +70,8 @@ public sealed partial class GuidanceSystem
     private static UIVirtualKeyboard? _activeKeyboard;
     private static InputSnapshot? _inputSnapshot;
     private static readonly bool LogGuidancePings = false;
+    private static uint _lastTargetRefreshFrame;
+    private static int _lastTargetRefreshPlayerIndex = -1;
 
     private sealed class InputSnapshot
     {
@@ -68,21 +101,34 @@ public sealed partial class GuidanceSystem
 
     internal static bool IsExplorationTrackingEnabled => _selectionMode == SelectionMode.Exploration;
 
-    private static void ResetTrackingState()
+    internal static void ResetTrackingState()
     {
         Waypoints.Clear();
         NearbyNpcs.Clear();
         NearbyPlayers.Clear();
         NearbyInteractables.Clear();
         NearbyExplorationTargets.Clear();
+        NearbyDroppedItems.Clear();
+        NearbyCritters.Clear();
+        NearbyPlantlife.Clear();
         _selectedIndex = -1;
         _selectedNpcIndex = -1;
         _selectedPlayerIndex = -1;
         _selectedInteractableIndex = -1;
         _selectedExplorationIndex = -1;
+        _selectedDroppedItemIndex = -1;
+        _selectedCritterIndex = -1;
+        _selectedPlantlifeIndex = -1;
+        _lastExplorationSelection = null;
         _selectionMode = SelectionMode.None;
+        SweepOrder.Clear();
+        _sweepCursor = 0;
+        _nextSweepFrame = 0;
+        ResetProximityProgress();
         ClearCategoryAnnouncement();
         _nextPingUpdateFrame = -1;
         _arrivalAnnounced = false;
+        _lastTargetRefreshFrame = 0;
+        _lastTargetRefreshPlayerIndex = -1;
     }
 }

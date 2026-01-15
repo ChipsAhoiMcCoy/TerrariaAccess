@@ -84,6 +84,22 @@ public sealed partial class InGameNarrationSystem
             Count,
         }
 
+        private enum InventoryRegion
+        {
+            None = 0,
+            Hotbar,
+            Inventory,
+            Coins,
+            Ammo,
+            CharacterPanel,
+            InventoryExtras,
+            Crafting,
+            CraftingGrid,
+            CraftingList,
+            Storage,
+            Shop,
+        }
+
         private readonly record struct NarrationCue(
             NarrationKind Kind,
             string Message,
@@ -126,6 +142,7 @@ public sealed partial class InGameNarrationSystem
 
         private sealed class NarrationHistory
         {
+            private static readonly bool HistoryDebugEnabled = !string.IsNullOrEmpty(Environment.GetEnvironmentVariable("SRM_DEBUG_HISTORY"));
             private readonly HistoryEntry?[] _lastCues = new HistoryEntry?[(int)NarrationKind.Count];
 
             public bool TryStore(in NarrationCue cue)
@@ -145,6 +162,24 @@ public sealed partial class InGameNarrationSystem
                     !NarrationHistorySettings.HasExpired(previous.Value.Frame, now))
                 {
                     return false;
+                }
+
+                // Debug: log why the cue was considered new
+                if (HistoryDebugEnabled && previous.HasValue)
+                {
+                    NarrationCue prev = previous.Value.Cue;
+                    string reason = "unknown";
+                    if (prev.Kind != cue.Kind) reason = $"Kind: {prev.Kind} vs {cue.Kind}";
+                    else if (prev.Message != cue.Message) reason = $"Message: '{prev.Message}' vs '{cue.Message}'";
+                    else if (!prev.Identity.Equals(cue.Identity)) reason = $"Identity differs";
+                    else if (prev.Location != cue.Location) reason = $"Location: '{prev.Location}' vs '{cue.Location}'";
+                    else if (prev.Tooltip != cue.Tooltip) reason = $"Tooltip differs (len {prev.Tooltip?.Length ?? 0} vs {cue.Tooltip?.Length ?? 0})";
+                    else if (prev.Details != cue.Details) reason = $"Details differs";
+                    else if (prev.SlotSignature != cue.SlotSignature) reason = $"SlotSignature: {prev.SlotSignature} vs {cue.SlotSignature}";
+                    else if (NarrationHistorySettings.HasExpired(previous.Value.Frame, now)) reason = "expired";
+
+                    global::ScreenReaderMod.ScreenReaderMod.Instance?.Logger.Info(
+                        $"[HistoryDebug] New cue allowed - {reason}");
                 }
 
                 _lastCues[index] = new HistoryEntry(cue, now);
@@ -172,6 +207,9 @@ public sealed partial class InGameNarrationSystem
 
             public static bool HasExpired(uint storedFrame, uint currentFrame)
             {
+                // When MaxAgeFrames is 0 (default), announcements never expire based on time.
+                // This prevents repeated announcements when staying on the same slot.
+                // Announcements are still allowed when the NarrationCue content changes.
                 if (MaxAgeFrames == 0)
                 {
                     return false;

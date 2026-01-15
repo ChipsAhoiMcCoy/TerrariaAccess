@@ -4,6 +4,7 @@ using System.Collections.Generic;
 using ScreenReaderMod.Common.Services;
 using ScreenReaderMod.Common.Utilities;
 using Terraria;
+using Terraria.Enums;
 using Terraria.ID;
 using Terraria.Localization;
 using Terraria.Map;
@@ -29,6 +30,36 @@ internal sealed class CursorDescriptorService
         TileID.Painting3X3,
         TileID.Painting4X3,
         TileID.Painting6X4,
+        TileID.Traps,
+        TileID.PressurePlates,
+        TileID.WeightedPressurePlate,
+        TileID.Timers,
+        TileID.LogicSensor,
+        TileID.ClosedDoor,
+        TileID.OpenDoor,
+        TileID.TrapdoorClosed,
+        TileID.TrapdoorOpen,
+        TileID.TallGateClosed,
+        TileID.TallGateOpen,
+    };
+
+    /// <summary>
+    /// Tile types that use frameX / 18 to determine their style variant.
+    /// </summary>
+    private static readonly HashSet<int> FrameXBasedStyleTileTypes = new()
+    {
+        TileID.Timers,
+    };
+
+    /// <summary>
+    /// Tile types that use frameY / 18 to determine their style variant.
+    /// </summary>
+    private static readonly HashSet<int> FrameYBasedStyleTileTypes = new()
+    {
+        TileID.Traps,
+        TileID.PressurePlates,
+        TileID.WeightedPressurePlate,
+        TileID.LogicSensor,
     };
 
     private static readonly Dictionary<int, Dictionary<int, int>> TileStyleToItemType = BuildTileStyleMap();
@@ -86,20 +117,42 @@ internal sealed class CursorDescriptorService
 
         if (tileType == TileID.Banners && TryDescribeBanner(tile, out name))
         {
+            name = AppendTileStateLabels(tile, name);
             descriptor = BuildDescriptor(tileType, name);
             return true;
         }
 
         if (tileType != TileID.Banners && TryDescribeTileFromItemPlacement(tile, tileType, out name))
         {
+            name = AppendTileStateLabels(tile, name);
             descriptor = BuildDescriptor(tileType, name);
             return true;
         }
 
+        // Try to get biome-specific tree names
+        if (IsTreeTile(tileType))
+        {
+            string? treeName = TryGetTreeName(tileX, tileY, tile);
+            if (!string.IsNullOrWhiteSpace(treeName))
+            {
+                name = AppendTileStateLabels(tile, treeName);
+                descriptor = BuildDescriptor(tileType, name);
+                return true;
+            }
+        }
+
         try
         {
-            int lookup = MapHelper.TileToLookup(tileType, 0);
+            int baseOption = GetPlantStyleOption(tileType, tile);
+            int lookup = MapHelper.TileToLookup(tileType, baseOption);
             name = Lang.GetMapObjectName(lookup);
+
+            // Append growth stage for herbs
+            string? growthStage = GetHerbGrowthStageLabel(tileType);
+            if (!string.IsNullOrWhiteSpace(name) && growthStage != null)
+            {
+                name = $"{name}, {growthStage}";
+            }
         }
         catch
         {
@@ -117,9 +170,137 @@ internal sealed class CursorDescriptorService
         }
 
         OverrideChestName(tileX, tileY, tileType, ref name);
+        name = AppendTileStateLabels(tile, name);
 
         descriptor = BuildDescriptor(tileType, name);
         return true;
+    }
+
+    /// <summary>
+    /// Appends shape, actuator, and interactive state labels to a tile name.
+    /// </summary>
+    private static string? AppendTileStateLabels(Tile tile, string? name)
+    {
+        string? shapeDescriptor = GetTileShapeDescriptor(tile);
+        if (!string.IsNullOrEmpty(shapeDescriptor))
+        {
+            name = $"{name}, {shapeDescriptor}";
+        }
+
+        // Add lever/switch on/off state
+        string? toggleStateLabel = GetToggleStateLabel(tile);
+        if (!string.IsNullOrEmpty(toggleStateLabel))
+        {
+            name = $"{name}, {toggleStateLabel}";
+        }
+
+        // Add junction box mode
+        string? junctionBoxLabel = GetJunctionBoxModeLabel(tile);
+        if (!string.IsNullOrEmpty(junctionBoxLabel))
+        {
+            name = $"{name}, {junctionBoxLabel}";
+        }
+
+        if (tile.HasActuator)
+        {
+            string actuatorLabel = GetLocalizedWithFallback("Mods.ScreenReaderMod.TileStates.HasActuator", "has actuator");
+            name = $"{name}, {actuatorLabel}";
+        }
+
+        return name;
+    }
+
+    /// <summary>
+    /// Gets the on/off state label for toggleable tiles like levers, switches, and timers.
+    /// </summary>
+    private static string? GetToggleStateLabel(Tile tile)
+    {
+        if (!tile.HasTile)
+        {
+            return null;
+        }
+
+        int tileType = tile.TileType;
+
+        // Lever (TileID 132): 2x2 tile, frameX toggles by ±36
+        // frameX 0-35 = OFF state, frameX 36-71 = ON state
+        if (tileType == TileID.Lever)
+        {
+            bool isOn = tile.TileFrameX >= 36;
+            return GetLocalizedWithFallback(
+                isOn ? "Mods.ScreenReaderMod.TileStates.LeverOn" : "Mods.ScreenReaderMod.TileStates.LeverOff",
+                isOn ? "on" : "off");
+        }
+
+        // Timer (TileID 144): 1x1 tile, frameY toggles between 0 (OFF) and 18 (ON/ticking)
+        if (tileType == TileID.Timers)
+        {
+            bool isOn = tile.TileFrameY != 0;
+            return GetLocalizedWithFallback(
+                isOn ? "Mods.ScreenReaderMod.TileStates.TimerOn" : "Mods.ScreenReaderMod.TileStates.TimerOff",
+                isOn ? "on" : "off");
+        }
+
+        // Logic Sensor (TileID 423): 1x1 tile, frameX toggles between 0 (OFF) and 18 (ON/activated)
+        if (tileType == TileID.LogicSensor)
+        {
+            bool isOn = tile.TileFrameX >= 18;
+            return GetLocalizedWithFallback(
+                isOn ? "Mods.ScreenReaderMod.TileStates.SensorOn" : "Mods.ScreenReaderMod.TileStates.SensorOff",
+                isOn ? "active" : "inactive");
+        }
+
+        return null;
+    }
+
+    /// <summary>
+    /// Checks if a tile type is any kind of door (regular, trapdoor, or tall gate).
+    /// </summary>
+    internal static bool IsDoorTile(int tileType)
+    {
+        return tileType == TileID.ClosedDoor ||
+               tileType == TileID.OpenDoor ||
+               tileType == TileID.TrapdoorClosed ||
+               tileType == TileID.TrapdoorOpen ||
+               tileType == TileID.TallGateClosed ||
+               tileType == TileID.TallGateOpen;
+    }
+
+    /// <summary>
+    /// Checks if a door tile type represents an open door.
+    /// </summary>
+    internal static bool IsDoorOpen(int tileType)
+    {
+        return tileType == TileID.OpenDoor ||
+               tileType == TileID.TrapdoorOpen ||
+               tileType == TileID.TallGateOpen;
+    }
+
+    /// <summary>
+    /// Gets the mode label for Junction Box tiles.
+    /// Junction boxes have 3 modes that control how wire signals are routed.
+    /// </summary>
+    private static string? GetJunctionBoxModeLabel(Tile tile)
+    {
+        if (!tile.HasTile || tile.TileType != TileID.WirePipe)
+        {
+            return null;
+        }
+
+        int mode = tile.TileFrameX / 18;
+        return mode switch
+        {
+            0 => GetLocalizedWithFallback(
+                "Mods.ScreenReaderMod.TileStates.JunctionBoxStraight",
+                "straight mode, wires pass through in the same direction"),
+            1 => GetLocalizedWithFallback(
+                "Mods.ScreenReaderMod.TileStates.JunctionBoxCrossA",
+                "cross mode A, down connects to left, up connects to right"),
+            2 => GetLocalizedWithFallback(
+                "Mods.ScreenReaderMod.TileStates.JunctionBoxCrossB",
+                "cross mode B, down connects to right, up connects to left"),
+            _ => null,
+        };
     }
 
     internal static int ResolveAnnouncementKey(int tileType)
@@ -131,6 +312,44 @@ internal sealed class CursorDescriptorService
         }
 
         return tileType;
+    }
+
+    /// <summary>
+    /// Resolves announcement key with frame state for toggleable tiles.
+    /// This ensures state changes (on/off) produce different keys.
+    /// </summary>
+    internal static int ResolveAnnouncementKey(int tileType, Tile tile)
+    {
+        int baseKey = ResolveAnnouncementKey(tileType);
+
+        // For toggleable tiles, include frame state to distinguish on/off
+        if (tileType == TileID.Lever)
+        {
+            bool isOn = tile.TileFrameX >= 36;
+            return isOn ? (baseKey | 0x10000) : baseKey;
+        }
+
+        if (tileType == TileID.Timers)
+        {
+            bool isOn = tile.TileFrameY != 0;
+            return isOn ? (baseKey | 0x10000) : baseKey;
+        }
+
+        // Logic Sensor: include on/off state so state changes trigger re-announcement
+        if (tileType == TileID.LogicSensor)
+        {
+            bool isOn = tile.TileFrameX >= 18;
+            return isOn ? (baseKey | 0x10000) : baseKey;
+        }
+
+        // Junction Box: include mode in key so mode changes trigger re-announcement
+        if (tileType == TileID.WirePipe)
+        {
+            int mode = tile.TileFrameX / 18;
+            return baseKey | (mode << 16);
+        }
+
+        return baseKey;
     }
 
     internal static bool ShouldSuppressVariantNames(int announcementKey)
@@ -154,7 +373,7 @@ internal sealed class CursorDescriptorService
             return;
         }
 
-        int chestIndex = Chest.FindChestByGuessing(tileX, tileY);
+        int chestIndex = FindChestAtTile(tileX, tileY, tileType);
         if (chestIndex < 0 || chestIndex >= Main.chest.Length)
         {
             return;
@@ -178,6 +397,69 @@ internal sealed class CursorDescriptorService
         }
 
         name = $"\"{sanitized}\" {name}";
+    }
+
+    private static int FindChestAtTile(int tileX, int tileY, int tileType)
+    {
+        // First try the standard guessing method
+        int chestIndex = Chest.FindChestByGuessing(tileX, tileY);
+        if (chestIndex >= 0)
+        {
+            return chestIndex;
+        }
+
+        // Fallback: Find origin tile using TileObjectData and search directly
+        if (!WorldGen.InWorld(tileX, tileY))
+        {
+            return -1;
+        }
+
+        Tile tile = Main.tile[tileX, tileY];
+        if (!tile.HasTile)
+        {
+            return -1;
+        }
+
+        TileObjectData? tileData = TileObjectData.GetTileData(tileType, 0);
+        if (tileData is null)
+        {
+            return -1;
+        }
+
+        // Calculate origin from frame coordinates
+        int frameX = tile.TileFrameX;
+        int frameY = tile.TileFrameY;
+        int tileWidth = tileData.CoordinateWidth + tileData.CoordinatePadding;
+        int tileHeight = tileData.CoordinateHeights[0] + tileData.CoordinatePadding;
+
+        // Determine which sub-tile we're on
+        int subX = (tileWidth > 0) ? (frameX % (tileData.Width * tileWidth)) / tileWidth : 0;
+        int subY = (tileHeight > 0) ? (frameY % (tileData.Height * tileHeight)) / tileHeight : 0;
+
+        int originX = tileX - subX;
+        int originY = tileY - subY;
+
+        // Try finding chest at calculated origin
+        chestIndex = Chest.FindChest(originX, originY);
+        if (chestIndex >= 0)
+        {
+            return chestIndex;
+        }
+
+        // Last resort: scan nearby for matching chest
+        for (int dx = -2; dx <= 2; dx++)
+        {
+            for (int dy = -2; dy <= 2; dy++)
+            {
+                chestIndex = Chest.FindChest(tileX + dx, tileY + dy);
+                if (chestIndex >= 0)
+                {
+                    return chestIndex;
+                }
+            }
+        }
+
+        return -1;
     }
 
     private static bool IsChestTile(int tileType)
@@ -226,10 +508,23 @@ internal sealed class CursorDescriptorService
     {
         name = null;
 
-        int style = TileObjectData.GetTileStyle(tile);
-        if (style < 0)
+        // Use frame-based style for tile types that use frame position for variant determination
+        int style;
+        if (FrameXBasedStyleTileTypes.Contains(tileType))
         {
-            return false;
+            style = tile.TileFrameX / 18;
+        }
+        else if (FrameYBasedStyleTileTypes.Contains(tileType))
+        {
+            style = tile.TileFrameY / 18;
+        }
+        else
+        {
+            style = TileObjectData.GetTileStyle(tile);
+            if (style < 0)
+            {
+                return false;
+            }
         }
 
         if (!TryResolveStyleItemType(tileType, style, out int itemType) || itemType <= ItemID.None)
@@ -250,7 +545,18 @@ internal sealed class CursorDescriptorService
     private static bool TryResolveStyleItemType(int tileType, int style, out int itemType)
     {
         itemType = ItemID.None;
-        if (!TileStyleToItemType.TryGetValue(tileType, out Dictionary<int, int>? map))
+
+        // Map open door types to their closed equivalents for item lookup
+        // (door items create closed door tiles, so open doors aren't in the mapping)
+        int lookupTileType = tileType switch
+        {
+            TileID.OpenDoor => TileID.ClosedDoor,
+            TileID.TrapdoorOpen => TileID.TrapdoorClosed,
+            TileID.TallGateOpen => TileID.TallGateClosed,
+            _ => tileType
+        };
+
+        if (!TileStyleToItemType.TryGetValue(lookupTileType, out Dictionary<int, int>? map))
         {
             return false;
         }
@@ -456,6 +762,256 @@ internal sealed class CursorDescriptorService
         }
 
         return string.IsNullOrWhiteSpace(cleaned) ? name : cleaned;
+    }
+
+    private static string? GetTileShapeDescriptor(Tile tile)
+    {
+        if (!tile.HasTile)
+        {
+            return null;
+        }
+
+        if (tile.IsHalfBlock)
+        {
+            return GetLocalizedWithFallback("Mods.ScreenReaderMod.TileShapes.HalfBlock", "half block");
+        }
+
+        return tile.Slope switch
+        {
+            SlopeType.SlopeDownLeft => GetLocalizedWithFallback("Mods.ScreenReaderMod.TileShapes.SlopeDownLeft", "sloped down-left"),
+            SlopeType.SlopeDownRight => GetLocalizedWithFallback("Mods.ScreenReaderMod.TileShapes.SlopeDownRight", "sloped down-right"),
+            SlopeType.SlopeUpLeft => GetLocalizedWithFallback("Mods.ScreenReaderMod.TileShapes.SlopeUpLeft", "sloped up-left"),
+            SlopeType.SlopeUpRight => GetLocalizedWithFallback("Mods.ScreenReaderMod.TileShapes.SlopeUpRight", "sloped up-right"),
+            _ => null,
+        };
+    }
+
+    private static string GetLocalizedWithFallback(string key, string fallback)
+    {
+        string value = Language.GetTextValue(key);
+        if (string.IsNullOrWhiteSpace(value) || string.Equals(value, key, StringComparison.Ordinal))
+        {
+            return fallback;
+        }
+
+        return value;
+    }
+
+    /// <summary>
+    /// Gets the map legend option index for plant tiles that use frame-based variants.
+    /// This allows herbs and dye plants to display their specific names (e.g., "Daybloom" instead of generic "Herbs").
+    /// </summary>
+    private static int GetPlantStyleOption(int tileType, Tile tile)
+    {
+        return tileType switch
+        {
+            TileID.ImmatureHerbs or TileID.MatureHerbs or TileID.BloomingHerbs
+                => Math.Clamp(tile.TileFrameX / 18, 0, 6),
+            TileID.DyePlants
+                => tile.TileFrameX / 34,
+            _ => 0
+        };
+    }
+
+    /// <summary>
+    /// Gets the growth stage label for herb tiles.
+    /// </summary>
+    private static string? GetHerbGrowthStageLabel(int tileType)
+    {
+        return tileType switch
+        {
+            TileID.ImmatureHerbs => GetLocalizedWithFallback("Mods.ScreenReaderMod.HerbStages.Immature", "immature"),
+            TileID.MatureHerbs => GetLocalizedWithFallback("Mods.ScreenReaderMod.HerbStages.Mature", "mature"),
+            TileID.BloomingHerbs => GetLocalizedWithFallback("Mods.ScreenReaderMod.HerbStages.Blooming", "blooming"),
+            _ => null
+        };
+    }
+
+    /// <summary>
+    /// Checks if the given tile type is any type of tree tile.
+    /// </summary>
+    private static bool IsTreeTile(int tileType)
+    {
+        return tileType == TileID.Trees ||
+               tileType == TileID.MushroomTrees ||
+               tileType == TileID.PalmTree ||
+               tileType == TileID.PineTree ||
+               tileType == TileID.VanityTreeSakura ||
+               tileType == TileID.VanityTreeYellowWillow ||
+               tileType == TileID.TreeAsh ||
+               tileType == TileID.TreeTopaz ||
+               tileType == TileID.TreeAmethyst ||
+               tileType == TileID.TreeSapphire ||
+               tileType == TileID.TreeEmerald ||
+               tileType == TileID.TreeRuby ||
+               tileType == TileID.TreeDiamond ||
+               tileType == TileID.TreeAmber;
+    }
+
+    /// <summary>
+    /// Gets the biome-specific tree name for a tree tile at the given coordinates.
+    /// </summary>
+    private static string? TryGetTreeName(int tileX, int tileY, Tile tile)
+    {
+        int tileType = tile.TileType;
+
+        // Handle special tree types that don't depend on ground tile
+        switch (tileType)
+        {
+            case TileID.MushroomTrees:
+                return GetLocalizedWithFallback("Mods.ScreenReaderMod.TreeNames.Mushroom", "Mushroom Tree");
+            case TileID.PineTree:
+                return GetLocalizedWithFallback("Mods.ScreenReaderMod.TreeNames.Pine", "Pine Tree");
+            case TileID.VanityTreeSakura:
+                return GetLocalizedWithFallback("Mods.ScreenReaderMod.TreeNames.Sakura", "Sakura Tree");
+            case TileID.VanityTreeYellowWillow:
+                return GetLocalizedWithFallback("Mods.ScreenReaderMod.TreeNames.YellowWillow", "Yellow Willow Tree");
+            case TileID.TreeAsh:
+                return GetLocalizedWithFallback("Mods.ScreenReaderMod.TreeNames.Ash", "Ash Tree");
+            case TileID.TreeTopaz:
+                return GetLocalizedWithFallback("Mods.ScreenReaderMod.TreeNames.Topaz", "Topaz Gem Tree");
+            case TileID.TreeAmethyst:
+                return GetLocalizedWithFallback("Mods.ScreenReaderMod.TreeNames.Amethyst", "Amethyst Gem Tree");
+            case TileID.TreeSapphire:
+                return GetLocalizedWithFallback("Mods.ScreenReaderMod.TreeNames.Sapphire", "Sapphire Gem Tree");
+            case TileID.TreeEmerald:
+                return GetLocalizedWithFallback("Mods.ScreenReaderMod.TreeNames.Emerald", "Emerald Gem Tree");
+            case TileID.TreeRuby:
+                return GetLocalizedWithFallback("Mods.ScreenReaderMod.TreeNames.Ruby", "Ruby Gem Tree");
+            case TileID.TreeDiamond:
+                return GetLocalizedWithFallback("Mods.ScreenReaderMod.TreeNames.Diamond", "Diamond Gem Tree");
+            case TileID.TreeAmber:
+                return GetLocalizedWithFallback("Mods.ScreenReaderMod.TreeNames.Amber", "Amber Gem Tree");
+        }
+
+        // For standard trees and palm trees, determine type from ground tile
+        if (tileType == TileID.Trees || tileType == TileID.PalmTree)
+        {
+            TreeTypes treeType = GetTreeTypeFromPosition(tileX, tileY, tileType);
+            return GetTreeNameFromType(treeType);
+        }
+
+        return null;
+    }
+
+    /// <summary>
+    /// Finds the ground tile below a tree and determines the tree type.
+    /// Mimics WorldGen.GetTreeBottom and WorldGen.GetTreeType.
+    /// </summary>
+    private static TreeTypes GetTreeTypeFromPosition(int tileX, int tileY, int treeTileType)
+    {
+        int x = tileX;
+        int y = tileY;
+
+        // For palm trees, just go straight down
+        if (treeTileType == TileID.PalmTree)
+        {
+            while (y < Main.maxTilesY - 50)
+            {
+                Tile t = Framing.GetTileSafely(x, y);
+                if (t.HasTile && t.TileType != TileID.PalmTree)
+                {
+                    break;
+                }
+                y++;
+            }
+        }
+        else
+        {
+            // For standard trees, adjust x position based on frame to find trunk center
+            Tile startTile = Framing.GetTileSafely(x, y);
+            int frameCol = startTile.TileFrameX / 22;
+            int frameRow = startTile.TileFrameY / 22;
+
+            if (frameCol == 3 && frameRow <= 2)
+                x++;
+            else if (frameCol == 4 && frameRow >= 3 && frameRow <= 5)
+                x--;
+            else if (frameCol == 1 && frameRow >= 6 && frameRow <= 8)
+                x--;
+            else if (frameCol == 2 && frameRow >= 6 && frameRow <= 8)
+                x++;
+            else if (frameCol == 2 && frameRow >= 9)
+                x++;
+            else if (frameCol == 3 && frameRow >= 9)
+                x--;
+
+            // Go down until we find a non-tree tile
+            while (y < Main.maxTilesY - 50)
+            {
+                Tile t = Framing.GetTileSafely(x, y);
+                if (!t.HasTile)
+                {
+                    y++;
+                    continue;
+                }
+
+                // Check if it's still a tree trunk tile
+                if (TileID.Sets.IsATreeTrunk[t.TileType] || t.TileType == TileID.MushroomTrees)
+                {
+                    y++;
+                    continue;
+                }
+
+                break;
+            }
+        }
+
+        // Now we're at the ground tile - determine tree type
+        Tile groundTile = Framing.GetTileSafely(x, y);
+        if (!groundTile.HasTile)
+        {
+            return TreeTypes.None;
+        }
+
+        return GetTreeTypeFromGroundTile(groundTile.TileType);
+    }
+
+    /// <summary>
+    /// Determines the tree type based on the ground tile type.
+    /// Mirrors the logic from WorldGen.GetTreeType.
+    /// </summary>
+    private static TreeTypes GetTreeTypeFromGroundTile(int groundTileType)
+    {
+        return groundTileType switch
+        {
+            TileID.Grass or TileID.GolfGrass => TreeTypes.Forest,
+            TileID.CorruptGrass => TreeTypes.Corrupt,
+            TileID.MushroomGrass => TreeTypes.Mushroom,
+            TileID.CrimsonGrass => TreeTypes.Crimson,
+            TileID.JungleGrass => TreeTypes.Jungle,
+            TileID.SnowBlock => TreeTypes.Snow,
+            TileID.HallowedGrass or TileID.GolfGrassHallowed => TreeTypes.Hallowed,
+            TileID.Sand => TreeTypes.Palm,
+            TileID.Ebonsand => TreeTypes.PalmCorrupt,
+            TileID.Crimsand => TreeTypes.PalmCrimson,
+            TileID.Pearlsand => TreeTypes.PalmHallowed,
+            TileID.Ash => TreeTypes.Ash,
+            _ => TreeTypes.None
+        };
+    }
+
+    /// <summary>
+    /// Gets the localized tree name for a given tree type.
+    /// </summary>
+    private static string? GetTreeNameFromType(TreeTypes treeType)
+    {
+        return treeType switch
+        {
+            TreeTypes.Forest => GetLocalizedWithFallback("Mods.ScreenReaderMod.TreeNames.Forest", "Forest Tree"),
+            TreeTypes.Corrupt => GetLocalizedWithFallback("Mods.ScreenReaderMod.TreeNames.Corrupt", "Corrupt Tree"),
+            TreeTypes.Mushroom => GetLocalizedWithFallback("Mods.ScreenReaderMod.TreeNames.Mushroom", "Mushroom Tree"),
+            TreeTypes.Crimson => GetLocalizedWithFallback("Mods.ScreenReaderMod.TreeNames.Crimson", "Crimson Tree"),
+            TreeTypes.Jungle => GetLocalizedWithFallback("Mods.ScreenReaderMod.TreeNames.Jungle", "Jungle Tree"),
+            TreeTypes.Snow => GetLocalizedWithFallback("Mods.ScreenReaderMod.TreeNames.Snow", "Boreal Tree"),
+            TreeTypes.Hallowed => GetLocalizedWithFallback("Mods.ScreenReaderMod.TreeNames.Hallowed", "Hallowed Tree"),
+            TreeTypes.Palm => GetLocalizedWithFallback("Mods.ScreenReaderMod.TreeNames.Palm", "Palm Tree"),
+            TreeTypes.PalmCorrupt => GetLocalizedWithFallback("Mods.ScreenReaderMod.TreeNames.PalmCorrupt", "Corrupt Palm Tree"),
+            TreeTypes.PalmCrimson => GetLocalizedWithFallback("Mods.ScreenReaderMod.TreeNames.PalmCrimson", "Crimson Palm Tree"),
+            TreeTypes.PalmHallowed => GetLocalizedWithFallback("Mods.ScreenReaderMod.TreeNames.PalmHallowed", "Hallowed Palm Tree"),
+            TreeTypes.Ash => GetLocalizedWithFallback("Mods.ScreenReaderMod.TreeNames.Ash", "Ash Tree"),
+            _ => null
+        };
     }
 
     internal static bool IsLikelyPlayerChat(string text)

@@ -1,0 +1,24 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <AssemblyName>ScreenReaderMod</AssemblyName>
+    <RootNamespace>ScreenReaderMod</RootNamespace>
+    <TargetFramework>net8.0</TargetFramework>
+    <LangVersion>12.0</LangVersion>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
+
+    <!-- Don't actually build the mod through MSBuild - use tModLoader's build system -->
+    <BuildMod>false</BuildMod>
+
+    <!-- Prevent output folder clutter -->
+    <AppendTargetFrameworkToOutputPath>false</AppendTargetFrameworkToOutputPath>
+    <AppendRuntimeIdentifierToOutputPath>false</AppendRuntimeIdentifierToOutputPath>
+  </PropertyGroup>
+
+  <!-- Import tModLoader's targets file for proper references -->
+  <Import Project="$(tMLSteamPath)tMLMod.targets" Condition="Exists('$(tMLSteamPath)tMLMod.targets')" />
+  <Import Project="C:\Program Files (x86)\Steam\steamapps\common\tModLoader\tMLMod.targets" Condition="!Exists('$(tMLSteamPath)tMLMod.targets')" />
+
+</Project>

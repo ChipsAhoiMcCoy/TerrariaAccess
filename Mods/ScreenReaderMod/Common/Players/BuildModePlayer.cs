@@ -7,6 +7,7 @@ using global::ScreenReaderMod;
 using ScreenReaderMod.Common.Services;
 using ScreenReaderMod.Common.Systems;
 using ScreenReaderMod.Common.Systems.BuildMode;
+using ScreenReaderMod.Common.Systems.GamepadEmulation;
 using ScreenReaderMod.Common.Utilities;
 using Terraria;
 using Terraria.DataStructures;
@@ -18,7 +19,6 @@ namespace ScreenReaderMod.Common.Players;
 
 public sealed class BuildModePlayer : ModPlayer
 {
-    private const int CursorAnnouncementCooldownTicks = 6;
     private const int HurtInputGraceTicks = 15;
 
     private enum BuildModeState
@@ -32,12 +32,6 @@ public sealed class BuildModePlayer : ModPlayer
     private BuildModeState _state = BuildModeState.Inactive;
     private Point? _firstCorner;
     private Point? _secondCorner;
-    private Point _lastAnnouncedCursor;
-    private int _cursorAnnounceCooldown;
-    private bool _lastMouseLeft;
-    private bool _lastQuickMount;
-    private bool _lastGamepadStart;
-    private bool _lastGamepadA;
     private SelectionAction _activeAction;
     private int _activeItemType;
     private int _tilesCleared;
@@ -47,15 +41,46 @@ public sealed class BuildModePlayer : ModPlayer
     private bool _actionCompletedAnnounced;
     private int _actionCooldown;
     private int _autoToolRevertSlot = -1;
-    private string? _lastCursorAnnouncement;
     private bool _wasUseHeld;
     private int _hurtGraceTicks;
     private SelectionIterator _selectionIterator;
+    private readonly List<ContextualHotkey> _hotkeys = new();
     private readonly BuildModeRangeManager _rangeManager = new();
+    private readonly BuildModeHousingAnnouncer _housingAnnouncer = new();
 
     private bool BuildModeActive => _state != BuildModeState.Inactive;
+
+    /// <summary>
+    /// Returns true if build mode is currently active. Used by external systems
+    /// to determine whether extended placement reach should be allowed.
+    /// </summary>
+    public bool IsBuildModeActive => BuildModeActive;
+
+    /// <summary>
+    /// Returns true if build mode is active and awaiting the second corner selection.
+    /// Used by CursorNarrator to provide "width by height" selection feedback.
+    /// </summary>
+    public bool IsAwaitingSecondCorner => _state == BuildModeState.AwaitingSecondCorner && _firstCorner.HasValue && !_secondCorner.HasValue;
+
+    /// <summary>
+    /// Returns the selection dimensions as "width by height" for the given cursor position.
+    /// Used by CursorNarrator to append to tile announcements during selection.
+    /// </summary>
+    public string GetSelectionDimensions(int cursorTileX, int cursorTileY)
+    {
+        if (!_firstCorner.HasValue)
+        {
+            return string.Empty;
+        }
+
+        int width = Math.Abs(cursorTileX - _firstCorner.Value.X) + 1;
+        int height = Math.Abs(cursorTileY - _firstCorner.Value.Y) + 1;
+
+        return $"{width} by {height}";
+    }
+
     private bool HasSelection => _state == BuildModeState.Executing && _firstCorner.HasValue && _secondCorner.HasValue;
-    private bool AwaitingSecondCorner => _state == BuildModeState.AwaitingSecondCorner && _firstCorner.HasValue && !_secondCorner.HasValue;
+    private bool AwaitingSecondCorner => IsAwaitingSecondCorner;
 
     public override void ResetEffects()
     {
@@ -65,7 +90,7 @@ public sealed class BuildModePlayer : ModPlayer
             return;
         }
 
-        _rangeManager.ExpandPlacementRangeToViewport(Player);
+        EnsurePlacementRangeExpanded();
     }
 
     public override void PreUpdate()
@@ -76,40 +101,34 @@ public sealed class BuildModePlayer : ModPlayer
             return;
         }
 
+        EnsurePlacementRangeExpanded();
+        SuppressGrappleAndMountControls();
         GuardBuildModeInput();
-        _rangeManager.ExpandPlacementRangeToViewport(Player);
     }
 
     public override void ProcessTriggers(TriggersSet triggersSet)
     {
-        bool startPressed = PlayerInput.UsingGamepad && IsGamepadStartPressed();
-        bool startJustPressed = startPressed && !_lastGamepadStart;
-        _lastGamepadStart = startPressed;
-
-        if (startJustPressed || (BuildModeKeybinds.Toggle?.JustPressed ?? false))
+        bool togglePressed = BuildModeKeybinds.Toggle?.JustPressed ?? false;
+        if (togglePressed)
         {
-            ToggleBuildMode();
+            CycleBuildMode();
+        }
+
+        EnsureHotkeysInitialized();
+
+        if (BuildModeActive)
+        {
+            EnsurePlacementRangeExpanded();
+            if (ContextualInputRouter.TryHandle(_hotkeys, triggersSet))
+            {
+                return;
+            }
         }
 
         if (!BuildModeActive)
         {
             TrackMouseForCornerPlacement(triggersSet);
-            return;
         }
-
-        bool placePressed = CaptureCornerPlacementInput(triggersSet);
-        if (!placePressed)
-        {
-            return;
-        }
-
-        if (!TryCaptureCursorTile(out Point tile))
-        {
-            ScreenReaderService.Announce(BuildModeNarrationCatalog.CursorOutOfBounds());
-            return;
-        }
-
-        HandleCornerPlacement(tile);
     }
 
     public override void PostUpdate()
@@ -124,6 +143,11 @@ public sealed class BuildModePlayer : ModPlayer
         if (!BuildModeActive)
         {
             RestorePlacementRangeIfNeeded();
+        }
+        else
+        {
+            // Check housing suitability while walking in build mode
+            _housingAnnouncer.Update(Player);
         }
 
         if (!BuildModeActive || !HasSelection)
@@ -182,20 +206,36 @@ public sealed class BuildModePlayer : ModPlayer
         }
     }
 
-    private void ToggleBuildMode()
+    private void CycleBuildMode()
     {
-        if (BuildModeActive)
+        // Cycle: Disabled -> Fill -> Outline -> Disabled
+        if (!BuildModeActive)
         {
-            _state = BuildModeState.Inactive;
-            RestorePlacementRangeIfNeeded();
+            // Disabled -> Fill
+            BuildModeKeybinds.OutlineModeEnabled = false;
             ResetSelection();
-            ScreenReaderService.Announce(BuildModeNarrationCatalog.Disabled());
+            _housingAnnouncer.Reset();
+            _state = BuildModeState.AwaitingFirstCorner;
+            ScreenReaderService.Announce(BuildModeNarrationCatalog.Enabled(outlineMode: false));
             return;
         }
 
+        if (!BuildModeKeybinds.OutlineModeEnabled)
+        {
+            // Fill -> Outline
+            BuildModeKeybinds.OutlineModeEnabled = true;
+            ResetSelection();
+            ScreenReaderService.Announce(BuildModeNarrationCatalog.Enabled(outlineMode: true));
+            return;
+        }
+
+        // Outline -> Disabled
+        BuildModeKeybinds.OutlineModeEnabled = false;
+        _state = BuildModeState.Inactive;
+        RestorePlacementRangeIfNeeded();
         ResetSelection();
-        _state = BuildModeState.AwaitingFirstCorner;
-        ScreenReaderService.Announce(BuildModeNarrationCatalog.Enabled());
+        _housingAnnouncer.Reset();
+        ScreenReaderService.Announce(BuildModeNarrationCatalog.Disabled());
     }
 
     private void ResetState()
@@ -203,14 +243,9 @@ public sealed class BuildModePlayer : ModPlayer
         _state = BuildModeState.Inactive;
         RestorePlacementRangeIfNeeded();
         ResetSelection();
-        _cursorAnnounceCooldown = 0;
-        _lastAnnouncedCursor = Point.Zero;
-        _lastMouseLeft = false;
-        _lastQuickMount = false;
-        _lastGamepadStart = false;
-        _lastGamepadA = false;
         ResetActiveAction();
         _hurtGraceTicks = 0;
+        _housingAnnouncer.Reset();
     }
 
     private void ResetActiveAction()
@@ -234,7 +269,6 @@ public sealed class BuildModePlayer : ModPlayer
     {
         _firstCorner = null;
         _secondCorner = null;
-        _lastCursorAnnouncement = null;
         if (_state != BuildModeState.Inactive)
         {
             _state = BuildModeState.AwaitingFirstCorner;
@@ -245,12 +279,6 @@ public sealed class BuildModePlayer : ModPlayer
     public override void OnHurt(Player.HurtInfo info)
     {
         _hurtGraceTicks = HurtInputGraceTicks;
-    }
-
-    private void SuppressQuickMount(TriggersSet triggersSet)
-    {
-        triggersSet.QuickMount = false;
-        Player.controlMount = false;
     }
 
     private void EnsureActiveAction(Rectangle selection, SelectionAction action, ref Item held)
@@ -335,7 +363,7 @@ public sealed class BuildModePlayer : ModPlayer
         }
 
         Tile tile = Framing.GetTileSafely(x, y);
-        if (!tile.HasTile && tile.WallType == 0)
+        if (!tile.HasTile && tile.WallType == WallID.None)
         {
             return true;
         }
@@ -373,11 +401,11 @@ public sealed class BuildModePlayer : ModPlayer
             }
         }
 
-        if (held.hammer > 0 && tile.WallType > 0)
+        if (held.hammer > 0 && tile.WallType > WallID.None)
         {
             int beforeWall = tile.WallType;
             Player.PickWall(x, y, held.hammer);
-            if (beforeWall != 0 && Main.tile[x, y].WallType == 0)
+            if (beforeWall != WallID.None && Main.tile[x, y].WallType == WallID.None)
             {
                 _wallsCleared++;
                 if (Main.netMode == NetmodeID.MultiplayerClient)
@@ -385,7 +413,7 @@ public sealed class BuildModePlayer : ModPlayer
                     NetMessage.SendData(MessageID.TileManipulation, -1, -1, null, 2, x, y);
                 }
             }
-            else if (Main.tile[x, y].WallType != 0)
+            else if (Main.tile[x, y].WallType != WallID.None)
             {
                 advanced = false;
             }
@@ -535,51 +563,10 @@ public sealed class BuildModePlayer : ModPlayer
         return Player.controlUseItem || Player.controlUseTile || Main.mouseLeft || Main.mouseRight;
     }
 
-    private bool CaptureCornerPlacementInput(TriggersSet triggersSet)
-    {
-        bool placePressed = BuildModeKeybinds.Place?.JustPressed ?? false;
-        bool usingGamepad = PlayerInput.UsingGamepad;
-        bool gamepadAPressed = usingGamepad && IsGamepadAButtonPressed();
-        bool gamepadAJustPressed = gamepadAPressed && !_lastGamepadA;
-        _lastGamepadA = gamepadAPressed;
-
-        bool quickMountPressed = triggersSet.QuickMount;
-        bool quickMountJustPressed = quickMountPressed && !_lastQuickMount;
-        _lastQuickMount = quickMountPressed;
-
-        if (quickMountPressed)
-        {
-            placePressed |= quickMountJustPressed;
-            SuppressQuickMount(triggersSet);
-        }
-
-        if (gamepadAJustPressed)
-        {
-            placePressed = true;
-        }
-
-        if (!placePressed && !usingGamepad)
-        {
-            bool mouseLeft = triggersSet.MouseLeft;
-            placePressed = mouseLeft && !_lastMouseLeft;
-            _lastMouseLeft = mouseLeft;
-        }
-        else
-        {
-            _lastMouseLeft = triggersSet.MouseLeft;
-        }
-
-        return placePressed;
-    }
-
     private void TrackMouseForCornerPlacement(TriggersSet triggersSet)
     {
-        if (!PlayerInput.UsingGamepad)
-        {
-            _lastMouseLeft = triggersSet.MouseLeft;
-        }
-
-        _lastQuickMount = triggersSet.QuickMount;
+        // Intentionally left blank; only tracking via keybind states now.
+        _ = triggersSet;
     }
 
     private void HandleCornerPlacement(Point tile)
@@ -587,7 +574,6 @@ public sealed class BuildModePlayer : ModPlayer
         if (!_firstCorner.HasValue)
         {
             _firstCorner = tile;
-            _lastAnnouncedCursor = tile;
             _state = BuildModeState.AwaitingSecondCorner;
             ScreenReaderService.Announce(BuildModeNarrationCatalog.PointOneSet());
             return;
@@ -604,7 +590,6 @@ public sealed class BuildModePlayer : ModPlayer
 
         _firstCorner = tile;
         _secondCorner = null;
-        _lastAnnouncedCursor = tile;
         _state = BuildModeState.AwaitingSecondCorner;
         ScreenReaderService.Announce(BuildModeNarrationCatalog.SelectionReset());
     }
@@ -623,6 +608,16 @@ public sealed class BuildModePlayer : ModPlayer
 
         tile = Point.Zero;
         return false;
+    }
+
+    private bool TryCaptureCursorTileInRange(out Point tile)
+    {
+        if (!TryCaptureCursorTile(out tile))
+        {
+            return false;
+        }
+
+        return true;
     }
 
     private Rectangle GetSelection()
@@ -644,74 +639,13 @@ public sealed class BuildModePlayer : ModPlayer
 
     private void AnnounceCursorPositionIfNeeded()
     {
-        if (!BuildModeActive || !_firstCorner.HasValue || _secondCorner.HasValue)
-        {
-            _cursorAnnounceCooldown = 0;
-            return;
-        }
-
-        if (!TryCaptureCursorTile(out Point tile))
-        {
-            _cursorAnnounceCooldown = 0;
-            return;
-        }
-
-        if (_cursorAnnounceCooldown > 0)
-        {
-            _cursorAnnounceCooldown--;
-            return;
-        }
-
-        if (tile == _lastAnnouncedCursor)
-        {
-            return;
-        }
-
-        _lastAnnouncedCursor = tile;
-        _cursorAnnounceCooldown = CursorAnnouncementCooldownTicks;
-
-        string announcement = BuildDirectionalCursorAnnouncement(_firstCorner.Value, tile);
-        if (string.IsNullOrWhiteSpace(announcement))
-        {
-            _lastCursorAnnouncement = null;
-            return;
-        }
-
-        bool suppressRepeats = PlayerInput.UsingGamepad && !IsGamepadDpadPressed();
-        if (suppressRepeats && string.Equals(_lastCursorAnnouncement, announcement, StringComparison.Ordinal))
-        {
-            return;
-        }
-
-        _lastCursorAnnouncement = announcement;
-        ScreenReaderService.Announce(announcement);
-    }
-
-    private string BuildDirectionalCursorAnnouncement(Point origin, Point current)
-    {
-        int deltaX = current.X - origin.X;
-        int deltaY = current.Y - origin.Y;
-
-        List<string> parts = new();
-
-        if (deltaY != 0)
-        {
-            string direction = deltaY > 0 ? "down" : "up";
-            parts.Add($"{Math.Abs(deltaY)} {direction}");
-        }
-
-        if (deltaX != 0)
-        {
-            string direction = deltaX > 0 ? "right" : "left";
-            parts.Add($"{Math.Abs(deltaX)} {direction}");
-        }
-
-        return parts.Count == 0 ? string.Empty : string.Join(", ", parts);
+        // Cursor position announcements during build mode selection are now handled
+        // by CursorNarrator, which appends "width by height" to tile announcements.
     }
 
     private static bool RequiresAxe(Tile tile)
     {
-        return tile.HasTile && tile.TileType >= 0 && tile.TileType < Main.tileAxe.Length && Main.tileAxe[tile.TileType];
+        return tile.HasTile && tile.TileType < Main.tileAxe.Length && Main.tileAxe[tile.TileType];
     }
 
     private int GetAdjustedMiningDelay(Item held)
@@ -845,6 +779,44 @@ public sealed class BuildModePlayer : ModPlayer
         Player.releaseUseTile = true;
     }
 
+    private void EnsureHotkeysInitialized()
+    {
+        if (_hotkeys.Count > 0)
+        {
+            return;
+        }
+
+        _hotkeys.Add(new ContextualHotkey(
+            "BuildModePlace",
+            Condition: () => BuildModeActive,
+            Chords: new[]
+            {
+                InputChord.FromKeybind(BuildModeKeybinds.Place, "BuildModePlace"),
+                InputChord.FromTrigger(
+                    "QuickMount",
+                    static _ => PlayerInput.Triggers.JustPressed.QuickMount,
+                    static triggers =>
+                    {
+                        triggers.QuickMount = false;
+                        PlayerInput.Triggers.Current.QuickMount = false;
+                        PlayerInput.Triggers.JustPressed.QuickMount = false;
+                    })
+            },
+            OnTriggered: HandleCornerPlacementInput,
+            Priority: 10));
+    }
+
+    private void HandleCornerPlacementInput()
+    {
+        if (!TryCaptureCursorTileInRange(out Point tile))
+        {
+            ScreenReaderService.Announce(BuildModeNarrationCatalog.CursorOutOfBounds());
+            return;
+        }
+
+        HandleCornerPlacement(tile);
+    }
+
     private void GuardBuildModeInput()
     {
         if (!HasSelection)
@@ -860,10 +832,46 @@ public sealed class BuildModePlayer : ModPlayer
         SuppressVanillaUseWhileActing();
     }
 
+    private void SuppressGrappleAndMountControls()
+    {
+        // Suppress grappling hook and mount controls while build mode is active.
+        // This prevents the A button (QuickMount) from triggering grapple teleportation
+        // or mount activation when the user intends to set build mode points.
+        Player.controlHook = false;
+        Player.controlMount = false;
+
+        // Also suppress via triggers to catch any remaining paths
+        if (PlayerInput.Triggers.Current.QuickMount)
+        {
+            PlayerInput.Triggers.Current.QuickMount = false;
+            PlayerInput.Triggers.JustPressed.QuickMount = false;
+        }
+    }
+
     private static bool IsGamepadDpadPressed()
     {
+        if (DpadVirtualizationSystem.WasDpadHeldThisFrame())
+        {
+            return true;
+        }
+
         try
         {
+            TriggersSet triggers = PlayerInput.Triggers.Current;
+            if (triggers?.KeyStatus is Dictionary<string, bool> keyStatus &&
+                (keyStatus.TryGetValue("DpadUp", out bool up) && up ||
+                 keyStatus.TryGetValue("DpadDown", out bool down) && down ||
+                 keyStatus.TryGetValue("DpadLeft", out bool left) && left ||
+                 keyStatus.TryGetValue("DpadRight", out bool right) && right))
+            {
+                return true;
+            }
+
+            if (!PlayerInput.UsingGamepad)
+            {
+                return false;
+            }
+
             GamePadState state = GamePad.GetState(PlayerIndex.One);
             if (!state.IsConnected)
             {
@@ -881,35 +889,25 @@ public sealed class BuildModePlayer : ModPlayer
         }
     }
 
-    private static bool IsGamepadStartPressed()
+    private void EnsurePlacementRangeExpanded()
     {
-        try
+        if (IsSmartCursorActive())
         {
-            GamePadState state = GamePad.GetState(PlayerIndex.One);
-            return state.IsConnected && state.Buttons.Start == ButtonState.Pressed;
+            RestorePlacementRangeIfNeeded();
+            return;
         }
-        catch
-        {
-            return false;
-        }
-    }
 
-    private static bool IsGamepadAButtonPressed()
-    {
-        try
-        {
-            GamePadState state = GamePad.GetState(PlayerIndex.One);
-            return state.IsConnected && state.Buttons.A == ButtonState.Pressed;
-        }
-        catch
-        {
-            return false;
-        }
+        _rangeManager.ExpandPlacementRangeToViewport(Player);
     }
 
     private void RestorePlacementRangeIfNeeded()
     {
         _rangeManager.RestorePlacementRange(Player);
+    }
+
+    private static bool IsSmartCursorActive()
+    {
+        return Main.SmartCursorIsUsed || Main.SmartCursorWanted;
     }
 
     private bool IsPlayerMoving()
@@ -935,6 +933,7 @@ public sealed class BuildModePlayer : ModPlayer
         public Rectangle Selection { get; private set; }
         private int _index;
         private int _total;
+        private bool _outlineMode;
 
         public bool Completed => HasSelection && _index >= _total;
 
@@ -943,7 +942,8 @@ public sealed class BuildModePlayer : ModPlayer
         public void Reset(Rectangle selection)
         {
             Selection = selection;
-            _total = selection.Width * selection.Height;
+            _outlineMode = BuildModeKeybinds.OutlineModeEnabled;
+            _total = _outlineMode ? CalculateOutlineTotal(selection) : selection.Width * selection.Height;
             _index = 0;
         }
 
@@ -956,9 +956,17 @@ public sealed class BuildModePlayer : ModPlayer
                 return false;
             }
 
-            int offset = _index++;
-            x = Selection.Left + offset % Selection.Width;
-            y = Selection.Top + offset / Selection.Width;
+            if (_outlineMode)
+            {
+                GetOutlinePosition(_index++, out x, out y);
+            }
+            else
+            {
+                int offset = _index++;
+                x = Selection.Left + offset % Selection.Width;
+                y = Selection.Top + offset / Selection.Width;
+            }
+
             return true;
         }
 
@@ -972,7 +980,8 @@ public sealed class BuildModePlayer : ModPlayer
 
         public bool IsSameSelection(Rectangle selection)
         {
-            return HasSelection && Selection == selection;
+            bool currentOutlineMode = BuildModeKeybinds.OutlineModeEnabled;
+            return HasSelection && Selection == selection && _outlineMode == currentOutlineMode;
         }
 
         public void Clear()
@@ -980,6 +989,79 @@ public sealed class BuildModePlayer : ModPlayer
             Selection = Rectangle.Empty;
             _index = 0;
             _total = 0;
+            _outlineMode = false;
+        }
+
+        private static int CalculateOutlineTotal(Rectangle selection)
+        {
+            if (selection.Width <= 0 || selection.Height <= 0)
+            {
+                return 0;
+            }
+
+            if (selection.Width == 1 || selection.Height == 1)
+            {
+                return selection.Width * selection.Height;
+            }
+
+            // Perimeter: 2*width + 2*height - 4 corners (counted twice)
+            return 2 * selection.Width + 2 * selection.Height - 4;
+        }
+
+        private void GetOutlinePosition(int index, out int x, out int y)
+        {
+            int w = Selection.Width;
+            int h = Selection.Height;
+
+            // Handle degenerate cases (1-wide or 1-tall selections)
+            if (w == 1)
+            {
+                x = Selection.Left;
+                y = Selection.Top + index;
+                return;
+            }
+
+            if (h == 1)
+            {
+                x = Selection.Left + index;
+                y = Selection.Top;
+                return;
+            }
+
+            // Walk the perimeter: top edge -> right edge -> bottom edge -> left edge
+            // Top edge: (0 to w-1)
+            if (index < w)
+            {
+                x = Selection.Left + index;
+                y = Selection.Top;
+                return;
+            }
+
+            index -= w;
+
+            // Right edge (excluding top corner): (1 to h-1)
+            if (index < h - 1)
+            {
+                x = Selection.Left + w - 1;
+                y = Selection.Top + 1 + index;
+                return;
+            }
+
+            index -= h - 1;
+
+            // Bottom edge (excluding right corner, going right to left): (w-2 to 0)
+            if (index < w - 1)
+            {
+                x = Selection.Left + w - 2 - index;
+                y = Selection.Top + h - 1;
+                return;
+            }
+
+            index -= w - 1;
+
+            // Left edge (excluding bottom and top corners): (h-2 to 1)
+            x = Selection.Left;
+            y = Selection.Top + h - 2 - index;
         }
     }
 }

@@ -59,19 +59,19 @@ public sealed partial class InGameNarrationSystem
             (ButtonBorderMenuField, ControlsButtonKind.Menu),
         };
 
+        private const int ControlsTabCount = 4;
+
         private UIState? _lastState;
         private string? _lastAnnouncement;
         private bool _announcedEntry;
         private bool _wasListening;
+        private bool? _lastOnKeyboard;
+        private bool? _lastOnGameplay;
 
         public void Update(bool requiresPause)
         {
-            if (!requiresPause)
-            {
-                Reset();
-                return;
-            }
-
+            // Note: requiresPause is ignored - we check if the Controls menu is open directly.
+            // This allows the Controls menu to be narrated in multiplayer where pause isn't possible.
             if (!TryGetControlsState(out UIManageControls? maybeState))
             {
                 Reset();
@@ -107,6 +107,11 @@ public sealed partial class InGameNarrationSystem
                 return;
             }
 
+            if (TryAnnounceCategorySelection(state))
+            {
+                return;
+            }
+
             if (TryAnnounceHover(state))
             {
                 return;
@@ -119,6 +124,8 @@ public sealed partial class InGameNarrationSystem
             _lastAnnouncement = null;
             _announcedEntry = false;
             _wasListening = false;
+            _lastOnKeyboard = null;
+            _lastOnGameplay = null;
             _uiTracker.Reset();
         }
 
@@ -142,6 +149,58 @@ public sealed partial class InGameNarrationSystem
 
             _wasListening = isListening;
             return isListening;
+        }
+
+        private bool TryAnnounceCategorySelection(UIManageControls state)
+        {
+            bool onKeyboard = ReadBoolean(state, OnKeyboardField);
+            bool onGameplay = ReadBoolean(state, OnGameplayField);
+
+            // First time seeing this state - just store values without announcing
+            if (_lastOnKeyboard is null || _lastOnGameplay is null)
+            {
+                _lastOnKeyboard = onKeyboard;
+                _lastOnGameplay = onGameplay;
+                return false;
+            }
+
+            // Check if keyboard/gamepad selection changed
+            if (onKeyboard != _lastOnKeyboard)
+            {
+                _lastOnKeyboard = onKeyboard;
+                _lastOnGameplay = onGameplay;
+
+                string categoryName = onKeyboard
+                    ? LocalizationHelper.GetTextOrFallback("Mods.ScreenReaderMod.ControlsMenu.KeyboardBindings", "Keyboard and mouse bindings")
+                    : LocalizationHelper.GetTextOrFallback("Mods.ScreenReaderMod.ControlsMenu.GamepadBindings", "Controller bindings");
+
+                int tabIndex = onKeyboard ? 1 : 2;
+                string announcement = TextSanitizer.JoinWithComma("Selected", categoryName, $"{tabIndex} of {ControlsTabCount}");
+                ScreenReaderService.Announce(announcement, force: true);
+                // Set _lastAnnouncement to the hover version to prevent duplicate
+                _lastAnnouncement = TextSanitizer.JoinWithComma(categoryName, $"{tabIndex} of {ControlsTabCount}");
+                return true;
+            }
+
+            // Check if gameplay/interface selection changed
+            if (onGameplay != _lastOnGameplay)
+            {
+                _lastOnKeyboard = onKeyboard;
+                _lastOnGameplay = onGameplay;
+
+                string categoryName = onGameplay
+                    ? LocalizationHelper.GetTextOrFallback("Mods.ScreenReaderMod.ControlsMenu.GameplayBindings", "Gameplay controls")
+                    : LocalizationHelper.GetTextOrFallback("Mods.ScreenReaderMod.ControlsMenu.InterfaceBindings", "Interface controls");
+
+                int tabIndex = onGameplay ? 3 : 4;
+                string announcement = TextSanitizer.JoinWithComma("Selected", categoryName, $"{tabIndex} of {ControlsTabCount}");
+                ScreenReaderService.Announce(announcement, force: true);
+                // Set _lastAnnouncement to the hover version to prevent duplicate
+                _lastAnnouncement = TextSanitizer.JoinWithComma(categoryName, $"{tabIndex} of {ControlsTabCount}");
+                return true;
+            }
+
+            return false;
         }
 
         private bool TryAnnounceHover(UIManageControls state)
@@ -223,22 +282,16 @@ public sealed partial class InGameNarrationSystem
             string fallback = GetButtonFallback(kind);
             string label = LocalizationHelper.GetTextOrFallback(labelKey, fallback);
 
-            if (IsButtonSelected(state, kind))
-            {
-                string suffix = LocalizationHelper.GetTextOrFallback("Mods.ScreenReaderMod.ControlsMenu.SelectedSuffix", "Selected");
-                if (!string.IsNullOrWhiteSpace(suffix))
-                {
-                    label = $"{label} ({suffix})";
-                }
-            }
-
             int tabIndex = GetTabIndex(kind);
             if (tabIndex > 0)
             {
-                label = $"{label} (Tab {tabIndex})";
+                description = TextSanitizer.JoinWithComma(label, $"{tabIndex} of {ControlsTabCount}");
+            }
+            else
+            {
+                description = label;
             }
 
-            description = label;
             return true;
         }
 
@@ -263,21 +316,6 @@ public sealed partial class InGameNarrationSystem
                 ControlsButtonKind.Gameplay => "Gameplay controls",
                 ControlsButtonKind.Menu => "Interface controls",
                 _ => string.Empty,
-            };
-        }
-
-        private static bool IsButtonSelected(UIManageControls state, ControlsButtonKind kind)
-        {
-            bool keyboardSelected = ReadBoolean(state, OnKeyboardField);
-            bool gameplaySelected = ReadBoolean(state, OnGameplayField);
-
-            return kind switch
-            {
-                ControlsButtonKind.Keyboard => keyboardSelected,
-                ControlsButtonKind.Gamepad => !keyboardSelected,
-                ControlsButtonKind.Gameplay => gameplaySelected,
-                ControlsButtonKind.Menu => !gameplaySelected,
-                _ => false,
             };
         }
 
@@ -370,36 +408,96 @@ public sealed partial class InGameNarrationSystem
 
         private static bool HandleDpadNavigation()
         {
-            if (!TryGetControlsState(out UIManageControls? state))
+            if (!TryGetControlsState(out UIManageControls? _))
             {
                 return false;
             }
 
             TriggersSet justPressed = PlayerInput.Triggers.JustPressed;
-            int requested = -1;
             int current = UILinkPointNavigator.CurrentPoint;
+            int requested = -1;
 
+            // Get all controls links sorted by visual position (top-to-bottom, left-to-right)
+            List<int> orderedLinks = GetPositionOrderedControlsLinks();
+
+            // Handle left/right navigation for header links
+            if (IsHeaderLink(current) && (justPressed.MenuLeft || justPressed.MenuRight))
+            {
+                int neighbor = justPressed.MenuLeft
+                    ? GetLinkedTarget(current, link => link.Left)
+                    : GetLinkedTarget(current, link => link.Right);
+
+                if (neighbor > 0)
+                {
+                    requested = neighbor;
+                }
+            }
+
+            // Handle up/down navigation through the ordered list
             if (justPressed.MenuUp)
             {
-                requested = GetLinkedTarget(current, link => link.Up);
+                int index = orderedLinks.IndexOf(current);
+                if (index > 0)
+                {
+                    // Move to previous item in list
+                    requested = orderedLinks[index - 1];
+                }
+                else if (index == 0)
+                {
+                    // At top of list - go back to header tabs
+                    requested = GetLinkedTarget(current, link => link.Up);
+                    if (requested < 0)
+                    {
+                        // Fallback to first header if no up link
+                        requested = 3001;
+                    }
+                }
+                else if (IsHeaderLink(current))
+                {
+                    // From header going up, wrap to bottom of list
+                    if (orderedLinks.Count > 0)
+                    {
+                        requested = orderedLinks[orderedLinks.Count - 1];
+                    }
+                }
+                else if (orderedLinks.Count > 0)
+                {
+                    // Not in list, go to last item
+                    requested = orderedLinks[orderedLinks.Count - 1];
+                }
             }
             else if (justPressed.MenuDown)
             {
-                requested = GetLinkedTarget(current, link => link.Down);
-            }
-            else if (justPressed.MenuLeft)
-            {
-                requested = GetLinkedTarget(current, link => link.Left);
-            }
-            else if (justPressed.MenuRight)
-            {
-                requested = GetLinkedTarget(current, link => link.Right);
+                int index = orderedLinks.IndexOf(current);
+                if (index >= 0 && index < orderedLinks.Count - 1)
+                {
+                    // Move to next item in list
+                    requested = orderedLinks[index + 1];
+                }
+                else if (index == orderedLinks.Count - 1)
+                {
+                    // At bottom of list - wrap to header tabs
+                    requested = 3001;
+                }
+                else if (IsHeaderLink(current))
+                {
+                    // From header going down, go to first list item
+                    if (orderedLinks.Count > 0)
+                    {
+                        requested = orderedLinks[0];
+                    }
+                }
+                else if (orderedLinks.Count > 0)
+                {
+                    // Not in list, go to first item
+                    requested = orderedLinks[0];
+                }
             }
 
-            // If nothing is focused, seed focus on the first controls element.
-            if (requested < 0 && current < 3000)
+            // If nothing is focused, seed focus on the first controls element
+            if (requested < 0 && current < 3000 && orderedLinks.Count > 0)
             {
-                requested = 3000;
+                requested = orderedLinks[0];
             }
 
             if (requested > 0 && UILinkPointNavigator.Points.TryGetValue(requested, out UILinkPoint? _))
@@ -411,6 +509,45 @@ public sealed partial class InGameNarrationSystem
             }
 
             return false;
+        }
+
+        private static bool IsHeaderLink(int linkId)
+        {
+            // Header links: 3000=back, 3001=keyboard, 3002=gamepad, 3003=profile, 3004=gameplay, 3005=ui
+            return linkId >= 3000 && linkId <= 3005;
+        }
+
+        private static List<int> GetPositionOrderedControlsLinks()
+        {
+            int minId = 3006; // First content link after headers
+            int maxId = UILinkPointNavigator.Shortcuts.FANCYUI_HIGHEST_INDEX;
+
+            var linkPositions = new List<(int Id, Vector2 Position)>();
+
+            for (int id = minId; id <= maxId; id++)
+            {
+                if (UILinkPointNavigator.Points.TryGetValue(id, out UILinkPoint? link))
+                {
+                    linkPositions.Add((id, link.Position));
+                }
+            }
+
+            // Sort by Y position first (top to bottom), then by X position (left to right)
+            // Using a small tolerance for Y to handle items on the same row
+            const float rowTolerance = 10f;
+
+            linkPositions.Sort((a, b) =>
+            {
+                float yDiff = a.Position.Y - b.Position.Y;
+                if (Math.Abs(yDiff) < rowTolerance)
+                {
+                    // Same row, sort by X
+                    return a.Position.X.CompareTo(b.Position.X);
+                }
+                return yDiff.CompareTo(0f);
+            });
+
+            return linkPositions.Select(lp => lp.Id).ToList();
         }
 
         private static int GetLinkedTarget(int currentPoint, Func<UILinkPoint, int> selector)

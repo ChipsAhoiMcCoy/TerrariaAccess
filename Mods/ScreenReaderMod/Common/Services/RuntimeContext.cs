@@ -12,7 +12,9 @@ internal static class RuntimeContext
         bool inGameUi = Main.InGameUI?.CurrentState is not null || Main.ingameOptionsWindow;
         bool hasActivePlayer = !isServer && Main.LocalPlayer is { active: true };
         bool worldActive = hasActivePlayer && !inMenu;
-        bool paused = Main.gamePaused || inMenu;
+        // Include ingameOptionsWindow so that settings narration works in multiplayer
+        // where the game doesn't actually pause when settings is opened.
+        bool paused = Main.gamePaused || inMenu || Main.ingameOptionsWindow;
 
         return new RuntimeContextSnapshot(
             IsServer: isServer,

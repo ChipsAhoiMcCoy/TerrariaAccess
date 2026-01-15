@@ -38,11 +38,14 @@ public sealed partial class InGameNarrationSystem
         private int _lastItemType = -1;
         private int _lastPrefix = -1;
         private int _lastStack = -1;
+        private static string? _lastAnnouncedDescription;
         private static string? _pendingAnnouncement;
         private static string? _pendingAnnouncementKey;
         private static int _pendingAnnouncementTicks;
         private const int PendingAnnouncementTimeoutTicks = 1;
         private static bool _externalSuppressed;
+        private static int _inventoryClosedGraceFrames;
+        private const int InventoryCloseGracePeriod = 2;
 
         public void Update(Player player)
         {
@@ -71,9 +74,17 @@ public sealed partial class InGameNarrationSystem
             _lastStack = held.stack;
 
             string description = DescribeHeldItem(selectedSlot, held);
+
+            // Skip if this is the exact same announcement as last time (prevents duplicates)
+            if (string.Equals(description, _lastAnnouncedDescription, StringComparison.Ordinal))
+            {
+                return;
+            }
+
             string key = BuildHotbarKey(selectedSlot, held);
             if (!string.IsNullOrWhiteSpace(description))
             {
+                _lastAnnouncedDescription = description;
                 bool smartCursorActive = Main.SmartCursorIsUsed || Main.SmartCursorWanted;
                 if (smartCursorActive)
                 {
@@ -93,6 +104,8 @@ public sealed partial class InGameNarrationSystem
             _lastItemType = -1;
             _lastPrefix = -1;
             _lastStack = -1;
+            // Note: Don't clear _lastAnnouncedDescription here to prevent duplicate
+            // announcements when transitioning from inventory back to hotbar
             ClearPendingAnnouncement();
         }
 
@@ -109,12 +122,16 @@ public sealed partial class InGameNarrationSystem
                 return true;
             }
 
-            bool usingGamepadUi = PlayerInput.UsingGamepadUI;
-            if (!usingGamepadUi)
+            // Suppress during grace period after inventory closes to prevent
+            // double-announcements during the transition
+            if (_inventoryClosedGraceFrames > 0)
             {
-                return false;
+                _inventoryClosedGraceFrames--;
+                return true;
             }
 
+            // Suppress when inventory is open for ALL input types (not just gamepad)
+            // This prevents HotbarNarrator from announcing simultaneously with InventoryNarrator
             return InventoryNarrator.IsInventoryUiOpen(player);
         }
 
@@ -182,6 +199,31 @@ public sealed partial class InGameNarrationSystem
             {
                 ClearPendingAnnouncement();
             }
+        }
+
+        internal static void SubscribeToInventoryEvents()
+        {
+            InventoryNarrator.InventoryOpened += OnInventoryOpened;
+            InventoryNarrator.InventoryClosed += OnInventoryClosed;
+        }
+
+        internal static void UnsubscribeFromInventoryEvents()
+        {
+            InventoryNarrator.InventoryOpened -= OnInventoryOpened;
+            InventoryNarrator.InventoryClosed -= OnInventoryClosed;
+        }
+
+        private static void OnInventoryOpened()
+        {
+            // Clear last announced description so that when inventory closes,
+            // we announce the hotbar item fresh (prevents over-suppression)
+            _lastAnnouncedDescription = null;
+        }
+
+        private static void OnInventoryClosed()
+        {
+            // Apply grace period to prevent double-announcements when inventory closes
+            _inventoryClosedGraceFrames = InventoryCloseGracePeriod;
         }
 
         private static string BuildHotbarKey(int slot, Item item)

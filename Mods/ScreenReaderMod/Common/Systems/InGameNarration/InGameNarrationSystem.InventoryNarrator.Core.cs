@@ -42,6 +42,10 @@ public sealed partial class InGameNarrationSystem
         private static readonly FocusTracker _focusTracker = new();
         private SlotFocus? _currentFocus;
         private string? _lastFocusKey;
+        private ItemIdentity _lastAnnouncedItemIdentity;
+        private bool _wasInventoryOpen;
+        private int _lastChestIndex = -1;
+        // Region tracking state moved to InventoryNarrator.Regions.cs
         private const UiNarrationArea InventoryNarrationAreas =
             UiNarrationArea.Inventory |
             UiNarrationArea.Storage |
@@ -51,6 +55,9 @@ public sealed partial class InGameNarrationSystem
             UiNarrationArea.Guide;
 
         private static readonly bool NarrationDebugEnabled = !string.IsNullOrEmpty(Environment.GetEnvironmentVariable("SRM_DEBUG_NARRATION"));
+        private static readonly bool InputDebugEnabled = !string.IsNullOrEmpty(Environment.GetEnvironmentVariable("SRM_DEBUG_INPUT"));
+        private static int _lastLoggedFocusLinkPoint = -999;
+        private static string? _lastLoggedFocusItemName;
 
         private static readonly Lazy<FieldInfo?> MouseTextCacheField = new(() =>
             typeof(Main).GetField("_mouseTextCache", BindingFlags.Instance | BindingFlags.NonPublic));
@@ -59,6 +66,10 @@ public sealed partial class InGameNarrationSystem
         private static FieldInfo? _mouseTextIsValidField;
         private static string? _capturedMouseText;
         private static uint _capturedMouseTextFrame;
+        private static int _inventoryOpenGraceFrames;
+        private const int InventoryOpenGracePeriod = 3;
+        private static int _chestOpenGraceFrames;
+        private const int ChestOpenGracePeriod = 10;
 
         public static void RecordFocus(Item[] inventory, int context, int slot)
         {
@@ -113,6 +124,19 @@ public sealed partial class InGameNarrationSystem
             _focusTracker.ClearSpecialLinkPoint(point);
         }
 
+        /// <summary>
+        /// Event raised when the inventory transitions from closed to open.
+        /// Used to notify other narrators (like CraftingNarrator) to reset their state.
+        /// </summary>
+        internal static event Action? InventoryOpened;
+
+        /// <summary>
+        /// Event raised when the inventory transitions from open to closed.
+        /// Used to notify other narrators (like HotbarNarrator) to apply a grace period.
+        /// </summary>
+        internal static event Action? InventoryClosed;
+
+
         public void Update(Player player)
         {
             if (Main.ingameOptionsWindow)
@@ -121,10 +145,42 @@ public sealed partial class InGameNarrationSystem
                 return;
             }
 
-            if (!IsInventoryUiOpen(player))
+            bool isInventoryOpen = IsInventoryUiOpen(player);
+            if (!isInventoryOpen)
             {
+                if (_wasInventoryOpen)
+                {
+                    OnInventoryJustClosed();
+                }
+                _wasInventoryOpen = false;
                 Reset();
                 return;
+            }
+
+            // Detect inventory just opened - set focus to inventory area and notify other narrators
+            if (!_wasInventoryOpen)
+            {
+                _wasInventoryOpen = true;
+                OnInventoryJustOpened();
+            }
+
+            // Detect chest/storage transition - notify listeners when chest opens
+            int currentChest = player.chest;
+            if (currentChest != _lastChestIndex)
+            {
+                if (_lastChestIndex == -1 && currentChest != -1)
+                {
+                    RaiseChestOpened(currentChest);
+                    // Suppress empty slot announcements briefly to allow focus to be captured
+                    _chestOpenGraceFrames = ChestOpenGracePeriod;
+                }
+                _lastChestIndex = currentChest;
+            }
+
+            // Decrement chest grace period
+            if (_chestOpenGraceFrames > 0)
+            {
+                _chestOpenGraceFrames--;
             }
 
             bool usingGamepad = PlayerInput.UsingGamepadUI;
@@ -136,6 +192,8 @@ public sealed partial class InGameNarrationSystem
             SlotFocus? nextFocus = _focusTracker.Consume(usingGamepad);
 
             _currentFocus = nextFocus.HasValue && IsFocusValid(nextFocus.Value) ? nextFocus : null;
+
+            LogFocusDebugState(usingGamepad, nextFocus);
 
             HandleMouseItem();
             HandleHoverItem(player);
@@ -189,14 +247,24 @@ public sealed partial class InGameNarrationSystem
                 if (craftingAvailableIndex >= 0 &&
                     CraftingNarrator.TryFocusRecipeAtAvailableIndex(craftingAvailableIndex))
                 {
-                    PlayTickIfNew($"craft-{craftingAvailableIndex}");
+                    PlayCraftingTickIfNew($"craft-{craftingAvailableIndex}", craftingAvailableIndex);
                     ResetHoverSlotsAndTooltips();
                     return;
                 }
             }
 
-            SlotFocus? focus = (selectingSpecial || inGamepadCraftingGrid) ? null : _currentFocus;
-            Item? focusedItem = (selectingSpecial || inGamepadCraftingGrid) ? null : GetItemFromFocus(focus);
+            // Also handle crafting list (vertical menu) link points so the area context
+            // is set correctly for the CraftingNarrator's gate check
+            bool inGamepadCraftingList = usingGamepad &&
+                currentPoint >= CraftingListLinkPointStart &&
+                currentPoint < CraftingListLinkPointEnd;
+            if (inGamepadCraftingList)
+            {
+                UiAreaNarrationContext.RecordArea(UiNarrationArea.Crafting);
+            }
+
+            SlotFocus? focus = (selectingSpecial || inGamepadCraftingGrid || inGamepadCraftingList) ? null : _currentFocus;
+            Item? focusedItem = (selectingSpecial || inGamepadCraftingGrid || inGamepadCraftingList) ? null : GetItemFromFocus(focus);
             if (focus.HasValue)
             {
                 UiAreaNarrationContext.RecordSlotContext(focus.Value.Context);
@@ -228,10 +296,15 @@ public sealed partial class InGameNarrationSystem
 
             HoverTarget target = new(hover, identity, location, rawTooltip, normalizedTooltip, focus, AllowMouseText: !usingGamepadFocus);
             string focusKey = BuildFocusKey(target, focus, inGamepadCraftingGrid ? craftingAvailableIndex : (int?)null);
-            PlayTickIfNew(focusKey);
+            PlayTickIfNew(focusKey, focus);
 
             if (target.HasItem)
             {
+                // Clear chest grace period once we successfully capture and announce an item
+                if (_chestOpenGraceFrames > 0 && player.chest != -1)
+                {
+                    _chestOpenGraceFrames = 0;
+                }
                 AnnounceItemHover(player, target);
                 return;
             }
@@ -281,8 +354,49 @@ public sealed partial class InGameNarrationSystem
 
         private void AnnounceItemHover(Player player, HoverTarget target)
         {
+            // Determine current region and check for change
+            InventoryRegion currentRegion = ResolveRegion(target.Focus, player);
+
+            // Fallback: check gamepad link point for crafting list when no slot focus
+            if (currentRegion == InventoryRegion.None && PlayerInput.UsingGamepadUI)
+            {
+                currentRegion = ResolveRegionFromLinkPoint(UILinkPointNavigator.CurrentPoint);
+            }
+
+            string? regionPrefix = null;
+            if (currentRegion == InventoryRegion.Storage)
+            {
+                // For storage, use the specific container name instead of generic "Storage"
+                string? containerName = TryGetStorageContainerName(target.Focus, player);
+                if (!string.IsNullOrWhiteSpace(containerName))
+                {
+                    // Announce if region changed OR container changed
+                    bool regionChanged = currentRegion != _lastAnnouncedRegion;
+                    bool containerChanged = !string.Equals(containerName, _lastAnnouncedStorageContainer, StringComparison.Ordinal);
+
+                    if (regionChanged || containerChanged)
+                    {
+                        regionPrefix = containerName;
+                        _lastAnnouncedRegion = currentRegion;
+                        _lastAnnouncedStorageContainer = containerName;
+                    }
+                }
+            }
+            else
+            {
+                if (currentRegion != InventoryRegion.None && currentRegion != _lastAnnouncedRegion)
+                {
+                    regionPrefix = GetRegionDisplayName(currentRegion);
+                    _lastAnnouncedRegion = currentRegion;
+                }
+
+                // Clear storage container tracking when leaving storage
+                _lastAnnouncedStorageContainer = null;
+            }
+
             string label = NarrationTextFormatter.ComposeItemLabel(target.Item);
             string message = string.IsNullOrEmpty(target.Location) ? label : $"{label}, {target.Location}";
+
             string? details = BuildTooltipDetails(target.Item, target.RawTooltip, allowMouseText: target.AllowMouseText);
             string? requirementDetails = CraftingNarrator.TryGetRequirementTooltipDetails(target.Item, string.IsNullOrWhiteSpace(target.Location));
             details = MergeDetails(details, requirementDetails);
@@ -290,11 +404,14 @@ public sealed partial class InGameNarrationSystem
             details = MergeDetails(details, priceDetails);
             string? sellDetails = BuildSellPriceDetails(player, target.Item, target.Identity);
             details = MergeDetails(details, sellDetails);
+            string? reforgeDetails = BuildReforgePriceDetails(player, target.Item, target.Focus);
+            details = MergeDetails(details, reforgeDetails);
 
             string combined = NarrationTextFormatter.CombineItemAnnouncement(message, details);
             int slotSignature = ComputeSlotSignature(target.Focus);
-            if (TryAnnounceCue(NarrationCue.ForItem(target.Identity, combined, target.Location, target.NormalizedTooltip, details, slotSignature), focus: target.Focus))
+            if (TryAnnounceCue(NarrationCue.ForItem(target.Identity, combined, target.Location, target.NormalizedTooltip, details, slotSignature), focus: target.Focus, regionPrefix: regionPrefix))
             {
+                _lastAnnouncedItemIdentity = target.Identity;
                 _narrationHistory.Reset(NarrationKind.EmptySlot);
                 _narrationHistory.Reset(NarrationKind.Tooltip);
             }
@@ -307,19 +424,76 @@ public sealed partial class InGameNarrationSystem
                 return existing;
             }
 
-            return string.IsNullOrWhiteSpace(existing) ? addition : $"{existing}. {addition}";
+            if (string.IsNullOrWhiteSpace(existing))
+            {
+                return addition;
+            }
+
+            // Only add a period separator if existing doesn't already end with punctuation
+            string separator = NarrationTextFormatter.HasTerminalPunctuation(existing) ? " " : ". ";
+            return $"{existing}{separator}{addition}";
         }
 
         private bool TryAnnounceEmptySlot(HoverTarget target)
         {
+            // Skip empty slot announcements during grace period after chest opens.
+            // This prevents announcing "Empty, Piggy bank slot 1" before the actual
+            // item focus is captured, which would cause a false empty announcement.
+            if (_chestOpenGraceFrames > 0)
+            {
+                return false;
+            }
+
             if (!target.HasLocation)
             {
                 return false;
             }
 
+            // Determine current region and check for change
+            Player player = Main.LocalPlayer;
+            InventoryRegion currentRegion = ResolveRegion(target.Focus, player);
+
+            // Fallback: check gamepad link point for crafting list when no slot focus
+            if (currentRegion == InventoryRegion.None && PlayerInput.UsingGamepadUI)
+            {
+                currentRegion = ResolveRegionFromLinkPoint(UILinkPointNavigator.CurrentPoint);
+            }
+
+            string? regionPrefix = null;
+            if (currentRegion == InventoryRegion.Storage)
+            {
+                // For storage, use the specific container name instead of generic "Storage"
+                string? containerName = TryGetStorageContainerName(target.Focus, player);
+                if (!string.IsNullOrWhiteSpace(containerName))
+                {
+                    // Announce if region changed OR container changed
+                    bool regionChanged = currentRegion != _lastAnnouncedRegion;
+                    bool containerChanged = !string.Equals(containerName, _lastAnnouncedStorageContainer, StringComparison.Ordinal);
+
+                    if (regionChanged || containerChanged)
+                    {
+                        regionPrefix = containerName;
+                        _lastAnnouncedRegion = currentRegion;
+                        _lastAnnouncedStorageContainer = containerName;
+                    }
+                }
+            }
+            else
+            {
+                if (currentRegion != InventoryRegion.None && currentRegion != _lastAnnouncedRegion)
+                {
+                    regionPrefix = GetRegionDisplayName(currentRegion);
+                    _lastAnnouncedRegion = currentRegion;
+                }
+
+                // Clear storage container tracking when leaving storage
+                _lastAnnouncedStorageContainer = null;
+            }
+
             string message = $"Empty, {target.Location}";
+
             int slotSignature = ComputeSlotSignature(target.Focus);
-            if (TryAnnounceCue(NarrationCue.ForEmpty(message, target.Location, slotSignature), focus: target.Focus))
+            if (TryAnnounceCue(NarrationCue.ForEmpty(message, target.Location, slotSignature), focus: target.Focus, regionPrefix: regionPrefix))
             {
                 _narrationHistory.Reset(NarrationKind.HoverItem);
                 _narrationHistory.Reset(NarrationKind.Tooltip);
@@ -330,6 +504,15 @@ public sealed partial class InGameNarrationSystem
 
         private bool TryAnnounceMouseText()
         {
+            // Skip mouse text announcements during grace period after inventory opens.
+            // This prevents announcing just the item name before the full hover item
+            // is resolved, which would cause duplicate announcements.
+            if (_inventoryOpenGraceFrames > 0)
+            {
+                _inventoryOpenGraceFrames--;
+                return false;
+            }
+
             string? mouseText = TryGetMouseText();
             if (string.IsNullOrWhiteSpace(mouseText))
             {
@@ -352,8 +535,16 @@ public sealed partial class InGameNarrationSystem
                 return;
             }
 
+            // Suppress tooltip if we just announced this exact item via HoverItem path
+            // This prevents repeated announcements when focus alternates between valid/invalid
+            if (!target.Identity.IsAir && target.Identity.Equals(_lastAnnouncedItemIdentity))
+            {
+                return;
+            }
+
             if (TryAnnounceCue(NarrationCue.ForTooltip(target.NormalizedTooltip)))
             {
+                _lastAnnouncedItemIdentity = target.Identity;
                 ResetHoverSlotCues();
             }
         }
@@ -415,6 +606,41 @@ public sealed partial class InGameNarrationSystem
             _inGameUiTracker.Reset();
             UiAreaNarrationContext.Clear();
             _lastFocusKey = null;
+            _lastAnnouncedItemIdentity = default;
+            _inventoryOpenGraceFrames = 0;
+            _lastChestIndex = -1;
+            _lastAnnouncedRegion = InventoryRegion.None;
+            _lastAnnouncedStorageContainer = null;
+        }
+
+        private static void OnInventoryJustOpened()
+        {
+            // Set the active area to Inventory to prevent crafting narrator from immediately
+            // announcing recipes when the inventory first opens. This ensures focus stays
+            // on the inventory until the user explicitly navigates to crafting.
+            UiAreaNarrationContext.RecordArea(UiNarrationArea.Inventory);
+
+            // Set grace period to prevent mouse text from being announced before
+            // the hover item is fully resolved (prevents duplicate announcements)
+            _inventoryOpenGraceFrames = InventoryOpenGracePeriod;
+
+            // Notify other narrators (like CraftingNarrator) to reset their state
+            InventoryOpened?.Invoke();
+        }
+
+        private static void OnInventoryJustClosed()
+        {
+            // Reset crafting UI state to prevent stale state from affecting navigation
+            // when inventory reopens. Without this, Main.recBigList can remain true
+            // if the user closed inventory while on the recipe grid (page 10), causing
+            // UILinkPointNavigator to incorrectly select page 10 instead of page 0
+            // on the next inventory open.
+            Main.recBigList = false;
+            Main.recStart = 0;
+
+            // Notify other narrators (like HotbarNarrator) that inventory has closed
+            // so they can apply grace periods to prevent double-announcements
+            InventoryClosed?.Invoke();
         }
 
         private static string BuildFocusKey(HoverTarget target, SlotFocus? focus, int? craftingIndex)
@@ -443,7 +669,7 @@ public sealed partial class InGameNarrationSystem
             return string.Empty;
         }
 
-        private void PlayTickIfNew(string key)
+        private void PlayTickIfNew(string key, SlotFocus? focus = null)
         {
             if (string.IsNullOrWhiteSpace(key) || string.Equals(key, _lastFocusKey, StringComparison.Ordinal))
             {
@@ -451,7 +677,80 @@ public sealed partial class InGameNarrationSystem
             }
 
             _lastFocusKey = key;
-            SoundEngine.PlaySound(SoundID.MenuTick);
+            PlaySpatialInventoryTick(focus);
+        }
+
+        private void PlayCraftingTickIfNew(string key, int craftingAvailableIndex)
+        {
+            if (string.IsNullOrWhiteSpace(key) || string.Equals(key, _lastFocusKey, StringComparison.Ordinal))
+            {
+                return;
+            }
+
+            _lastFocusKey = key;
+            PlaySpatialCraftingTick(craftingAvailableIndex);
+        }
+
+        private static void PlaySpatialCraftingTick(int craftingAvailableIndex)
+        {
+            // First try: Get position directly from game's UILinkPointNavigator (most accurate)
+            if (UiSlotSpatialAudio.TryGetCurrentLinkPointPosition(out var linkPointPos))
+            {
+                var spatial = UiSlotSpatialAudio.ComputeSpatialParamsFromScreen(linkPointPos);
+                UiTickSoundPlayer.PlaySpatialTick(spatial.Pan, spatial.Pitch);
+                return;
+            }
+
+            // Second try: Get cursor position (synced during gamepad navigation)
+            if (UiSlotSpatialAudio.TryGetCursorPosition(out var cursorPos))
+            {
+                var spatial = UiSlotSpatialAudio.ComputeSpatialParamsFromScreen(cursorPos);
+                UiTickSoundPlayer.PlaySpatialTick(spatial.Pan, spatial.Pitch);
+                return;
+            }
+
+            // Fallback: Use calculated screen position for crafting grid
+            if (UiSlotSpatialAudio.TryGetCraftingGridScreenPosition(craftingAvailableIndex, out var screenPos))
+            {
+                var spatial = UiSlotSpatialAudio.ComputeSpatialParamsFromScreen(screenPos);
+                UiTickSoundPlayer.PlaySpatialTick(spatial.Pan, spatial.Pitch);
+                return;
+            }
+
+            // No position available, play centered tick
+            UiTickSoundPlayer.PlaySpatialTick(0f, 0f);
+        }
+
+        private static void PlaySpatialInventoryTick(SlotFocus? focus)
+        {
+            // Try to get the best available screen position:
+            // 1) UILinkPointNavigator position (most accurate, directly from game)
+            // 2) Cursor position (synced to selected element during gamepad navigation)
+            // 3) Calculated position based on context/slot (fallback)
+            int context = focus?.Context ?? 0;
+            int slot = focus?.Slot ?? 0;
+
+            if (UiSlotSpatialAudio.TryGetBestScreenPosition(context, slot, out var screenPos))
+            {
+                var spatial = UiSlotSpatialAudio.ComputeSpatialParamsFromScreen(screenPos);
+                UiTickSoundPlayer.PlaySpatialTick(spatial.Pan, spatial.Pitch);
+                return;
+            }
+
+            // Ultimate fallback: logical grid-based positioning
+            if (focus.HasValue)
+            {
+                SlotFocus value = focus.Value;
+                if (UiSlotSpatialAudio.TryGetSlotPosition(value.Context, value.Slot, out var position))
+                {
+                    var fallbackSpatial = UiSlotSpatialAudio.ComputeSpatialParams(position);
+                    UiTickSoundPlayer.PlaySpatialTick(fallbackSpatial.Pan, fallbackSpatial.Pitch);
+                    return;
+                }
+            }
+
+            // No position available, play centered tick
+            UiTickSoundPlayer.PlaySpatialTick(0f, 0f);
         }
 
         public void ForceReset()
@@ -474,22 +773,22 @@ public sealed partial class InGameNarrationSystem
             {
                 if (inventoryIndex < 10)
                 {
-                    return $"Hotbar slot {inventoryIndex + 1}";
+                    return $"Slot {inventoryIndex + 1}";
                 }
 
                 if (inventoryIndex < 50)
                 {
-                    return $"Inventory slot {inventoryIndex - 9}";
+                    return $"Slot {inventoryIndex - 9}";
                 }
 
                 if (inventoryIndex < 54)
                 {
-                    return $"Coin slot {inventoryIndex - 49}";
+                    return $"Slot {inventoryIndex - 49}";
                 }
 
                 if (inventoryIndex < 58)
                 {
-                    return $"Ammo slot {inventoryIndex - 53}";
+                    return $"Slot {inventoryIndex - 53}";
                 }
             }
 
@@ -521,14 +820,24 @@ public sealed partial class InGameNarrationSystem
             int chestIndex = player.chest;
             if (chestIndex != -1)
             {
-                string container = SlotContextFormatter.DescribeContainer(chestIndex);
                 Item[]? containerItems = GetContainerItems(player, chestIndex);
                 if (containerItems is not null && TryMatch(containerItems, identity, out int containerSlot))
                 {
-                    return $"{container} slot {containerSlot + 1}";
+                    return $"Slot {containerSlot + 1}";
                 }
 
-                return container;
+                // Fallback: try to infer slot from gamepad link point (400-439 are chest slots)
+                if (PlayerInput.UsingGamepadUI)
+                {
+                    int currentPoint = UILinkPointNavigator.CurrentPoint;
+                    if (currentPoint >= 400 && currentPoint < 440)
+                    {
+                        int slotFromPoint = currentPoint - 400;
+                        return $"Slot {slotFromPoint + 1}";
+                    }
+                }
+
+                return string.Empty;
             }
 
             if (Main.npcShop > 0)
@@ -539,7 +848,7 @@ public sealed partial class InGameNarrationSystem
                     Item[]? shopItems = shops[Main.npcShop]?.item;
                     if (shopItems is not null && TryMatch(shopItems, identity, out int shopSlot))
                     {
-                        return $"Shop slot {shopSlot + 1}";
+                        return $"Slot {shopSlot + 1}";
                     }
                 }
             }
@@ -563,22 +872,22 @@ public sealed partial class InGameNarrationSystem
 
                 if (ReferenceEquals(items, player.bank.item))
                 {
-                    return $"Piggy bank slot {focus.Slot + 1}";
+                    return $"Slot {focus.Slot + 1}";
                 }
 
                 if (ReferenceEquals(items, player.bank2.item))
                 {
-                    return $"Safe slot {focus.Slot + 1}";
+                    return $"Slot {focus.Slot + 1}";
                 }
 
                 if (ReferenceEquals(items, player.bank3.item))
                 {
-                    return $"Defender's forge slot {focus.Slot + 1}";
+                    return $"Slot {focus.Slot + 1}";
                 }
 
                 if (ReferenceEquals(items, player.bank4.item))
                 {
-                    return $"Void vault slot {focus.Slot + 1}";
+                    return $"Slot {focus.Slot + 1}";
                 }
 
                 if (ReferenceEquals(items, player.armor))
@@ -607,8 +916,7 @@ public sealed partial class InGameNarrationSystem
                     {
                         if (ReferenceEquals(Main.chest[i]?.item, items))
                         {
-                            string container = SlotContextFormatter.DescribeContainer(i);
-                            return focus.Slot >= 0 ? $"{container} slot {focus.Slot + 1}" : container;
+                            return focus.Slot >= 0 ? $"Slot {focus.Slot + 1}" : "Slot";
                         }
                     }
                 }
@@ -620,7 +928,7 @@ public sealed partial class InGameNarrationSystem
                     {
                         if (ReferenceEquals(shops[i]?.item, items))
                         {
-                            return focus.Slot >= 0 ? $"Shop slot {focus.Slot + 1}" : "Shop slot";
+                            return focus.Slot >= 0 ? $"Slot {focus.Slot + 1}" : "Slot";
                         }
                     }
                 }
@@ -636,6 +944,11 @@ public sealed partial class InGameNarrationSystem
             if (context == ItemSlot.Context.CraftingMaterial)
             {
                 return "Crafting slot";
+            }
+
+            if (context == ItemSlot.Context.PrefixItem)
+            {
+                return "Reforge slot";
             }
 
             return string.Empty;
@@ -803,6 +1116,68 @@ public sealed partial class InGameNarrationSystem
             return totalValue / 5;
         }
 
+        private static string? BuildReforgePriceDetails(Player player, Item item, SlotFocus? focus)
+        {
+            if (player is null || item is null || item.IsAir)
+            {
+                return null;
+            }
+
+            if (!Main.InReforgeMenu)
+            {
+                return null;
+            }
+
+            if (!focus.HasValue)
+            {
+                return null;
+            }
+
+            int context = Math.Abs(focus.Value.Context);
+            if (context != ItemSlot.Context.PrefixItem)
+            {
+                return null;
+            }
+
+            if (item.maxStack != 1)
+            {
+                return null;
+            }
+
+            long reforgeCost = GetReforgeCost(player, item);
+            if (reforgeCost <= 0)
+            {
+                return null;
+            }
+
+            string coinText = CoinFormatter.ValueToCoinString(reforgeCost);
+            return string.IsNullOrWhiteSpace(coinText) ? null : $"Reforge cost {coinText}";
+        }
+
+        private static long GetReforgeCost(Player player, Item item)
+        {
+            if (player is null || item is null || item.IsAir)
+            {
+                return 0;
+            }
+
+            long cost = item.value;
+            if (cost <= 0)
+            {
+                return 1;
+            }
+
+            if (player.discountAvailable)
+            {
+                cost = (long)(cost * 0.8);
+            }
+
+            cost = (long)(cost * player.currentShoppingSettings.PriceAdjustment);
+            cost /= 3;
+
+            return Math.Max(1, cost);
+        }
+
         private static Item? TryResolveShopItem(ItemIdentity identity, SlotFocus? focus, Chest[] shops)
         {
             if (focus.HasValue && focus.Value.Slot >= 0 && focus.Value.Items is Item[] focusItems)
@@ -917,7 +1292,9 @@ public sealed partial class InGameNarrationSystem
                     continue;
                 }
 
-                string cleaned = GlyphTagFormatter.Normalize(segment).Trim();
+                // Only use TextSanitizer here - GlyphTagFormatter would incorrectly
+                // convert price numbers to controller button names (e.g., "5" → "Right bumper")
+                string cleaned = TextSanitizer.Clean(segment);
                 if (!string.IsNullOrWhiteSpace(cleaned))
                 {
                     segments.Add(cleaned);
@@ -929,25 +1306,20 @@ public sealed partial class InGameNarrationSystem
                 return price.ToString();
             }
 
-            return string.Join(' ', segments);
-        }
+            string result = string.Join(' ', segments);
 
-        private static Item[]? GetContainerItems(Player player, int chestIndex)
-        {
-            if (chestIndex >= 0 && chestIndex < Main.chest.Length)
+            // Strip redundant "Buy price:" prefix (Lang.tip[50]) since we prepend "Costs"
+            string buyPricePrefix = Lang.tip[50].Value;
+            if (!string.IsNullOrEmpty(buyPricePrefix) &&
+                result.StartsWith(buyPricePrefix, StringComparison.OrdinalIgnoreCase))
             {
-                return Main.chest[chestIndex]?.item;
+                result = result.Substring(buyPricePrefix.Length).TrimStart();
             }
 
-            return chestIndex switch
-            {
-                -2 => player.bank.item,
-                -3 => player.bank2.item,
-                -4 => player.bank3.item,
-                -5 => player.bank4.item,
-                _ => null,
-            };
+            return result;
         }
+
+        // GetContainerItems moved to InventoryNarrator.Regions.cs
 
         private static bool TryMatch(Item[] items, ItemIdentity identity, out int index)
         {
@@ -973,6 +1345,8 @@ public sealed partial class InGameNarrationSystem
 
             return ItemIdentity.From(item).Equals(identity);
         }
+
+        // Region tracking, resolution, and display name methods moved to InventoryNarrator.Regions.cs
 
         private static string? TryGetMouseText()
         {
@@ -1062,7 +1436,8 @@ public sealed partial class InGameNarrationSystem
             in NarrationCue cue,
             bool force = false,
             UiNarrationArea allowedAreas = InventoryNarrationAreas,
-            SlotFocus? focus = null)
+            SlotFocus? focus = null,
+            string? regionPrefix = null)
         {
             if (!_narrationHistory.TryStore(cue))
             {
@@ -1077,7 +1452,13 @@ public sealed partial class InGameNarrationSystem
             }
 
             NarrationInstrumentationContext.SetPendingKey(BuildInstrumentationKey(cue));
-            ScreenReaderService.Announce(cue.Message, force);
+
+            // Prepend region prefix only when actually announcing (after deduplication check)
+            string message = string.IsNullOrWhiteSpace(regionPrefix)
+                ? cue.Message
+                : $"{regionPrefix}. {cue.Message}";
+
+            ScreenReaderService.Announce(message, force);
             return true;
         }
 
@@ -1136,6 +1517,58 @@ public sealed partial class InGameNarrationSystem
             }
 
             return normalized;
+        }
+
+        /// <summary>
+        /// Logs diagnostic information about focus state. Enable with SRM_DEBUG_INPUT env var.
+        /// Only logs when focus changes to avoid log spam.
+        /// </summary>
+        private static void LogFocusDebugState(bool usingGamepad, SlotFocus? focus)
+        {
+            if (!InputDebugEnabled)
+            {
+                return;
+            }
+
+            int currentLinkPoint = UILinkPointNavigator.CurrentPoint;
+            string? itemName = null;
+
+            if (focus.HasValue)
+            {
+                Item? item = GetItemFromFocus(focus);
+                if (item is not null && !item.IsAir)
+                {
+                    itemName = NarrationTextFormatter.ComposeItemName(item);
+                }
+            }
+
+            // Only log on changes
+            bool linkPointChanged = currentLinkPoint != _lastLoggedFocusLinkPoint;
+            bool itemChanged = !string.Equals(itemName, _lastLoggedFocusItemName, StringComparison.Ordinal);
+
+            if (!linkPointChanged && !itemChanged)
+            {
+                return;
+            }
+
+            _lastLoggedFocusLinkPoint = currentLinkPoint;
+            _lastLoggedFocusItemName = itemName;
+
+            int context = focus?.Context ?? -1;
+            int slot = focus?.Slot ?? -1;
+            bool hasPendingFocus = focus.HasValue;
+            InputMode inputMode = PlayerInput.CurrentInputMode;
+
+            string message = $"[FocusDebug] " +
+                $"linkPoint={currentLinkPoint} " +
+                $"item='{itemName ?? "none"}' " +
+                $"context={context} " +
+                $"slot={slot} " +
+                $"hasFocus={hasPendingFocus} " +
+                $"usingGamepad={usingGamepad} " +
+                $"inputMode={inputMode}";
+
+            global::ScreenReaderMod.ScreenReaderMod.Instance?.Logger.Info(message);
         }
 
     }

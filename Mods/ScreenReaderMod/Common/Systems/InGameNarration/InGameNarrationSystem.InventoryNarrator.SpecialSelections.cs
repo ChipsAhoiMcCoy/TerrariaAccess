@@ -32,6 +32,15 @@ public sealed partial class InGameNarrationSystem
                 return true;
             }
 
+            // Determine region for special selections
+            InventoryRegion currentRegion = ResolveRegionForSpecialPoint(currentPoint);
+            string? regionPrefix = null;
+            if (currentRegion != InventoryRegion.None && currentRegion != _lastAnnouncedRegion)
+            {
+                regionPrefix = GetRegionDisplayName(currentRegion);
+                _lastAnnouncedRegion = currentRegion;
+            }
+
             PlayTickIfNew($"special-{currentPoint}");
             _currentFocus = null;
             _focusTracker.ClearSpecialLinkPoint(currentPoint);
@@ -40,7 +49,7 @@ public sealed partial class InGameNarrationSystem
             _narrationHistory.Reset(NarrationKind.SpecialSelection);
             UiAreaNarrationContext.RecordArea(UiNarrationArea.Inventory);
             SpecialSelectionRepeat.Record(currentPoint);
-            TryAnnounceCue(NarrationCue.ForSpecial(label), force: true);
+            TryAnnounceCue(NarrationCue.ForSpecial(label), force: true, regionPrefix: regionPrefix);
             return true;
         }
 
@@ -63,6 +72,7 @@ public sealed partial class InGameNarrationSystem
                 1550 => Button(GetPvpToggleText()),
                 int teamButton when teamButton >= 1551 && teamButton <= 1556 => Button(GetTeamButtonText(teamButton)),
                 1557 => DescribeDefenseCounter(),
+                1570 => FormatButtonLabel(LocalizationHelper.GetTextOrFallback("Mods.ScreenReaderMod.InventorySpecial.AchievementAdvisor", "Achievement Advisor")),
                 _ => null,
             };
 
@@ -131,7 +141,7 @@ public sealed partial class InGameNarrationSystem
             return null;
         }
 
-        private static bool IsSpecialInventoryPoint(int point)
+        internal static bool IsSpecialInventoryPoint(int point)
         {
             return point switch
             {
@@ -141,7 +151,30 @@ public sealed partial class InGameNarrationSystem
                 1550 => true,
                 >= 1551 and <= 1556 => true,
                 1557 => true,
+                1570 => true, // Achievement Advisor
                 _ => false,
+            };
+        }
+
+        private static InventoryRegion ResolveRegionForSpecialPoint(int point)
+        {
+            return point switch
+            {
+                // Inventory management buttons (Quick Stack, Sort)
+                301 or 302 => InventoryRegion.InventoryExtras,
+                // Equipment page buttons and Camera Mode
+                >= 304 and <= 308 => InventoryRegion.CharacterPanel,
+                // Emote, Bestiary, and Loadout Controls buttons (visually near inventory)
+                309 or 310 or 311 => InventoryRegion.InventoryExtras,
+                // Individual loadout slots
+                >= 312 and <= 320 => InventoryRegion.CharacterPanel,
+                // Chest buttons
+                >= 500 and <= 505 => InventoryRegion.Storage,
+                // PvP and team buttons, defense counter
+                >= 1550 and <= 1557 => InventoryRegion.CharacterPanel,
+                // Achievement Advisor
+                1570 => InventoryRegion.CharacterPanel,
+                _ => InventoryRegion.None,
             };
         }
 

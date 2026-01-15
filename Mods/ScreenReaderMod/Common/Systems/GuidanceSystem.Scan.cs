@@ -2,6 +2,7 @@
 using System;
 using System.Collections.Generic;
 using Microsoft.Xna.Framework;
+using ScreenReaderMod.Common.Systems.Guidance;
 using Terraria;
 using Terraria.ID;
 
@@ -9,37 +10,7 @@ namespace ScreenReaderMod.Common.Systems;
 
 public sealed partial class GuidanceSystem
 {
-    private readonly struct NpcGuidanceEntry
-    {
-        public readonly int NpcIndex;
-        public readonly string DisplayName;
-        public readonly float DistanceTiles;
-
-        public NpcGuidanceEntry(int npcIndex, string displayName, float distanceTiles)
-        {
-            NpcIndex = npcIndex;
-            DisplayName = displayName;
-            DistanceTiles = distanceTiles;
-        }
-    }
-
-    private static readonly List<NpcGuidanceEntry> NearbyNpcs = new();
-
-    private readonly struct InteractableGuidanceEntry
-    {
-        public readonly Point Anchor;
-        public readonly string DisplayName;
-        public readonly Vector2 WorldPosition;
-        public readonly float DistanceTiles;
-
-        public InteractableGuidanceEntry(Point anchor, string displayName, Vector2 worldPosition, float distanceTiles)
-        {
-            Anchor = anchor;
-            DisplayName = displayName;
-            WorldPosition = worldPosition;
-            DistanceTiles = distanceTiles;
-        }
-    }
+    private static readonly List<GuidanceEntry> NearbyNpcs = new();
 
     private readonly struct InteractableDefinition
     {
@@ -61,7 +32,7 @@ public sealed partial class GuidanceSystem
         }
     }
 
-    private static readonly List<InteractableGuidanceEntry> NearbyInteractables = new();
+    private static readonly List<GuidanceEntry> NearbyInteractables = new();
     private static readonly HashSet<Point> InteractableAnchorScratch = new();
     private static readonly InteractableDefinition[] InteractableDefinitions =
     {
@@ -86,22 +57,23 @@ public sealed partial class GuidanceSystem
 
     private static readonly Dictionary<int, List<InteractableDefinition>> InteractableDefinitionsByTileType = BuildInteractableDefinitionMap();
 
-    private readonly struct PlayerGuidanceEntry
-    {
-        public readonly int PlayerIndex;
-        public readonly string DisplayName;
-        public readonly float DistanceTiles;
-
-        public PlayerGuidanceEntry(int playerIndex, string displayName, float distanceTiles)
-        {
-            PlayerIndex = playerIndex;
-            DisplayName = displayName;
-            DistanceTiles = distanceTiles;
-        }
-    }
-
-    private static readonly List<PlayerGuidanceEntry> NearbyPlayers = new();
+    private static readonly List<GuidanceEntry> NearbyPlayers = new();
     private static readonly List<ExplorationTargetRegistry.ExplorationTarget> NearbyExplorationTargets = new();
+
+    private static readonly List<GuidanceEntry> NearbyDroppedItems = new();
+
+    private static readonly List<GuidanceEntry> NearbyCritters = new();
+
+    private static readonly List<GuidanceEntry> NearbyPlantlife = new();
+    private static readonly HashSet<Point> PlantlifeAnchorScratch = new();
+
+    private static readonly int[] PlantlifeTileTypes =
+    {
+        TileID.MatureHerbs,
+        TileID.BloomingHerbs,
+        TileID.MushroomPlants,
+        TileID.DyePlants
+    };
 
     private static Dictionary<int, List<InteractableDefinition>> BuildInteractableDefinitionMap()
     {
@@ -125,7 +97,7 @@ public sealed partial class GuidanceSystem
         int preservedNpcIndex = -1;
         if (_selectedNpcIndex >= 0 && _selectedNpcIndex < NearbyNpcs.Count)
         {
-            preservedNpcIndex = NearbyNpcs[_selectedNpcIndex].NpcIndex;
+            preservedNpcIndex = NearbyNpcs[_selectedNpcIndex].Index;
         }
 
         NearbyNpcs.Clear();
@@ -138,15 +110,15 @@ public sealed partial class GuidanceSystem
         Vector2 origin = player.Center;
         for (int i = 0; i < Main.maxNPCs; i++)
         {
-            if (TryCreateNpcEntry(i, origin, includeOutOfRange: false, out NpcGuidanceEntry entry))
+            if (TryCreateNpcEntry(i, origin, includeOutOfRange: false, out GuidanceEntry entry))
             {
                 NearbyNpcs.Add(entry);
             }
         }
 
-        if (preservedNpcIndex >= 0 && !NearbyNpcs.Exists(entry => entry.NpcIndex == preservedNpcIndex))
+        if (preservedNpcIndex >= 0 && !NearbyNpcs.Exists(entry => entry.Index == preservedNpcIndex))
         {
-            if (TryCreateNpcEntry(preservedNpcIndex, origin, includeOutOfRange: true, out NpcGuidanceEntry preservedEntry))
+            if (TryCreateNpcEntry(preservedNpcIndex, origin, includeOutOfRange: true, out GuidanceEntry preservedEntry))
             {
                 NearbyNpcs.Add(preservedEntry);
             }
@@ -166,7 +138,7 @@ public sealed partial class GuidanceSystem
 
         if (preservedNpcIndex >= 0)
         {
-            int restoredIndex = NearbyNpcs.FindIndex(entry => entry.NpcIndex == preservedNpcIndex);
+            int restoredIndex = NearbyNpcs.FindIndex(entry => entry.Index == preservedNpcIndex);
             if (restoredIndex >= 0)
             {
                 _selectedNpcIndex = restoredIndex;
@@ -185,7 +157,7 @@ public sealed partial class GuidanceSystem
         int preservedPlayerIndex = -1;
         if (_selectedPlayerIndex >= 0 && _selectedPlayerIndex < NearbyPlayers.Count)
         {
-            preservedPlayerIndex = NearbyPlayers[_selectedPlayerIndex].PlayerIndex;
+            preservedPlayerIndex = NearbyPlayers[_selectedPlayerIndex].Index;
         }
 
         NearbyPlayers.Clear();
@@ -197,7 +169,7 @@ public sealed partial class GuidanceSystem
 
         for (int i = 0; i < Main.maxPlayers; i++)
         {
-            if (TryCreatePlayerEntry(i, player, out PlayerGuidanceEntry entry))
+            if (TryCreatePlayerEntry(i, player, out GuidanceEntry entry))
             {
                 NearbyPlayers.Add(entry);
             }
@@ -213,7 +185,7 @@ public sealed partial class GuidanceSystem
 
         if (preservedPlayerIndex >= 0)
         {
-            int restoredIndex = NearbyPlayers.FindIndex(entry => entry.PlayerIndex == preservedPlayerIndex);
+            int restoredIndex = NearbyPlayers.FindIndex(entry => entry.Index == preservedPlayerIndex);
             if (restoredIndex >= 0)
             {
                 _selectedPlayerIndex = restoredIndex;
@@ -231,27 +203,105 @@ public sealed partial class GuidanceSystem
     {
         IReadOnlyList<ExplorationTargetRegistry.ExplorationTarget> snapshot = ExplorationTargetRegistry.GetSnapshot();
         int preservedIndex = _selectedExplorationIndex;
+        ExplorationTargetRegistry.ExplorationTarget? retainedSelection = _lastExplorationSelection;
 
         NearbyExplorationTargets.Clear();
         if (snapshot.Count > 0)
         {
             NearbyExplorationTargets.AddRange(snapshot);
-            NearbyExplorationTargets.Sort(static (left, right) => left.DistanceTiles.CompareTo(right.DistanceTiles));
+            NearbyExplorationTargets.Sort(static (left, right) =>
+            {
+                int compareDistance = left.DistanceTiles.CompareTo(right.DistanceTiles);
+                if (compareDistance != 0)
+                {
+                    return compareDistance;
+                }
+
+                int compareLabel = string.Compare(
+                    SanitizeLabel(left.Label),
+                    SanitizeLabel(right.Label),
+                    StringComparison.OrdinalIgnoreCase);
+                if (compareLabel != 0)
+                {
+                    return compareLabel;
+                }
+
+                int compareX = left.WorldPosition.X.CompareTo(right.WorldPosition.X);
+                if (compareX != 0)
+                {
+                    return compareX;
+                }
+
+                return left.WorldPosition.Y.CompareTo(right.WorldPosition.Y);
+            });
         }
 
         if (NearbyExplorationTargets.Count == 0)
         {
             _selectedExplorationIndex = -1;
+            _lastExplorationSelection = null;
+            ExplorationTargetRegistry.SetSelectedTarget(null);
+            return;
+        }
+
+        if (retainedSelection.HasValue)
+        {
+            ExplorationTargetRegistry.ExplorationTarget target = retainedSelection.Value;
+            int bestMatchIndex = NearbyExplorationTargets.FindIndex(candidate => candidate.Key.Equals(target.Key));
+            float bestMatchDistance = float.MaxValue;
+            if (bestMatchIndex < 0)
+            {
+                // Prefer the closest matching entry so nearby identical labels don't collapse into the first match.
+                for (int i = 0; i < NearbyExplorationTargets.Count; i++)
+                {
+                    ExplorationTargetRegistry.ExplorationTarget candidate = NearbyExplorationTargets[i];
+                    if (!IsExplorationTargetMatch(candidate, target))
+                    {
+                        continue;
+                    }
+
+                    float distance = Vector2.Distance(candidate.WorldPosition, target.WorldPosition);
+                    if (distance < bestMatchDistance)
+                    {
+                        bestMatchDistance = distance;
+                        bestMatchIndex = i;
+                    }
+                }
+            }
+
+            if (bestMatchIndex >= 0)
+            {
+                _selectedExplorationIndex = bestMatchIndex;
+                _lastExplorationSelection = NearbyExplorationTargets[_selectedExplorationIndex];
+                ExplorationTargetRegistry.SetSelectedTarget(_lastExplorationSelection);
+                return;
+            }
+
+            _selectedExplorationIndex = -1;
+            _lastExplorationSelection = null;
+            ExplorationTargetRegistry.SetSelectedTarget(null);
             return;
         }
 
         if (preservedIndex >= 0 && preservedIndex < NearbyExplorationTargets.Count)
         {
             _selectedExplorationIndex = preservedIndex;
+            _lastExplorationSelection = NearbyExplorationTargets[_selectedExplorationIndex];
+            ExplorationTargetRegistry.SetSelectedTarget(_lastExplorationSelection);
             return;
         }
 
         _selectedExplorationIndex = Math.Clamp(_selectedExplorationIndex, -1, NearbyExplorationTargets.Count - 1);
+        if (_selectedExplorationIndex >= 0)
+        {
+            _lastExplorationSelection = NearbyExplorationTargets[_selectedExplorationIndex];
+            ExplorationTargetRegistry.SetSelectedTarget(_lastExplorationSelection);
+        }
+        else
+        {
+            _lastExplorationSelection = null;
+            ExplorationTargetRegistry.SetSelectedTarget(null);
+        }
     }
 
     private static void RefreshInteractableEntries(Player player)
@@ -312,7 +362,7 @@ public sealed partial class GuidanceSystem
                         continue;
                     }
 
-                    if (TryCreateInteractableEntry(definition, anchor, origin, isPreservedAnchor, out InteractableGuidanceEntry entry))
+                    if (TryCreateInteractableEntry(definition, anchor, origin, isPreservedAnchor, out GuidanceEntry entry))
                     {
                         NearbyInteractables.Add(entry);
                         if (isPreservedAnchor)
@@ -324,7 +374,7 @@ public sealed partial class GuidanceSystem
             }
         }
 
-        if (hasPreservedAnchor && !preservedIncluded && TryCreateInteractableEntryForAnchor(preservedAnchor, origin, includeOutOfRange: true, out InteractableGuidanceEntry preservedEntry))
+        if (hasPreservedAnchor && !preservedIncluded && TryCreateInteractableEntryForAnchor(preservedAnchor, origin, includeOutOfRange: true, out GuidanceEntry preservedEntry))
         {
             NearbyInteractables.Add(preservedEntry);
         }
@@ -353,7 +403,7 @@ public sealed partial class GuidanceSystem
         }
     }
 
-    private static bool TryCreateNpcEntry(int npcIndex, Vector2 origin, bool includeOutOfRange, out NpcGuidanceEntry entry)
+    private static bool TryCreateNpcEntry(int npcIndex, Vector2 origin, bool includeOutOfRange, out GuidanceEntry entry)
     {
         entry = default;
         if (npcIndex < 0 || npcIndex >= Main.maxNPCs)
@@ -374,11 +424,11 @@ public sealed partial class GuidanceSystem
         }
 
         string displayName = ResolveNpcDisplayName(npc);
-        entry = new NpcGuidanceEntry(npcIndex, displayName, distanceTiles);
+        entry = GuidanceEntry.CreateNpc(npcIndex, displayName, npc.Center, distanceTiles);
         return true;
     }
 
-    private static bool TryCreatePlayerEntry(int playerIndex, Player owner, out PlayerGuidanceEntry entry)
+    private static bool TryCreatePlayerEntry(int playerIndex, Player owner, out GuidanceEntry entry)
     {
         entry = default;
         if (playerIndex < 0 || playerIndex >= Main.maxPlayers)
@@ -394,11 +444,11 @@ public sealed partial class GuidanceSystem
 
         float distanceTiles = Vector2.Distance(owner.Center, candidate.Center) / 16f;
         string displayName = ResolvePlayerDisplayName(candidate, playerIndex);
-        entry = new PlayerGuidanceEntry(playerIndex, displayName, distanceTiles);
+        entry = GuidanceEntry.CreatePlayer(playerIndex, displayName, candidate.Center, distanceTiles);
         return true;
     }
 
-    private static bool TryCreateInteractableEntry(InteractableDefinition definition, Point anchor, Vector2 origin, bool includeOutOfRange, out InteractableGuidanceEntry entry)
+    private static bool TryCreateInteractableEntry(InteractableDefinition definition, Point anchor, Vector2 origin, bool includeOutOfRange, out GuidanceEntry entry)
     {
         entry = default;
         if (!IsWithinWorld(anchor))
@@ -419,11 +469,11 @@ public sealed partial class GuidanceSystem
             return false;
         }
 
-        entry = new InteractableGuidanceEntry(anchor, definition.DisplayName, worldPosition, distanceTiles);
+        entry = GuidanceEntry.CreateInteractable(anchor, definition.DisplayName, worldPosition, distanceTiles);
         return true;
     }
 
-    private static bool TryCreateInteractableEntryForAnchor(Point anchor, Vector2 origin, bool includeOutOfRange, out InteractableGuidanceEntry entry)
+    private static bool TryCreateInteractableEntryForAnchor(Point anchor, Vector2 origin, bool includeOutOfRange, out GuidanceEntry entry)
     {
         entry = default;
         if (!IsWithinWorld(anchor))
@@ -551,5 +601,305 @@ public sealed partial class GuidanceSystem
     private static bool IsWithinWorld(Point point)
     {
         return point.X >= 0 && point.X < Main.maxTilesX && point.Y >= 0 && point.Y < Main.maxTilesY;
+    }
+
+    private const float ScreenEdgePaddingPixels = 48f;
+
+    private static bool IsWorldPositionApproximatelyOnScreen(Vector2 worldPosition, float paddingPixels = ScreenEdgePaddingPixels)
+    {
+        float zoomX = Math.Abs(Main.GameViewMatrix.Zoom.X) < 0.001f ? 1f : Main.GameViewMatrix.Zoom.X;
+        float zoomY = Math.Abs(Main.GameViewMatrix.Zoom.Y) < 0.001f ? zoomX : Main.GameViewMatrix.Zoom.Y;
+        float zoom = Math.Max(0.001f, Math.Min(zoomX, zoomY));
+
+        float viewWidth = Main.screenWidth / zoom;
+        float viewHeight = Main.screenHeight / zoom;
+        Vector2 topLeft = Main.screenPosition;
+
+        float left = topLeft.X - paddingPixels;
+        float top = topLeft.Y - paddingPixels;
+        float right = left + viewWidth + paddingPixels * 2f;
+        float bottom = top + viewHeight + paddingPixels * 2f;
+
+        return worldPosition.X >= left && worldPosition.X <= right &&
+               worldPosition.Y >= top && worldPosition.Y <= bottom;
+    }
+
+    private static void RefreshDroppedItemEntries(Player player)
+    {
+        int preservedItemIndex = -1;
+        if (_selectedDroppedItemIndex >= 0 && _selectedDroppedItemIndex < NearbyDroppedItems.Count)
+        {
+            preservedItemIndex = NearbyDroppedItems[_selectedDroppedItemIndex].Index;
+        }
+
+        NearbyDroppedItems.Clear();
+        if (player is null || !player.active)
+        {
+            _selectedDroppedItemIndex = -1;
+            return;
+        }
+
+        Vector2 origin = player.Center;
+
+        for (int i = 0; i < Main.maxItems; i++)
+        {
+            Item item = Main.item[i];
+            if (!item.active || item.stack <= 0)
+            {
+                continue;
+            }
+
+            Vector2 itemCenter = item.Center;
+            if (!IsWorldPositionApproximatelyOnScreen(itemCenter))
+            {
+                continue;
+            }
+
+            float distanceTiles = Vector2.Distance(origin, itemCenter) / 16f;
+            string displayName = ResolveDroppedItemDisplayName(item);
+            NearbyDroppedItems.Add(GuidanceEntry.CreateDroppedItem(i, displayName, itemCenter, distanceTiles));
+        }
+
+        NearbyDroppedItems.Sort((left, right) => left.DistanceTiles.CompareTo(right.DistanceTiles));
+
+        if (NearbyDroppedItems.Count == 0)
+        {
+            _selectedDroppedItemIndex = -1;
+            return;
+        }
+
+        if (preservedItemIndex >= 0)
+        {
+            int restoredIndex = NearbyDroppedItems.FindIndex(entry => entry.Index == preservedItemIndex);
+            if (restoredIndex >= 0)
+            {
+                _selectedDroppedItemIndex = restoredIndex;
+                return;
+            }
+        }
+
+        // Preserve "All" mode (-1) for categories that support it; only clamp out-of-bounds positive indices
+        if (_selectedDroppedItemIndex >= NearbyDroppedItems.Count)
+        {
+            _selectedDroppedItemIndex = NearbyDroppedItems.Count - 1;
+        }
+    }
+
+    private static string ResolveDroppedItemDisplayName(Item item)
+    {
+        string name = Lang.GetItemNameValue(item.type);
+        if (string.IsNullOrWhiteSpace(name))
+        {
+            name = "Item";
+        }
+
+        return item.stack > 1 ? $"{item.stack} {name}" : name;
+    }
+
+    private static void RefreshCritterEntries(Player player)
+    {
+        int preservedNpcIndex = -1;
+        if (_selectedCritterIndex >= 0 && _selectedCritterIndex < NearbyCritters.Count)
+        {
+            preservedNpcIndex = NearbyCritters[_selectedCritterIndex].Index;
+        }
+
+        NearbyCritters.Clear();
+        if (player is null || !player.active)
+        {
+            _selectedCritterIndex = -1;
+            return;
+        }
+
+        Vector2 origin = player.Center;
+        for (int i = 0; i < Main.maxNPCs; i++)
+        {
+            NPC npc = Main.npc[i];
+            if (!npc.active || npc.lifeMax <= 0)
+            {
+                continue;
+            }
+
+            if (!NPCID.Sets.CountsAsCritter[npc.type])
+            {
+                continue;
+            }
+
+            float distanceTiles = Vector2.Distance(origin, npc.Center) / 16f;
+            if (distanceTiles > DistanceReferenceTiles)
+            {
+                continue;
+            }
+
+            string displayName = ResolveCritterDisplayName(npc);
+            NearbyCritters.Add(GuidanceEntry.CreateCritter(i, displayName, npc.Center, distanceTiles));
+        }
+
+        NearbyCritters.Sort((left, right) => left.DistanceTiles.CompareTo(right.DistanceTiles));
+
+        if (NearbyCritters.Count == 0)
+        {
+            _selectedCritterIndex = -1;
+            return;
+        }
+
+        if (preservedNpcIndex >= 0)
+        {
+            int restoredIndex = NearbyCritters.FindIndex(entry => entry.Index == preservedNpcIndex);
+            if (restoredIndex >= 0)
+            {
+                _selectedCritterIndex = restoredIndex;
+                return;
+            }
+        }
+
+        // Preserve "All" mode (-1) for categories that support it; only clamp out-of-bounds positive indices
+        if (_selectedCritterIndex >= NearbyCritters.Count)
+        {
+            _selectedCritterIndex = NearbyCritters.Count - 1;
+        }
+    }
+
+    private static string ResolveCritterDisplayName(NPC npc)
+    {
+        string localized = Lang.GetNPCNameValue(npc.type);
+        return !string.IsNullOrWhiteSpace(localized) ? localized : "Critter";
+    }
+
+    private static void RefreshPlantlifeEntries(Player player)
+    {
+        bool hasPreservedAnchor = false;
+        Point preservedAnchor = Point.Zero;
+        if (_selectedPlantlifeIndex >= 0 && _selectedPlantlifeIndex < NearbyPlantlife.Count)
+        {
+            preservedAnchor = NearbyPlantlife[_selectedPlantlifeIndex].Anchor;
+            hasPreservedAnchor = true;
+        }
+
+        NearbyPlantlife.Clear();
+        PlantlifeAnchorScratch.Clear();
+
+        if (player is null || !player.active)
+        {
+            _selectedPlantlifeIndex = -1;
+            return;
+        }
+
+        Vector2 origin = player.Center;
+        int scanRadius = (int)Math.Clamp(DistanceReferenceTiles + 8f, 4f, 120f);
+        int playerTileX = (int)(origin.X / 16f);
+        int playerTileY = (int)(origin.Y / 16f);
+        int minX = Math.Max(0, playerTileX - scanRadius);
+        int maxX = Math.Min(Main.maxTilesX - 1, playerTileX + scanRadius);
+        int minY = Math.Max(0, playerTileY - scanRadius);
+        int maxY = Math.Min(Main.maxTilesY - 1, playerTileY + scanRadius);
+
+        for (int x = minX; x <= maxX; x++)
+        {
+            for (int y = minY; y <= maxY; y++)
+            {
+                Tile tile = Main.tile[x, y];
+                if (!tile.HasTile)
+                {
+                    continue;
+                }
+
+                if (Array.IndexOf(PlantlifeTileTypes, tile.TileType) < 0)
+                {
+                    continue;
+                }
+
+                Point anchor = new(x, y);
+                if (!PlantlifeAnchorScratch.Add(anchor))
+                {
+                    continue;
+                }
+
+                Vector2 worldPosition = new((x + 0.5f) * 16f, (y + 0.5f) * 16f);
+                float distanceTiles = Vector2.Distance(worldPosition, origin) / 16f;
+
+                if (distanceTiles > DistanceReferenceTiles)
+                {
+                    continue;
+                }
+
+                string displayName = ResolvePlantDisplayName(tile);
+                NearbyPlantlife.Add(GuidanceEntry.CreatePlantlife(anchor, displayName, worldPosition, distanceTiles));
+            }
+        }
+
+        NearbyPlantlife.Sort((left, right) => left.DistanceTiles.CompareTo(right.DistanceTiles));
+
+        if (NearbyPlantlife.Count == 0)
+        {
+            _selectedPlantlifeIndex = -1;
+            return;
+        }
+
+        if (hasPreservedAnchor)
+        {
+            int restoredIndex = NearbyPlantlife.FindIndex(entry => entry.Anchor == preservedAnchor);
+            if (restoredIndex >= 0)
+            {
+                _selectedPlantlifeIndex = restoredIndex;
+                return;
+            }
+        }
+
+        // Preserve "All" mode (-1) for categories that support it; only clamp out-of-bounds positive indices
+        if (_selectedPlantlifeIndex >= NearbyPlantlife.Count)
+        {
+            _selectedPlantlifeIndex = NearbyPlantlife.Count - 1;
+        }
+    }
+
+    private static string ResolvePlantDisplayName(Tile tile)
+    {
+        return tile.TileType switch
+        {
+            TileID.MushroomPlants => "Glowing Mushroom",
+            TileID.MatureHerbs => ResolveHerbName(tile, "Mature"),
+            TileID.BloomingHerbs => ResolveHerbName(tile, "Blooming"),
+            TileID.DyePlants => ResolveDyePlantName(tile),
+            _ => "Plant"
+        };
+    }
+
+    private static string ResolveDyePlantName(Tile tile)
+    {
+        int style = tile.TileFrameX / 34;
+        return style switch
+        {
+            0 => "Teal Mushroom",
+            1 => "Green Mushroom",
+            2 => "Sky Blue Flower",
+            3 => "Yellow Marigold",
+            4 => "Blue Berries",
+            5 => "Lime Kelp",
+            6 => "Pink Prickly Pear",
+            7 => "Orange Bloodroot",
+            8 => "Strange Plant",
+            9 => "Strange Plant",
+            10 => "Strange Plant",
+            11 => "Strange Plant",
+            _ => "Dye Plant"
+        };
+    }
+
+    private static string ResolveHerbName(Tile tile, string prefix)
+    {
+        int frameX = tile.TileFrameX / 18;
+        string herbName = frameX switch
+        {
+            0 => "Daybloom",
+            1 => "Moonglow",
+            2 => "Blinkroot",
+            3 => "Deathweed",
+            4 => "Waterleaf",
+            5 => "Fireblossom",
+            6 => "Shiverthorn",
+            _ => "Herb"
+        };
+        return $"{prefix} {herbName}";
     }
 }

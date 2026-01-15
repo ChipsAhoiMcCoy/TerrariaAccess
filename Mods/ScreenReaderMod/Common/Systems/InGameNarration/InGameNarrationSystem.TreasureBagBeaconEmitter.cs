@@ -36,9 +36,7 @@ public sealed partial class InGameNarrationSystem
     {
         private const float PitchScale = 320f;
         private const float PanScalePixels = 480f;
-        private const float DistanceReferenceTiles = 110f;
-        private const float MinVolume = 0.24f;
-        private const float VolumeRange = 0.72f;
+        private const float FixedVolume = 0.45f;
         private const int SampleRate = 44100;
         private const int BaseFrequencyHz = 490;
         private const int CyclesPerBuffer = 64;
@@ -132,16 +130,7 @@ public sealed partial class InGameNarrationSystem
                 Vector2 offset = bagCenter - playerCenter;
                 float pitch = MathHelper.Clamp(-offset.Y / PitchScale, -0.6f, 0.6f);
                 float pan = MathHelper.Clamp(offset.X / PanScalePixels, -1f, 1f);
-                float distancePixels = offset.Length();
-                float distanceTiles = distancePixels / 16f;
-                float distanceFactor = 1f / (1f + (distanceTiles / Math.Max(1f, DistanceReferenceTiles)));
-                float baseVolume = MathHelper.Clamp(MinVolume + distanceFactor * VolumeRange, 0f, 1f);
-                float loudness = SoundLoudnessUtility.ApplyDistanceFalloff(
-                    baseVolume,
-                    distanceTiles,
-                    DistanceReferenceTiles,
-                    minFactor: 0.4f);
-                float volume = loudness * Main.soundVolume;
+                float volume = FixedVolume * Main.soundVolume * AudioVolumeDefaults.WorldCueVolumeScale;
 
                 instance.Pitch = pitch;
                 instance.Pan = pan;

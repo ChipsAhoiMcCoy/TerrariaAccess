@@ -3,6 +3,7 @@ using System;
 using System.Collections.Generic;
 using Microsoft.Xna.Framework;
 using Microsoft.Xna.Framework.Audio;
+using ScreenReaderMod.Common.Players;
 using ScreenReaderMod.Common.Services;
 using ScreenReaderMod.Common.Systems.Guidance;
 using ScreenReaderMod.Common.Utilities;
@@ -29,16 +30,16 @@ public sealed partial class GuidanceSystem : ModSystem
     private const float PitchScale = 320f;
     private const float PanScalePixels = 480f;
     private const float DistanceReferenceTiles = 90f;
-    private const float MinVolume = 0.18f;
-    private const int TeleportSearchRadiusTiles = 18;
-    private const int TeleportVerticalSearchTiles = 8;
-    private static readonly TeleportSafetyEvaluator TeleportSafety = new(TeleportSearchRadiusTiles, TeleportVerticalSearchTiles);
+    private const float ProximityAnnouncementStepTiles = 10f;
+    private const float ProximityAnnouncementToleranceTiles = 0.35f;
+    private const float ExplorationSelectionMatchToleranceTiles = 6f;
+    private const float FixedVolume = 0.45f;
     private static readonly SpatialAudioPanner.SpatialAudioProfile GuidanceAudioProfile = new(
         PitchScalePixels: PitchScale,
         PanScalePixels: PanScalePixels,
         DistanceReferenceTiles: DistanceReferenceTiles,
-        MinVolume: MinVolume,
-        VolumeScale: 0.85f,
+        MinVolume: FixedVolume,
+        VolumeScale: 0f,
         PitchClamp: 0.7f);
 
     public override void Load()
@@ -62,6 +63,11 @@ public sealed partial class GuidanceSystem : ModSystem
 
     public override void OnWorldUnload()
     {
+        if (Main.netMode == NetmodeID.MultiplayerClient && Main.LocalPlayer is not null)
+        {
+            Main.LocalPlayer.GetModPlayer<GuidancePlayer>().CacheWaypointState();
+        }
+
         ResetTrackingState();
         CloseNamingUi();
         DisposeToneResources();
@@ -89,69 +95,20 @@ public sealed partial class GuidanceSystem : ModSystem
 
     public override void LoadWorldData(TagCompound tag)
     {
+        // Multiplayer clients use per-player cache via GuidancePlayer.OnEnterWorld
+        // instead of world data (which won't exist since mod is client-side only)
+        if (Main.netMode == NetmodeID.MultiplayerClient)
+        {
+            return;
+        }
+
         ResetTrackingState();
-
-        if (tag.ContainsKey(WaypointListKey))
-        {
-            foreach (TagCompound entry in tag.GetList<TagCompound>(WaypointListKey))
-            {
-                string name = entry.GetString("name");
-                float x = entry.GetFloat("x");
-                float y = entry.GetFloat("y");
-                Waypoints.Add(new Waypoint(name, new Vector2(x, y)));
-            }
-        }
-
-        if (tag.ContainsKey(SelectedIndexKey))
-        {
-            _selectedIndex = Math.Clamp(tag.GetInt(SelectedIndexKey), -1, Waypoints.Count - 1);
-        }
-
-        bool explorationMode = tag.ContainsKey(ExplorationModeKey) && tag.GetBool(ExplorationModeKey);
-        if (explorationMode)
-        {
-            _selectionMode = SelectionMode.Exploration;
-        }
-        else if (_selectedIndex >= 0 && _selectedIndex < Waypoints.Count)
-        {
-            _selectionMode = SelectionMode.Waypoint;
-        }
-        else
-        {
-            _selectionMode = SelectionMode.None;
-            _selectedIndex = -1;
-        }
-
-        ClearCategoryAnnouncement();
+        LoadWaypointData(tag, "world save", announceSelection: false);
     }
 
     public override void SaveWorldData(TagCompound tag)
     {
-        if (Waypoints.Count > 0)
-        {
-            List<TagCompound> serialized = new(Waypoints.Count);
-            foreach (Waypoint waypoint in Waypoints)
-            {
-                serialized.Add(new TagCompound
-                {
-                    ["name"] = waypoint.Name,
-                    ["x"] = waypoint.WorldPosition.X,
-                    ["y"] = waypoint.WorldPosition.Y,
-                });
-            }
-
-            tag[WaypointListKey] = serialized;
-        }
-
-        if (_selectionMode == SelectionMode.Waypoint && _selectedIndex >= 0 && _selectedIndex < Waypoints.Count)
-        {
-            tag[SelectedIndexKey] = _selectedIndex;
-        }
-
-        if (_selectionMode == SelectionMode.Exploration)
-        {
-            tag[ExplorationModeKey] = true;
-        }
+        SaveWaypointData(tag, "world save");
     }
 
     public override void PostUpdatePlayers()
@@ -160,6 +117,7 @@ public sealed partial class GuidanceSystem : ModSystem
         {
             _nextPingUpdateFrame = -1;
             _arrivalAnnounced = false;
+            ResetProximityProgress();
         }
         else
         {
@@ -168,6 +126,7 @@ public sealed partial class GuidanceSystem : ModSystem
             {
                 _nextPingUpdateFrame = -1;
                 _arrivalAnnounced = false;
+                ResetProximityProgress();
                 return;
             }
 
@@ -176,18 +135,32 @@ public sealed partial class GuidanceSystem : ModSystem
                 return;
             }
 
+            EnsureTargetsUpToDate(player);
+
+            // Check sweep mode FIRST for "All" selections (index = -1)
+            // This must run before TryGetCurrentTrackingTarget, which returns false for "All" modes
+            if (IsSweepModeActive())
+            {
+                _nextPingUpdateFrame = -1;
+                _arrivalAnnounced = false;
+                UpdateSweepPings(player);
+                return;
+            }
+
             if (!TryGetCurrentTrackingTarget(player, out Vector2 targetPosition, out string arrivalLabel))
             {
                 _nextPingUpdateFrame = -1;
                 _arrivalAnnounced = false;
+                ResetProximityProgress();
                 LogPing("No tracking target; reset ping state");
                 return;
             }
 
             float distanceTiles = Vector2.Distance(player.Center, targetPosition) / 16f;
+            UpdateProximityAnnouncement(player, targetPosition, arrivalLabel, distanceTiles);
             if (distanceTiles <= ArrivalTileThreshold)
             {
-                if (!_arrivalAnnounced && !string.IsNullOrWhiteSpace(arrivalLabel))
+                if (!_arrivalAnnounced && !string.IsNullOrWhiteSpace(arrivalLabel) && _selectionMode != SelectionMode.DroppedItem)
                 {
                     ScreenReaderService.Announce($"Arrived at {arrivalLabel}");
                 }
@@ -200,6 +173,14 @@ public sealed partial class GuidanceSystem : ModSystem
             if (_arrivalAnnounced)
             {
                 _arrivalAnnounced = false;
+            }
+
+            bool allowPing = IsPingEnabledForCurrentSelection();
+            if (!allowPing)
+            {
+                // Sweep mode already handled at start of function; just disable pinging here
+                _nextPingUpdateFrame = -1;
+                return;
             }
 
             if (_nextPingUpdateFrame < 0)
@@ -215,6 +196,102 @@ public sealed partial class GuidanceSystem : ModSystem
             }
         }
 
+    }
+
+    private static bool IsSweepModeActive()
+    {
+        return _selectionMode switch
+        {
+            SelectionMode.Waypoint when _selectedIndex < 0 => Waypoints.Count > 0,
+            SelectionMode.DroppedItem when _selectedDroppedItemIndex < 0 => NearbyDroppedItems.Count > 0,
+            SelectionMode.Critter when _selectedCritterIndex < 0 => NearbyCritters.Count > 0,
+            SelectionMode.Plantlife when _selectedPlantlifeIndex < 0 => NearbyPlantlife.Count > 0,
+            _ => false
+        };
+    }
+
+    private static void UpdateSweepPings(Player player)
+    {
+        RefreshSweepOrder(player);
+
+        if (SweepOrder.Count == 0)
+        {
+            return;
+        }
+
+        if (Main.GameUpdateCount < (uint)_nextSweepFrame)
+        {
+            return;
+        }
+
+        if (_sweepCursor >= SweepOrder.Count)
+        {
+            _sweepCursor = 0;
+        }
+
+        SweepTarget target = SweepOrder[_sweepCursor];
+        EmitPing(player, target.WorldPosition);
+
+        _sweepCursor++;
+        if (_sweepCursor >= SweepOrder.Count)
+        {
+            _sweepCursor = 0;
+        }
+
+        _nextSweepFrame = (int)Main.GameUpdateCount + SweepIntervalFrames;
+    }
+
+    private static void RefreshSweepOrder(Player player)
+    {
+        SweepOrder.Clear();
+        Vector2 origin = player.Center;
+
+        switch (_selectionMode)
+        {
+            case SelectionMode.Waypoint when _selectedIndex < 0:
+                foreach (Waypoint wp in Waypoints)
+                {
+                    float dist = Vector2.Distance(origin, wp.WorldPosition) / 16f;
+                    SweepOrder.Add(new SweepTarget(wp.WorldPosition, dist));
+                }
+                break;
+            case SelectionMode.DroppedItem when _selectedDroppedItemIndex < 0:
+                foreach (GuidanceEntry entry in NearbyDroppedItems)
+                {
+                    SweepOrder.Add(new SweepTarget(entry.WorldPosition, entry.DistanceTiles));
+                }
+                break;
+            case SelectionMode.Critter when _selectedCritterIndex < 0:
+                foreach (GuidanceEntry entry in NearbyCritters)
+                {
+                    SweepOrder.Add(new SweepTarget(entry.WorldPosition, entry.DistanceTiles));
+                }
+                break;
+            case SelectionMode.Plantlife when _selectedPlantlifeIndex < 0:
+                foreach (GuidanceEntry entry in NearbyPlantlife)
+                {
+                    SweepOrder.Add(new SweepTarget(entry.WorldPosition, entry.DistanceTiles));
+                }
+                break;
+        }
+
+        // Sort by X position (left to right), then by Y, then by distance
+        SweepOrder.Sort(static (left, right) =>
+        {
+            int compareX = left.WorldPosition.X.CompareTo(right.WorldPosition.X);
+            if (compareX != 0)
+            {
+                return compareX;
+            }
+
+            int compareY = left.WorldPosition.Y.CompareTo(right.WorldPosition.Y);
+            if (compareY != 0)
+            {
+                return compareY;
+            }
+
+            return left.DistanceTiles.CompareTo(right.DistanceTiles);
+        });
     }
 
     private static void BeginNaming(Player player)
@@ -265,7 +342,9 @@ public sealed partial class GuidanceSystem : ModSystem
             string resolvedName = TextSanitizer.Clean(string.IsNullOrWhiteSpace(rawInput) ? fallbackName : rawInput.Trim());
             global::ScreenReaderMod.ScreenReaderMod.Instance?.Logger.Info($"[WaypointNaming:{logContext}] Resolved name: \"{resolvedName}\" (input: \"{rawInput}\")");
 
-            Waypoints.Add(new Waypoint(resolvedName, worldPosition));
+            Waypoint waypoint = new(resolvedName, worldPosition);
+            Waypoints.Add(waypoint);
+            SendWaypointAddedToServer(waypoint);
             _selectedIndex = Waypoints.Count - 1;
             _selectionMode = SelectionMode.Waypoint;
 
@@ -386,6 +465,30 @@ public sealed partial class GuidanceSystem : ModSystem
         global::ScreenReaderMod.ScreenReaderMod.Instance?.Logger.Info($"[GuidancePing] {message}");
     }
 
+    private static void EnsureTargetsUpToDate(Player player)
+    {
+        if (player is null || !player.active)
+        {
+            return;
+        }
+
+        if (_lastTargetRefreshFrame == Main.GameUpdateCount && _lastTargetRefreshPlayerIndex == player.whoAmI)
+        {
+            return;
+        }
+
+        RefreshNpcEntries(player);
+        RefreshPlayerEntries(player);
+        RefreshInteractableEntries(player);
+        RefreshExplorationEntries();
+        RefreshDroppedItemEntries(player);
+        RefreshCritterEntries(player);
+        RefreshPlantlifeEntries(player);
+
+        _lastTargetRefreshFrame = Main.GameUpdateCount;
+        _lastTargetRefreshPlayerIndex = player.whoAmI;
+    }
+
     internal static void HandleKeybinds(Player player)
     {
         if (Main.dedServ || Main.gameMenu)
@@ -402,6 +505,8 @@ public sealed partial class GuidanceSystem : ModSystem
         {
             return;
         }
+
+        EnsureTargetsUpToDate(player);
 
         if (GuidanceKeybinds.Create?.JustPressed ?? false)
         {
@@ -447,63 +552,306 @@ public sealed partial class GuidanceSystem : ModSystem
 
     private static void TeleportToTrackingTarget(Player player)
     {
-        if (!TryResolveTeleportTarget(player, out Vector2 targetPosition, out string label))
+        if (!TryResolveTeleportTarget(player, out TeleportTarget target))
         {
             ScreenReaderService.Announce("No active guidance target to teleport to.");
             return;
         }
 
-        if (!TeleportSafety.TryFindSafeDestination(player, targetPosition, out Vector2 destination, out string failureReason))
-        {
-            string displayLabel = string.IsNullOrWhiteSpace(label) ? "the target" : label;
-            string detail = string.IsNullOrWhiteSpace(failureReason) ? string.Empty : $" {failureReason}";
-            ScreenReaderService.Announce($"Unable to find a safe teleport location near {displayLabel}.{detail}");
-            global::ScreenReaderMod.ScreenReaderMod.Instance?.Logger.Info($"[GuidanceTeleport] failed near \"{displayLabel}\" ({NarrationStringCatalog.Coordinates(targetPosition)}) reason=\"{failureReason}\"");
-            return;
-        }
-
-        player.Teleport(destination, TeleportationStyleID.RodOfDiscord);
+        Vector2 destination = ResolveTeleportDestination(player, target.Anchor);
+        player.RemoveAllGrapplingHooks();
+        player.Teleport(destination, target.Style);
         player.velocity = Vector2.Zero;
         player.fallStart = (int)(player.position.Y / 16f);
 
         if (Main.netMode == NetmodeID.MultiplayerClient)
         {
-            NetMessage.SendData(MessageID.TeleportEntity, -1, -1, null, player.whoAmI, destination.X, destination.Y, TeleportationStyleID.RodOfDiscord);
+            NetMessage.SendData(MessageID.TeleportEntity, -1, -1, null, 0, player.whoAmI, destination.X, destination.Y, target.Style);
         }
 
         _arrivalAnnounced = false;
         RescheduleGuidancePing(player);
         EmitCurrentGuidancePing(player);
 
-        string announcement = string.IsNullOrWhiteSpace(label)
+        string announcement = string.IsNullOrWhiteSpace(target.Label)
             ? "Teleported to guidance target."
-            : $"Teleported to {label}.";
+            : $"Teleported to {target.Label}.";
         ScreenReaderService.Announce(announcement);
     }
 
-    private static bool TryResolveTeleportTarget(Player player, out Vector2 worldPosition, out string label)
+    private static bool TryResolveTeleportTarget(Player player, out TeleportTarget target)
     {
-        if (TryGetCurrentTrackingTarget(player, out worldPosition, out label))
+        if (TryGetCurrentTrackingTarget(player, out Vector2 worldPosition, out string label))
         {
+            target = new TeleportTarget(worldPosition, label, ResolveTeleportStyleForSelection());
             return true;
         }
 
         if (_selectionMode == SelectionMode.Exploration && TryGetSelectedExploration(out ExplorationTargetRegistry.ExplorationTarget exploration))
         {
-            worldPosition = exploration.WorldPosition;
-            label = exploration.Label;
+            target = new TeleportTarget(exploration.WorldPosition, exploration.Label, TeleportationStyleID.RodOfDiscord);
             return true;
         }
 
-        worldPosition = default;
-        label = string.Empty;
+        target = default;
         return false;
+    }
+
+    private static Vector2 ResolveTeleportDestination(Player player, Vector2 anchor)
+    {
+        Vector2 topLeft = anchor - new Vector2(player.width * 0.5f, player.height);
+
+        float minX = 16f;
+        float minY = 16f;
+        float maxX = (Main.maxTilesX - 2) * 16f - player.width;
+        float maxY = (Main.maxTilesY - 2) * 16f - player.height;
+
+        float clampedX = MathHelper.Clamp(topLeft.X, minX, maxX);
+        float clampedY = MathHelper.Clamp(topLeft.Y, minY, maxY);
+
+        return new Vector2(clampedX, clampedY);
     }
 
     private static string BuildDefaultName()
     {
         int nextIndex = Waypoints.Count + 1;
-        return $"Waypoint {nextIndex}";
+        return BuildDefaultName(nextIndex);
+    }
+
+    private static string BuildDefaultName(int index)
+    {
+        if (index <= 0)
+        {
+            index = Waypoints.Count + 1;
+        }
+
+        return $"Waypoint {index}";
+    }
+
+    private static (List<Waypoint> waypoints, SelectionMode selectionMode, int selectedIndex) BuildSerializableWaypointState(string source, bool normalizeRuntime = false)
+    {
+        List<Waypoint> sanitized = new(Waypoints.Count);
+        int mappedSelection = -1;
+
+        for (int i = 0; i < Waypoints.Count; i++)
+        {
+            Waypoint waypoint = Waypoints[i];
+            if (!TryCreateWaypoint(waypoint.Name, waypoint.WorldPosition.X, waypoint.WorldPosition.Y, sanitized.Count, source, out Waypoint sanitizedWaypoint))
+            {
+                continue;
+            }
+
+            if (_selectionMode == SelectionMode.Waypoint && _selectedIndex == i)
+            {
+                mappedSelection = sanitized.Count;
+            }
+
+            sanitized.Add(sanitizedWaypoint);
+        }
+
+        SelectionMode selectionMode = _selectionMode;
+        int selectedIndex = _selectedIndex;
+
+        if (sanitized.Count == 0)
+        {
+            selectionMode = SelectionMode.None;
+            selectedIndex = -1;
+        }
+        else if (selectionMode == SelectionMode.Waypoint)
+        {
+            selectedIndex = mappedSelection >= 0
+                ? mappedSelection
+                : Math.Clamp(_selectedIndex, 0, sanitized.Count - 1);
+
+            if (selectedIndex < 0 || selectedIndex >= sanitized.Count)
+            {
+                selectionMode = SelectionMode.None;
+                selectedIndex = -1;
+            }
+        }
+        else
+        {
+            selectedIndex = Math.Clamp(_selectedIndex, -1, sanitized.Count - 1);
+        }
+
+        if (normalizeRuntime && (sanitized.Count != Waypoints.Count || selectionMode != _selectionMode || selectedIndex != _selectedIndex))
+        {
+            Waypoints.Clear();
+            Waypoints.AddRange(sanitized);
+            _selectionMode = selectionMode;
+            _selectedIndex = selectedIndex;
+            _nextPingUpdateFrame = -1;
+            _arrivalAnnounced = false;
+        }
+
+        return (sanitized, selectionMode, selectedIndex);
+    }
+
+    internal static bool SaveWaypointData(TagCompound tag, string source, bool normalizeRuntime = true)
+    {
+        (List<Waypoint> waypoints, SelectionMode selectionMode, int selectedIndex) = BuildSerializableWaypointState(source, normalizeRuntime: normalizeRuntime);
+        bool hasData = false;
+
+        if (waypoints.Count > 0)
+        {
+            List<TagCompound> serialized = new(waypoints.Count);
+            foreach (Waypoint waypoint in waypoints)
+            {
+                serialized.Add(new TagCompound
+                {
+                    ["name"] = waypoint.Name,
+                    ["x"] = waypoint.WorldPosition.X,
+                    ["y"] = waypoint.WorldPosition.Y,
+                });
+            }
+
+            tag[WaypointListKey] = serialized;
+            hasData = true;
+        }
+        else
+        {
+            tag.Remove(WaypointListKey);
+        }
+
+        if (selectionMode == SelectionMode.Waypoint && selectedIndex >= 0 && selectedIndex < waypoints.Count)
+        {
+            tag[SelectedIndexKey] = selectedIndex;
+            hasData = true;
+        }
+        else
+        {
+            tag.Remove(SelectedIndexKey);
+        }
+
+        if (selectionMode == SelectionMode.Exploration)
+        {
+            tag[ExplorationModeKey] = true;
+            hasData = true;
+        }
+        else
+        {
+            tag.Remove(ExplorationModeKey);
+        }
+
+        return hasData;
+    }
+
+    internal static bool LoadWaypointData(TagCompound tag, string source, bool announceSelection)
+    {
+        ResetWaypointSelectionState();
+
+        if (tag.ContainsKey(WaypointListKey))
+        {
+            foreach (TagCompound entry in tag.GetList<TagCompound>(WaypointListKey))
+            {
+                if (!entry.ContainsKey("x") || !entry.ContainsKey("y"))
+                {
+                    LogWaypointWarning($"Dropped waypoint from {source}: missing coordinates.");
+                    continue;
+                }
+
+                string name = entry.GetString("name");
+                float x = entry.GetFloat("x");
+                float y = entry.GetFloat("y");
+
+                if (TryCreateWaypoint(name, x, y, Waypoints.Count, source, out Waypoint waypoint))
+                {
+                    Waypoints.Add(waypoint);
+                }
+            }
+        }
+
+        if (tag.ContainsKey(SelectedIndexKey))
+        {
+            _selectedIndex = Math.Clamp(tag.GetInt(SelectedIndexKey), -1, Waypoints.Count - 1);
+        }
+
+        bool explorationMode = tag.ContainsKey(ExplorationModeKey) && tag.GetBool(ExplorationModeKey);
+        if (explorationMode)
+        {
+            _selectionMode = SelectionMode.Exploration;
+        }
+        else if (_selectedIndex >= 0 && _selectedIndex < Waypoints.Count)
+        {
+            _selectionMode = SelectionMode.Waypoint;
+        }
+        else
+        {
+            _selectionMode = SelectionMode.None;
+            _selectedIndex = -1;
+        }
+
+        ClearCategoryAnnouncement();
+        ResetProximityProgress();
+
+        if (announceSelection && _selectionMode == SelectionMode.Waypoint && _selectedIndex >= 0 && _selectedIndex < Waypoints.Count)
+        {
+            if (Main.LocalPlayer is { active: true } player)
+            {
+                RescheduleGuidancePing(player);
+            }
+        }
+
+        return Waypoints.Count > 0 || explorationMode;
+    }
+
+    private static bool TryCreateWaypoint(string? rawName, float x, float y, int fallbackIndex, string source, out Waypoint waypoint)
+    {
+        waypoint = default;
+
+        Vector2 worldPosition = new(x, y);
+        if (!IsValidWaypointPosition(worldPosition))
+        {
+            LogWaypointWarning($"Dropped waypoint {fallbackIndex + 1} from {source}: invalid position ({x}, {y}).");
+            return false;
+        }
+
+        string resolvedName = ResolveWaypointName(rawName, fallbackIndex);
+        waypoint = new Waypoint(resolvedName, worldPosition);
+        return true;
+    }
+
+    private static string ResolveWaypointName(string? rawName, int fallbackIndex)
+    {
+        string cleaned = SanitizeLabel(rawName);
+        if (!string.IsNullOrWhiteSpace(cleaned))
+        {
+            return cleaned;
+        }
+
+        return BuildDefaultName(fallbackIndex + 1);
+    }
+
+    private static bool IsValidWaypointPosition(Vector2 worldPosition)
+    {
+        if (!float.IsFinite(worldPosition.X) || !float.IsFinite(worldPosition.Y))
+        {
+            return false;
+        }
+
+        float minX = 16f;
+        float minY = 16f;
+        float maxX = (Main.maxTilesX - 2) * 16f;
+        float maxY = (Main.maxTilesY - 2) * 16f;
+
+        return worldPosition.X >= minX && worldPosition.X <= maxX &&
+               worldPosition.Y >= minY && worldPosition.Y <= maxY;
+    }
+
+    private static void LogWaypointWarning(string message)
+    {
+        ScreenReaderMod.Instance?.Logger.Warn($"[GuidanceSync] {message}");
+    }
+
+    private static void ResetWaypointSelectionState()
+    {
+        Waypoints.Clear();
+        _selectionMode = SelectionMode.None;
+        _selectedIndex = -1;
+        _nextPingUpdateFrame = -1;
+        _arrivalAnnounced = false;
+        ClearCategoryAnnouncement();
+        ResetProximityProgress();
     }
 
     private static readonly SelectionMode[] CategoryOrder =
@@ -513,8 +861,13 @@ public sealed partial class GuidanceSystem : ModSystem
         SelectionMode.Interactable,
         SelectionMode.Npc,
         SelectionMode.Player,
-        SelectionMode.Waypoint
+        SelectionMode.Waypoint,
+        SelectionMode.DroppedItem,
+        SelectionMode.Critter,
+        SelectionMode.Plantlife
     };
+
+    private readonly record struct TeleportTarget(Vector2 Anchor, string Label, int Style);
 
     private static bool IsCategoryAvailable(SelectionMode category, Player player)
     {
@@ -531,6 +884,8 @@ public sealed partial class GuidanceSystem : ModSystem
         {
             direction = 1;
         }
+
+        EnsureTargetsUpToDate(player);
 
         int currentIndex = Array.IndexOf(CategoryOrder, _selectionMode);
         if (currentIndex < 0)
@@ -559,6 +914,8 @@ public sealed partial class GuidanceSystem : ModSystem
 
     private static void ApplyCategorySelection(SelectionMode category, Player player)
     {
+        EnsureTargetsUpToDate(player);
+
         switch (category)
         {
             case SelectionMode.None:
@@ -572,6 +929,7 @@ public sealed partial class GuidanceSystem : ModSystem
             case SelectionMode.Exploration:
                 _selectionMode = SelectionMode.Exploration;
                 _selectedExplorationIndex = -1;
+                _lastExplorationSelection = null;
                 RefreshExplorationEntries();
                 ExplorationTargetRegistry.SetSelectedTarget(null);
                 _selectedIndex = Math.Min(_selectedIndex, Waypoints.Count - 1);
@@ -589,14 +947,11 @@ public sealed partial class GuidanceSystem : ModSystem
                     _selectedInteractableIndex = -1;
                     ClearCategoryAnnouncement();
                     RescheduleGuidancePing(player);
-                    AnnounceCategorySelection("Crafting guidance", "No crafting stations detected nearby.");
+                    AnnounceCategorySelection("Crafting", "No crafting stations detected nearby.");
                     return;
                 }
 
-                if (_selectedInteractableIndex < 0 || _selectedInteractableIndex >= NearbyInteractables.Count)
-                {
-                    _selectedInteractableIndex = 0;
-                }
+                _selectedInteractableIndex = 0;
 
                 BeginCategoryAnnouncement(SelectionMode.Interactable);
                 RescheduleGuidancePing(player);
@@ -613,14 +968,11 @@ public sealed partial class GuidanceSystem : ModSystem
                     ClearCategoryAnnouncement();
                     RescheduleGuidancePing(player);
                     int rangeTiles = (int)MathF.Round(DistanceReferenceTiles);
-                    AnnounceCategorySelection("NPC guidance", $"No nearby NPCs within {rangeTiles} tiles.");
+                    AnnounceCategorySelection("NPCs", $"No nearby NPCs within {rangeTiles} tiles.");
                     return;
                 }
 
-                if (_selectedNpcIndex < 0 || _selectedNpcIndex >= NearbyNpcs.Count)
-                {
-                    _selectedNpcIndex = 0;
-                }
+                _selectedNpcIndex = 0;
 
                 BeginCategoryAnnouncement(SelectionMode.Npc);
                 RescheduleGuidancePing(player);
@@ -630,7 +982,7 @@ public sealed partial class GuidanceSystem : ModSystem
             case SelectionMode.Player:
                 if (Main.netMode == NetmodeID.SinglePlayer)
                 {
-                    ScreenReaderService.Announce("Player guidance is available only in multiplayer.");
+                    ScreenReaderService.Announce("Players is available only in multiplayer.");
                     return;
                 }
 
@@ -642,14 +994,11 @@ public sealed partial class GuidanceSystem : ModSystem
                     _selectedPlayerIndex = -1;
                     ClearCategoryAnnouncement();
                     RescheduleGuidancePing(player);
-                    AnnounceCategorySelection("Player guidance", "No other active players detected.");
+                    AnnounceCategorySelection("Players", "No other active players detected.");
                     return;
                 }
 
-                if (_selectedPlayerIndex < 0 || _selectedPlayerIndex >= NearbyPlayers.Count)
-                {
-                    _selectedPlayerIndex = 0;
-                }
+                _selectedPlayerIndex = 0;
 
                 BeginCategoryAnnouncement(SelectionMode.Player);
                 RescheduleGuidancePing(player);
@@ -668,15 +1017,71 @@ public sealed partial class GuidanceSystem : ModSystem
                     return;
                 }
 
-                if (_selectedIndex < 0 || _selectedIndex >= Waypoints.Count)
-                {
-                    _selectedIndex = 0;
-                }
+                // Waypoints don't have an "All" mode - start at first waypoint
+                _selectedIndex = 0;
 
                 BeginCategoryAnnouncement(SelectionMode.Waypoint);
                 RescheduleGuidancePing(player);
                 AnnounceWaypointSelection(player);
                 EmitCurrentGuidancePing(player);
+                return;
+            case SelectionMode.DroppedItem:
+                _selectionMode = SelectionMode.DroppedItem;
+                ExplorationTargetRegistry.SetSelectedTarget(null);
+                RefreshDroppedItemEntries(player);
+                if (NearbyDroppedItems.Count == 0)
+                {
+                    _selectedDroppedItemIndex = -1;
+                    ClearCategoryAnnouncement();
+                    RescheduleGuidancePing(player);
+                    AnnounceCategorySelection("Items", "No dropped items on screen.");
+                    return;
+                }
+
+                _selectedDroppedItemIndex = -1;
+
+                BeginCategoryAnnouncement(SelectionMode.DroppedItem);
+                RescheduleGuidancePing(player);
+                AnnounceDroppedItemEntry(player, NearbyDroppedItems.Count);
+                return;
+            case SelectionMode.Critter:
+                _selectionMode = SelectionMode.Critter;
+                ExplorationTargetRegistry.SetSelectedTarget(null);
+                RefreshCritterEntries(player);
+                if (NearbyCritters.Count == 0)
+                {
+                    _selectedCritterIndex = -1;
+                    ClearCategoryAnnouncement();
+                    RescheduleGuidancePing(player);
+                    int rangeTiles = (int)MathF.Round(DistanceReferenceTiles);
+                    AnnounceCategorySelection("Critters", $"No critters within {rangeTiles} tiles.");
+                    return;
+                }
+
+                _selectedCritterIndex = -1;
+
+                BeginCategoryAnnouncement(SelectionMode.Critter);
+                RescheduleGuidancePing(player);
+                AnnounceCritterEntry(player, NearbyCritters.Count);
+                return;
+            case SelectionMode.Plantlife:
+                _selectionMode = SelectionMode.Plantlife;
+                ExplorationTargetRegistry.SetSelectedTarget(null);
+                RefreshPlantlifeEntries(player);
+                if (NearbyPlantlife.Count == 0)
+                {
+                    _selectedPlantlifeIndex = -1;
+                    ClearCategoryAnnouncement();
+                    RescheduleGuidancePing(player);
+                    AnnounceCategorySelection("Plants", "No harvestable plants nearby.");
+                    return;
+                }
+
+                _selectedPlantlifeIndex = -1;
+
+                BeginCategoryAnnouncement(SelectionMode.Plantlife);
+                RescheduleGuidancePing(player);
+                AnnouncePlantlifeEntry(player, NearbyPlantlife.Count);
                 return;
         }
     }
@@ -688,119 +1093,115 @@ public sealed partial class GuidanceSystem : ModSystem
             direction = 1;
         }
 
+        EnsureTargetsUpToDate(player);
+
         switch (_selectionMode)
         {
             case SelectionMode.Waypoint:
-                if (Waypoints.Count == 0)
+            {
+                int totalWaypoints = Waypoints.Count;
+                if (totalWaypoints == 0)
                 {
                     ClearCategoryAnnouncement();
                     AnnounceCategorySelection("Waypoints", "No waypoints saved.");
                     return;
                 }
 
-                if (_selectedIndex < 0 || _selectedIndex >= Waypoints.Count)
+                // Waypoints don't have an "All" mode - wrap directly between first and last
+                if (_selectedIndex < 0)
                 {
-                    _selectedIndex = direction > 0 ? 0 : Waypoints.Count - 1;
+                    _selectedIndex = 0;
                 }
                 else
                 {
-                    _selectedIndex = Modulo(_selectedIndex + direction, Waypoints.Count);
+                    _selectedIndex += direction;
+                    if (_selectedIndex < 0)
+                    {
+                        // Wrap to last waypoint
+                        _selectedIndex = totalWaypoints - 1;
+                    }
+                    else if (_selectedIndex >= totalWaypoints)
+                    {
+                        // Wrap to first waypoint
+                        _selectedIndex = 0;
+                    }
                 }
 
                 RescheduleGuidancePing(player);
                 AnnounceWaypointSelection(player);
                 EmitCurrentGuidancePing(player);
                 return;
+            }
             case SelectionMode.Npc:
+            {
                 RefreshNpcEntries(player);
-                if (NearbyNpcs.Count == 0)
+                if (!TryAdvanceSelectionIndex(ref _selectedNpcIndex, NearbyNpcs.Count, direction))
                 {
                     _selectedNpcIndex = -1;
                     ClearCategoryAnnouncement();
                     RescheduleGuidancePing(player);
                     int rangeTiles = (int)MathF.Round(DistanceReferenceTiles);
-                    AnnounceCategorySelection("NPC guidance", $"No NPCs within {rangeTiles} tiles.");
+                    AnnounceCategorySelection("NPCs", $"No NPCs within {rangeTiles} tiles.");
                     return;
-                }
-
-                if (_selectedNpcIndex < 0 || _selectedNpcIndex >= NearbyNpcs.Count)
-                {
-                    _selectedNpcIndex = direction > 0 ? 0 : NearbyNpcs.Count - 1;
-                }
-                else
-                {
-                    _selectedNpcIndex = Modulo(_selectedNpcIndex + direction, NearbyNpcs.Count);
                 }
 
                 RescheduleGuidancePing(player);
                 AnnounceNpcSelection(player);
                 EmitCurrentGuidancePing(player);
                 return;
+            }
             case SelectionMode.Interactable:
+            {
                 RefreshInteractableEntries(player);
-                if (NearbyInteractables.Count == 0)
+                if (!TryAdvanceSelectionIndex(ref _selectedInteractableIndex, NearbyInteractables.Count, direction))
                 {
                     _selectedInteractableIndex = -1;
                     ClearCategoryAnnouncement();
                     RescheduleGuidancePing(player);
-                    AnnounceCategorySelection("Crafting guidance", "No crafting stations detected nearby.");
+                    AnnounceCategorySelection("Crafting", "No crafting stations detected nearby.");
                     return;
-                }
-
-                if (_selectedInteractableIndex < 0 || _selectedInteractableIndex >= NearbyInteractables.Count)
-                {
-                    _selectedInteractableIndex = direction > 0 ? 0 : NearbyInteractables.Count - 1;
-                }
-                else
-                {
-                    _selectedInteractableIndex = Modulo(_selectedInteractableIndex + direction, NearbyInteractables.Count);
                 }
 
                 RescheduleGuidancePing(player);
                 AnnounceInteractableSelection(player);
                 EmitCurrentGuidancePing(player);
                 return;
+            }
             case SelectionMode.Player:
+            {
                 if (Main.netMode == NetmodeID.SinglePlayer)
                 {
-                    ScreenReaderService.Announce("Player guidance is available only in multiplayer.");
+                    ScreenReaderService.Announce("Players is available only in multiplayer.");
                     return;
                 }
 
                 RefreshPlayerEntries(player);
-                if (NearbyPlayers.Count == 0)
+                if (!TryAdvanceSelectionIndex(ref _selectedPlayerIndex, NearbyPlayers.Count, direction))
                 {
                     _selectedPlayerIndex = -1;
                     ClearCategoryAnnouncement();
                     RescheduleGuidancePing(player);
-                    AnnounceCategorySelection("Player guidance", "No other active players detected.");
+                    AnnounceCategorySelection("Players", "No other active players detected.");
                     return;
-                }
-
-                if (_selectedPlayerIndex < 0 || _selectedPlayerIndex >= NearbyPlayers.Count)
-                {
-                    _selectedPlayerIndex = direction > 0 ? 0 : NearbyPlayers.Count - 1;
-                }
-                else
-                {
-                    _selectedPlayerIndex = Modulo(_selectedPlayerIndex + direction, NearbyPlayers.Count);
                 }
 
                 RescheduleGuidancePing(player);
                 AnnouncePlayerSelection(player);
                 EmitCurrentGuidancePing(player);
                 return;
+            }
             case SelectionMode.Exploration:
+            {
                 RefreshExplorationEntries();
                 int totalExploration = NearbyExplorationTargets.Count;
                 if (totalExploration == 0)
                 {
                     ClearCategoryAnnouncement();
-                    AnnounceCategorySelection("Exploration mode", "No exploration targets detected nearby.");
+                    AnnounceCategorySelection("Explore", "No exploration targets detected nearby.");
                     return;
                 }
 
-                int totalSlots = totalExploration + 1; // include the "All" slot at -1
+                int totalSlots = totalExploration + 1;
                 int currentSlot = _selectedExplorationIndex + 1;
                 int nextSlot = Modulo(currentSlot + direction, totalSlots);
                 _selectedExplorationIndex = nextSlot - 1;
@@ -811,12 +1212,130 @@ public sealed partial class GuidanceSystem : ModSystem
                 if (_selectedExplorationIndex < 0)
                 {
                     ExplorationTargetRegistry.SetSelectedTarget(null);
+                    _lastExplorationSelection = null;
                 }
                 else if (_selectedExplorationIndex < NearbyExplorationTargets.Count)
                 {
-                    ExplorationTargetRegistry.SetSelectedTarget(NearbyExplorationTargets[_selectedExplorationIndex]);
+                    _lastExplorationSelection = NearbyExplorationTargets[_selectedExplorationIndex];
+                    ExplorationTargetRegistry.SetSelectedTarget(_lastExplorationSelection);
                 }
                 return;
+            }
+            case SelectionMode.DroppedItem:
+            {
+                RefreshDroppedItemEntries(player);
+                int totalItems = NearbyDroppedItems.Count;
+                if (totalItems == 0)
+                {
+                    _selectedDroppedItemIndex = -1;
+                    ClearCategoryAnnouncement();
+                    RescheduleGuidancePing(player);
+                    AnnounceCategorySelection("Items", "No dropped items on screen.");
+                    return;
+                }
+
+                if (_selectedDroppedItemIndex < 0)
+                {
+                    // On "All" - always go to first item (index 0) regardless of direction
+                    _selectedDroppedItemIndex = 0;
+                }
+                else
+                {
+                    _selectedDroppedItemIndex += direction;
+                    if (_selectedDroppedItemIndex < 0 || _selectedDroppedItemIndex >= totalItems)
+                    {
+                        // Wrapped - go to "All"
+                        _selectedDroppedItemIndex = -1;
+                    }
+                }
+
+                RescheduleGuidancePing(player);
+                AnnounceDroppedItemEntry(player, totalItems);
+                if (_selectedDroppedItemIndex >= 0)
+                {
+                    EmitCurrentGuidancePing(player);
+                }
+                return;
+            }
+            case SelectionMode.Critter:
+            {
+                RefreshCritterEntries(player);
+                int totalCritters = NearbyCritters.Count;
+                if (totalCritters == 0)
+                {
+                    _selectedCritterIndex = -1;
+                    ClearCategoryAnnouncement();
+                    RescheduleGuidancePing(player);
+                    int rangeTiles = (int)MathF.Round(DistanceReferenceTiles);
+                    AnnounceCategorySelection("Critters", $"No critters within {rangeTiles} tiles.");
+                    return;
+                }
+
+                if (_selectedCritterIndex < 0)
+                {
+                    // On "All" - always go to first item (index 0) regardless of direction
+                    // User can then navigate from there
+                    _selectedCritterIndex = 0;
+                }
+                else
+                {
+                    _selectedCritterIndex += direction;
+                    if (_selectedCritterIndex < 0)
+                    {
+                        // Wrapped past first - go to "All"
+                        _selectedCritterIndex = -1;
+                    }
+                    else if (_selectedCritterIndex >= totalCritters)
+                    {
+                        // Wrapped past last - go to "All"
+                        _selectedCritterIndex = -1;
+                    }
+                }
+
+                RescheduleGuidancePing(player);
+                AnnounceCritterEntry(player, totalCritters);
+                if (_selectedCritterIndex >= 0)
+                {
+                    EmitCurrentGuidancePing(player);
+                }
+                return;
+            }
+            case SelectionMode.Plantlife:
+            {
+                RefreshPlantlifeEntries(player);
+                int totalPlants = NearbyPlantlife.Count;
+                if (totalPlants == 0)
+                {
+                    _selectedPlantlifeIndex = -1;
+                    ClearCategoryAnnouncement();
+                    RescheduleGuidancePing(player);
+                    AnnounceCategorySelection("Plants", "No harvestable plants nearby.");
+                    return;
+                }
+
+                if (_selectedPlantlifeIndex < 0)
+                {
+                    // On "All" - always go to first item (index 0) regardless of direction
+                    _selectedPlantlifeIndex = 0;
+                }
+                else
+                {
+                    _selectedPlantlifeIndex += direction;
+                    if (_selectedPlantlifeIndex < 0 || _selectedPlantlifeIndex >= totalPlants)
+                    {
+                        // Wrapped - go to "All"
+                        _selectedPlantlifeIndex = -1;
+                    }
+                }
+
+                RescheduleGuidancePing(player);
+                AnnouncePlantlifeEntry(player, totalPlants);
+                if (_selectedPlantlifeIndex >= 0)
+                {
+                    EmitCurrentGuidancePing(player);
+                }
+                return;
+            }
             default:
                 ScreenReaderService.Announce("Select a waypoint, player, NPC, or crafting category to browse entries.");
                 return;
@@ -832,7 +1351,7 @@ public sealed partial class GuidanceSystem : ModSystem
 
         Waypoint waypoint = Waypoints[_selectedIndex];
         string announcement = ComposeWaypointAnnouncement(waypoint, player);
-        AnnounceCategoryEntry(SelectionMode.Waypoint, "Waypoints", announcement);
+        AnnounceSelectedEntry(SelectionMode.Waypoint, "Waypoints", announcement);
     }
 
     private static void AnnounceNpcSelection(Player player)
@@ -842,18 +1361,18 @@ public sealed partial class GuidanceSystem : ModSystem
             return;
         }
 
-        if (!TryGetSelectedNpc(player, out NPC npc, out NpcGuidanceEntry entry))
+        if (!TryGetSelectedNpc(player, out NPC npc, out GuidanceEntry entry))
         {
             int rangeTiles = (int)MathF.Round(DistanceReferenceTiles);
             ClearCategoryAnnouncement();
-            AnnounceCategorySelection("NPC guidance", $"No nearby NPCs within {rangeTiles} tiles.");
+            AnnounceCategorySelection("NPCs", $"No nearby NPCs within {rangeTiles} tiles.");
             return;
         }
 
         int totalEntries = NearbyNpcs.Count;
         int position = _selectedNpcIndex + 1;
         string announcement = ComposeNpcAnnouncement(entry, player, npc.Center, position, totalEntries);
-        AnnounceCategoryEntry(SelectionMode.Npc, "NPC guidance", announcement);
+        AnnounceSelectedEntry(SelectionMode.Npc, "NPCs", announcement);
     }
 
     private static void AnnounceInteractableSelection(Player player)
@@ -863,17 +1382,17 @@ public sealed partial class GuidanceSystem : ModSystem
             return;
         }
 
-        if (!TryGetSelectedInteractable(player, out InteractableGuidanceEntry entry))
+        if (!TryGetSelectedInteractable(player, out GuidanceEntry entry))
         {
             ClearCategoryAnnouncement();
-            AnnounceCategorySelection("Crafting guidance", "No crafting stations detected nearby.");
+            AnnounceCategorySelection("Crafting", "No crafting stations detected nearby.");
             return;
         }
 
         int totalEntries = NearbyInteractables.Count;
         int position = _selectedInteractableIndex + 1;
         string announcement = ComposeEntityAnnouncement(entry.DisplayName, player, entry.WorldPosition, position, totalEntries);
-        AnnounceCategoryEntry(SelectionMode.Interactable, "Crafting guidance", announcement);
+        AnnounceSelectedEntry(SelectionMode.Interactable, "Crafting", announcement);
     }
 
     private static void AnnouncePlayerSelection(Player player)
@@ -883,17 +1402,44 @@ public sealed partial class GuidanceSystem : ModSystem
             return;
         }
 
-        if (!TryGetSelectedPlayer(player, out Player targetPlayer, out PlayerGuidanceEntry entry))
+        if (!TryGetSelectedPlayer(player, out Player targetPlayer, out GuidanceEntry entry))
         {
             ClearCategoryAnnouncement();
-            AnnounceCategorySelection("Player guidance", "No other active players detected.");
+            AnnounceCategorySelection("Players", "No other active players detected.");
             return;
         }
 
         int totalEntries = NearbyPlayers.Count;
         int position = _selectedPlayerIndex + 1;
         string announcement = ComposePlayerAnnouncement(entry, player, targetPlayer.Center, position, totalEntries);
-        AnnounceCategoryEntry(SelectionMode.Player, "Player guidance", announcement);
+        AnnounceSelectedEntry(SelectionMode.Player, "Players", announcement);
+    }
+
+    private static void AnnounceDroppedItemSelection(Player player)
+    {
+        if (_selectionMode != SelectionMode.DroppedItem)
+        {
+            return;
+        }
+
+        if (_selectedDroppedItemIndex < 0)
+        {
+            int total = NearbyDroppedItems.Count + 1; // +1 for "All" option
+            AnnounceCategorySelection("Items", $"All, 1 of {total}");
+            return;
+        }
+
+        if (!TryGetSelectedDroppedItem(player, out GuidanceEntry entry))
+        {
+            ClearCategoryAnnouncement();
+            AnnounceCategorySelection("Items", "No dropped items on screen.");
+            return;
+        }
+
+        int totalEntries = NearbyDroppedItems.Count + 1; // +1 for "All" option
+        int position = _selectedDroppedItemIndex + 2; // +2 because "All" is position 1
+        string announcement = ComposeEntityAnnouncement(entry.DisplayName, player, entry.WorldPosition, position, totalEntries);
+        AnnounceSelectedEntry(SelectionMode.DroppedItem, "Items", announcement);
     }
 
     private static void AnnounceExplorationEntry(Player player, int totalEntries)
@@ -912,15 +1458,159 @@ public sealed partial class GuidanceSystem : ModSystem
         int position = _selectedExplorationIndex + 1;
         ExplorationTargetRegistry.ExplorationTarget entry = NearbyExplorationTargets[_selectedExplorationIndex];
         string announcement = ComposeEntityAnnouncement(entry.Label, player, entry.WorldPosition, position, totalEntries);
-        AnnounceCategoryEntry(SelectionMode.Exploration, string.Empty, announcement);
+        AnnounceSelectedEntry(SelectionMode.Exploration, string.Empty, announcement);
     }
 
-    private static string ComposeNpcAnnouncement(NpcGuidanceEntry entry, Player player, Vector2 npcPosition, int position, int total)
+    private static void AnnounceDroppedItemEntry(Player player, int totalEntries)
+    {
+        if (_selectionMode != SelectionMode.DroppedItem)
+        {
+            return;
+        }
+
+        if (_selectedDroppedItemIndex < 0)
+        {
+            int total = totalEntries + 1; // +1 for "All" option
+            AnnounceSelectedEntry(SelectionMode.DroppedItem, "Items", $"All, 1 of {total}");
+            return;
+        }
+
+        AnnounceDroppedItemSelection(player);
+    }
+
+    private static void AnnounceCritterSelection(Player player)
+    {
+        if (_selectionMode != SelectionMode.Critter)
+        {
+            return;
+        }
+
+        if (_selectedCritterIndex < 0)
+        {
+            int total = NearbyCritters.Count + 1; // +1 for "All" option
+            AnnounceCategorySelection("Critters", $"All, 1 of {total}");
+            return;
+        }
+
+        if (!TryGetSelectedCritter(player, out GuidanceEntry entry))
+        {
+            int rangeTiles = (int)MathF.Round(DistanceReferenceTiles);
+            ClearCategoryAnnouncement();
+            AnnounceCategorySelection("Critters", $"No critters within {rangeTiles} tiles.");
+            return;
+        }
+
+        int totalEntries = NearbyCritters.Count + 1; // +1 for "All" option
+        int position = _selectedCritterIndex + 2; // +2 because "All" is position 1
+        string announcement = ComposeEntityAnnouncement(entry.DisplayName, player, entry.WorldPosition, position, totalEntries);
+        AnnounceSelectedEntry(SelectionMode.Critter, "Critters", announcement);
+    }
+
+    private static void AnnounceCritterEntry(Player player, int totalEntries)
+    {
+        if (_selectionMode != SelectionMode.Critter)
+        {
+            return;
+        }
+
+        if (_selectedCritterIndex < 0)
+        {
+            int total = totalEntries + 1; // +1 for "All" option
+            AnnounceSelectedEntry(SelectionMode.Critter, "Critters", $"All, 1 of {total}");
+            return;
+        }
+
+        AnnounceCritterSelection(player);
+    }
+
+    private static void AnnouncePlantlifeSelection(Player player)
+    {
+        if (_selectionMode != SelectionMode.Plantlife)
+        {
+            return;
+        }
+
+        if (_selectedPlantlifeIndex < 0)
+        {
+            int total = NearbyPlantlife.Count + 1; // +1 for "All" option
+            AnnounceCategorySelection("Plants", $"All, 1 of {total}");
+            return;
+        }
+
+        if (!TryGetSelectedPlantlife(player, out GuidanceEntry entry))
+        {
+            ClearCategoryAnnouncement();
+            AnnounceCategorySelection("Plants", "No harvestable plants nearby.");
+            return;
+        }
+
+        int totalEntries = NearbyPlantlife.Count + 1; // +1 for "All" option
+        int position = _selectedPlantlifeIndex + 2; // +2 because "All" is position 1
+        string announcement = ComposeEntityAnnouncement(entry.DisplayName, player, entry.WorldPosition, position, totalEntries);
+        AnnounceSelectedEntry(SelectionMode.Plantlife, "Plants", announcement);
+    }
+
+    private static void AnnouncePlantlifeEntry(Player player, int totalEntries)
+    {
+        if (_selectionMode != SelectionMode.Plantlife)
+        {
+            return;
+        }
+
+        if (_selectedPlantlifeIndex < 0)
+        {
+            int total = totalEntries + 1; // +1 for "All" option
+            AnnounceSelectedEntry(SelectionMode.Plantlife, "Plants", $"All, 1 of {total}");
+            return;
+        }
+
+        AnnouncePlantlifeSelection(player);
+    }
+
+    private static bool TryGetSelectedCritter(Player player, out GuidanceEntry entry)
+    {
+        entry = default;
+        if (_selectionMode != SelectionMode.Critter)
+        {
+            return false;
+        }
+
+        EnsureTargetsUpToDate(player);
+        if (_selectedCritterIndex < 0 || _selectedCritterIndex >= NearbyCritters.Count)
+        {
+            _selectedCritterIndex = -1;
+            return false;
+        }
+
+        entry = NearbyCritters[_selectedCritterIndex];
+        return true;
+    }
+
+    private static bool TryGetSelectedPlantlife(Player player, out GuidanceEntry entry)
+    {
+        entry = default;
+        if (_selectionMode != SelectionMode.Plantlife)
+        {
+            return false;
+        }
+
+        EnsureTargetsUpToDate(player);
+        if (_selectedPlantlifeIndex < 0 || _selectedPlantlifeIndex >= NearbyPlantlife.Count)
+        {
+            _selectedPlantlifeIndex = -1;
+            return false;
+        }
+
+        entry = NearbyPlantlife[_selectedPlantlifeIndex];
+        return true;
+    }
+
+    private static string ComposeNpcAnnouncement(GuidanceEntry entry, Player player, Vector2 npcPosition, int position, int total)
     {
         return ComposeEntityAnnouncement(entry.DisplayName, player, npcPosition, position, total);
     }
 
-    private static string ComposePlayerAnnouncement(PlayerGuidanceEntry entry, Player player, Vector2 targetPlayerPosition, int position, int total)
+    private static string ComposePlayerAnnouncement(GuidanceEntry entry, Player player, Vector2 targetPlayerPosition, int position, int total)
     {
         return ComposeEntityAnnouncement(entry.DisplayName, player, targetPlayerPosition, position, total);
     }
@@ -934,17 +1624,31 @@ public sealed partial class GuidanceSystem : ModSystem
         }
 
         string ordinal = FormatEntryOrdinal(position, total);
-        string announcement = string.IsNullOrWhiteSpace(ordinal)
+        string label = string.IsNullOrWhiteSpace(ordinal)
             ? sanitizedName
             : $"{sanitizedName} {ordinal}";
 
-        string relative = DescribeRelativeOffset(player.Center, targetPosition);
-        if (string.IsNullOrWhiteSpace(relative))
+        string relative = DescribeCursorStyleOffset(player, targetPosition);
+        return TextSanitizer.JoinWithComma(label, relative);
+    }
+
+    private static bool TryAdvanceSelectionIndex(ref int index, int totalCount, int direction)
+    {
+        if (totalCount <= 0)
         {
-            return announcement;
+            index = -1;
+            return false;
         }
 
-        return $"{announcement}, {relative}";
+        direction = direction == 0 ? 1 : direction;
+        if (index < 0 || index >= totalCount)
+        {
+            index = direction > 0 ? 0 : totalCount - 1;
+            return true;
+        }
+
+        index = Modulo(index + direction, totalCount);
+        return true;
     }
 
     private static int Modulo(int value, int modulus)
@@ -973,8 +1677,10 @@ public sealed partial class GuidanceSystem : ModSystem
             return;
         }
 
-        Waypoint removed = Waypoints[_selectedIndex];
-        Waypoints.RemoveAt(_selectedIndex);
+        int removedIndex = _selectedIndex;
+        Waypoint removed = Waypoints[removedIndex];
+        Waypoints.RemoveAt(removedIndex);
+        SendWaypointDeletedToServer(removedIndex);
 
         if (Waypoints.Count == 0)
         {
@@ -996,7 +1702,7 @@ public sealed partial class GuidanceSystem : ModSystem
         Waypoint nextWaypoint = Waypoints[_selectedIndex];
         string nextAnnouncement = ComposeWaypointAnnouncement(nextWaypoint, player);
         ScreenReaderService.Announce($"Deleted waypoint {SanitizeLabel(removed.Name)}.");
-        AnnounceCategoryEntry(SelectionMode.Waypoint, "Waypoints", nextAnnouncement);
+        AnnounceSelectedEntry(SelectionMode.Waypoint, "Waypoints", nextAnnouncement);
         RescheduleGuidancePing(player);
         EmitCurrentGuidancePing(player);
     }
@@ -1004,13 +1710,13 @@ public sealed partial class GuidanceSystem : ModSystem
     private static void AnnounceDisabledSelection()
     {
         ClearCategoryAnnouncement();
-        AnnounceCategorySelection("Guidance disabled", string.Empty);
+        AnnounceCategorySelection("Off", string.Empty);
     }
 
     private static void AnnounceExplorationSelection()
     {
         ClearCategoryAnnouncement();
-        AnnounceCategorySelection("Exploration mode", "Tracking all nearby interactables. Use Page Up and Page Down to cycle specific targets.");
+        AnnounceCategorySelection("Explore", "All nearby interactables");
         ExplorationTargetRegistry.SetSelectedTarget(null);
     }
 
@@ -1021,17 +1727,12 @@ public sealed partial class GuidanceSystem : ModSystem
 
         string waypointName = SanitizeLabel(waypoint.Name);
         string ordinal = FormatEntryOrdinal(position, total);
-        string announcement = string.IsNullOrWhiteSpace(ordinal)
+        string label = string.IsNullOrWhiteSpace(ordinal)
             ? waypointName
             : $"{waypointName} {ordinal}";
 
-        string relative = DescribeRelativeOffset(player.Center, waypoint.WorldPosition);
-        if (string.IsNullOrWhiteSpace(relative))
-        {
-            return announcement;
-        }
-
-        return $"{announcement}, {relative}";
+        string relative = DescribeCursorStyleOffset(player, waypoint.WorldPosition);
+        return TextSanitizer.JoinWithComma(label, relative);
     }
 
     private static string ComposeCreationAnnouncement(string waypointName, Player player, Vector2 worldPosition)
@@ -1046,7 +1747,7 @@ public sealed partial class GuidanceSystem : ModSystem
         return $"Created waypoint {sanitizedName}, {relative}";
     }
 
-    private static bool TryGetSelectedNpc(Player player, out NPC npc, out NpcGuidanceEntry entry)
+    private static bool TryGetSelectedNpc(Player player, out NPC npc, out GuidanceEntry entry)
     {
         entry = default;
         npc = default!;
@@ -1055,7 +1756,7 @@ public sealed partial class GuidanceSystem : ModSystem
             return false;
         }
 
-        RefreshNpcEntries(player);
+        EnsureTargetsUpToDate(player);
         if (_selectedNpcIndex < 0 || _selectedNpcIndex >= NearbyNpcs.Count)
         {
             _selectedNpcIndex = -1;
@@ -1063,12 +1764,12 @@ public sealed partial class GuidanceSystem : ModSystem
         }
 
         entry = NearbyNpcs[_selectedNpcIndex];
-        if (entry.NpcIndex < 0 || entry.NpcIndex >= Main.maxNPCs)
+        if (entry.Index < 0 || entry.Index >= Main.maxNPCs)
         {
             return false;
         }
 
-        npc = Main.npc[entry.NpcIndex];
+        npc = Main.npc[entry.Index];
         if (!IsTrackableNpc(npc))
         {
             RefreshNpcEntries(player);
@@ -1079,12 +1780,12 @@ public sealed partial class GuidanceSystem : ModSystem
             }
 
             entry = NearbyNpcs[_selectedNpcIndex];
-            if (entry.NpcIndex < 0 || entry.NpcIndex >= Main.maxNPCs)
+            if (entry.Index < 0 || entry.Index >= Main.maxNPCs)
             {
                 return false;
             }
 
-            npc = Main.npc[entry.NpcIndex];
+            npc = Main.npc[entry.Index];
             if (!IsTrackableNpc(npc))
             {
                 return false;
@@ -1094,7 +1795,7 @@ public sealed partial class GuidanceSystem : ModSystem
         return true;
     }
 
-    private static bool TryGetSelectedPlayer(Player owner, out Player target, out PlayerGuidanceEntry entry)
+    private static bool TryGetSelectedPlayer(Player owner, out Player target, out GuidanceEntry entry)
     {
         entry = default;
         target = default!;
@@ -1109,7 +1810,7 @@ public sealed partial class GuidanceSystem : ModSystem
             return false;
         }
 
-        RefreshPlayerEntries(owner);
+        EnsureTargetsUpToDate(owner);
         if (_selectedPlayerIndex < 0 || _selectedPlayerIndex >= NearbyPlayers.Count)
         {
             _selectedPlayerIndex = -1;
@@ -1117,12 +1818,12 @@ public sealed partial class GuidanceSystem : ModSystem
         }
 
         entry = NearbyPlayers[_selectedPlayerIndex];
-        if (entry.PlayerIndex < 0 || entry.PlayerIndex >= Main.maxPlayers)
+        if (entry.Index < 0 || entry.Index >= Main.maxPlayers)
         {
             return false;
         }
 
-        target = Main.player[entry.PlayerIndex];
+        target = Main.player[entry.Index];
         if (!IsTrackablePlayer(target, owner))
         {
             RefreshPlayerEntries(owner);
@@ -1133,12 +1834,12 @@ public sealed partial class GuidanceSystem : ModSystem
             }
 
             entry = NearbyPlayers[_selectedPlayerIndex];
-            if (entry.PlayerIndex < 0 || entry.PlayerIndex >= Main.maxPlayers)
+            if (entry.Index < 0 || entry.Index >= Main.maxPlayers)
             {
                 return false;
             }
 
-            target = Main.player[entry.PlayerIndex];
+            target = Main.player[entry.Index];
             if (!IsTrackablePlayer(target, owner))
             {
                 return false;
@@ -1164,10 +1865,11 @@ public sealed partial class GuidanceSystem : ModSystem
         }
 
         entry = NearbyExplorationTargets[_selectedExplorationIndex];
+        _lastExplorationSelection = entry;
         return true;
     }
 
-    private static bool TryGetSelectedInteractable(Player player, out InteractableGuidanceEntry entry)
+    private static bool TryGetSelectedInteractable(Player player, out GuidanceEntry entry)
     {
         entry = default;
         if (_selectionMode != SelectionMode.Interactable)
@@ -1175,7 +1877,7 @@ public sealed partial class GuidanceSystem : ModSystem
             return false;
         }
 
-        RefreshInteractableEntries(player);
+        EnsureTargetsUpToDate(player);
         if (_selectedInteractableIndex < 0 || _selectedInteractableIndex >= NearbyInteractables.Count)
         {
             _selectedInteractableIndex = -1;
@@ -1183,6 +1885,45 @@ public sealed partial class GuidanceSystem : ModSystem
         }
 
         entry = NearbyInteractables[_selectedInteractableIndex];
+        return true;
+    }
+
+    private static bool TryGetSelectedDroppedItem(Player player, out GuidanceEntry entry)
+    {
+        entry = default;
+        if (_selectionMode != SelectionMode.DroppedItem)
+        {
+            return false;
+        }
+
+        EnsureTargetsUpToDate(player);
+        if (_selectedDroppedItemIndex < 0 || _selectedDroppedItemIndex >= NearbyDroppedItems.Count)
+        {
+            _selectedDroppedItemIndex = -1;
+            return false;
+        }
+
+        entry = NearbyDroppedItems[_selectedDroppedItemIndex];
+
+        // Validate the item still exists and is active
+        if (entry.Index < 0 || entry.Index >= Main.maxItems)
+        {
+            return false;
+        }
+
+        Item item = Main.item[entry.Index];
+        if (!item.active || item.stack <= 0)
+        {
+            RefreshDroppedItemEntries(player);
+            if (_selectedDroppedItemIndex < 0 || _selectedDroppedItemIndex >= NearbyDroppedItems.Count)
+            {
+                _selectedDroppedItemIndex = -1;
+                return false;
+            }
+
+            entry = NearbyDroppedItems[_selectedDroppedItemIndex];
+        }
+
         return true;
     }
 
@@ -1239,6 +1980,11 @@ public sealed partial class GuidanceSystem : ModSystem
         }
     }
 
+    private static void AnnounceSelectedEntry(SelectionMode category, string categoryLabel, string detail)
+    {
+        AnnounceCategoryEntry(category, categoryLabel, detail);
+    }
+
     private static void BeginCategoryAnnouncement(SelectionMode category)
     {
         _categoryAnnouncementMode = category;
@@ -1278,6 +2024,50 @@ public sealed partial class GuidanceSystem : ModSystem
         return string.Join(", ", parts);
     }
 
+    private static string DescribeCursorStyleOffset(Player player, Vector2 targetPosition)
+    {
+        if (player is null || !player.active)
+        {
+            return string.Empty;
+        }
+
+        Vector2 origin = ResolvePlayerReferencePoint(player);
+        int originTileX = (int)(origin.X / 16f);
+        int originTileY = (int)(origin.Y / 16f);
+        int targetTileX = (int)(targetPosition.X / 16f);
+        int targetTileY = (int)(targetPosition.Y / 16f);
+
+        int offsetX = targetTileX - originTileX;
+        int offsetY = targetTileY - originTileY;
+
+        if (offsetX == 0 && offsetY == 0)
+        {
+            return "origin";
+        }
+
+        List<string> parts = new(2);
+        if (offsetX != 0)
+        {
+            string direction = offsetX > 0 ? "right" : "left";
+            parts.Add($"{Math.Abs(offsetX)} {direction}");
+        }
+
+        if (offsetY != 0)
+        {
+            string direction = offsetY > 0 ? "down" : "up";
+            parts.Add($"{Math.Abs(offsetY)} {direction}");
+        }
+
+        return string.Join(", ", parts);
+    }
+
+    private static Vector2 ResolvePlayerReferencePoint(Player player)
+    {
+        const float chestFraction = 0.25f;
+        float verticalOffset = player.height * chestFraction * player.gravDir;
+        return player.Center - new Vector2(0f, verticalOffset);
+    }
+
     private static bool TryGetSelectedWaypoint(out Waypoint waypoint)
     {
         if (_selectionMode == SelectionMode.Waypoint && _selectedIndex >= 0 && _selectedIndex < Waypoints.Count)
@@ -1292,12 +2082,7 @@ public sealed partial class GuidanceSystem : ModSystem
 
     private static bool TryGetCurrentTrackingTarget(Player player, out Vector2 worldPosition, out string label)
     {
-        if (_selectionMode == SelectionMode.Exploration)
-        {
-            worldPosition = default;
-            label = string.Empty;
-            return false;
-        }
+        EnsureTargetsUpToDate(player);
 
         switch (_selectionMode)
         {
@@ -1309,17 +2094,29 @@ public sealed partial class GuidanceSystem : ModSystem
                 worldPosition = exploration.WorldPosition;
                 label = SanitizeLabel(exploration.Label);
                 return true;
-            case SelectionMode.Npc when TryGetSelectedNpc(player, out NPC npc, out NpcGuidanceEntry entry):
-                worldPosition = npc.Center;
+            case SelectionMode.Npc when TryGetSelectedNpc(player, out NPC npc, out GuidanceEntry entry):
+                worldPosition = npc.Bottom;
                 label = SanitizeLabel(entry.DisplayName);
                 return true;
-            case SelectionMode.Interactable when TryGetSelectedInteractable(player, out InteractableGuidanceEntry interactable):
+            case SelectionMode.Interactable when TryGetSelectedInteractable(player, out GuidanceEntry interactable):
                 worldPosition = interactable.WorldPosition;
                 label = SanitizeLabel(interactable.DisplayName);
                 return true;
-            case SelectionMode.Player when TryGetSelectedPlayer(player, out Player targetPlayer, out PlayerGuidanceEntry playerEntry):
-                worldPosition = targetPlayer.Center;
+            case SelectionMode.Player when TryGetSelectedPlayer(player, out Player targetPlayer, out GuidanceEntry playerEntry):
+                worldPosition = targetPlayer.Bottom;
                 label = SanitizeLabel(playerEntry.DisplayName);
+                return true;
+            case SelectionMode.DroppedItem when TryGetSelectedDroppedItem(player, out GuidanceEntry droppedItem):
+                worldPosition = droppedItem.WorldPosition;
+                label = SanitizeLabel(droppedItem.DisplayName);
+                return true;
+            case SelectionMode.Critter when TryGetSelectedCritter(player, out GuidanceEntry critter):
+                worldPosition = critter.WorldPosition;
+                label = SanitizeLabel(critter.DisplayName);
+                return true;
+            case SelectionMode.Plantlife when TryGetSelectedPlantlife(player, out GuidanceEntry plantlife):
+                worldPosition = plantlife.WorldPosition;
+                label = SanitizeLabel(plantlife.DisplayName);
                 return true;
             default:
                 worldPosition = default;
@@ -1328,5 +2125,130 @@ public sealed partial class GuidanceSystem : ModSystem
         }
     }
 
-}
+    private static int ResolveTeleportStyleForSelection()
+    {
+        return _selectionMode == SelectionMode.Player
+            ? TeleportationStyleID.TeleportationPotion
+            : TeleportationStyleID.RodOfDiscord;
+    }
 
+    private static void UpdateProximityAnnouncement(Player player, Vector2 targetPosition, string targetLabel, float distanceTiles)
+    {
+        ProximityTargetKey key = ResolveProximityTargetKey(player);
+        if (!_activeProximityTarget.Equals(key))
+        {
+            _activeProximityTarget = key;
+            _lastProximityStepIndex = int.MaxValue;
+        }
+
+        if (distanceTiles <= ArrivalTileThreshold)
+        {
+            _lastProximityStepIndex = int.MaxValue;
+            return;
+        }
+
+        float stepPosition = distanceTiles / ProximityAnnouncementStepTiles;
+        int stepIndex = (int)MathF.Floor(stepPosition);
+        if (_lastProximityStepIndex == int.MaxValue)
+        {
+            _lastProximityStepIndex = stepIndex;
+            return;
+        }
+
+        float toleranceSteps = ProximityAnnouncementToleranceTiles / ProximityAnnouncementStepTiles;
+        // Re-arm progress when backing out of the current band so new approaches retrigger updates.
+        bool movedAway = stepIndex > _lastProximityStepIndex &&
+            stepPosition >= (_lastProximityStepIndex + 1) - toleranceSteps;
+        if (movedAway)
+        {
+            _lastProximityStepIndex = stepIndex;
+            return;
+        }
+
+        bool crossedStep = stepPosition <= _lastProximityStepIndex - toleranceSteps;
+        if (!crossedStep)
+        {
+            return;
+        }
+
+        string relative = DescribeRelativeOffset(player.Center, targetPosition);
+        if (string.IsNullOrWhiteSpace(relative))
+        {
+            return;
+        }
+
+        // Keep proximity callouts minimal: only report the relative offset, no target name prefix.
+        ScreenReaderService.Announce(relative);
+        _lastProximityStepIndex = stepIndex;
+    }
+
+    private static bool IsPingEnabledForCurrentSelection()
+    {
+        return _selectionMode switch
+        {
+            SelectionMode.Exploration => false,
+            SelectionMode.None => false,
+            SelectionMode.Waypoint when _selectedIndex < 0 => false,
+            SelectionMode.DroppedItem when _selectedDroppedItemIndex < 0 => false,
+            SelectionMode.Critter when _selectedCritterIndex < 0 => false,
+            SelectionMode.Plantlife when _selectedPlantlifeIndex < 0 => false,
+            _ => true
+        };
+    }
+
+    private static ProximityTargetKey ResolveProximityTargetKey(Player player)
+    {
+        return _selectionMode switch
+        {
+            SelectionMode.Waypoint => new ProximityTargetKey(SelectionMode.Waypoint, _selectedIndex),
+            SelectionMode.Npc when TryGetSelectedNpc(player, out _, out GuidanceEntry npcEntry)
+                => new ProximityTargetKey(SelectionMode.Npc, npcEntry.Index),
+            SelectionMode.Player when TryGetSelectedPlayer(player, out _, out GuidanceEntry playerEntry)
+                => new ProximityTargetKey(SelectionMode.Player, playerEntry.Index),
+            SelectionMode.Interactable when TryGetSelectedInteractable(player, out GuidanceEntry interactableEntry)
+                => new ProximityTargetKey(SelectionMode.Interactable, HashCode.Combine(interactableEntry.Anchor.X, interactableEntry.Anchor.Y)),
+            SelectionMode.Exploration when TryGetSelectedExploration(out ExplorationTargetRegistry.ExplorationTarget explorationEntry)
+                => new ProximityTargetKey(
+                    SelectionMode.Exploration,
+                    HashCode.Combine(explorationEntry.Key.SourceId, explorationEntry.Key.LocalId)),
+            SelectionMode.DroppedItem when TryGetSelectedDroppedItem(player, out GuidanceEntry droppedItemEntry)
+                => new ProximityTargetKey(SelectionMode.DroppedItem, droppedItemEntry.Index),
+            SelectionMode.Critter when TryGetSelectedCritter(player, out GuidanceEntry critterEntry)
+                => new ProximityTargetKey(SelectionMode.Critter, critterEntry.Index),
+            SelectionMode.Plantlife when TryGetSelectedPlantlife(player, out GuidanceEntry plantlifeEntry)
+                => new ProximityTargetKey(SelectionMode.Plantlife, HashCode.Combine(plantlifeEntry.Anchor.X, plantlifeEntry.Anchor.Y)),
+            _ => new ProximityTargetKey(SelectionMode.None, -1)
+        };
+    }
+
+    private static bool IsExplorationTargetMatch(
+        ExplorationTargetRegistry.ExplorationTarget candidate,
+        ExplorationTargetRegistry.ExplorationTarget target)
+    {
+        if (candidate.Key.Equals(target.Key))
+        {
+            return true;
+        }
+
+        float deltaTiles = Vector2.Distance(candidate.WorldPosition, target.WorldPosition) / 16f;
+        if (deltaTiles > ExplorationSelectionMatchToleranceTiles)
+        {
+            return false;
+        }
+
+        if (string.IsNullOrWhiteSpace(target.Label))
+        {
+            return true;
+        }
+
+        string candidateLabel = SanitizeLabel(candidate.Label);
+        string targetLabel = SanitizeLabel(target.Label);
+        return string.Equals(candidateLabel, targetLabel, StringComparison.OrdinalIgnoreCase);
+    }
+
+    private static void ResetProximityProgress()
+    {
+        _activeProximityTarget = new ProximityTargetKey(SelectionMode.None, -1);
+        _lastProximityStepIndex = int.MaxValue;
+    }
+}

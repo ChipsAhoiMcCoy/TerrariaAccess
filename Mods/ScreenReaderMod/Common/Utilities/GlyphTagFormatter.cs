@@ -113,11 +113,6 @@ internal static class GlyphTagFormatter
             }
 
             string sanitized = builder.ToString();
-            if (raw.IndexOf("open", StringComparison.OrdinalIgnoreCase) >= 0 ||
-                sanitized.IndexOf(" to open", StringComparison.OrdinalIgnoreCase) >= 0)
-            {
-                LogGlyphDebug(raw, sanitized, snippets);
-            }
 
             return Normalize(sanitized);
         }
