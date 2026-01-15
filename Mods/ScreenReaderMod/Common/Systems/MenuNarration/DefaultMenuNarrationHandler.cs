@@ -2,6 +2,7 @@
 using System;
 using System.Collections.Generic;
 using ScreenReaderMod.Common.Systems;
+using ScreenReaderMod.Common.Systems.MenuNarration.ModConfig;
 using ScreenReaderMod.Common.Utilities;
 using Terraria;
 using Terraria.ID;
@@ -16,7 +17,7 @@ internal sealed class DefaultMenuNarrationHandler : IMenuNarrationHandler
 {
     private readonly MenuFocusResolver _focusResolver = new();
     private readonly MenuUiSelectionTracker _uiSelectionTracker = new();
-    private readonly ModConfigMenuNarrator _modConfigNarrator = new();
+    private readonly ModConfigNarrationCoordinator _modConfigCoordinator = new();
     private readonly MenuNarrationState _state = new();
     private MenuUiSelectionTracker.WorldCreationSnapshot _lastWorldCreationSnapshot;
     private bool _modeJustEntered;
@@ -33,7 +34,7 @@ internal sealed class DefaultMenuNarrationHandler : IMenuNarrationHandler
         _state.ModeEnteredAt = context.Timestamp;
         _focusResolver.Reset();
         _uiSelectionTracker.Reset();
-        _modConfigNarrator.Reset();
+        _modConfigCoordinator.Reset();
         _lastWorldCreationSnapshot = default;
     }
 
@@ -41,7 +42,7 @@ internal sealed class DefaultMenuNarrationHandler : IMenuNarrationHandler
     {
         _focusResolver.Reset();
         _uiSelectionTracker.Reset();
-        _modConfigNarrator.Reset();
+        _modConfigCoordinator.Reset();
         _state.ResetAll();
         _lastWorldCreationSnapshot = default;
         _modeJustEntered = false;
@@ -77,7 +78,7 @@ internal sealed class DefaultMenuNarrationHandler : IMenuNarrationHandler
             return events;
         }
 
-        if (_modConfigNarrator.TryBuildMenuEvents(context, events))
+        if (_modConfigCoordinator.TryBuildMenuEvents(context, events))
         {
             return events;
         }
@@ -124,7 +125,7 @@ internal sealed class DefaultMenuNarrationHandler : IMenuNarrationHandler
         }
 
         // Handle mod config screens on first frame too
-        if (_modConfigNarrator.TryBuildMenuEvents(context, events))
+        if (_modConfigCoordinator.TryBuildMenuEvents(context, events))
         {
             return;
         }
@@ -143,7 +144,7 @@ internal sealed class DefaultMenuNarrationHandler : IMenuNarrationHandler
             ManageModsAccessibilitySystem.IsHandlingGamepadInput ||
             ModInfoAccessibilitySystem.IsHandlingGamepadInput ||
             DownloadModsAccessibilitySystem.IsHandlingGamepadInput ||
-            ModConfigMenuNarrator.IsHandlingGamepadInput)
+            ModConfigNarrationCoordinator.IsHandlingGamepadInput)
         {
             ScreenReaderMod.Instance?.Logger.Debug($"[DefaultHandler][HoverDiag] Suppressed by accessibility flag");
             return false;
@@ -624,7 +625,7 @@ internal sealed class DefaultMenuNarrationHandler : IMenuNarrationHandler
             ModInfoAccessibilitySystem.IsHandlingGamepadInput ||
             DownloadModsAccessibilitySystem.IsHandlingGamepadInput ||
             AchievementsMenuGamepadSystem.IsHandlingGamepadInput ||
-            ModConfigMenuNarrator.IsHandlingGamepadInput)
+            ModConfigNarrationCoordinator.IsHandlingGamepadInput)
         {
             return false;
         }

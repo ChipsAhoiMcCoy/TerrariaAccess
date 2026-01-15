@@ -11,6 +11,7 @@ using Microsoft.Xna.Framework.Graphics;
 using ScreenReaderMod.Common.Services;
 using ScreenReaderMod.Common.Systems.FirstLetterNavigation;
 using ScreenReaderMod.Common.Systems.MenuNarration;
+using ScreenReaderMod.Common.Systems.MenuNarration.ModConfig;
 using ScreenReaderMod.Common.Utilities;
 using Terraria;
 using Terraria.Audio;
@@ -47,7 +48,7 @@ public sealed partial class InGameNarrationSystem : ModSystem
     private readonly NpcDialogueNarrator _npcDialogueNarrator;
     private readonly IngameSettingsNarrator _ingameSettingsNarrator;
     private readonly ControlsMenuNarrator _controlsMenuNarrator;
-    private readonly ModConfigMenuNarrator _modConfigMenuNarrator;
+    private readonly ModConfigNarrationCoordinator _modConfigCoordinator;
     private readonly FootstepAudioEmitter _footstepAudioEmitter;
     private readonly ClimbAudioEmitter _climbAudioEmitter;
     private readonly BiomeAnnouncementEmitter _biomeAnnouncementEmitter;
@@ -133,7 +134,7 @@ public sealed partial class InGameNarrationSystem : ModSystem
         _npcDialogueNarrator = new NpcDialogueNarrator();
         _ingameSettingsNarrator = new IngameSettingsNarrator();
         _controlsMenuNarrator = new ControlsMenuNarrator();
-        _modConfigMenuNarrator = new ModConfigMenuNarrator();
+        _modConfigCoordinator = new ModConfigNarrationCoordinator();
         _footstepAudioEmitter = new FootstepAudioEmitter();
         _climbAudioEmitter = new ClimbAudioEmitter();
         _biomeAnnouncementEmitter = new BiomeAnnouncementEmitter();
@@ -419,7 +420,7 @@ public sealed partial class InGameNarrationSystem : ModSystem
         DetectInventoryGains(player);
         RunNarrationScheduler(runtime, player, isPaused, requirePaused);
         FirstLetterNavigationManager.Update();
-        _modConfigMenuNarrator.TryHandleIngameUi(Main.InGameUI, isPaused);
+        _modConfigCoordinator.TryHandleIngameUi(Main.InGameUI);
     }
 
     private void DetectLowLight(Player player)
