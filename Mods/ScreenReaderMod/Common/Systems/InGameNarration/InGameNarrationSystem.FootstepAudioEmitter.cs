@@ -35,7 +35,7 @@ public sealed partial class InGameNarrationSystem
         // Edge beep state
         private const float EdgeBeepVolume = 0.35f;       // Volume for edge beeps
         private const float EdgeBeepFrequency = 3000f;    // High-pitched pure tone
-        private const int EdgeBeepIntervalFrames = 12;    // Consistent beep rate (~5 beeps/sec)
+        private const int EdgeBeepIntervalFrames = 6;     // Consistent beep rate (~10 beeps/sec)
         private int _edgeBeepTimer;
 
         private readonly record struct EdgeScanResult(Vector2 WorldPosition, bool IsPlatform, float DistancePixels);
@@ -295,7 +295,7 @@ public sealed partial class InGameNarrationSystem
                         return new EdgeScanResult(edgePos, isPlatform, distancePixels);
                     }
 
-                    break; // Shallow drop, stop scanning
+                    // Shallow drop - continue scanning for deeper edges ahead
                 }
             }
 
