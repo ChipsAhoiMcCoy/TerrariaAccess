@@ -24,23 +24,11 @@ public sealed partial class GuidanceSystem : ModSystem
     private const string ExplorationModeKey = "screenReaderWaypointExplorationMode";
 
     internal const float ArrivalTileThreshold = 4f;
-    private const int MinPingDelayFrames = 8;
     private const int MaxPingDelayFrames = 54;
-    private const float PingDelayScale = 1.35f;
-    private const float PitchScale = 320f;
-    private const float PanScalePixels = 480f;
-    private const float DistanceReferenceTiles = 90f;
+    private const float ScanRangeTiles = 90f;
     private const float ProximityAnnouncementStepTiles = 10f;
     private const float ProximityAnnouncementToleranceTiles = 0.35f;
     private const float ExplorationSelectionMatchToleranceTiles = 6f;
-    private const float FixedVolume = 0.45f;
-    private static readonly SpatialAudioPanner.SpatialAudioProfile GuidanceAudioProfile = new(
-        PitchScalePixels: PitchScale,
-        PanScalePixels: PanScalePixels,
-        DistanceReferenceTiles: DistanceReferenceTiles,
-        MinVolume: FixedVolume,
-        VolumeScale: 0f,
-        PitchClamp: 0.7f);
 
     public override void Load()
     {
@@ -967,7 +955,7 @@ public sealed partial class GuidanceSystem : ModSystem
                     _selectedNpcIndex = -1;
                     ClearCategoryAnnouncement();
                     RescheduleGuidancePing(player);
-                    int rangeTiles = (int)MathF.Round(DistanceReferenceTiles);
+                    int rangeTiles = (int)MathF.Round(ScanRangeTiles);
                     AnnounceCategorySelection("NPCs", $"No nearby NPCs within {rangeTiles} tiles.");
                     return;
                 }
@@ -1053,7 +1041,7 @@ public sealed partial class GuidanceSystem : ModSystem
                     _selectedCritterIndex = -1;
                     ClearCategoryAnnouncement();
                     RescheduleGuidancePing(player);
-                    int rangeTiles = (int)MathF.Round(DistanceReferenceTiles);
+                    int rangeTiles = (int)MathF.Round(ScanRangeTiles);
                     AnnounceCategorySelection("Critters", $"No critters within {rangeTiles} tiles.");
                     return;
                 }
@@ -1140,7 +1128,7 @@ public sealed partial class GuidanceSystem : ModSystem
                     _selectedNpcIndex = -1;
                     ClearCategoryAnnouncement();
                     RescheduleGuidancePing(player);
-                    int rangeTiles = (int)MathF.Round(DistanceReferenceTiles);
+                    int rangeTiles = (int)MathF.Round(ScanRangeTiles);
                     AnnounceCategorySelection("NPCs", $"No NPCs within {rangeTiles} tiles.");
                     return;
                 }
@@ -1266,7 +1254,7 @@ public sealed partial class GuidanceSystem : ModSystem
                     _selectedCritterIndex = -1;
                     ClearCategoryAnnouncement();
                     RescheduleGuidancePing(player);
-                    int rangeTiles = (int)MathF.Round(DistanceReferenceTiles);
+                    int rangeTiles = (int)MathF.Round(ScanRangeTiles);
                     AnnounceCategorySelection("Critters", $"No critters within {rangeTiles} tiles.");
                     return;
                 }
@@ -1363,7 +1351,7 @@ public sealed partial class GuidanceSystem : ModSystem
 
         if (!TryGetSelectedNpc(player, out NPC npc, out GuidanceEntry entry))
         {
-            int rangeTiles = (int)MathF.Round(DistanceReferenceTiles);
+            int rangeTiles = (int)MathF.Round(ScanRangeTiles);
             ClearCategoryAnnouncement();
             AnnounceCategorySelection("NPCs", $"No nearby NPCs within {rangeTiles} tiles.");
             return;
@@ -1494,7 +1482,7 @@ public sealed partial class GuidanceSystem : ModSystem
 
         if (!TryGetSelectedCritter(player, out GuidanceEntry entry))
         {
-            int rangeTiles = (int)MathF.Round(DistanceReferenceTiles);
+            int rangeTiles = (int)MathF.Round(ScanRangeTiles);
             ClearCategoryAnnouncement();
             AnnounceCategorySelection("Critters", $"No critters within {rangeTiles} tiles.");
             return;

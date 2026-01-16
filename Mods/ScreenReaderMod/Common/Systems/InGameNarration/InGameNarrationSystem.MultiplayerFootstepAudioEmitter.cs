@@ -18,8 +18,6 @@ public sealed partial class InGameNarrationSystem
     private sealed class MultiplayerFootstepAudioEmitter
     {
         private const float MinLandingDisplacement = 6f;
-        private const float PitchScalePixels = 320f;
-        private const float PanScalePixels = 320f;
         private const float BaseVolume = 0.45f;
 
         private readonly Dictionary<int, PlayerFootstepState> _playerStates = new();
@@ -217,21 +215,11 @@ public sealed partial class InGameNarrationSystem
 
         private static void PlaySpatialStep(Player localPlayer, Player remotePlayer, bool onPlatform)
         {
-            // Apply multiplayer footstep volume config
-            float configVolume = (ScreenReaderModConfig.Instance?.MultiplayerFootstepVolume ?? 100) / 100f;
-            if (configVolume <= 0f)
-            {
-                return;
-            }
-
-            // Calculate spatial audio properties
-            SpatialAudioPanner.SpatialDirection direction = SpatialAudioPanner.ComputeDirection(
+            // Calculate spatial audio properties using Terraria-aligned system
+            SpatialAudioPanner.SpatialAudioSample sample = SpatialAudioPanner.Compute(
                 localPlayer.Center,
                 remotePlayer.Center,
-                PitchScalePixels,
-                PanScalePixels);
-
-            float volume = BaseVolume * configVolume;
+                BaseVolume);
 
             // Compute frequency based on remote player's speed (same logic as local footsteps)
             float horizontalSpeed = Math.Abs(remotePlayer.velocity.X);
@@ -243,11 +231,11 @@ public sealed partial class InGameNarrationSystem
                 ? MathHelper.Lerp(360f, 430f, normalized)
                 : MathHelper.Lerp(190f, 220f, normalized);
 
-            // Apply vertical pitch shift (direction.Pitch is positive when target is above)
-            float pitchMultiplier = 1f + (direction.Pitch * 0.3f);
+            // Apply vertical pitch shift (sample.Pitch is positive when target is above)
+            float pitchMultiplier = 1f + (sample.Pitch * 0.3f);
             float frequency = baseFrequency * pitchMultiplier;
 
-            FootstepToneProvider.Play(frequency, volume, useTriangleWave: false, direction.Pan);
+            FootstepToneProvider.Play(frequency, sample.Volume, useTriangleWave: false, sample.Pan);
         }
     }
 }

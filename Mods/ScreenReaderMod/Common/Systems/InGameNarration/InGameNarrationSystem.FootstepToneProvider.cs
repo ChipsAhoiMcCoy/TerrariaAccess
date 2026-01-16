@@ -28,18 +28,12 @@ public sealed partial class InGameNarrationSystem
                 return;
             }
 
-            float configVolume = (ScreenReaderModConfig.Instance?.FootstepVolume ?? 100) / 100f;
-            if (configVolume <= 0f)
-            {
-                return;
-            }
-
             CleanupFinishedInstances();
 
             SoundEffect tone = EnsureTone(frequencyHz, useTriangleWave);
             SoundEffectInstance instance = tone.CreateInstance();
             instance.IsLooped = false;
-            instance.Volume = MathHelper.Clamp(volume, 0f, 1f) * Main.soundVolume * AudioVolumeDefaults.WorldCueVolumeScale * configVolume;
+            instance.Volume = MathHelper.Clamp(volume, 0f, 1f) * Main.soundVolume * AudioVolumeDefaults.WorldCueVolumeScale;
             instance.Pan = MathHelper.Clamp(pan, -1f, 1f);
             instance.Play();
             ActiveInstances.Add(instance);
@@ -96,18 +90,12 @@ public sealed partial class InGameNarrationSystem
                 return null;
             }
 
-            float configVolume = (ScreenReaderModConfig.Instance?.FootstepVolume ?? 100) / 100f;
-            if (configVolume <= 0f)
-            {
-                return null;
-            }
-
             CleanupFinishedInstances();
 
             SoundEffect tone = EnsureTone(frequencyHz, useTriangleWave: true);
             SoundEffectInstance instance = tone.CreateInstance();
             instance.IsLooped = true;
-            instance.Volume = MathHelper.Clamp(volume, 0f, 1f) * Main.soundVolume * AudioVolumeDefaults.WorldCueVolumeScale * configVolume;
+            instance.Volume = MathHelper.Clamp(volume, 0f, 1f) * Main.soundVolume * AudioVolumeDefaults.WorldCueVolumeScale;
             instance.Pan = MathHelper.Clamp(pan, -1f, 1f);
             instance.Play();
             ActiveInstances.Add(instance);
@@ -141,18 +129,12 @@ public sealed partial class InGameNarrationSystem
                 return null;
             }
 
-            float configVolume = (ScreenReaderModConfig.Instance?.FootstepVolume ?? 100) / 100f;
-            if (configVolume <= 0f)
-            {
-                return null;
-            }
-
             CleanupFinishedInstances();
 
             SoundEffect noise = EnsureWhiteNoise();
             SoundEffectInstance instance = noise.CreateInstance();
             instance.IsLooped = true;
-            instance.Volume = MathHelper.Clamp(volume, 0f, 1f) * Main.soundVolume * AudioVolumeDefaults.WorldCueVolumeScale * configVolume;
+            instance.Volume = MathHelper.Clamp(volume, 0f, 1f) * Main.soundVolume * AudioVolumeDefaults.WorldCueVolumeScale;
             instance.Pan = MathHelper.Clamp(pan, -1f, 1f);
             instance.Play();
             ActiveInstances.Add(instance);

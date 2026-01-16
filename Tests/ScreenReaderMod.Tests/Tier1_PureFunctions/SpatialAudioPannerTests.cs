@@ -3,231 +3,284 @@ using ScreenReaderMod.Common.Services;
 
 namespace ScreenReaderMod.Tests.Tier1_PureFunctions;
 
+/// <summary>
+/// Tests for SpatialAudioPanner which matches Terraria's native spatial audio system.
+/// Uses Terraria's exact constants:
+/// - Pan: offsetX / 960 pixels
+/// - Pitch: -offsetY / 960 pixels (added for vertical awareness)
+/// - Volume: 1 - distance / 2500 pixels
+/// </summary>
 public class SpatialAudioPannerTests
 {
-    private const float DefaultPitchScale = 200f;
-    private const float DefaultPanScale = 200f;
+    // Terraria's constants
+    private const float PanScalePixels = 960f;
+    private const float PitchScalePixels = 960f;
+    private const float VolumeFalloffPixels = 2500f;
+    private const float MaxPitchClamp = 0.7f;
 
-    #region ComputeDirection Tests
+    #region Pan Tests
 
     [Fact]
-    public void ComputeDirection_SamePosition_ReturnsZeroPitchAndPan()
+    public void Compute_SamePosition_ReturnsZeroPan()
     {
         var listener = new Vector2(100, 100);
         var target = new Vector2(100, 100);
 
-        var result = SpatialAudioPanner.ComputeDirection(
-            listener, target, DefaultPitchScale, DefaultPanScale);
+        var result = SpatialAudioPanner.Compute(listener, target);
 
-        result.Pitch.Should().Be(0f);
         result.Pan.Should().Be(0f);
-        result.DistanceTiles.Should().Be(0f);
     }
 
     [Fact]
-    public void ComputeDirection_TargetAbove_ReturnsPositivePitch()
+    public void Compute_TargetToRight_ReturnsPositivePan()
     {
         var listener = new Vector2(100, 100);
-        var target = new Vector2(100, 0); // 100 pixels above (negative Y = up)
+        var target = new Vector2(580, 100); // 480 pixels right = 0.5 pan (480/960)
 
-        var result = SpatialAudioPanner.ComputeDirection(
-            listener, target, DefaultPitchScale, DefaultPanScale);
+        var result = SpatialAudioPanner.Compute(listener, target);
 
-        result.Pitch.Should().BePositive();
-        result.Pan.Should().BeApproximately(0f, 0.001f);
-    }
-
-    [Fact]
-    public void ComputeDirection_TargetBelow_ReturnsNegativePitch()
-    {
-        var listener = new Vector2(100, 100);
-        var target = new Vector2(100, 200); // 100 pixels below (positive Y = down)
-
-        var result = SpatialAudioPanner.ComputeDirection(
-            listener, target, DefaultPitchScale, DefaultPanScale);
-
-        result.Pitch.Should().BeNegative();
-        result.Pan.Should().BeApproximately(0f, 0.001f);
-    }
-
-    [Fact]
-    public void ComputeDirection_TargetToRight_ReturnsPositivePan()
-    {
-        var listener = new Vector2(100, 100);
-        var target = new Vector2(200, 100); // 100 pixels to the right
-
-        var result = SpatialAudioPanner.ComputeDirection(
-            listener, target, DefaultPitchScale, DefaultPanScale);
-
-        result.Pan.Should().BePositive();
-        result.Pitch.Should().BeApproximately(0f, 0.001f);
-    }
-
-    [Fact]
-    public void ComputeDirection_TargetToLeft_ReturnsNegativePan()
-    {
-        var listener = new Vector2(100, 100);
-        var target = new Vector2(0, 100); // 100 pixels to the left
-
-        var result = SpatialAudioPanner.ComputeDirection(
-            listener, target, DefaultPitchScale, DefaultPanScale);
-
-        result.Pan.Should().BeNegative();
-        result.Pitch.Should().BeApproximately(0f, 0.001f);
-    }
-
-    [Fact]
-    public void ComputeDirection_HalfScaleOffset_ReturnsMidRangeValues()
-    {
-        var listener = new Vector2(100, 100);
-        // Offset by half the scale in both directions
-        var target = new Vector2(200, 0); // +100 X, -100 Y
-
-        var result = SpatialAudioPanner.ComputeDirection(
-            listener, target, DefaultPitchScale, DefaultPanScale);
-
-        result.Pitch.Should().BeApproximately(0.5f, 0.01f);
         result.Pan.Should().BeApproximately(0.5f, 0.01f);
     }
 
     [Fact]
-    public void ComputeDirection_ExceedsScale_ClampedToMaxValues()
+    public void Compute_TargetToLeft_ReturnsNegativePan()
     {
-        var listener = new Vector2(100, 100);
-        // Very far offset that exceeds scale
-        var target = new Vector2(1000, -800);
+        var listener = new Vector2(580, 100);
+        var target = new Vector2(100, 100); // 480 pixels left = -0.5 pan
 
-        var result = SpatialAudioPanner.ComputeDirection(
-            listener, target, DefaultPitchScale, DefaultPanScale);
+        var result = SpatialAudioPanner.Compute(listener, target);
 
-        // Pan is clamped to [-1, 1]
+        result.Pan.Should().BeApproximately(-0.5f, 0.01f);
+    }
+
+    [Fact]
+    public void Compute_FullPanScale_ReturnsMaxPan()
+    {
+        var listener = new Vector2(0, 100);
+        var target = new Vector2(960, 100); // Exactly at pan scale = 1.0
+
+        var result = SpatialAudioPanner.Compute(listener, target);
+
         result.Pan.Should().Be(1f);
-        // Pitch is clamped to [-pitchClamp, pitchClamp] (default 0.8)
-        result.Pitch.Should().Be(0.8f);
     }
 
     [Fact]
-    public void ComputeDirection_CustomPitchClamp_RespectsClampValue()
+    public void Compute_ExceedsPanScale_ClampedToOne()
+    {
+        var listener = new Vector2(0, 100);
+        var target = new Vector2(2000, 100); // Beyond pan scale
+
+        var result = SpatialAudioPanner.Compute(listener, target);
+
+        result.Pan.Should().Be(1f);
+    }
+
+    #endregion
+
+    #region Pitch Tests
+
+    [Fact]
+    public void Compute_SamePosition_ReturnsZeroPitch()
     {
         var listener = new Vector2(100, 100);
-        var target = new Vector2(100, -800); // Very far above
+        var target = new Vector2(100, 100);
 
-        var result = SpatialAudioPanner.ComputeDirection(
-            listener, target, DefaultPitchScale, DefaultPanScale, pitchClamp: 0.5f);
+        var result = SpatialAudioPanner.Compute(listener, target);
 
-        result.Pitch.Should().Be(0.5f);
+        result.Pitch.Should().Be(0f);
     }
 
     [Fact]
-    public void ComputeDirection_CalculatesDistanceInTiles()
+    public void Compute_TargetAbove_ReturnsPositivePitch()
+    {
+        var listener = new Vector2(100, 580);
+        var target = new Vector2(100, 100); // 480 pixels above (negative Y offset)
+
+        var result = SpatialAudioPanner.Compute(listener, target);
+
+        // Pitch = -offsetY / 960 = -(-480) / 960 = 0.5
+        result.Pitch.Should().BeApproximately(0.5f, 0.01f);
+    }
+
+    [Fact]
+    public void Compute_TargetBelow_ReturnsNegativePitch()
+    {
+        var listener = new Vector2(100, 100);
+        var target = new Vector2(100, 580); // 480 pixels below (positive Y offset)
+
+        var result = SpatialAudioPanner.Compute(listener, target);
+
+        // Pitch = -offsetY / 960 = -(480) / 960 = -0.5
+        result.Pitch.Should().BeApproximately(-0.5f, 0.01f);
+    }
+
+    [Fact]
+    public void Compute_VeryFarAbove_ClampedToMaxPitch()
+    {
+        var listener = new Vector2(100, 2000);
+        var target = new Vector2(100, 0); // Very far above
+
+        var result = SpatialAudioPanner.Compute(listener, target);
+
+        result.Pitch.Should().Be(MaxPitchClamp);
+    }
+
+    [Fact]
+    public void Compute_VeryFarBelow_ClampedToMinPitch()
+    {
+        var listener = new Vector2(100, 0);
+        var target = new Vector2(100, 2000); // Very far below
+
+        var result = SpatialAudioPanner.Compute(listener, target);
+
+        result.Pitch.Should().Be(-MaxPitchClamp);
+    }
+
+    #endregion
+
+    #region Volume Tests
+
+    [Fact]
+    public void Compute_ZeroDistance_ReturnsFullVolume()
+    {
+        var listener = new Vector2(100, 100);
+        var target = new Vector2(100, 100);
+
+        var result = SpatialAudioPanner.Compute(listener, target, baseVolume: 1.0f);
+
+        result.Volume.Should().Be(1f);
+    }
+
+    [Fact]
+    public void Compute_HalfFalloffDistance_ReturnsHalfVolume()
+    {
+        var listener = new Vector2(0, 0);
+        var target = new Vector2(1250, 0); // Half of 2500 pixels falloff
+
+        var result = SpatialAudioPanner.Compute(listener, target, baseVolume: 1.0f);
+
+        // Volume = 1 - 1250/2500 = 0.5
+        result.Volume.Should().BeApproximately(0.5f, 0.01f);
+    }
+
+    [Fact]
+    public void Compute_AtFalloffDistance_ReturnsZeroVolume()
+    {
+        var listener = new Vector2(0, 0);
+        var target = new Vector2(2500, 0); // Exactly at falloff distance
+
+        var result = SpatialAudioPanner.Compute(listener, target, baseVolume: 1.0f);
+
+        result.Volume.Should().Be(0f);
+    }
+
+    [Fact]
+    public void Compute_BeyondFalloffDistance_ClampedToZero()
+    {
+        var listener = new Vector2(0, 0);
+        var target = new Vector2(5000, 0); // Beyond falloff distance
+
+        var result = SpatialAudioPanner.Compute(listener, target, baseVolume: 1.0f);
+
+        result.Volume.Should().Be(0f);
+    }
+
+    [Fact]
+    public void Compute_BaseVolumeScalesResult()
+    {
+        var listener = new Vector2(0, 0);
+        var target = new Vector2(0, 0);
+
+        var result = SpatialAudioPanner.Compute(listener, target, baseVolume: 0.5f);
+
+        result.Volume.Should().Be(0.5f);
+    }
+
+    [Fact]
+    public void Compute_BaseVolumeAndDistanceCombined()
+    {
+        var listener = new Vector2(0, 0);
+        var target = new Vector2(1250, 0); // Half falloff = 0.5 distance factor
+
+        var result = SpatialAudioPanner.Compute(listener, target, baseVolume: 0.8f);
+
+        // Volume = 0.5 * 0.8 = 0.4
+        result.Volume.Should().BeApproximately(0.4f, 0.01f);
+    }
+
+    #endregion
+
+    #region Distance Tests
+
+    [Fact]
+    public void Compute_CalculatesDistanceInTiles()
     {
         var listener = new Vector2(0, 0);
         var target = new Vector2(160, 0); // 160 pixels = 10 tiles (16 pixels per tile)
 
-        var result = SpatialAudioPanner.ComputeDirection(
-            listener, target, DefaultPitchScale, DefaultPanScale);
+        var result = SpatialAudioPanner.Compute(listener, target);
 
         result.DistanceTiles.Should().BeApproximately(10f, 0.001f);
     }
 
     [Fact]
-    public void ComputeDirection_DiagonalDistance_CalculatesPythagorean()
+    public void Compute_DiagonalDistance_CalculatesPythagorean()
     {
         var listener = new Vector2(0, 0);
         // 48 pixels X, 64 pixels Y = 80 pixels distance (3-4-5 triangle scaled by 16)
         // 80 pixels / 16 = 5 tiles
         var target = new Vector2(48, 64);
 
-        var result = SpatialAudioPanner.ComputeDirection(
-            listener, target, DefaultPitchScale, DefaultPanScale);
+        var result = SpatialAudioPanner.Compute(listener, target);
 
         result.DistanceTiles.Should().BeApproximately(5f, 0.001f);
     }
 
     #endregion
 
-    #region ComputeSample Tests
+    #region Combined Behavior Tests
 
     [Fact]
-    public void ComputeSample_ZeroDistance_ReturnsFullVolume()
+    public void Compute_DiagonalOffset_ReturnsCorrectPanPitchAndVolume()
+    {
+        var listener = new Vector2(0, 480);
+        var target = new Vector2(480, 0); // Right and above
+
+        var result = SpatialAudioPanner.Compute(listener, target, baseVolume: 1.0f);
+
+        // Pan: 480 / 960 = 0.5
+        result.Pan.Should().BeApproximately(0.5f, 0.01f);
+
+        // Pitch: -(-480) / 960 = 0.5
+        result.Pitch.Should().BeApproximately(0.5f, 0.01f);
+
+        // Distance: sqrt(480^2 + 480^2) ≈ 679 pixels
+        // Volume: 1 - 679/2500 ≈ 0.73
+        result.Volume.Should().BeApproximately(0.73f, 0.02f);
+    }
+
+    [Fact]
+    public void Compute_DefaultBaseVolume_IsOne()
     {
         var listener = new Vector2(100, 100);
         var target = new Vector2(100, 100);
-        var profile = new SpatialAudioPanner.SpatialAudioProfile(
-            PitchScalePixels: DefaultPitchScale,
-            PanScalePixels: DefaultPanScale,
-            DistanceReferenceTiles: 40f,
-            MinVolume: 0.2f);
 
-        var result = SpatialAudioPanner.ComputeSample(listener, target, profile, soundVolume: 1.0f);
+        var result = SpatialAudioPanner.Compute(listener, target);
 
-        // At zero distance: factor = 1/(1+0) = 1
-        // volume = min(0.2 + 1 * 0.85, 1) * 1.0 = 1.0 (clamped)
-        result.Volume.Should().BeApproximately(1.0f, 0.01f);
-    }
-
-    [Fact]
-    public void ComputeSample_AtReferenceDistance_ReturnsReducedVolume()
-    {
-        var listener = new Vector2(0, 0);
-        var target = new Vector2(640, 0); // 40 tiles away (640/16 = 40)
-        var profile = new SpatialAudioPanner.SpatialAudioProfile(
-            PitchScalePixels: DefaultPitchScale,
-            PanScalePixels: DefaultPanScale,
-            DistanceReferenceTiles: 40f,
-            MinVolume: 0.2f);
-
-        var result = SpatialAudioPanner.ComputeSample(listener, target, profile, soundVolume: 1.0f);
-
-        // At reference distance (40 tiles): factor = 1/(1+40/40) = 1/2 = 0.5
-        // volume = (0.2 + 0.5 * 0.85) * 1.0 = 0.625
-        result.Volume.Should().BeApproximately(0.625f, 0.01f);
-    }
-
-    [Fact]
-    public void ComputeSample_SoundVolumeScalesResult()
-    {
-        var listener = new Vector2(100, 100);
-        var target = new Vector2(100, 100);
-        var profile = new SpatialAudioPanner.SpatialAudioProfile(
-            PitchScalePixels: DefaultPitchScale,
-            PanScalePixels: DefaultPanScale,
-            DistanceReferenceTiles: 40f,
-            MinVolume: 0.2f);
-
-        var result = SpatialAudioPanner.ComputeSample(listener, target, profile, soundVolume: 0.5f);
-
-        // At zero distance with 0.5 sound volume
-        result.Volume.Should().BeApproximately(0.5f, 0.01f);
-    }
-
-    [Fact]
-    public void ComputeSample_IncludesPitchAndPan()
-    {
-        var listener = new Vector2(100, 100);
-        var target = new Vector2(200, 0); // Right and above
-        var profile = new SpatialAudioPanner.SpatialAudioProfile(
-            PitchScalePixels: DefaultPitchScale,
-            PanScalePixels: DefaultPanScale,
-            DistanceReferenceTiles: 40f,
-            MinVolume: 0.2f);
-
-        var result = SpatialAudioPanner.ComputeSample(listener, target, profile, soundVolume: 1.0f);
-
-        result.Pitch.Should().BePositive();
-        result.Pan.Should().BePositive();
+        // Default baseVolume should be 1.0
+        result.Volume.Should().Be(1f);
     }
 
     #endregion
 
-    #region SpatialDirection Record Tests
+    #region SpatialAudioSample Record Tests
 
     [Fact]
-    public void SpatialDirection_RecordEquality_WorksCorrectly()
+    public void SpatialAudioSample_RecordEquality_WorksCorrectly()
     {
-        var a = new SpatialAudioPanner.SpatialDirection(0.5f, 0.3f, 10f);
-        var b = new SpatialAudioPanner.SpatialDirection(0.5f, 0.3f, 10f);
-        var c = new SpatialAudioPanner.SpatialDirection(0.5f, 0.4f, 10f);
+        var a = new SpatialAudioPanner.SpatialAudioSample(0.3f, 0.5f, 0.8f, 10f);
+        var b = new SpatialAudioPanner.SpatialAudioSample(0.3f, 0.5f, 0.8f, 10f);
+        var c = new SpatialAudioPanner.SpatialAudioSample(0.4f, 0.5f, 0.8f, 10f);
 
         a.Should().Be(b);
         a.Should().NotBe(c);

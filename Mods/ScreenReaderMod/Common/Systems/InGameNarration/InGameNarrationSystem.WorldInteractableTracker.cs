@@ -575,12 +575,6 @@ public sealed partial class InGameNarrationSystem
                 return;
             }
 
-            float configVolume = (ScreenReaderModConfig.Instance?.InteractableCueVolume ?? 100) / 100f;
-            if (configVolume <= 0f)
-            {
-                return;
-            }
-
             int currentFrame = (int)Main.GameUpdateCount;
             TrackedInteractableKey cueKey = entry.Candidate.Key;
             if (_nextCueFrame.TryGetValue(cueKey, out int readyFrame) && currentFrame < readyFrame)
@@ -588,53 +582,33 @@ public sealed partial class InGameNarrationSystem
                 return;
             }
 
-            SpatialAudioPanner.SpatialDirection direction = SpatialAudioPanner.ComputeDirection(
+            SpatialAudioPanner.SpatialAudioSample sample = SpatialAudioPanner.Compute(
                 playerCenter,
                 entry.Candidate.WorldPosition,
-                entry.Candidate.Profile.PitchScalePixels,
-                entry.Candidate.Profile.PanScalePixels,
-                pitchClamp: 0.8f);
+                Main.soundVolume);
             InteractableCueProfile profile = entry.Candidate.Profile;
 
             if (profile.SoundStyle.HasValue)
             {
-                float soundStyleBaseVolume = profile.ComputeVolume(entry.DistanceTiles);
-                float soundStyleLoudness = SoundLoudnessUtility.ApplyDistanceFalloff(
-                    soundStyleBaseVolume,
-                    entry.DistanceTiles,
-                    profile.MaxAudibleDistanceTiles,
-                    minFactor: 0.45f);
-                float soundStyleScaledVolume = MathHelper.Clamp(
-                    soundStyleLoudness * (isPrimaryCue ? 1f : SecondaryCueVolumeScale) * AudioVolumeDefaults.WorldCueVolumeScale * configVolume,
-                    0f,
-                    1f);
-                if (soundStyleScaledVolume <= 0f)
+                // For SoundStyle with position, Terraria handles pan and volume falloff natively.
+                // We only apply our pitch offset and the cue volume scales.
+                float soundStyleVolumeScale = (isPrimaryCue ? 1f : SecondaryCueVolumeScale) * AudioVolumeDefaults.WorldCueVolumeScale;
+                if (soundStyleVolumeScale <= 0f)
                 {
                     return;
                 }
 
                 SoundStyle style = profile.SoundStyle.Value
-                    .WithVolumeScale(soundStyleScaledVolume)
-                    .WithPitchOffset(direction.Pitch);
+                    .WithVolumeScale(soundStyleVolumeScale)
+                    .WithPitchOffset(sample.Pitch);
                 SoundEngine.PlaySound(style, entry.Candidate.WorldPosition);
                 _nextCueFrame[cueKey] = currentFrame + Math.Max(1, profile.MinIntervalFrames);
                 return;
             }
 
-            float baseVolume = profile.ComputeVolume(entry.DistanceTiles);
-            float loudness = SoundLoudnessUtility.ApplyDistanceFalloff(
-                baseVolume,
-                entry.DistanceTiles,
-                profile.MaxAudibleDistanceTiles,
-                minFactor: 0.45f);
-            float volume = loudness * Main.soundVolume;
-            if (volume <= 0f)
-            {
-                return;
-            }
-
+            // For synthesized tones, we apply pan/pitch/volume manually since we're not using SoundEngine.
             float scaledVolume = MathHelper.Clamp(
-                volume * (isPrimaryCue ? 1f : SecondaryCueVolumeScale) * AudioVolumeDefaults.WorldCueVolumeScale * configVolume,
+                sample.Volume * (isPrimaryCue ? 1f : SecondaryCueVolumeScale) * AudioVolumeDefaults.WorldCueVolumeScale,
                 0f,
                 1f);
             if (scaledVolume <= 0f)
@@ -645,8 +619,8 @@ public sealed partial class InGameNarrationSystem
             SoundEffect tone = EnsureTone(profile);
             SoundEffectInstance instance = tone.CreateInstance();
             instance.IsLooped = false;
-            instance.Pitch = direction.Pitch;
-            instance.Pan = direction.Pan;
+            instance.Pitch = sample.Pitch;
+            instance.Pan = sample.Pan;
             instance.Volume = scaledVolume;
 
             try
@@ -1380,9 +1354,6 @@ public sealed partial class InGameNarrationSystem
 
     private readonly struct InteractableCueProfile
     {
-        private const float DefaultPanScale = 520f;
-        private const float DefaultPitchScale = 320f;
-        private const float MinDelayResponseExponent = 0.05f;
         private const int SweepIntervalFrames = 10;
 
         private InteractableCueProfile(
@@ -1392,13 +1363,9 @@ public sealed partial class InGameNarrationSystem
             ToneEnvelope envelope,
             float durationSeconds,
             float baseGain,
-            float volume,
             float maxAudibleDistanceTiles,
             int minIntervalFrames,
             int maxIntervalFrames,
-            float panScalePixels = DefaultPanScale,
-            float pitchScalePixels = DefaultPitchScale,
-            float delayResponseExponent = 1f,
             string arrivalLabel = "",
             SoundStyle? soundStyle = null)
         {
@@ -1408,13 +1375,9 @@ public sealed partial class InGameNarrationSystem
             Envelope = envelope;
             DurationSeconds = durationSeconds;
             BaseGain = baseGain;
-            Volume = volume;
             MaxAudibleDistanceTiles = maxAudibleDistanceTiles;
             MinIntervalFrames = minIntervalFrames;
             MaxIntervalFrames = maxIntervalFrames;
-            PanScalePixels = panScalePixels;
-            PitchScalePixels = pitchScalePixels;
-            DelayResponseExponent = Math.Max(MinDelayResponseExponent, delayResponseExponent);
             ArrivalLabel = arrivalLabel ?? string.Empty;
             SoundStyle = soundStyle;
         }
@@ -1425,27 +1388,11 @@ public sealed partial class InGameNarrationSystem
         public ToneEnvelope Envelope { get; }
         public float DurationSeconds { get; }
         public float BaseGain { get; }
-        public float Volume { get; }
         public float MaxAudibleDistanceTiles { get; }
         public int MinIntervalFrames { get; }
         public int MaxIntervalFrames { get; }
-        public float PanScalePixels { get; }
-        public float PitchScalePixels { get; }
-        public float DelayResponseExponent { get; }
         public string ArrivalLabel { get; }
         public SoundStyle? SoundStyle { get; }
-
-        public float ComputeVolume(float distanceTiles)
-        {
-            _ = distanceTiles;
-            return Volume;
-        }
-
-        public int ComputeDelayFrames(float distanceTiles)
-        {
-            _ = distanceTiles;
-            return Math.Max(1, MinIntervalFrames);
-        }
 
         public static InteractableCueProfile Chest { get; } = new(
             id: "chest",
@@ -1454,11 +1401,9 @@ public sealed partial class InGameNarrationSystem
             envelope: SynthesizedSoundFactory.ToneEnvelopes.WorldCue,
             durationSeconds: 0.18f,
             baseGain: 0.4f,
-            volume: 0.45f,
             maxAudibleDistanceTiles: 85f,
             minIntervalFrames: SweepIntervalFrames,
             maxIntervalFrames: 52,
-            delayResponseExponent: 0.7f,
             arrivalLabel: "a chest");
 
         public static InteractableCueProfile HeartCrystal { get; } = new(
@@ -1468,11 +1413,9 @@ public sealed partial class InGameNarrationSystem
             envelope: SynthesizedSoundFactory.ToneEnvelopes.WorldCue,
             durationSeconds: 0.22f,
             baseGain: 0.4f,
-            volume: 0.45f,
             maxAudibleDistanceTiles: 90f,
             minIntervalFrames: SweepIntervalFrames,
             maxIntervalFrames: 52,
-            delayResponseExponent: 0.7f,
             arrivalLabel: "a heart crystal");
 
         public static InteractableCueProfile LifeFruit { get; } = new(
@@ -1482,11 +1425,9 @@ public sealed partial class InGameNarrationSystem
             envelope: SynthesizedSoundFactory.ToneEnvelopes.WorldCue,
             durationSeconds: 0.22f,
             baseGain: 0.4f,
-            volume: 0.45f,
             maxAudibleDistanceTiles: 90f,
             minIntervalFrames: SweepIntervalFrames,
             maxIntervalFrames: 52,
-            delayResponseExponent: 0.7f,
             arrivalLabel: "a life fruit");
 
         public static InteractableCueProfile PlanteraBulb { get; } = new(
@@ -1496,11 +1437,9 @@ public sealed partial class InGameNarrationSystem
             envelope: SynthesizedSoundFactory.ToneEnvelopes.WorldCue,
             durationSeconds: 0.22f,
             baseGain: 0.4f,
-            volume: 0.45f,
             maxAudibleDistanceTiles: 90f,
             minIntervalFrames: SweepIntervalFrames,
             maxIntervalFrames: 52,
-            delayResponseExponent: 0.7f,
             arrivalLabel: "a Plantera bulb");
 
         public static InteractableCueProfile DemonAltar { get; } = new(
@@ -1510,11 +1449,9 @@ public sealed partial class InGameNarrationSystem
             envelope: SynthesizedSoundFactory.ToneEnvelopes.WorldCue,
             durationSeconds: 0.2f,
             baseGain: 0.38f,
-            volume: 0.45f,
             maxAudibleDistanceTiles: 85f,
             minIntervalFrames: SweepIntervalFrames,
             maxIntervalFrames: 56,
-            delayResponseExponent: 0.7f,
             arrivalLabel: "a demon altar");
 
         public static InteractableCueProfile CrimsonAltar { get; } = new(
@@ -1524,11 +1461,9 @@ public sealed partial class InGameNarrationSystem
             envelope: SynthesizedSoundFactory.ToneEnvelopes.WorldCue,
             durationSeconds: 0.2f,
             baseGain: 0.38f,
-            volume: 0.45f,
             maxAudibleDistanceTiles: 85f,
             minIntervalFrames: SweepIntervalFrames,
             maxIntervalFrames: 56,
-            delayResponseExponent: 0.7f,
             arrivalLabel: "a crimson altar");
 
         public static InteractableCueProfile ShadowOrb { get; } = new(
@@ -1538,11 +1473,9 @@ public sealed partial class InGameNarrationSystem
             envelope: SynthesizedSoundFactory.ToneEnvelopes.WorldCue,
             durationSeconds: 0.2f,
             baseGain: 0.38f,
-            volume: 0.45f,
             maxAudibleDistanceTiles: 80f,
             minIntervalFrames: SweepIntervalFrames,
             maxIntervalFrames: 54,
-            delayResponseExponent: 0.7f,
             arrivalLabel: "a shadow orb");
 
         public static InteractableCueProfile CrimsonHeart { get; } = new(
@@ -1552,11 +1485,9 @@ public sealed partial class InGameNarrationSystem
             envelope: SynthesizedSoundFactory.ToneEnvelopes.WorldCue,
             durationSeconds: 0.2f,
             baseGain: 0.38f,
-            volume: 0.45f,
             maxAudibleDistanceTiles: 80f,
             minIntervalFrames: SweepIntervalFrames,
             maxIntervalFrames: 54,
-            delayResponseExponent: 0.7f,
             arrivalLabel: "a crimson heart");
 
         public static InteractableCueProfile BeeLarva { get; } = new(
@@ -1566,11 +1497,9 @@ public sealed partial class InGameNarrationSystem
             envelope: SynthesizedSoundFactory.ToneEnvelopes.WorldCue,
             durationSeconds: 0.2f,
             baseGain: 0.42f,
-            volume: 0.45f,
             maxAudibleDistanceTiles: 70f,
             minIntervalFrames: SweepIntervalFrames,
             maxIntervalFrames: 50,
-            delayResponseExponent: 0.7f,
             arrivalLabel: "a bee larva");
 
         public static InteractableCueProfile RescueNpc { get; } = new(
@@ -1580,11 +1509,9 @@ public sealed partial class InGameNarrationSystem
             envelope: SynthesizedSoundFactory.ToneEnvelopes.WorldCue,
             durationSeconds: 0.2f,
             baseGain: 0.36f,
-            volume: 0.45f,
             maxAudibleDistanceTiles: 80f,
             minIntervalFrames: SweepIntervalFrames,
             maxIntervalFrames: 48,
-            delayResponseExponent: 0.7f,
             arrivalLabel: "a rescue NPC");
 
         public static InteractableCueProfile FallenStar { get; } = new(
@@ -1594,11 +1521,9 @@ public sealed partial class InGameNarrationSystem
             envelope: SynthesizedSoundFactory.ToneEnvelopes.WorldCue,
             durationSeconds: 0.2f,
             baseGain: 0.38f,
-            volume: 0.45f,
             maxAudibleDistanceTiles: 95f,
             minIntervalFrames: SweepIntervalFrames,
             maxIntervalFrames: 46,
-            delayResponseExponent: 0.7f,
             arrivalLabel: "a fallen star");
 
         public static InteractableCueProfile Ore { get; } = new(
@@ -1608,12 +1533,9 @@ public sealed partial class InGameNarrationSystem
             envelope: SynthesizedSoundFactory.ToneEnvelopes.WorldCue,
             durationSeconds: 0.2f,
             baseGain: 0.36f,
-            volume: 0.45f,
             maxAudibleDistanceTiles: 92f,
             minIntervalFrames: SweepIntervalFrames,
             maxIntervalFrames: 48,
-            delayResponseExponent: 0.68f,
-            arrivalLabel: string.Empty,
             soundStyle: SoundID.Tink);
 
         public static InteractableCueProfile Gem { get; } = new(
@@ -1623,12 +1545,9 @@ public sealed partial class InGameNarrationSystem
             envelope: SynthesizedSoundFactory.ToneEnvelopes.WorldCue,
             durationSeconds: 0.22f,
             baseGain: 0.38f,
-            volume: 0.45f,
             maxAudibleDistanceTiles: 92f,
             minIntervalFrames: SweepIntervalFrames,
             maxIntervalFrames: 48,
-            delayResponseExponent: 0.68f,
-            arrivalLabel: string.Empty,
             soundStyle: SoundID.Shatter);
     }
 }
