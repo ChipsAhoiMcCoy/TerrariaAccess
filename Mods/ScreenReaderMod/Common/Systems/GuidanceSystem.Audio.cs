@@ -56,10 +56,9 @@ public sealed partial class GuidanceSystem
         {
             CleanupFinishedWaypointInstances();
 
-            SpatialAudioPanner.SpatialAudioSample sample = SpatialAudioPanner.ComputeSample(
+            SpatialAudioPanner.SpatialAudioSample sample = SpatialAudioPanner.Compute(
                 player.Center,
                 worldPosition,
-                GuidanceAudioProfile,
                 Main.soundVolume);
             if (sample.Volume <= 0f)
             {

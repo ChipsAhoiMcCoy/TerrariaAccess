@@ -982,8 +982,6 @@ public sealed partial class InGameNarrationSystem
 
             CleanupFinishedInstances();
 
-            Vector2 offset = tileCenterWorld - player.Center;
-
             // Calculate frequency based on screen position:
             // - Top of screen: 1000 Hz
             // - Middle of screen: 440 Hz
@@ -1007,12 +1005,15 @@ public sealed partial class InGameNarrationSystem
 
             SoundEffect tone = CreateCursorTone(frequency);
 
-            float pan = MathHelper.Clamp(offset.X / 480f, -1f, 1f);
+            // Use Terraria-aligned pan calculation; volume uses custom falloff for cursor feedback
+            SpatialAudioPanner.SpatialAudioSample sample = SpatialAudioPanner.Compute(
+                player.Center,
+                tileCenterWorld);
+
             float baseVolume = 0.45f;
-            float distanceTiles = offset.Length() / 16f;
             float loudness = SoundLoudnessUtility.ApplyDistanceFalloff(
                 baseVolume,
-                distanceTiles,
+                sample.DistanceTiles,
                 CursorLoudnessReferenceTiles,
                 minFactor: 0.4f);
             float volume = loudness * Main.soundVolume * AudioVolumeDefaults.WorldCueVolumeScale;
@@ -1021,7 +1022,7 @@ public sealed partial class InGameNarrationSystem
             instance.IsLooped = false;
             instance.Volume = volume;
             instance.Pitch = 0f;
-            instance.Pan = pan;
+            instance.Pan = sample.Pan;
             instance.Play();
             ActiveSounds.Add((tone, instance));
         }

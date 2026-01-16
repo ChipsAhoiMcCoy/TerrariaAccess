@@ -18,8 +18,6 @@ public sealed partial class InGameNarrationSystem
         private const int ScanIntervalTicks = 4;
         private const float StandardRangeTiles = 52f;
         private const float BossRangeTiles = 160f;
-        private const float PanScalePixels = 520f;
-        private const float PitchScalePixels = 320f;
         private const int MinIntervalFrames = 7;
         private const int MaxIntervalFrames = 32;
         private const float HostileToneDurationSeconds = 0.045f;
@@ -226,11 +224,13 @@ public sealed partial class InGameNarrationSystem
                 return;
             }
 
-            Vector2 offset = candidate.WorldPosition - listenerCenter;
-            float pan = MathHelper.Clamp(offset.X / PanScalePixels, -1f, 1f);
-            float pitch = MathHelper.Clamp(-offset.Y / PitchScalePixels, -0.8f, 0.8f);
+            // Use Terraria-aligned spatial audio for hostile cues
+            SpatialAudioPanner.SpatialAudioSample sample = SpatialAudioPanner.Compute(
+                listenerCenter,
+                candidate.WorldPosition,
+                Main.soundVolume);
 
-            float volume = MathHelper.Clamp(1f, 0f, 1f) * Main.soundVolume * AudioVolumeDefaults.WorldCueVolumeScale;
+            float volume = MathHelper.Clamp(sample.Volume * AudioVolumeDefaults.WorldCueVolumeScale, 0f, 1f);
             if (volume <= 0f)
             {
                 return;
@@ -238,8 +238,8 @@ public sealed partial class InGameNarrationSystem
 
             SoundEffectInstance instance = tone.CreateInstance();
             instance.IsLooped = false;
-            instance.Pan = pan;
-            instance.Pitch = pitch;
+            instance.Pan = sample.Pan;
+            instance.Pitch = sample.Pitch;
             instance.Volume = volume;
 
             try

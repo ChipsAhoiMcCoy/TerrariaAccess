@@ -21,7 +21,6 @@ public sealed partial class InGameNarrationSystem
         // Edge detection configuration
         private const int EdgeScanRangeTiles = 18;      // How far ahead to scan
         private const int MinDropHeightTiles = 3;       // Minimum drop to count as edge
-        private const float PanScalePixels = 320f;      // Pan scaling for positional audio
 
         private Point _lastFootTile = new(-1, -1);
         private float _lastFootX = float.NaN;
@@ -423,13 +422,14 @@ public sealed partial class InGameNarrationSystem
             {
                 _edgeBeepTimer = 0;
 
-                // Compute pan based on actual world position of edge relative to player
-                Vector2 playerCenter = player.Center;
-                float offsetX = nearestEdge.WorldPosition.X - playerCenter.X;
-                float pan = MathHelper.Clamp(offsetX / PanScalePixels, -1f, 1f);
+                // Compute spatial audio with distance-based volume falloff
+                SpatialAudioPanner.SpatialAudioSample sample = SpatialAudioPanner.Compute(
+                    player.Center,
+                    nearestEdge.WorldPosition,
+                    EdgeBeepVolume);
 
-                // Play a beep (pure sine wave)
-                FootstepToneProvider.Play(EdgeBeepFrequency, EdgeBeepVolume, useTriangleWave: false, pan);
+                // Play a beep (pure sine wave) with spatial pan and volume
+                FootstepToneProvider.Play(EdgeBeepFrequency, sample.Volume, useTriangleWave: false, sample.Pan);
             }
         }
 

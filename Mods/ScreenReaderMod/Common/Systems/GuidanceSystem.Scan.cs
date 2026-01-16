@@ -322,7 +322,7 @@ public sealed partial class GuidanceSystem
         }
 
         Vector2 origin = player.Center;
-        int scanRadius = (int)Math.Clamp(DistanceReferenceTiles + 8f, 4f, 240f);
+        int scanRadius = (int)Math.Clamp(ScanRangeTiles + 8f, 4f, 240f);
         int playerTileX = (int)(origin.X / 16f);
         int playerTileY = (int)(origin.Y / 16f);
         int minX = Math.Max(0, playerTileX - scanRadius);
@@ -418,7 +418,7 @@ public sealed partial class GuidanceSystem
         }
 
         float distanceTiles = Vector2.Distance(origin, npc.Center) / 16f;
-        if (!includeOutOfRange && distanceTiles > DistanceReferenceTiles)
+        if (!includeOutOfRange && distanceTiles > ScanRangeTiles)
         {
             return false;
         }
@@ -464,7 +464,7 @@ public sealed partial class GuidanceSystem
 
         Vector2 worldPosition = ResolveInteractableWorldPosition(anchor, definition);
         float distanceTiles = Vector2.Distance(worldPosition, origin) / 16f;
-        if (!includeOutOfRange && distanceTiles > DistanceReferenceTiles)
+        if (!includeOutOfRange && distanceTiles > ScanRangeTiles)
         {
             return false;
         }
@@ -726,7 +726,7 @@ public sealed partial class GuidanceSystem
             }
 
             float distanceTiles = Vector2.Distance(origin, npc.Center) / 16f;
-            if (distanceTiles > DistanceReferenceTiles)
+            if (distanceTiles > ScanRangeTiles)
             {
                 continue;
             }
@@ -786,7 +786,7 @@ public sealed partial class GuidanceSystem
         }
 
         Vector2 origin = player.Center;
-        int scanRadius = (int)Math.Clamp(DistanceReferenceTiles + 8f, 4f, 120f);
+        int scanRadius = (int)Math.Clamp(ScanRangeTiles + 8f, 4f, 120f);
         int playerTileX = (int)(origin.X / 16f);
         int playerTileY = (int)(origin.Y / 16f);
         int minX = Math.Max(0, playerTileX - scanRadius);
@@ -818,7 +818,7 @@ public sealed partial class GuidanceSystem
                 Vector2 worldPosition = new((x + 0.5f) * 16f, (y + 0.5f) * 16f);
                 float distanceTiles = Vector2.Distance(worldPosition, origin) / 16f;
 
-                if (distanceTiles > DistanceReferenceTiles)
+                if (distanceTiles > ScanRangeTiles)
                 {
                     continue;
                 }
