@@ -980,12 +980,6 @@ public sealed partial class InGameNarrationSystem
                 return;
             }
 
-            float configVolume = (ScreenReaderModConfig.Instance?.CursorVolume ?? 100) / 100f;
-            if (configVolume <= 0f)
-            {
-                return;
-            }
-
             CleanupFinishedInstances();
 
             Vector2 offset = tileCenterWorld - player.Center;
@@ -1021,7 +1015,7 @@ public sealed partial class InGameNarrationSystem
                 distanceTiles,
                 CursorLoudnessReferenceTiles,
                 minFactor: 0.4f);
-            float volume = loudness * Main.soundVolume * AudioVolumeDefaults.WorldCueVolumeScale * configVolume;
+            float volume = loudness * Main.soundVolume * AudioVolumeDefaults.WorldCueVolumeScale;
 
             SoundEffectInstance instance = tone.CreateInstance();
             instance.IsLooped = false;

@@ -217,13 +217,6 @@ public sealed partial class InGameNarrationSystem
 
         private static void PlaySpatialStep(Player localPlayer, Player remotePlayer, bool onPlatform)
         {
-            // Apply multiplayer footstep volume config
-            float configVolume = (ScreenReaderModConfig.Instance?.MultiplayerFootstepVolume ?? 100) / 100f;
-            if (configVolume <= 0f)
-            {
-                return;
-            }
-
             // Calculate spatial audio properties
             SpatialAudioPanner.SpatialDirection direction = SpatialAudioPanner.ComputeDirection(
                 localPlayer.Center,
@@ -231,7 +224,7 @@ public sealed partial class InGameNarrationSystem
                 PitchScalePixels,
                 PanScalePixels);
 
-            float volume = BaseVolume * configVolume;
+            float volume = BaseVolume;
 
             // Compute frequency based on remote player's speed (same logic as local footsteps)
             float horizontalSpeed = Math.Abs(remotePlayer.velocity.X);

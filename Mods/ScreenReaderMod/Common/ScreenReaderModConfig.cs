@@ -22,44 +22,13 @@ public class ScreenReaderModConfig : ModConfig
     [DefaultValue(true)]
     public bool EdgeDetectionEnabled { get; set; } = true;
 
-    [DefaultValue(100)]
-    [Range(0, 100)]
-    [Slider]
-    public int FootstepVolume { get; set; } = 100;
-
     // Multiplayer footsteps
     [DefaultValue(true)]
     public bool MultiplayerFootstepsEnabled { get; set; } = true;
 
-    [DefaultValue(50)]
-    [Range(0, 100)]
-    [Slider]
-    public int MultiplayerFootstepVolume { get; set; } = 50;
-
     // Cursor audio cues
     [DefaultValue(true)]
     public bool CursorTileSounds { get; set; } = true;
-
-    [DefaultValue(100)]
-    [Range(0, 100)]
-    [Slider]
-    public int CursorVolume { get; set; } = 100;
-
-    // Other audio cue volumes
-    [DefaultValue(100)]
-    [Range(0, 100)]
-    [Slider]
-    public int EnemySoundVolume { get; set; } = 100;
-
-    [DefaultValue(100)]
-    [Range(0, 100)]
-    [Slider]
-    public int GuidanceVolume { get; set; } = 100;
-
-    [DefaultValue(100)]
-    [Range(0, 100)]
-    [Slider]
-    public int InteractableCueVolume { get; set; } = 100;
 
     // Experimental features
     [DefaultValue(true)]

@@ -41,7 +41,6 @@ public sealed partial class InGameNarrationSystem : ModSystem
     private readonly SmartCursorNarrator _smartCursorNarrator;
     private readonly CraftingNarrator _craftingNarrator;
     private readonly CursorNarrator _cursorNarrator;
-    private readonly TreasureBagBeaconEmitter _treasureBagBeaconEmitter;
     private readonly HostileStaticAudioEmitter _hostileStaticAudioEmitter;
     private readonly WorldInteractableTracker _worldInteractableTracker;
     private readonly InventoryNarrator _inventoryNarrator;
@@ -127,7 +126,6 @@ public sealed partial class InGameNarrationSystem : ModSystem
         _smartCursorNarrator = new SmartCursorNarrator(_cursorDescriptorService);
         _craftingNarrator = new CraftingNarrator();
         _cursorNarrator = new CursorNarrator(_cursorDescriptorService);
-        _treasureBagBeaconEmitter = new TreasureBagBeaconEmitter();
         _hostileStaticAudioEmitter = new HostileStaticAudioEmitter();
         _worldInteractableTracker = new WorldInteractableTracker();
         _inventoryNarrator = new InventoryNarrator();
@@ -140,7 +138,6 @@ public sealed partial class InGameNarrationSystem : ModSystem
         _biomeAnnouncementEmitter = new BiomeAnnouncementEmitter();
         _multiplayerFootstepAudioEmitter = new MultiplayerFootstepAudioEmitter();
         _worldPositionalAudioService = new WorldPositionalAudioService(
-            _treasureBagBeaconEmitter,
             _hostileStaticAudioEmitter,
             _footstepAudioEmitter,
             _climbAudioEmitter,

@@ -220,12 +220,6 @@ public sealed partial class InGameNarrationSystem
 
         private void PlayStaticCue(Vector2 listenerCenter, HostileCandidate candidate)
         {
-            float configVolume = (ScreenReaderModConfig.Instance?.EnemySoundVolume ?? 100) / 100f;
-            if (configVolume <= 0f)
-            {
-                return;
-            }
-
             SoundEffect tone = EnsureHostileTone();
             if (tone.IsDisposed)
             {
@@ -236,7 +230,7 @@ public sealed partial class InGameNarrationSystem
             float pan = MathHelper.Clamp(offset.X / PanScalePixels, -1f, 1f);
             float pitch = MathHelper.Clamp(-offset.Y / PitchScalePixels, -0.8f, 0.8f);
 
-            float volume = MathHelper.Clamp(1f, 0f, 1f) * Main.soundVolume * AudioVolumeDefaults.WorldCueVolumeScale * configVolume;
+            float volume = MathHelper.Clamp(1f, 0f, 1f) * Main.soundVolume * AudioVolumeDefaults.WorldCueVolumeScale;
             if (volume <= 0f)
             {
                 return;
