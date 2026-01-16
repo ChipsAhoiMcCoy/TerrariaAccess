@@ -74,6 +74,64 @@ internal sealed class BuildModeHousingAnnouncer
         _lastAnnouncedRoom = Rectangle.Empty;
     }
 
+    /// <summary>
+    /// Gets the initial housing status for the player's current position without announcing it.
+    /// This is intended to be called when build mode is first enabled so the housing status
+    /// can be included in the initial announcement. Also initializes state to prevent
+    /// the Update method from immediately re-announcing.
+    /// </summary>
+    /// <param name="player">The local player.</param>
+    /// <returns>The housing status string, or null if not in valid housing.</returns>
+    public string? GetInitialHousingStatus(Player player)
+    {
+        if (player is null || !player.active)
+        {
+            return null;
+        }
+
+        Point playerTile = player.Center.ToTileCoordinates();
+
+        // Initialize state to prevent immediate re-announcement in Update
+        _lastCheckPosition = playerTile;
+        _checkCooldown = CheckCooldownFrames;
+
+        if (!WorldGen.InWorld(playerTile.X, playerTile.Y, 10))
+        {
+            return null;
+        }
+
+        // Check if this position is in a valid room structure
+        bool isValidRoom = WorldGen.StartRoomCheck(playerTile.X, playerTile.Y);
+
+        if (!isValidRoom)
+        {
+            _lastAnnouncedRoom = Rectangle.Empty;
+            return null;
+        }
+
+        // We're in a valid room - get the bounds and store it
+        Rectangle currentRoom = new(WorldGen.roomX1, WorldGen.roomY1,
+            WorldGen.roomX2 - WorldGen.roomX1, WorldGen.roomY2 - WorldGen.roomY1);
+        _lastAnnouncedRoom = currentRoom;
+
+        // First check if an NPC lives here
+        string? occupantName = FindRoomOccupant();
+        if (occupantName != null)
+        {
+            return BuildModeNarrationCatalog.HousingOccupied(occupantName);
+        }
+
+        // No occupant - do the full housing check
+        if (WorldGen.MoveTownNPC(playerTile.X, playerTile.Y, -1))
+        {
+            return BuildModeNarrationCatalog.HousingSuitable();
+        }
+
+        // Housing check failed - error messages were output via Main.NewText
+        // which will be announced separately by the existing hook
+        return null;
+    }
+
     private void CheckAndAnnounceHousing(int tileX, int tileY)
     {
         if (!WorldGen.InWorld(tileX, tileY, 10))
@@ -113,10 +171,14 @@ internal sealed class BuildModeHousingAnnouncer
         }
 
         // No occupant - trigger the full housing check using MoveTownNPC with -1 for query mode.
-        // This outputs messages via Main.NewText which are caught by
-        // TryAnnounceHousingQuery in InGameNarrationSystem and announced.
-        // This will report missing furniture or "suitable housing" status.
-        WorldGen.MoveTownNPC(tileX, tileY, -1);
+        // MoveTownNPC outputs error messages via Main.NewText which are caught by
+        // TryAnnounceHousingQuery in InGameNarrationSystem. However, it returns true
+        // silently on success without outputting a message, so we announce success directly.
+        if (WorldGen.MoveTownNPC(tileX, tileY, -1))
+        {
+            // Housing is valid - announce success
+            ScreenReaderService.Announce(BuildModeNarrationCatalog.HousingSuitable(), force: true);
+        }
     }
 
     /// <summary>

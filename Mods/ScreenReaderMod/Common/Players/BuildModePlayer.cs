@@ -216,7 +216,16 @@ public sealed class BuildModePlayer : ModPlayer
             ResetSelection();
             _housingAnnouncer.Reset();
             _state = BuildModeState.AwaitingFirstCorner;
-            ScreenReaderService.Announce(BuildModeNarrationCatalog.Enabled(outlineMode: false));
+
+            // Get initial housing status to include in announcement
+            string? housingStatus = _housingAnnouncer.GetInitialHousingStatus(Player);
+            string announcement = BuildModeNarrationCatalog.Enabled(outlineMode: false);
+            if (!string.IsNullOrEmpty(housingStatus))
+            {
+                announcement = $"{announcement} {housingStatus}";
+            }
+
+            ScreenReaderService.Announce(announcement);
             return;
         }
 

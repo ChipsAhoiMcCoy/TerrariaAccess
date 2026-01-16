@@ -1,6 +1,7 @@
 #nullable enable
 using Microsoft.Xna.Framework;
 using Microsoft.Xna.Framework.Input;
+using ScreenReaderMod.Common.Services;
 using Terraria;
 using Terraria.Audio;
 using Terraria.GameInput;
@@ -185,9 +186,17 @@ internal sealed class HousingQueryHandler
             return;
         }
 
-        // Trigger the housing query - this will output the result via Main.NewText,
-        // which is hooked by TryAnnounceHousingQuery in InGameNarrationSystem
-        WorldGen.MoveTownNPC(tileX, tileY, -1);
+        // Trigger the housing query - MoveTownNPC outputs error messages via Main.NewText,
+        // but returns true silently on success. We announce success directly via ScreenReaderService
+        // to ensure reliable feedback regardless of how other code paths interact.
+        if (WorldGen.MoveTownNPC(tileX, tileY, -1))
+        {
+            // Housing is valid - announce success directly
+            ScreenReaderService.Announce(Lang.inter[39].Value, force: true);
+        }
+
+        // Play tick sound to match native gamepad behavior
+        SoundEngine.PlaySound(SoundID.MenuTick);
     }
 
     private static void TriggerNpcMoveToPlayerPosition(int npcIndex)
