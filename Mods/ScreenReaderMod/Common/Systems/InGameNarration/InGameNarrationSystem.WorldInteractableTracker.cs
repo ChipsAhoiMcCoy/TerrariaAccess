@@ -135,7 +135,22 @@ public sealed partial class InGameNarrationSystem
                     frameHeight: 36,
                     widthTiles: 2,
                     heightTiles: 2,
-                    profile: InteractableCueProfile.BeeLarva)));
+                    profile: InteractableCueProfile.BeeLarva),
+                new TileInteractableDefinition(
+                    tileTypes: new[] { (int)TileID.LihzahrdAltar },
+                    frameWidth: 54,
+                    frameHeight: 36,
+                    widthTiles: 3,
+                    heightTiles: 2,
+                    profile: InteractableCueProfile.LihzahrdAltar),
+                new TileInteractableDefinition(
+                    tileTypes: new[] { (int)TileID.Crystals },
+                    frameWidth: 18,
+                    frameHeight: 18,
+                    widthTiles: 1,
+                    heightTiles: 1,
+                    profile: InteractableCueProfile.GelatinCrystal,
+                    tilePredicate: static tile => tile.TileFrameX >= 324)));
 
             RegisterSource(new OreInteractableSource(
                 scanRadiusTiles: 90f));
@@ -1548,6 +1563,41 @@ public sealed partial class InGameNarrationSystem
             maxAudibleDistanceTiles: 92f,
             minIntervalFrames: SweepIntervalFrames,
             maxIntervalFrames: 48,
+            soundStyle: SoundID.Shatter);
+
+        /// <summary>
+        /// Lihzahrd Altar - ancient stone altar found in the Lihzahrd Temple (Jungle Temple).
+        /// Used to summon Golem by inserting a Lihzahrd Power Cell.
+        /// Deep, resonant tone evoking ancient temple stonework.
+        /// </summary>
+        public static InteractableCueProfile LihzahrdAltar { get; } = new(
+            id: "lihzahrd-altar",
+            fundamentalFrequency: 400f,
+            partialMultipliers: new[] { 1.4f, 1.8f, 2.2f },
+            envelope: SynthesizedSoundFactory.ToneEnvelopes.WorldCue,
+            durationSeconds: 0.24f,
+            baseGain: 0.4f,
+            maxAudibleDistanceTiles: 85f,
+            minIntervalFrames: SweepIntervalFrames,
+            maxIntervalFrames: 54,
+            arrivalLabel: "a Lihzahrd altar");
+
+        /// <summary>
+        /// Gelatin Crystal - shimmering pink crystal found in the Underground Hallow.
+        /// Used to summon Queen Slime when picked up or interacted with.
+        /// Bright, crystalline tone with shimmery harmonics.
+        /// </summary>
+        public static InteractableCueProfile GelatinCrystal { get; } = new(
+            id: "gelatin-crystal",
+            fundamentalFrequency: 1040f,
+            partialMultipliers: new[] { 1.5f, 2f, 2.4f },
+            envelope: SynthesizedSoundFactory.ToneEnvelopes.WorldCue,
+            durationSeconds: 0.22f,
+            baseGain: 0.4f,
+            maxAudibleDistanceTiles: 90f,
+            minIntervalFrames: SweepIntervalFrames,
+            maxIntervalFrames: 50,
+            arrivalLabel: "a Gelatin Crystal",
             soundStyle: SoundID.Shatter);
     }
 }
