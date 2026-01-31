@@ -34,6 +34,37 @@ public class ScreenReaderModConfig : ModConfig
     [DefaultValue(true)]
     public bool SpatialInventoryAudio { get; set; } = true;
 
+    // Volume controls
+    [DefaultValue(1f)]
+    [Range(0f, 1f)]
+    [Slider]
+    public float FootstepVolume { get; set; } = 1f;
+
+    [DefaultValue(1f)]
+    [Range(0f, 1f)]
+    [Slider]
+    public float MultiplayerFootstepVolume { get; set; } = 1f;
+
+    [DefaultValue(1f)]
+    [Range(0f, 1f)]
+    [Slider]
+    public float EnemySoundVolume { get; set; } = 1f;
+
+    [DefaultValue(1f)]
+    [Range(0f, 1f)]
+    [Slider]
+    public float GuidanceVolume { get; set; } = 1f;
+
+    [DefaultValue(1f)]
+    [Range(0f, 1f)]
+    [Slider]
+    public float InteractableCueVolume { get; set; } = 1f;
+
+    [DefaultValue(1f)]
+    [Range(0f, 1f)]
+    [Slider]
+    public float CursorVolume { get; set; } = 1f;
+
     public override void OnLoaded()
     {
         Instance = this;

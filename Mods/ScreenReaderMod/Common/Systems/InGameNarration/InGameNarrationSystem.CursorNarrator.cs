@@ -1016,7 +1016,8 @@ public sealed partial class InGameNarrationSystem
                 sample.DistanceTiles,
                 CursorLoudnessReferenceTiles,
                 minFactor: 0.4f);
-            float volume = loudness * Main.soundVolume * AudioVolumeDefaults.WorldCueVolumeScale;
+            float configVolume = ScreenReaderModConfig.Instance?.CursorVolume ?? 1f;
+            float volume = loudness * configVolume * Main.soundVolume * AudioVolumeDefaults.WorldCueVolumeScale;
 
             SoundEffectInstance instance = tone.CreateInstance();
             instance.IsLooped = false;

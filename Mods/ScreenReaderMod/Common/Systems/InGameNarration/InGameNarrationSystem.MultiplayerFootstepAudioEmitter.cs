@@ -235,7 +235,8 @@ public sealed partial class InGameNarrationSystem
             float pitchMultiplier = 1f + (sample.Pitch * 0.3f);
             float frequency = baseFrequency * pitchMultiplier;
 
-            FootstepToneProvider.Play(frequency, sample.Volume, useTriangleWave: false, sample.Pan);
+            float configVolume = ScreenReaderModConfig.Instance?.MultiplayerFootstepVolume ?? 1f;
+            FootstepToneProvider.Play(frequency, sample.Volume * configVolume, useTriangleWave: false, sample.Pan);
         }
     }
 }

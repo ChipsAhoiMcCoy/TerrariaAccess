@@ -145,7 +145,8 @@ public sealed partial class InGameNarrationSystem
         private void PlayStep(Player player, bool onPlatform, bool onHarmfulTile)
         {
             ComputeStepAudio(player, onPlatform, out float frequency, out float loudness);
-            FootstepToneProvider.Play(frequency, loudness, useTriangleWave: onHarmfulTile);
+            float configVolume = ScreenReaderModConfig.Instance?.FootstepVolume ?? 1f;
+            FootstepToneProvider.Play(frequency, loudness * configVolume, useTriangleWave: onHarmfulTile);
         }
 
         private void ResetState()
@@ -364,7 +365,8 @@ public sealed partial class InGameNarrationSystem
                 return;
             }
 
-            _harmfulLoopInstance.Volume = MathHelper.Clamp(loudness, 0f, 1f) * Main.soundVolume * AudioVolumeDefaults.WorldCueVolumeScale;
+            float configVolume = ScreenReaderModConfig.Instance?.FootstepVolume ?? 1f;
+            _harmfulLoopInstance.Volume = MathHelper.Clamp(loudness * configVolume, 0f, 1f) * Main.soundVolume * AudioVolumeDefaults.WorldCueVolumeScale;
         }
 
         private static void ComputeHarmfulToneAudio(Player player, out float frequency, out float loudness)
@@ -429,7 +431,8 @@ public sealed partial class InGameNarrationSystem
                     EdgeBeepVolume);
 
                 // Play a beep (pure sine wave) with spatial pan and volume
-                FootstepToneProvider.Play(EdgeBeepFrequency, sample.Volume, useTriangleWave: false, sample.Pan);
+                float configVolume = ScreenReaderModConfig.Instance?.FootstepVolume ?? 1f;
+                FootstepToneProvider.Play(EdgeBeepFrequency, sample.Volume * configVolume, useTriangleWave: false, sample.Pan);
             }
         }
 

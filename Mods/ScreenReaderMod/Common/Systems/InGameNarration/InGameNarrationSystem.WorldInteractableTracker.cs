@@ -602,12 +602,13 @@ public sealed partial class InGameNarrationSystem
                 entry.Candidate.WorldPosition,
                 Main.soundVolume);
             InteractableCueProfile profile = entry.Candidate.Profile;
+            float configVolume = ScreenReaderModConfig.Instance?.InteractableCueVolume ?? 1f;
 
             if (profile.SoundStyle.HasValue)
             {
                 // For SoundStyle with position, Terraria handles pan and volume falloff natively.
                 // We only apply our pitch offset and the cue volume scales.
-                float soundStyleVolumeScale = (isPrimaryCue ? 1f : SecondaryCueVolumeScale) * AudioVolumeDefaults.WorldCueVolumeScale;
+                float soundStyleVolumeScale = (isPrimaryCue ? 1f : SecondaryCueVolumeScale) * configVolume * AudioVolumeDefaults.WorldCueVolumeScale;
                 if (soundStyleVolumeScale <= 0f)
                 {
                     return;
@@ -623,7 +624,7 @@ public sealed partial class InGameNarrationSystem
 
             // For synthesized tones, we apply pan/pitch/volume manually since we're not using SoundEngine.
             float scaledVolume = MathHelper.Clamp(
-                sample.Volume * (isPrimaryCue ? 1f : SecondaryCueVolumeScale) * AudioVolumeDefaults.WorldCueVolumeScale,
+                sample.Volume * (isPrimaryCue ? 1f : SecondaryCueVolumeScale) * configVolume * AudioVolumeDefaults.WorldCueVolumeScale,
                 0f,
                 1f);
             if (scaledVolume <= 0f)

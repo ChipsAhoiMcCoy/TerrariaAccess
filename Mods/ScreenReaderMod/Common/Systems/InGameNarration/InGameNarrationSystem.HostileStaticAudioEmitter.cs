@@ -230,7 +230,8 @@ public sealed partial class InGameNarrationSystem
                 candidate.WorldPosition,
                 Main.soundVolume);
 
-            float volume = MathHelper.Clamp(sample.Volume * AudioVolumeDefaults.WorldCueVolumeScale, 0f, 1f);
+            float configVolume = ScreenReaderModConfig.Instance?.EnemySoundVolume ?? 1f;
+            float volume = MathHelper.Clamp(sample.Volume * configVolume * AudioVolumeDefaults.WorldCueVolumeScale, 0f, 1f);
             if (volume <= 0f)
             {
                 return;

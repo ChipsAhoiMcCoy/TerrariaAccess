@@ -70,7 +70,8 @@ public sealed partial class GuidanceSystem
             instance.IsLooped = false;
             instance.Pan = sample.Pan;
             instance.Pitch = sample.Pitch;
-            instance.Volume = MathHelper.Clamp(sample.Volume * AudioVolumeDefaults.WorldCueVolumeScale, 0f, 1f);
+            float configVolume = ScreenReaderModConfig.Instance?.GuidanceVolume ?? 1f;
+            instance.Volume = MathHelper.Clamp(sample.Volume * configVolume * AudioVolumeDefaults.WorldCueVolumeScale, 0f, 1f);
 
             try
             {
