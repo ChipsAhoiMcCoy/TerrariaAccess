@@ -919,89 +919,14 @@ public sealed partial class InGameNarrationSystem
 
         private static string ResolveChestLabel(Point anchor, Tile tile)
         {
-            string name = string.Empty;
-            int chestIndex = FindChestAtTile(anchor.X, anchor.Y, tile.TileType);
-            if (chestIndex >= 0 && chestIndex < Main.chest.Length)
+            // Always use CursorDescriptors which properly combines user-assigned names with chest type
+            // e.g., a Wooden Chest named "Bar and Ore" becomes '"Bar and Ore" Wooden Chest'
+            if (CursorDescriptors.TryDescribe(anchor.X, anchor.Y, out CursorDescriptorService.CursorDescriptor descriptor) && !string.IsNullOrWhiteSpace(descriptor.Name))
             {
-                Chest? chest = Main.chest[chestIndex];
-                if (chest is not null)
-                {
-                    name = TextSanitizer.Clean(chest.name);
-                }
+                return descriptor.Name;
             }
 
-            if (string.IsNullOrWhiteSpace(name))
-            {
-                if (CursorDescriptors.TryDescribe(anchor.X, anchor.Y, out CursorDescriptorService.CursorDescriptor descriptor) && !string.IsNullOrWhiteSpace(descriptor.Name))
-                {
-                    name = descriptor.Name;
-                }
-            }
-
-            return string.IsNullOrWhiteSpace(name) ? "Chest" : name;
-        }
-
-        private static int FindChestAtTile(int tileX, int tileY, int tileType)
-        {
-            // First try the standard guessing method
-            int chestIndex = Chest.FindChestByGuessing(tileX, tileY);
-            if (chestIndex >= 0)
-            {
-                return chestIndex;
-            }
-
-            // Fallback: Find origin tile using TileObjectData and search directly
-            if (!WorldGen.InWorld(tileX, tileY))
-            {
-                return -1;
-            }
-
-            Tile tile = Main.tile[tileX, tileY];
-            if (!tile.HasTile)
-            {
-                return -1;
-            }
-
-            TileObjectData? tileData = TileObjectData.GetTileData(tileType, 0);
-            if (tileData is null)
-            {
-                return -1;
-            }
-
-            // Calculate origin from frame coordinates
-            int frameX = tile.TileFrameX;
-            int frameY = tile.TileFrameY;
-            int tileWidth = tileData.CoordinateWidth + tileData.CoordinatePadding;
-            int tileHeight = tileData.CoordinateHeights[0] + tileData.CoordinatePadding;
-
-            // Determine which sub-tile we're on
-            int subX = (tileWidth > 0) ? (frameX % (tileData.Width * tileWidth)) / tileWidth : 0;
-            int subY = (tileHeight > 0) ? (frameY % (tileData.Height * tileHeight)) / tileHeight : 0;
-
-            int originX = tileX - subX;
-            int originY = tileY - subY;
-
-            // Try finding chest at calculated origin
-            chestIndex = Chest.FindChest(originX, originY);
-            if (chestIndex >= 0)
-            {
-                return chestIndex;
-            }
-
-            // Last resort: scan nearby for matching chest
-            for (int dx = -2; dx <= 2; dx++)
-            {
-                for (int dy = -2; dy <= 2; dy++)
-                {
-                    chestIndex = Chest.FindChest(tileX + dx, tileY + dy);
-                    if (chestIndex >= 0)
-                    {
-                        return chestIndex;
-                    }
-                }
-            }
-
-            return -1;
+            return "Chest";
         }
     }
 

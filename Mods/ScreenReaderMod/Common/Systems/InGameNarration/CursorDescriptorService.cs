@@ -41,6 +41,9 @@ internal sealed class CursorDescriptorService
         TileID.TrapdoorOpen,
         TileID.TallGateClosed,
         TileID.TallGateOpen,
+        TileID.Containers,
+        TileID.Containers2,
+        TileID.Dressers,
     };
 
     /// <summary>
@@ -122,8 +125,20 @@ internal sealed class CursorDescriptorService
             return true;
         }
 
-        if (tileType != TileID.Banners && TryDescribeTileFromItemPlacement(tile, tileType, out name))
+        // Skip TryDescribeTileFromItemPlacement for chests - item names like "Chest" are too generic
+        // Instead, let chests fall through to the MapHelper lookup which gives proper names like "Wooden Chest"
+        if (tileType != TileID.Banners && !IsChestTile(tileType) && TryDescribeTileFromItemPlacement(tile, tileType, out name))
         {
+            name = AppendTileStateLabels(tile, name);
+            descriptor = BuildDescriptor(tileType, name);
+            return true;
+        }
+
+        // Handle chest tiles using map name lookup for proper type names
+        if (IsChestTile(tileType))
+        {
+            name = ResolveChestTypeName(tile, tileType);
+            OverrideChestName(tileX, tileY, tileType, ref name);
             name = AppendTileStateLabels(tile, name);
             descriptor = BuildDescriptor(tileType, name);
             return true;
@@ -469,6 +484,44 @@ internal sealed class CursorDescriptorService
                tileType == TileID.Dressers;
     }
 
+    /// <summary>
+    /// Resolves the proper chest type name (e.g., "Wooden Chest", "Frozen Chest") using item lookup then map lookup.
+    /// </summary>
+    private static string ResolveChestTypeName(Tile tile, int tileType)
+    {
+        // Calculate chest style from frame - chests are 2 tiles wide (36 pixels), dressers are 3 wide (54 pixels)
+        int frameWidth = tileType == TileID.Dressers ? 54 : 36;
+        int style = tile.TileFrameX / frameWidth;
+
+        // First try item-based lookup for more specific names (e.g., "Gold Chest" vs just "Chest")
+        if (TryResolveStyleItemType(tileType, style, out int itemType) && itemType > ItemID.None)
+        {
+            string itemName = Lang.GetItemNameValue(itemType);
+            if (!string.IsNullOrWhiteSpace(itemName))
+            {
+                return itemName;
+            }
+        }
+
+        // Fall back to map lookup
+        try
+        {
+            int lookup = MapHelper.TileToLookup(tileType, style);
+            string? mapName = Lang.GetMapObjectName(lookup);
+            if (!string.IsNullOrWhiteSpace(mapName))
+            {
+                return mapName;
+            }
+        }
+        catch
+        {
+            // Fall through to default
+        }
+
+        // Fallback to generic name
+        return tileType == TileID.Dressers ? "Dresser" : "Chest";
+    }
+
     private static bool TryDescribeBanner(Tile tile, out string? name)
     {
         name = null;
@@ -517,6 +570,13 @@ internal sealed class CursorDescriptorService
         else if (FrameYBasedStyleTileTypes.Contains(tileType))
         {
             style = tile.TileFrameY / 18;
+        }
+        else if (IsChestTile(tileType))
+        {
+            // Chests are 2 tiles wide (36 pixels per style in frameX)
+            // Dressers are 3 tiles wide (54 pixels per style in frameX)
+            int frameWidth = tileType == TileID.Dressers ? 54 : 36;
+            style = tile.TileFrameX / frameWidth;
         }
         else
         {
