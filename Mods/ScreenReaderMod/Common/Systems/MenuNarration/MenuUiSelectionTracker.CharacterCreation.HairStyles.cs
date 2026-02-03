@@ -7,7 +7,7 @@ internal sealed partial class MenuUiSelectionTracker
 {
     private const int CharacterCreationTabCount = 10;
 
-    private static readonly string?[] HairStyleDescriptions =
+    internal static readonly string?[] HairStyleDescriptions =
     {
         "Large, wild, messy hair,",
         "Small, tousled, messy hair,",

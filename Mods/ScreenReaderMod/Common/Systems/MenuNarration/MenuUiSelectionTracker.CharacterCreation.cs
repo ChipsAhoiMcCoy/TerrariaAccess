@@ -293,6 +293,13 @@ internal sealed partial class MenuUiSelectionTracker
 
     private static string DescribeHairStyleOption(UIElement root, UIElement element)
     {
+        // If HairStyleNavigationSystem is actively handling navigation, defer to it
+        // to avoid duplicate announcements
+        if (HairStyleNavigationSystem.IsHandlingNavigation)
+        {
+            return string.Empty;
+        }
+
         int? styleId = HairStyleIdField?.GetValue(element) is int value ? value : null;
         int totalStyles = HairStyleDescriptions.Length;
         string? ordinal = styleId.HasValue ? $"{styleId.Value + 1} of {totalStyles}" : null;
