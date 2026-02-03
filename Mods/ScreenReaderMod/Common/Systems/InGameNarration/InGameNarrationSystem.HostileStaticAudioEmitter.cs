@@ -42,6 +42,13 @@ public sealed partial class InGameNarrationSystem
                 return;
             }
 
+            // Suppress when guidance system is actively tracking hostiles
+            if (GuidanceSystem.IsHostileMobTrackingActive)
+            {
+                Reset();
+                return;
+            }
+
             if (!LockOnHelper.CanUseLockonSystem())
             {
                 Reset();

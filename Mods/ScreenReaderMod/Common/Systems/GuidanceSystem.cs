@@ -178,7 +178,15 @@ public sealed partial class GuidanceSystem : ModSystem
             }
             else if (Main.GameUpdateCount >= (uint)_nextPingUpdateFrame)
             {
-                EmitPing(player, targetPosition);
+                // Use hostile ping for hostile mob tracking, waypoint ping for everything else
+                if (_selectionMode == SelectionMode.HostileMob)
+                {
+                    EmitHostilePing(player, targetPosition);
+                }
+                else
+                {
+                    EmitPing(player, targetPosition);
+                }
                 _nextPingUpdateFrame = ComputeNextPingFrame(player, targetPosition);
                 LogPing($"Rescheduled next ping at frame {_nextPingUpdateFrame} after emit");
             }
@@ -218,7 +226,16 @@ public sealed partial class GuidanceSystem : ModSystem
         }
 
         SweepTarget target = SweepOrder[_sweepCursor];
-        EmitPing(player, target.WorldPosition);
+
+        // Use hostile ping for hostile mob sweep, waypoint ping for everything else
+        if (_selectionMode == SelectionMode.HostileMob)
+        {
+            EmitHostilePing(player, target.WorldPosition);
+        }
+        else
+        {
+            EmitPing(player, target.WorldPosition);
+        }
 
         _sweepCursor++;
         if (_sweepCursor >= SweepOrder.Count)
@@ -472,6 +489,7 @@ public sealed partial class GuidanceSystem : ModSystem
         RefreshDroppedItemEntries(player);
         RefreshCritterEntries(player);
         RefreshPlantlifeEntries(player);
+        RefreshHostileMobEntries(player);
 
         _lastTargetRefreshFrame = Main.GameUpdateCount;
         _lastTargetRefreshPlayerIndex = player.whoAmI;
@@ -852,7 +870,8 @@ public sealed partial class GuidanceSystem : ModSystem
         SelectionMode.Waypoint,
         SelectionMode.DroppedItem,
         SelectionMode.Critter,
-        SelectionMode.Plantlife
+        SelectionMode.Plantlife,
+        SelectionMode.HostileMob
     };
 
     private readonly record struct TeleportTarget(Vector2 Anchor, string Label, int Style);
@@ -1070,6 +1089,27 @@ public sealed partial class GuidanceSystem : ModSystem
                 BeginCategoryAnnouncement(SelectionMode.Plantlife);
                 RescheduleGuidancePing(player);
                 AnnouncePlantlifeEntry(player, NearbyPlantlife.Count);
+                return;
+            case SelectionMode.HostileMob:
+                _selectionMode = SelectionMode.HostileMob;
+                ExplorationTargetRegistry.SetSelectedTarget(null);
+                RefreshHostileMobEntries(player);
+                if (NearbyHostileMobs.Count == 0)
+                {
+                    _selectedHostileMobIndex = -1;
+                    ClearCategoryAnnouncement();
+                    RescheduleGuidancePing(player);
+                    AnnounceCategorySelection("Enemies", "No hostile enemies on screen.");
+                    return;
+                }
+
+                // No "All" mode for hostile mobs - start at first enemy
+                _selectedHostileMobIndex = 0;
+
+                BeginCategoryAnnouncement(SelectionMode.HostileMob);
+                RescheduleGuidancePing(player);
+                AnnounceHostileMobSelection(player);
+                EmitHostileMobSelectionPing(player);
                 return;
         }
     }
@@ -1324,6 +1364,44 @@ public sealed partial class GuidanceSystem : ModSystem
                 }
                 return;
             }
+            case SelectionMode.HostileMob:
+            {
+                RefreshHostileMobEntries(player);
+                int totalHostiles = NearbyHostileMobs.Count;
+                if (totalHostiles == 0)
+                {
+                    _selectedHostileMobIndex = -1;
+                    ClearCategoryAnnouncement();
+                    RescheduleGuidancePing(player);
+                    AnnounceCategorySelection("Enemies", "No hostile enemies on screen.");
+                    return;
+                }
+
+                // No "All" mode - wrap directly between first and last
+                if (_selectedHostileMobIndex < 0)
+                {
+                    _selectedHostileMobIndex = 0;
+                }
+                else
+                {
+                    _selectedHostileMobIndex += direction;
+                    if (_selectedHostileMobIndex < 0)
+                    {
+                        // Wrap to last enemy
+                        _selectedHostileMobIndex = totalHostiles - 1;
+                    }
+                    else if (_selectedHostileMobIndex >= totalHostiles)
+                    {
+                        // Wrap to first enemy
+                        _selectedHostileMobIndex = 0;
+                    }
+                }
+
+                RescheduleGuidancePing(player);
+                AnnounceHostileMobSelection(player);
+                EmitHostileMobSelectionPing(player);
+                return;
+            }
             default:
                 ScreenReaderService.Announce("Select a waypoint, player, NPC, or crafting category to browse entries.");
                 return;
@@ -1555,6 +1633,26 @@ public sealed partial class GuidanceSystem : ModSystem
         AnnouncePlantlifeSelection(player);
     }
 
+    private static void AnnounceHostileMobSelection(Player player)
+    {
+        if (_selectionMode != SelectionMode.HostileMob)
+        {
+            return;
+        }
+
+        if (!TryGetSelectedHostileMob(player, out GuidanceEntry entry))
+        {
+            ClearCategoryAnnouncement();
+            AnnounceCategorySelection("Enemies", "No hostile enemies on screen.");
+            return;
+        }
+
+        int totalEntries = NearbyHostileMobs.Count;
+        int position = _selectedHostileMobIndex + 1;
+        string announcement = ComposeEntityAnnouncement(entry.DisplayName, player, entry.WorldPosition, position, totalEntries);
+        AnnounceSelectedEntry(SelectionMode.HostileMob, "Enemies", announcement);
+    }
+
     private static bool TryGetSelectedCritter(Player player, out GuidanceEntry entry)
     {
         entry = default;
@@ -1590,6 +1688,45 @@ public sealed partial class GuidanceSystem : ModSystem
         }
 
         entry = NearbyPlantlife[_selectedPlantlifeIndex];
+        return true;
+    }
+
+    private static bool TryGetSelectedHostileMob(Player player, out GuidanceEntry entry)
+    {
+        entry = default;
+        if (_selectionMode != SelectionMode.HostileMob)
+        {
+            return false;
+        }
+
+        EnsureTargetsUpToDate(player);
+        if (_selectedHostileMobIndex < 0 || _selectedHostileMobIndex >= NearbyHostileMobs.Count)
+        {
+            _selectedHostileMobIndex = -1;
+            return false;
+        }
+
+        entry = NearbyHostileMobs[_selectedHostileMobIndex];
+
+        // Validate the NPC still exists and is active
+        if (entry.Index < 0 || entry.Index >= Main.maxNPCs)
+        {
+            return false;
+        }
+
+        NPC npc = Main.npc[entry.Index];
+        if (!npc.active || npc.friendly || npc.townNPC)
+        {
+            RefreshHostileMobEntries(player);
+            if (_selectedHostileMobIndex < 0 || _selectedHostileMobIndex >= NearbyHostileMobs.Count)
+            {
+                _selectedHostileMobIndex = -1;
+                return false;
+            }
+
+            entry = NearbyHostileMobs[_selectedHostileMobIndex];
+        }
+
         return true;
     }
 
@@ -2106,6 +2243,10 @@ public sealed partial class GuidanceSystem : ModSystem
                 worldPosition = plantlife.WorldPosition;
                 label = SanitizeLabel(plantlife.DisplayName);
                 return true;
+            case SelectionMode.HostileMob when TryGetSelectedHostileMob(player, out GuidanceEntry hostileMob):
+                worldPosition = hostileMob.WorldPosition;
+                label = SanitizeLabel(hostileMob.DisplayName);
+                return true;
             default:
                 worldPosition = default;
                 label = string.Empty;
@@ -2205,6 +2346,8 @@ public sealed partial class GuidanceSystem : ModSystem
                 => new ProximityTargetKey(SelectionMode.Critter, critterEntry.Index),
             SelectionMode.Plantlife when TryGetSelectedPlantlife(player, out GuidanceEntry plantlifeEntry)
                 => new ProximityTargetKey(SelectionMode.Plantlife, HashCode.Combine(plantlifeEntry.Anchor.X, plantlifeEntry.Anchor.Y)),
+            SelectionMode.HostileMob when TryGetSelectedHostileMob(player, out GuidanceEntry hostileMobEntry)
+                => new ProximityTargetKey(SelectionMode.HostileMob, hostileMobEntry.Index),
             _ => new ProximityTargetKey(SelectionMode.None, -1)
         };
     }

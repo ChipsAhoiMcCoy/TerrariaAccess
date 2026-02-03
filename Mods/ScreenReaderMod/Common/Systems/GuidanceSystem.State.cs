@@ -25,7 +25,8 @@ public sealed partial class GuidanceSystem
         Waypoint,
         DroppedItem,
         Critter,
-        Plantlife
+        Plantlife,
+        HostileMob
     }
 
     private static SelectionMode _selectionMode = SelectionMode.None;
@@ -37,6 +38,7 @@ public sealed partial class GuidanceSystem
     private static int _selectedDroppedItemIndex = -1;
     private static int _selectedCritterIndex = -1;
     private static int _selectedPlantlifeIndex = -1;
+    private static int _selectedHostileMobIndex = -1;
     private static ExplorationTargetRegistry.ExplorationTarget? _lastExplorationSelection;
 
     // Sweep state for "All" mode pinging
@@ -111,6 +113,7 @@ public sealed partial class GuidanceSystem
         NearbyDroppedItems.Clear();
         NearbyCritters.Clear();
         NearbyPlantlife.Clear();
+        NearbyHostileMobs.Clear();
         _selectedIndex = -1;
         _selectedNpcIndex = -1;
         _selectedPlayerIndex = -1;
@@ -119,6 +122,7 @@ public sealed partial class GuidanceSystem
         _selectedDroppedItemIndex = -1;
         _selectedCritterIndex = -1;
         _selectedPlantlifeIndex = -1;
+        _selectedHostileMobIndex = -1;
         _lastExplorationSelection = null;
         _selectionMode = SelectionMode.None;
         SweepOrder.Clear();

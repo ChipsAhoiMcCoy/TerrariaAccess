@@ -67,6 +67,8 @@ public sealed partial class GuidanceSystem
     private static readonly List<GuidanceEntry> NearbyPlantlife = new();
     private static readonly HashSet<Point> PlantlifeAnchorScratch = new();
 
+    private static readonly List<GuidanceEntry> NearbyHostileMobs = new();
+
     private static readonly int[] PlantlifeTileTypes =
     {
         TileID.MatureHerbs,
@@ -901,5 +903,95 @@ public sealed partial class GuidanceSystem
             _ => "Herb"
         };
         return $"{prefix} {herbName}";
+    }
+
+    private static void RefreshHostileMobEntries(Player player)
+    {
+        int preservedNpcIndex = -1;
+        if (_selectedHostileMobIndex >= 0 && _selectedHostileMobIndex < NearbyHostileMobs.Count)
+        {
+            preservedNpcIndex = NearbyHostileMobs[_selectedHostileMobIndex].Index;
+        }
+
+        NearbyHostileMobs.Clear();
+        if (player is null || !player.active)
+        {
+            _selectedHostileMobIndex = -1;
+            return;
+        }
+
+        Vector2 origin = player.Center;
+        for (int i = 0; i < Main.maxNPCs; i++)
+        {
+            NPC npc = Main.npc[i];
+            if (!IsEligibleHostileMob(npc, player))
+            {
+                continue;
+            }
+
+            if (!IsWorldPositionApproximatelyOnScreen(npc.Center))
+            {
+                continue;
+            }
+
+            float distanceTiles = Vector2.Distance(origin, npc.Center) / 16f;
+            if (distanceTiles > ScanRangeTiles)
+            {
+                continue;
+            }
+
+            string displayName = ResolveHostileMobDisplayName(npc);
+            NearbyHostileMobs.Add(GuidanceEntry.CreateHostileMob(i, displayName, npc.Center, distanceTiles));
+        }
+
+        NearbyHostileMobs.Sort((left, right) => left.DistanceTiles.CompareTo(right.DistanceTiles));
+
+        if (NearbyHostileMobs.Count == 0)
+        {
+            _selectedHostileMobIndex = -1;
+            return;
+        }
+
+        if (preservedNpcIndex >= 0)
+        {
+            int restoredIndex = NearbyHostileMobs.FindIndex(entry => entry.Index == preservedNpcIndex);
+            if (restoredIndex >= 0)
+            {
+                _selectedHostileMobIndex = restoredIndex;
+                return;
+            }
+        }
+
+        // Preserve "All" mode (-1) for categories that support it; only clamp out-of-bounds positive indices
+        if (_selectedHostileMobIndex >= NearbyHostileMobs.Count)
+        {
+            _selectedHostileMobIndex = NearbyHostileMobs.Count - 1;
+        }
+    }
+
+    private static bool IsEligibleHostileMob(NPC npc, Player player)
+    {
+        if (!npc.active || npc.lifeMax <= 5 || npc.damage <= 0)
+        {
+            return false;
+        }
+
+        if (!npc.CanBeChasedBy(player, ignoreDontTakeDamage: false))
+        {
+            return false;
+        }
+
+        if (npc.townNPC || npc.friendly)
+        {
+            return false;
+        }
+
+        return true;
+    }
+
+    private static string ResolveHostileMobDisplayName(NPC npc)
+    {
+        string name = Lang.GetNPCNameValue(npc.type);
+        return !string.IsNullOrWhiteSpace(name) ? name : "Enemy";
     }
 }

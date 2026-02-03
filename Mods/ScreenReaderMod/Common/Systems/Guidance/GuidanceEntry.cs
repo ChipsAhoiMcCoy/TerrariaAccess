@@ -13,7 +13,8 @@ internal enum GuidanceCategory
     Player,
     DroppedItem,
     Critter,
-    Plantlife
+    Plantlife,
+    HostileMob
 }
 
 /// <summary>
@@ -106,4 +107,10 @@ internal readonly struct GuidanceEntry
     /// </summary>
     public static GuidanceEntry CreatePlantlife(Point anchor, string displayName, Vector2 worldPosition, float distanceTiles)
         => new(GuidanceCategory.Plantlife, -1, displayName, worldPosition, distanceTiles, anchor);
+
+    /// <summary>
+    /// Creates a hostile mob guidance entry.
+    /// </summary>
+    public static GuidanceEntry CreateHostileMob(int npcIndex, string displayName, Vector2 worldPosition, float distanceTiles)
+        => new(GuidanceCategory.HostileMob, npcIndex, displayName, worldPosition, distanceTiles);
 }
