@@ -63,6 +63,16 @@ Mods: {
 					Label: Gamepad Emulation
 					Tooltip: When enabled, keyboard inputs are translated to gamepad inputs for UI navigation. Disable this if you are using a physical controller. Toggle with F6.
 				}
+
+				ChunkMinerEnabled: {
+					Label: Chunk Miner
+					Tooltip: When enabled, mining an ore or gem will automatically mine all connected tiles of the same type in the vein. Great for quickly harvesting resource deposits.
+				}
+
+				ChunkMinerMaxTiles: {
+					Label: Chunk Miner Max Tiles
+					Tooltip: Maximum number of tiles that can be mined at once when chunk mining. Higher values allow larger veins to be mined in one hit, but may cause brief lag on very large deposits.
+				}
 			}
 		}
 
@@ -531,6 +541,16 @@ Configs: {
 
 		GamepadEmulationEnabled: {
 			Label: Gamepad Emulation Enabled
+			Tooltip: ""
+		}
+
+		ChunkMinerEnabled: {
+			Label: Chunk Miner
+			Tooltip: ""
+		}
+
+		ChunkMinerMaxTiles: {
+			Label: Chunk Miner Max Tiles
 			Tooltip: ""
 		}
 	}

@@ -65,6 +65,15 @@ public class ScreenReaderModConfig : ModConfig
     [Slider]
     public float CursorVolume { get; set; } = 1f;
 
+    // Chunk Mining
+    [DefaultValue(true)]
+    public bool ChunkMinerEnabled { get; set; } = true;
+
+    [DefaultValue(100)]
+    [Range(10, 500)]
+    [Slider]
+    public int ChunkMinerMaxTiles { get; set; } = 100;
+
     public override void OnLoaded()
     {
         Instance = this;
