@@ -361,6 +361,60 @@ public sealed class GamepadEmulationSystem : ModSystem
         pack.JustPressed.KeyStatus[TriggerNames.SmartSelect] = false;
     }
 
+    /// <summary>
+    /// Aggressively suppresses all Shift-based triggers when gamepad emulation is enabled.
+    /// This prevents any Shift key bindings from triggering unexpected behavior.
+    /// Only the mod's own SmartSelect keybind (F key) is allowed to trigger SmartSelect.
+    /// </summary>
+    private static void SuppressAllShiftTriggers()
+    {
+        if (!GamepadEmulationState.Enabled)
+        {
+            return;
+        }
+
+        if (InputStateHelper.IsTextInputActive())
+        {
+            return;
+        }
+
+        if (!Main.keyState.PressingShift())
+        {
+            return;
+        }
+
+        // Get triggers that may have been set by Shift key bindings
+        TriggersPack triggerPack = PlayerInput.Triggers;
+
+        // Suppress SmartSelect (unless our F keybind is pressed)
+        bool allowSmartSelect = GamepadEmulationKeybinds.SmartSelect is { } keybind &&
+            (keybind.Current || VirtualTriggerService.IsKeybindPressedRaw(keybind));
+        if (!allowSmartSelect)
+        {
+            triggerPack.Current.KeyStatus[TriggerNames.SmartSelect] = false;
+            triggerPack.JustPressed.KeyStatus[TriggerNames.SmartSelect] = false;
+        }
+
+        // Suppress any other triggers that might be inadvertently bound to Shift
+        // Check if Shift alone is what's activating these triggers (no other keys involved)
+        // By checking if the trigger's latest input mode is Keyboard, we can be more precise
+        if (triggerPack.Current.LatestInputMode.TryGetValue(TriggerNames.Inventory, out InputMode invMode) &&
+            (invMode == InputMode.Keyboard || invMode == InputMode.KeyboardUI))
+        {
+            // Only suppress if Escape (the normal Inventory key) is NOT pressed
+            if (!Main.keyState.IsKeyDown(Keys.Escape))
+            {
+                // Suppress inventory trigger if it was somehow activated by Shift
+                // This is a safety net for edge cases
+                if (triggerPack.Current.Inventory)
+                {
+                    triggerPack.Current.KeyStatus[TriggerNames.Inventory] = false;
+                    triggerPack.JustPressed.KeyStatus[TriggerNames.Inventory] = false;
+                }
+            }
+        }
+    }
+
     #endregion
 
     #region Input Update
@@ -379,7 +433,7 @@ public sealed class GamepadEmulationSystem : ModSystem
         FirstLetterNavigationManager.SuppressNavigationTriggers();
 
         HandleFeatureToggleHotkey();
-        SuppressShiftSmartSelect();
+        SuppressAllShiftTriggers();
 
         // Inject housing-relevant triggers early so CheckHousingQueryOnMouseClick can see them.
         if (GamepadEmulationState.Enabled && Main.playerInventory && !InputStateHelper.IsTextInputActive())

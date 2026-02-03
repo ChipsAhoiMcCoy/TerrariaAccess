@@ -4,9 +4,12 @@ Mods: {
 			ScreenReaderModConfig: {
 				DisplayName: Screen Reader Mod Settings
 
-				EdgeDetectionEnabled: {
+				EdgeDetectionMode: {
 					Label: Edge Detection
-					Tooltip: When enabled, plays a subtle static sound that gets louder as you approach drop-offs (3+ tiles deep) while walking. The sound indicates direction and stops when you stop moving or become airborne.
+					Tooltip: Controls how you're warned about drop-offs (3+ tiles deep) while walking. Static plays white noise that gets louder as you approach. Beeps plays high-pitched tones at a fixed rate. Both indicate direction and stop when you stop moving.
+					Off.Label: Off
+					Static.Label: Static
+					Beeps.Label: Beeps
 				}
 
 				CursorTileSounds: {
@@ -484,7 +487,7 @@ Configs: {
 	ScreenReaderModConfig: {
 		DisplayName: Screen Reader Mod Config
 
-		EdgeDetectionEnabled: {
+		EdgeDetectionMode: {
 			Label: Edge Detection
 			Tooltip: ""
 		}
@@ -551,6 +554,25 @@ Configs: {
 
 		ChunkMinerMaxTiles: {
 			Label: Chunk Miner Max Tiles
+			Tooltip: ""
+		}
+	}
+
+	EdgeDetectionMode: {
+		Tooltip: ""
+
+		Off: {
+			Label: Off
+			Tooltip: ""
+		}
+
+		Static: {
+			Label: Static
+			Tooltip: ""
+		}
+
+		Beeps: {
+			Label: Beeps
 			Tooltip: ""
 		}
 	}

@@ -4,6 +4,13 @@ using Terraria.ModLoader.Config;
 
 namespace ScreenReaderMod.Common;
 
+public enum EdgeDetectionMode
+{
+    Off,
+    Static,
+    Beeps
+}
+
 public class ScreenReaderModConfig : ModConfig
 {
     public static ScreenReaderModConfig Instance { get; private set; } = null!;
@@ -19,8 +26,8 @@ public class ScreenReaderModConfig : ModConfig
     public bool AnnounceDamageNumbers { get; set; }
 
     // Movement audio cues
-    [DefaultValue(true)]
-    public bool EdgeDetectionEnabled { get; set; } = true;
+    [DefaultValue(EdgeDetectionMode.Static)]
+    public EdgeDetectionMode EdgeDetectionMode { get; set; } = EdgeDetectionMode.Static;
 
     // Multiplayer footsteps
     [DefaultValue(true)]
