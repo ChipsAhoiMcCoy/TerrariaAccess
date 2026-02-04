@@ -42,6 +42,31 @@ public static class ScreenReaderService
         Controller.Interrupt(channel);
     }
 
+    /// <summary>
+    /// Sets a prefix that will be prepended to the next announcement.
+    /// This enables coordinated announcements between narrators without
+    /// frame timing hacks or cross-narrator static queues.
+    /// For example, when switching cursor modes, the mode change can be
+    /// queued as a prefix and the next tile announcement will include it.
+    /// </summary>
+    public static void SetPendingPrefix(string? prefix)
+    {
+        Controller.SetPendingPrefix(prefix);
+    }
+
+    /// <summary>
+    /// Clears any pending prefix without using it.
+    /// </summary>
+    public static void ClearPendingPrefix()
+    {
+        Controller.ClearPendingPrefix();
+    }
+
+    /// <summary>
+    /// Returns whether there is a pending prefix waiting to be used.
+    /// </summary>
+    public static bool HasPendingPrefix => Controller.HasPendingPrefix;
+
     public static bool ToggleSpeechInterrupt()
     {
         return Controller.ToggleInterrupts();

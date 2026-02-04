@@ -50,7 +50,6 @@ public sealed partial class InGameNarrationSystem
         private int _originTileX = int.MinValue;
         private int _originTileY = int.MinValue;
         private static readonly List<(SoundEffect effect, SoundEffectInstance instance)> ActiveSounds = new();
-        private static bool _suppressNextAnnouncement;
         private string? _lastTileAnnouncementName;
         private int _lastTileAnnouncementKey = int.MinValue;
         private TileContentSignature _lastTileContentSignature;
@@ -309,12 +308,6 @@ public sealed partial class InGameNarrationSystem
                 tileX = (int)(cursorWorld.X / 16f);
                 tileY = (int)(cursorWorld.Y / 16f);
                 tileCenterWorld = new Vector2(tileX * 16f + 8f, tileY * 16f + 8f);
-            }
-
-            if (ConsumeSuppressionFlag())
-            {
-                _wasHoveringPlayer = IsHoveringPlayer(player, cursorWorld);
-                return;
             }
 
             if (PlayerInput.UsingGamepadUI && InventoryNarrator.IsInventoryUiOpen(player))
@@ -702,11 +695,7 @@ public sealed partial class InGameNarrationSystem
 
             string announcement = string.Join(", ", parts);
 
-            if (SmartCursorNarrator.TryDequeuePendingPrefix(out string smartCursorPrefix))
-            {
-                announcement = $"{smartCursorPrefix}. {announcement}";
-            }
-
+            // Pending prefix (e.g., "Unlocked cursor") is automatically prepended by the speech service
             ScreenReaderService.Announce(announcement, force: true);
         }
 
@@ -760,11 +749,7 @@ public sealed partial class InGameNarrationSystem
 
             string announcement = string.Join(", ", parts);
 
-            if (SmartCursorNarrator.TryDequeuePendingPrefix(out string smartCursorPrefix))
-            {
-                announcement = $"{smartCursorPrefix}. {announcement}";
-            }
-
+            // Pending prefix (e.g., "Unlocked cursor") is automatically prepended by the speech service
             ScreenReaderService.Announce(announcement, force: true);
         }
 
@@ -820,29 +805,8 @@ public sealed partial class InGameNarrationSystem
 
             string announcement = $"{player.name}'s {partName}{offsetText}";
 
-            // Check for pending "Tile by Tile" prefix from SmartCursorNarrator
-            if (SmartCursorNarrator.TryDequeuePendingPrefix(out string smartCursorPrefix))
-            {
-                announcement = $"{smartCursorPrefix}. {announcement}";
-            }
-
+            // Pending prefix (e.g., "Unlocked cursor") is automatically prepended by the speech service
             ScreenReaderService.Announce(announcement, force: true);
-        }
-
-        public static void SuppressNextAnnouncement()
-        {
-            _suppressNextAnnouncement = true;
-        }
-
-        private static bool ConsumeSuppressionFlag()
-        {
-            if (!_suppressNextAnnouncement)
-            {
-                return false;
-            }
-
-            _suppressNextAnnouncement = false;
-            return true;
         }
 
         private static void CenterCursorOnPlayer(Player player)
@@ -875,11 +839,7 @@ public sealed partial class InGameNarrationSystem
         {
             string messageKey = NormalizeKey(message);
 
-            // Check for pending "Tile by Tile" prefix from SmartCursorNarrator
-            if (SmartCursorNarrator.TryDequeuePendingPrefix(out string smartCursorPrefix))
-            {
-                message = $"{smartCursorPrefix}. {message}";
-            }
+            // Pending prefix (e.g., "Unlocked cursor") is automatically prepended by the speech service
 
             if (HotbarNarrator.TryDequeuePendingAnnouncement(out string hotbarAnnouncement, out string? hotbarKey))
             {

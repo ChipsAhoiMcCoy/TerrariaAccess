@@ -50,6 +50,9 @@ internal sealed class SpeechController
     private bool _interruptEnabled = true;
     private bool _logOnly;
 
+    // Speech queueing: pending prefix gets prepended to next announcement
+    private string? _pendingPrefix;
+
     internal SpeechController(ISpeechProvider primary, ISpeechProvider? worldAnnouncement = null)
     {
         _providers.Add(primary);
@@ -145,6 +148,44 @@ internal sealed class SpeechController
         }
     }
 
+    /// <summary>
+    /// Sets a prefix that will be prepended to the next announcement.
+    /// This allows multiple narrators to coordinate announcements without
+    /// frame timing hacks or cross-narrator static queues.
+    /// </summary>
+    internal void SetPendingPrefix(string? prefix)
+    {
+        lock (_syncRoot)
+        {
+            _pendingPrefix = prefix;
+        }
+    }
+
+    /// <summary>
+    /// Clears any pending prefix without using it.
+    /// </summary>
+    internal void ClearPendingPrefix()
+    {
+        lock (_syncRoot)
+        {
+            _pendingPrefix = null;
+        }
+    }
+
+    /// <summary>
+    /// Returns whether there is a pending prefix waiting to be used.
+    /// </summary>
+    internal bool HasPendingPrefix
+    {
+        get
+        {
+            lock (_syncRoot)
+            {
+                return !string.IsNullOrWhiteSpace(_pendingPrefix);
+            }
+        }
+    }
+
     internal void SetCategoryWindow(AnnouncementCategory category, TimeSpan window)
     {
         lock (_syncRoot)
@@ -217,6 +258,13 @@ internal sealed class SpeechController
             {
                 ScreenReaderDiagnostics.LogSpeechSuppressed(request with { Text = trimmed }, "muted");
                 return;
+            }
+
+            // Consume and prepend any pending prefix
+            if (!string.IsNullOrWhiteSpace(_pendingPrefix))
+            {
+                trimmed = $"{_pendingPrefix}. {trimmed}";
+                _pendingPrefix = null;
             }
 
             SpeechRequest normalized = request with { Text = trimmed };

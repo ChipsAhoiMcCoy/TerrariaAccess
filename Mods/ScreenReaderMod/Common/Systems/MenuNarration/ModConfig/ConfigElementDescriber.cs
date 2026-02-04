@@ -18,6 +18,24 @@ internal static class ConfigElementDescriber
     private static readonly Dictionary<Type, ConfigElementAccessors> AccessorCache = new();
 
     /// <summary>
+    /// Gets only the current value of a config element (e.g., "On", "Off", "Static").
+    /// Use this after toggling/cycling to announce just the new state.
+    /// </summary>
+    public static string GetValueOnly(UIElement? element)
+    {
+        if (element is null)
+        {
+            return string.Empty;
+        }
+
+        Type type = element.GetType();
+        ConfigElementAccessors accessors = GetAccessors(type);
+
+        string value = TryExtractConfigValue(element, accessors);
+        return !string.IsNullOrWhiteSpace(value) ? TextSanitizer.Clean(value) : string.Empty;
+    }
+
+    /// <summary>
     /// Gets a full description of a config element (label + value).
     /// </summary>
     public static string DescribeConfigElement(UIElement? element)

@@ -1,8 +1,10 @@
 #nullable enable
 using System;
 using System.Collections.Generic;
+using System.Diagnostics;
 using System.IO;
 using System.Runtime.InteropServices;
+using System.Threading;
 using Terraria;
 
 namespace ScreenReaderMod.Common.Services;
@@ -14,6 +16,10 @@ namespace ScreenReaderMod.Common.Services;
 internal sealed class TolkSpeechProvider : ISpeechProvider
 {
     private const string TolkLibraryName = "Tolk.dll";
+
+    // Windows API for DLL search path manipulation
+    [DllImport("kernel32.dll", CharSet = CharSet.Unicode, SetLastError = true)]
+    private static extern bool SetDllDirectoryW(string? lpPathName);
 
     // Tolk native API delegates
     private delegate void TolkLoadDelegate();
@@ -243,11 +249,76 @@ internal sealed class TolkSpeechProvider : ISpeechProvider
                 _trySAPI = Marshal.GetDelegateForFunctionPointer<TolkTrySAPIDelegate>(
                     NativeLibrary.GetExport(handle, "Tolk_TrySAPI"));
 
+                // Check companion DLL presence for diagnostics
+                string tolkDir = Path.GetDirectoryName(libraryPath) ?? "";
+                string nvdaDll = Path.Combine(tolkDir, "nvdaControllerClient64.dll");
+                string sapiDll = Path.Combine(tolkDir, "SAAPI64.dll");
+
+                bool hasNvdaDll = File.Exists(nvdaDll);
+                bool hasSapiDll = File.Exists(sapiDll);
+
+                ScreenReaderMod.Instance?.Logger.Info($"[Tolk] Companion DLLs in {tolkDir}:");
+                ScreenReaderMod.Instance?.Logger.Info($"[Tolk]   nvdaControllerClient64.dll: {(hasNvdaDll ? "FOUND" : "MISSING")}");
+                ScreenReaderMod.Instance?.Logger.Info($"[Tolk]   SAAPI64.dll: {(hasSapiDll ? "FOUND" : "MISSING")}");
+
+                // Check if NVDA process is running before attempting detection
+                int nvdaProcessCount = 0;
+                try
+                {
+                    Process[] nvdaProcesses = Process.GetProcessesByName("nvda");
+                    nvdaProcessCount = nvdaProcesses.Length;
+                    ScreenReaderMod.Instance?.Logger.Info($"[Tolk] NVDA process check: {nvdaProcessCount} instance(s) found");
+                    foreach (var proc in nvdaProcesses)
+                    {
+                        ScreenReaderMod.Instance?.Logger.Info($"[Tolk]   - PID {proc.Id}, Started: {proc.StartTime:HH:mm:ss}, SessionId: {proc.SessionId}");
+                        proc.Dispose();
+                    }
+
+                    // Log current process info for comparison
+                    using var currentProc = Process.GetCurrentProcess();
+                    ScreenReaderMod.Instance?.Logger.Info($"[Tolk] Current process: PID {currentProc.Id}, 64-bit: {Environment.Is64BitProcess}");
+                    ScreenReaderMod.Instance?.Logger.Info($"[Tolk] Session ID: {currentProc.SessionId}");
+
+                    // Warn if NVDA is running but companion DLL is missing
+                    if (nvdaProcessCount > 0 && !hasNvdaDll)
+                    {
+                        ScreenReaderMod.Instance?.Logger.Warn("[Tolk] NVDA is running but nvdaControllerClient64.dll is MISSING! " +
+                            "Tolk cannot communicate with NVDA without this file. " +
+                            $"Please copy nvdaControllerClient64.dll to: {tolkDir}");
+                    }
+                }
+                catch (Exception ex)
+                {
+                    ScreenReaderMod.Instance?.Logger.Info($"[Tolk] NVDA process check failed: {ex.Message}");
+                }
+
+                // Add Tolk directory to DLL search path so Tolk can find companion DLLs
+                // (nvdaControllerClient64.dll, SAAPI64.dll, etc.) when it internally calls LoadLibrary
+                bool dllDirWasSet = false;
+                if (!string.IsNullOrEmpty(tolkDir))
+                {
+                    dllDirWasSet = SetDllDirectoryW(tolkDir);
+                    ScreenReaderMod.Instance?.Logger.Info($"[Tolk] SetDllDirectory('{tolkDir}') = {dllDirWasSet}");
+                    if (!dllDirWasSet)
+                    {
+                        int error = Marshal.GetLastWin32Error();
+                        ScreenReaderMod.Instance?.Logger.Warn($"[Tolk] SetDllDirectory failed with error code {error}");
+                    }
+                }
+
+                try
+                {
                 // First try without SAPI to prefer real screen readers
+                ScreenReaderMod.Instance?.Logger.Info("[Tolk] Calling Tolk_TrySAPI(false) to prefer real screen readers...");
                 _trySAPI(false);
+
+                ScreenReaderMod.Instance?.Logger.Info("[Tolk] Calling Tolk_Load()...");
                 _load();
 
-                if (!_isLoaded())
+                bool isLoaded = _isLoaded();
+                ScreenReaderMod.Instance?.Logger.Info($"[Tolk] Tolk_IsLoaded() = {isLoaded}");
+
+                if (!isLoaded)
                 {
                     _lastError = "Tolk_Load succeeded but Tolk_IsLoaded returned false";
                     ScreenReaderMod.Instance?.Logger.Warn($"[Tolk] Library loaded from {libraryPath}, but Tolk_IsLoaded returned false.");
@@ -255,13 +326,59 @@ internal sealed class TolkSpeechProvider : ISpeechProvider
                     return false;
                 }
 
-                // If no screen reader with speech found, try again with SAPI fallback
-                if (!_hasSpeech())
+                bool hasSpeechInitial = _hasSpeech();
+                ScreenReaderMod.Instance?.Logger.Info($"[Tolk] Tolk_HasSpeech() = {hasSpeechInitial} (without SAPI)");
+
+                // Get detected screen reader name even if hasSpeech is false
+                IntPtr initialNamePtr = _detectScreenReader();
+                string? initialDetected = initialNamePtr != IntPtr.Zero ? Marshal.PtrToStringUni(initialNamePtr) : null;
+                ScreenReaderMod.Instance?.Logger.Info($"[Tolk] Tolk_DetectScreenReader() = '{initialDetected ?? "(null)"}' (without SAPI)");
+
+                // If NVDA is running but hasSpeech is false, retry with delay
+                // (NVDA's COM server may not be fully initialized when tModLoader starts)
+                if (!hasSpeechInitial && nvdaProcessCount > 0 && hasNvdaDll)
                 {
-                    ScreenReaderMod.Instance?.Logger.Info("[Tolk] No screen reader detected, enabling SAPI fallback...");
+                    for (int retry = 1; retry <= 3; retry++)
+                    {
+                        ScreenReaderMod.Instance?.Logger.Info($"[Tolk] NVDA detected but not responding. Retry {retry}/3 after 500ms...");
+                        Thread.Sleep(500);
+
+                        _unload();
+                        _trySAPI(false);
+                        _load();
+
+                        hasSpeechInitial = _hasSpeech();
+                        if (hasSpeechInitial)
+                        {
+                            ScreenReaderMod.Instance?.Logger.Info($"[Tolk] NVDA responded on retry {retry}");
+                            break;
+                        }
+                    }
+                }
+
+                // If no screen reader with speech found, try again with SAPI fallback
+                if (!hasSpeechInitial)
+                {
+                    if (nvdaProcessCount > 0)
+                    {
+                        ScreenReaderMod.Instance?.Logger.Warn("[Tolk] NVDA is running but Tolk cannot communicate with it. " +
+                            "Falling back to SAPI. Check that nvdaControllerClient64.dll is in the same folder as Tolk.dll.");
+                    }
+                    else
+                    {
+                        ScreenReaderMod.Instance?.Logger.Info("[Tolk] No screen reader detected, enabling SAPI fallback...");
+                    }
+
                     _unload();
                     _trySAPI(true);
                     _load();
+
+                    bool hasSpeechWithSapi = _hasSpeech();
+                    ScreenReaderMod.Instance?.Logger.Info($"[Tolk] Tolk_HasSpeech() = {hasSpeechWithSapi} (with SAPI)");
+
+                    IntPtr sapiNamePtr = _detectScreenReader();
+                    string? sapiDetected = sapiNamePtr != IntPtr.Zero ? Marshal.PtrToStringUni(sapiNamePtr) : null;
+                    ScreenReaderMod.Instance?.Logger.Info($"[Tolk] Tolk_DetectScreenReader() = '{sapiDetected ?? "(null)"}' (with SAPI)");
                 }
 
                 if (!_hasSpeech())
@@ -282,6 +399,15 @@ internal sealed class TolkSpeechProvider : ISpeechProvider
                 _lastError = null;
                 ScreenReaderMod.Instance?.Logger.Info($"[Tolk] Connected to {_detectedScreenReader ?? "unknown screen reader"} via {libraryPath}.");
                 return true;
+                }
+                finally
+                {
+                    // Reset DLL directory to default to avoid affecting other code
+                    if (dllDirWasSet)
+                    {
+                        SetDllDirectoryW(null);
+                    }
+                }
             }
             catch (Exception ex)
             {

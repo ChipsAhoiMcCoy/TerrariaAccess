@@ -46,29 +46,7 @@ public sealed partial class InGameNarrationSystem
         private int _lastCursorAnnouncementKey = int.MinValue;
         private bool _lastSmartCursorEnabled;
         private string? _pendingStatePrefix;
-        private bool _suppressCursorAnnouncement;
         private bool _lastIsToggleOn;
-
-        // Static pending prefix for CursorNarrator to bundle with its next announcement
-        private static string? _pendingCursorPrefix;
-
-        internal static bool TryDequeuePendingPrefix(out string prefix)
-        {
-            if (_pendingCursorPrefix is null)
-            {
-                prefix = string.Empty;
-                return false;
-            }
-
-            prefix = _pendingCursorPrefix;
-            _pendingCursorPrefix = null;
-            return true;
-        }
-
-        internal static void ClearPendingPrefix()
-        {
-            _pendingCursorPrefix = null;
-        }
 
         public SmartCursorNarrator(CursorDescriptorService descriptorService)
         {
@@ -103,12 +81,12 @@ public sealed partial class InGameNarrationSystem
                 }
                 else
                 {
-                    // Set pending prefix for CursorNarrator to bundle with its first tile announcement
-                    _pendingCursorPrefix = LocalizationHelper.GetTextOrFallback(
+                    // Use the speech service's prefix queue to bundle with the next announcement
+                    string unlockPrefix = LocalizationHelper.GetTextOrFallback(
                         "Mods.ScreenReaderMod.SmartCursor.UnlockedCursor",
                         "Unlocked cursor");
+                    ScreenReaderService.SetPendingPrefix(unlockPrefix);
                     _pendingStatePrefix = null;
-                    _suppressCursorAnnouncement = false;
                 }
 
                 ResetStateTracking();
@@ -170,7 +148,6 @@ public sealed partial class InGameNarrationSystem
         {
             ResetStateTracking();
             _pendingStatePrefix = null;
-            _suppressCursorAnnouncement = false;
         }
 
         private void ResetSmartCursorRepeatTracking()
@@ -442,12 +419,6 @@ public sealed partial class InGameNarrationSystem
 
             string prefix = _pendingStatePrefix;
             _pendingStatePrefix = null;
-
-            if (_suppressCursorAnnouncement)
-            {
-                CursorNarrator.SuppressNextAnnouncement();
-                _suppressCursorAnnouncement = false;
-            }
 
             if (string.Equals(prefix, _lastAnnouncement, StringComparison.Ordinal))
             {

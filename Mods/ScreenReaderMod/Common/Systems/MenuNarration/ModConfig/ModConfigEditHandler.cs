@@ -204,7 +204,7 @@ internal sealed class ModConfigEditHandler
         if (ConfigSliderHandler.TryToggleBoolean(element))
         {
             _gate.SuppressForFrames(30);
-            AnnounceCurrentElement(isMenuContext, menuEventSink);
+            AnnounceValueOnly(element, isMenuContext, menuEventSink);
             return;
         }
 
@@ -212,7 +212,7 @@ internal sealed class ModConfigEditHandler
         if (ConfigSliderHandler.TryCycleEnum(element))
         {
             _gate.SuppressForFrames(30);
-            AnnounceCurrentElement(isMenuContext, menuEventSink);
+            AnnounceValueOnly(element, isMenuContext, menuEventSink);
             return;
         }
 
@@ -253,8 +253,7 @@ internal sealed class ModConfigEditHandler
         {
             if (ConfigSliderHandler.TryInvokeClick(element))
             {
-                AnnounceCurrentElement(isMenuContext, menuEventSink);
-                SoundEngine.PlaySound(SoundID.MenuTick);
+                AnnounceValueOnly(element, isMenuContext, menuEventSink);
             }
         }
     }
@@ -274,7 +273,20 @@ internal sealed class ModConfigEditHandler
         if (!string.IsNullOrWhiteSpace(description))
         {
             _gate.TryAnnounce(description, false, isMenuContext, menuEventSink);
-                    }
+        }
+    }
+
+    private void AnnounceValueOnly(
+        UIElement element,
+        bool isMenuContext,
+        Action<string, bool, MenuNarrationEventKind>? menuEventSink)
+    {
+        string valueOnly = ConfigElementDescriber.GetValueOnly(element);
+
+        if (!string.IsNullOrWhiteSpace(valueOnly))
+        {
+            _gate.TryAnnounce(valueOnly, true, isMenuContext, menuEventSink);
+        }
     }
 
     private static List<UIElement> CollectConfigElements(UIElement configList)

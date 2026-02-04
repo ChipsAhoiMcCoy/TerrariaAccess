@@ -3,8 +3,6 @@ using System;
 using System.Reflection;
 using Microsoft.Xna.Framework;
 using Terraria;
-using Terraria.Audio;
-using Terraria.ID;
 using Terraria.UI;
 
 namespace ScreenReaderMod.Common.Systems.MenuNarration.ModConfig;
@@ -79,13 +77,8 @@ internal static class ConfigSliderHandler
             return false;
         }
 
-        if (TryInvokeClick(element))
-        {
-            SoundEngine.PlaySound(SoundID.MenuTick);
-            return true;
-        }
-
-        return false;
+        // Element's click handler plays its own sound, so we don't add another
+        return TryInvokeClick(element);
     }
 
     /// <summary>
@@ -157,7 +150,6 @@ internal static class ConfigSliderHandler
             }
 
             TryAutoSaveConfigChanges();
-            SoundEngine.PlaySound(SoundID.MenuTick);
             return true;
         }
         catch (Exception ex)
@@ -198,7 +190,6 @@ internal static class ConfigSliderHandler
             newProportion = Math.Clamp(newProportion, 0f, 1f);
 
             accessors.ProportionProperty.SetValue(element, newProportion);
-            SoundEngine.PlaySound(SoundID.MenuTick);
             return true;
         }
         catch (Exception ex)

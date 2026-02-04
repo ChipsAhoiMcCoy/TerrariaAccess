@@ -4,9 +4,9 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Project Overview
 
-Terraria Access is a tModLoader mod that makes Terraria playable for blind and low-vision players. It provides NVDA-driven speech narration for menus and in-game UI, plus positional audio cues for spatial awareness.
+Terraria Access is a tModLoader mod that makes Terraria playable for blind and low-vision players. It provides speech narration for menus and in-game UI via multiple screen readers, plus positional audio cues for spatial awareness.
 
-**Key technologies:** C# (.NET 8.0), tModLoader, NVDA screen reader integration via nvdaControllerClient64.dll
+**Key technologies:** C# (.NET 8.0), tModLoader, Tolk library for universal screen reader support (JAWS, NVDA, Window-Eyes, SuperNova, System Access, ZoomText, SAPI fallback)
 
 ## Build Commands
 
@@ -30,7 +30,7 @@ The build script invokes tModLoader's build system (`dotnet tModLoader.dll -buil
 **Entry Point:** `ScreenReaderMod.cs` - Initializes services and keybinds on mod load.
 
 **Services Layer (`Services/`):**
-- `ScreenReaderService` - Central speech API. Manages announcement categories (Default, Tile, Wall, Pickup, World) with per-category rate limiting. Routes to `SpeechController` -> `NvdaSpeechProvider`.
+- `ScreenReaderService` - Central speech API. Manages announcement categories (Default, Tile, Wall, Pickup, World) with per-category rate limiting. Routes to `SpeechController` -> `TolkSpeechProvider`.
 - `SpatialAudioPanner` - Calculates stereo panning/pitch based on world position relative to player.
 - `WorldAnnouncementService` - Handles world event announcements (blood moon, invasions, biome changes).
 
@@ -126,10 +126,10 @@ Defined in multiple `*Keybinds.cs` files:
 
 No automated test suite. Manual testing requires:
 1. Terraria + tModLoader installed
-2. NVDA screen reader running
-3. `nvdaControllerClient64.dll` in tModLoader directory
+2. A supported screen reader running (NVDA, JAWS, etc.)
+3. `Tolk.dll` in tModLoader directory
 
-Use `-NarrationLint` flag to scan client.log for NVDA communication failures after gameplay sessions.
+Use `-NarrationLint` flag to scan client.log for Tolk communication failures after gameplay sessions.
 
 ## Code Intelligence
 
