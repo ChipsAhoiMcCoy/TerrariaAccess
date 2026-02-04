@@ -150,7 +150,24 @@ public sealed partial class GuidanceSystem : ModSystem
             {
                 if (!_arrivalAnnounced && !string.IsNullOrWhiteSpace(arrivalLabel) && _selectionMode != SelectionMode.DroppedItem)
                 {
-                    ScreenReaderService.Announce($"Arrived at {arrivalLabel}");
+                    // Check suppression (e.g., after teleporting, arrival is redundant)
+                    if (!ScreenReaderService.CheckAndClearSuppression(SuppressionKeyArrival))
+                    {
+                        string arrivalMessage = $"Arrived at {arrivalLabel}";
+
+                        // If category just changed, prefix arrival with category so user knows context
+                        if (_includeCategoryInNextAnnouncement)
+                        {
+                            string categoryLabel = ResolveCategoryLabel(_selectionMode);
+                            if (!string.IsNullOrWhiteSpace(categoryLabel))
+                            {
+                                arrivalMessage = $"{categoryLabel}. {arrivalMessage}";
+                            }
+                            _includeCategoryInNextAnnouncement = false;
+                        }
+
+                        ScreenReaderService.Announce(arrivalMessage);
+                    }
                 }
 
                 _arrivalAnnounced = true;
@@ -583,6 +600,9 @@ public sealed partial class GuidanceSystem : ModSystem
             ? "Teleported to guidance target."
             : $"Teleported to {target.Label}.";
         ScreenReaderService.Announce(announcement);
+
+        // Suppress redundant "Arrived at X" since we just announced teleport destination
+        ScreenReaderService.SuppressNext(SuppressionKeyArrival);
     }
 
     private static bool TryResolveTeleportTarget(Player player, out TeleportTarget target)
@@ -2074,6 +2094,9 @@ public sealed partial class GuidanceSystem : ModSystem
             categoryLabel = "Guidance";
         }
 
+        // Category is being announced, so don't include it again in subsequent announcements
+        _includeCategoryInNextAnnouncement = false;
+
         if (string.IsNullOrWhiteSpace(detail))
         {
             ScreenReaderService.Announce(categoryLabel);
@@ -2091,18 +2114,19 @@ public sealed partial class GuidanceSystem : ModSystem
             return;
         }
 
-        bool includeCategory = _categoryAnnouncementPending || _categoryAnnouncementMode != category;
-        _categoryAnnouncementMode = category;
-        _categoryAnnouncementPending = false;
+        // Use centralized speech queue: enqueue category as prefix if switching categories
+        bool includeCategory = _lastAnnouncedCategory != category;
+        _lastAnnouncedCategory = category;
 
         if (includeCategory && !string.IsNullOrWhiteSpace(categoryLabel))
         {
-            ScreenReaderService.Announce($"{categoryLabel}. {detail}");
+            ScreenReaderService.EnqueuePrefix(categoryLabel);
+            // Category is being announced, so don't include it again in arrival
+            _includeCategoryInNextAnnouncement = false;
         }
-        else
-        {
-            ScreenReaderService.Announce(detail);
-        }
+
+        // The enqueued prefix (if any) will be automatically prepended by SpeechController
+        ScreenReaderService.Announce(detail);
     }
 
     private static void AnnounceSelectedEntry(SelectionMode category, string categoryLabel, string detail)
@@ -2110,16 +2134,52 @@ public sealed partial class GuidanceSystem : ModSystem
         AnnounceCategoryEntry(category, categoryLabel, detail);
     }
 
+    /// <summary>
+    /// Marks the start of a category selection, forcing the next announcement to include the category label.
+    /// Uses the centralized speech queue system via EnqueuePrefix.
+    /// </summary>
     private static void BeginCategoryAnnouncement(SelectionMode category)
     {
-        _categoryAnnouncementMode = category;
-        _categoryAnnouncementPending = true;
+        // Clear any pending prefixes from previous context
+        ScreenReaderService.ClearAllPrefixes();
+        // Force category to be announced by resetting tracking
+        _lastAnnouncedCategory = SelectionMode.None;
+        // Ensure any immediate announcements (like arrival) also include the category
+        _includeCategoryInNextAnnouncement = true;
+        // Suppress immediate arrival announcement - we're about to announce the selection,
+        // so saying "Arrived at X" right after would be redundant
+        ScreenReaderService.SuppressNext(SuppressionKeyArrival);
     }
 
+    /// <summary>
+    /// Clears category announcement state and any pending speech prefixes.
+    /// </summary>
     private static void ClearCategoryAnnouncement()
     {
-        _categoryAnnouncementMode = SelectionMode.None;
-        _categoryAnnouncementPending = false;
+        ScreenReaderService.ClearAllPrefixes();
+        _lastAnnouncedCategory = SelectionMode.None;
+        _includeCategoryInNextAnnouncement = false;
+    }
+
+    /// <summary>
+    /// Resolves the display label for a category, used for announcements.
+    /// </summary>
+    private static string ResolveCategoryLabel(SelectionMode mode)
+    {
+        return mode switch
+        {
+            SelectionMode.Exploration => "Explore",
+            SelectionMode.Npc => "NPCs",
+            SelectionMode.Player => "Players",
+            SelectionMode.Interactable => "Crafting",
+            SelectionMode.Waypoint => "Waypoints",
+            SelectionMode.DroppedItem => "Items",
+            SelectionMode.Critter => "Critters",
+            SelectionMode.Plantlife => "Plants",
+            SelectionMode.HostileMob => "Enemies",
+            SelectionMode.None => "Off",
+            _ => string.Empty
+        };
     }
 
     private static string DescribeRelativeOffset(Vector2 origin, Vector2 target)

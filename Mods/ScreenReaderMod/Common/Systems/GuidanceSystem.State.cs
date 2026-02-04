@@ -58,8 +58,12 @@ public sealed partial class GuidanceSystem
             DistanceTiles = distanceTiles;
         }
     }
-    private static SelectionMode _categoryAnnouncementMode = SelectionMode.None;
-    private static bool _categoryAnnouncementPending;
+
+    // Speech queue integration - uses centralized SpeechController queue system
+    private const string SuppressionKeyArrival = "guidance:arrival";
+    private static SelectionMode _lastAnnouncedCategory = SelectionMode.None;
+    private static bool _includeCategoryInNextAnnouncement;
+
     private static ProximityTargetKey _activeProximityTarget = new(SelectionMode.None, -1);
     private static int _lastProximityStepIndex = int.MaxValue;
 
@@ -130,6 +134,8 @@ public sealed partial class GuidanceSystem
         _nextSweepFrame = 0;
         ResetProximityProgress();
         ClearCategoryAnnouncement();
+        _lastAnnouncedCategory = SelectionMode.None;
+        _includeCategoryInNextAnnouncement = false;
         _nextPingUpdateFrame = -1;
         _arrivalAnnounced = false;
         _lastTargetRefreshFrame = 0;
