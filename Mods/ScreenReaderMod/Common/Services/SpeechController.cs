@@ -53,6 +53,12 @@ internal sealed class SpeechController
     // Speech queueing: pending prefix gets prepended to next announcement
     private string? _pendingPrefix;
 
+    // Extended speech queue system
+    private readonly Queue<string> _pendingPrefixes = new();
+    private readonly HashSet<string> _suppressionKeys = new();
+    private readonly HashSet<string> _announcedOnceKeys = new();
+    private readonly Dictionary<string, uint> _cooldownEndFrames = new();
+
     internal SpeechController(ISpeechProvider primary, ISpeechProvider? worldAnnouncement = null)
     {
         _providers.Add(primary);
@@ -93,6 +99,13 @@ internal sealed class SpeechController
             _lastCategoryAnnouncedAt.Clear();
             _lastMessage = null;
             _lastAnnouncedAt = DateTime.MinValue;
+
+            // Clear extended speech queue state
+            _pendingPrefix = null;
+            _pendingPrefixes.Clear();
+            _suppressionKeys.Clear();
+            _announcedOnceKeys.Clear();
+            _cooldownEndFrames.Clear();
         }
 
         foreach (ISpeechProvider provider in _providers)
@@ -119,6 +132,13 @@ internal sealed class SpeechController
             _initialized = false;
             _muted = false;
             _interruptEnabled = false;
+
+            // Clear extended speech queue state
+            _pendingPrefix = null;
+            _pendingPrefixes.Clear();
+            _suppressionKeys.Clear();
+            _announcedOnceKeys.Clear();
+            _cooldownEndFrames.Clear();
         }
     }
 
@@ -181,10 +201,216 @@ internal sealed class SpeechController
         {
             lock (_syncRoot)
             {
-                return !string.IsNullOrWhiteSpace(_pendingPrefix);
+                return !string.IsNullOrWhiteSpace(_pendingPrefix) || _pendingPrefixes.Count > 0;
             }
         }
     }
+
+    #region Extended Speech Queue System
+
+    /// <summary>
+    /// Enqueues a prefix to be prepended to the next announcement.
+    /// Multiple prefixes can be queued and will be combined with the next announcement.
+    /// </summary>
+    internal void EnqueuePrefix(string prefix)
+    {
+        if (string.IsNullOrWhiteSpace(prefix))
+        {
+            return;
+        }
+
+        lock (_syncRoot)
+        {
+            _pendingPrefixes.Enqueue(prefix.Trim());
+        }
+    }
+
+    /// <summary>
+    /// Clears all pending prefixes without using them.
+    /// </summary>
+    internal void ClearAllPrefixes()
+    {
+        lock (_syncRoot)
+        {
+            _pendingPrefix = null;
+            _pendingPrefixes.Clear();
+        }
+    }
+
+    /// <summary>
+    /// Marks a key for one-shot suppression. The next announcement that checks
+    /// this key will be suppressed, and the key will be cleared.
+    /// </summary>
+    internal void SuppressNext(string key)
+    {
+        if (string.IsNullOrWhiteSpace(key))
+        {
+            return;
+        }
+
+        lock (_syncRoot)
+        {
+            _suppressionKeys.Add(key);
+        }
+    }
+
+    /// <summary>
+    /// Checks if a suppression key is set and clears it if so.
+    /// Returns true if the key was set (meaning the announcement should be suppressed).
+    /// </summary>
+    internal bool CheckAndClearSuppression(string key)
+    {
+        if (string.IsNullOrWhiteSpace(key))
+        {
+            return false;
+        }
+
+        lock (_syncRoot)
+        {
+            return _suppressionKeys.Remove(key);
+        }
+    }
+
+    /// <summary>
+    /// Marks a context as having been announced. Used for one-time announcements
+    /// that should only happen once per context (e.g., description on first focus).
+    /// </summary>
+    internal void MarkContextAnnounced(string contextKey)
+    {
+        if (string.IsNullOrWhiteSpace(contextKey))
+        {
+            return;
+        }
+
+        lock (_syncRoot)
+        {
+            _announcedOnceKeys.Add(contextKey);
+        }
+    }
+
+    /// <summary>
+    /// Checks if a context has already been announced.
+    /// </summary>
+    internal bool WasContextAnnounced(string contextKey)
+    {
+        if (string.IsNullOrWhiteSpace(contextKey))
+        {
+            return false;
+        }
+
+        lock (_syncRoot)
+        {
+            return _announcedOnceKeys.Contains(contextKey);
+        }
+    }
+
+    /// <summary>
+    /// Clears announced context keys. If prefix is provided, only clears keys
+    /// that start with that prefix; otherwise clears all keys.
+    /// </summary>
+    internal void ClearContexts(string? prefix = null)
+    {
+        lock (_syncRoot)
+        {
+            if (string.IsNullOrWhiteSpace(prefix))
+            {
+                _announcedOnceKeys.Clear();
+                _suppressionKeys.Clear();
+            }
+            else
+            {
+                _announcedOnceKeys.RemoveWhere(k => k.StartsWith(prefix, StringComparison.Ordinal));
+                _suppressionKeys.RemoveWhere(k => k.StartsWith(prefix, StringComparison.Ordinal));
+            }
+        }
+    }
+
+    /// <summary>
+    /// Sets a cooldown for a key that expires after the specified number of frames.
+    /// Use IsOnCooldown() to check if the cooldown is still active.
+    /// </summary>
+    internal void SetCooldown(string key, uint frames)
+    {
+        if (string.IsNullOrWhiteSpace(key))
+        {
+            return;
+        }
+
+        lock (_syncRoot)
+        {
+            // We need access to the current game frame count
+            // This will be provided via a method parameter or we use a static accessor
+            uint currentFrame = GetCurrentFrame();
+            _cooldownEndFrames[key] = currentFrame + frames;
+        }
+    }
+
+    /// <summary>
+    /// Checks if a cooldown is still active for the given key.
+    /// </summary>
+    internal bool IsOnCooldown(string key)
+    {
+        if (string.IsNullOrWhiteSpace(key))
+        {
+            return false;
+        }
+
+        lock (_syncRoot)
+        {
+            if (!_cooldownEndFrames.TryGetValue(key, out uint endFrame))
+            {
+                return false;
+            }
+
+            uint currentFrame = GetCurrentFrame();
+
+            // Handle frame counter wrap-around
+            if (currentFrame >= endFrame)
+            {
+                // Cooldown expired, remove the key
+                _cooldownEndFrames.Remove(key);
+                return false;
+            }
+
+            // Check for wrap-around case: if endFrame is much larger than currentFrame,
+            // the cooldown might have wrapped around
+            if (endFrame - currentFrame > uint.MaxValue / 2)
+            {
+                // Likely wrapped, treat as expired
+                _cooldownEndFrames.Remove(key);
+                return false;
+            }
+
+            return true;
+        }
+    }
+
+    /// <summary>
+    /// Clears a specific cooldown.
+    /// </summary>
+    internal void ClearCooldown(string key)
+    {
+        if (string.IsNullOrWhiteSpace(key))
+        {
+            return;
+        }
+
+        lock (_syncRoot)
+        {
+            _cooldownEndFrames.Remove(key);
+        }
+    }
+
+    /// <summary>
+    /// Gets the current game frame count. Uses Terraria's Main.GameUpdateCount.
+    /// </summary>
+    private static uint GetCurrentFrame()
+    {
+        // Access Terraria's frame counter
+        return Terraria.Main.GameUpdateCount;
+    }
+
+    #endregion
 
     internal void SetCategoryWindow(AnnouncementCategory category, TimeSpan window)
     {
@@ -260,11 +486,28 @@ internal sealed class SpeechController
                 return;
             }
 
-            // Consume and prepend any pending prefix
+            // Consume and prepend any pending prefixes (legacy single prefix + new queue)
+            var prefixParts = new List<string>();
+
             if (!string.IsNullOrWhiteSpace(_pendingPrefix))
             {
-                trimmed = $"{_pendingPrefix}. {trimmed}";
+                prefixParts.Add(_pendingPrefix);
                 _pendingPrefix = null;
+            }
+
+            while (_pendingPrefixes.Count > 0)
+            {
+                string queuedPrefix = _pendingPrefixes.Dequeue();
+                if (!string.IsNullOrWhiteSpace(queuedPrefix))
+                {
+                    prefixParts.Add(queuedPrefix);
+                }
+            }
+
+            if (prefixParts.Count > 0)
+            {
+                string combinedPrefix = string.Join(". ", prefixParts);
+                trimmed = $"{combinedPrefix}. {trimmed}";
             }
 
             SpeechRequest normalized = request with { Text = trimmed };

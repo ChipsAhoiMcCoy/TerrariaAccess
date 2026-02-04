@@ -35,6 +35,8 @@ public sealed partial class InGameNarrationSystem
     private sealed class NpcDialogueNarrator
     {
         private const uint ButtonAnnouncementCooldownFrames = 30; // ~0.5 seconds at 60fps
+        private const string SuppressionKeyButton = "npc-dialogue:button";
+        private const string CooldownKeyButton = "npc-dialogue:button-cooldown";
 
         private int _lastNpc = -1;
         private string? _lastChat;
@@ -42,11 +44,8 @@ public sealed partial class InGameNarrationSystem
         private bool _lastCloseFocus;
         private bool _lastSecondaryFocus;
         private bool _lastHappinessFocus;
-        private bool _suppressNextButtonAnnouncement;
-        private string? _pendingNpcChat;
         private int _lastAnnouncedButtonIndex = -1;
         private ButtonType _lastAnnouncedButtonType;
-        private uint _lastButtonAnnouncementFrame;
 
         private static string? _currentPrimaryButton;
         private static string? _currentCloseButton;
@@ -142,11 +141,10 @@ public sealed partial class InGameNarrationSystem
             ResetFocus();
             _lastNpc = npc.whoAmI;
             _lastChat = null;
-            _pendingNpcChat = null;
             _lastAnnouncedButtonIndex = -1;
-            _lastButtonAnnouncementFrame = 0;
-            // Don't suppress - we want the first button to announce with the bundled NPC chat
-            _suppressNextButtonAnnouncement = false;
+            // Clear any pending prefixes and cooldowns from previous NPC
+            ScreenReaderService.ClearAllPrefixes();
+            ScreenReaderService.ClearCooldown(CooldownKeyButton);
             NpcDialogueInputTracker.Reset();
         }
 
@@ -163,10 +161,10 @@ public sealed partial class InGameNarrationSystem
                     : $"{prefix} says: {normalizedText}";
 
                 // If this is the first chat for this NPC (no button announced yet),
-                // store it to bundle with the first button announcement
+                // enqueue it to bundle with the first button announcement
                 if (_lastAnnouncedButtonIndex < 0)
                 {
-                    _pendingNpcChat = npcChatMessage;
+                    ScreenReaderService.EnqueuePrefix(npcChatMessage);
                 }
                 else
                 {
@@ -187,7 +185,7 @@ public sealed partial class InGameNarrationSystem
             else if (string.IsNullOrWhiteSpace(normalizedText))
             {
                 _lastChat = null;
-                _pendingNpcChat = null;
+                ScreenReaderService.ClearAllPrefixes();
             }
         }
 
@@ -207,7 +205,8 @@ public sealed partial class InGameNarrationSystem
                 category: category,
                 requestInterrupt: interruptsAllowed);
 
-            _suppressNextButtonAnnouncement = true;
+            // Suppress the next button announcement to avoid announcing the button after typing
+            ScreenReaderService.SuppressNext(SuppressionKeyButton);
         }
 
         private static bool IsTypingToNpc(Player player)
@@ -309,16 +308,16 @@ public sealed partial class InGameNarrationSystem
 
             if (!lastState && !string.IsNullOrWhiteSpace(label))
             {
-                if (_suppressNextButtonAnnouncement)
+                // Check one-shot suppression (used after typing input)
+                if (ScreenReaderService.CheckAndClearSuppression(SuppressionKeyButton))
                 {
-                    _suppressNextButtonAnnouncement = false;
                     lastState = true;
                     return;
                 }
 
                 // Debounce: skip if we just announced this same button recently
                 // This prevents double announcements when clicking a button causes brief focus toggle
-                if (buttonType == _lastAnnouncedButtonType && IsWithinCooldown())
+                if (buttonType == _lastAnnouncedButtonType && ScreenReaderService.IsOnCooldown(CooldownKeyButton))
                 {
                     lastState = true;
                     return;
@@ -331,7 +330,7 @@ public sealed partial class InGameNarrationSystem
                 int position = buttonIndex >= 0 ? buttonIndex + 1 : 1;
                 _lastAnnouncedButtonIndex = buttonIndex;
                 _lastAnnouncedButtonType = buttonType;
-                _lastButtonAnnouncementFrame = Main.GameUpdateCount;
+                ScreenReaderService.SetCooldown(CooldownKeyButton, ButtonAnnouncementCooldownFrames);
 
                 string buttonLabel = trimmed;
                 if (!trimmed.Contains("button", StringComparison.OrdinalIgnoreCase))
@@ -350,33 +349,14 @@ public sealed partial class InGameNarrationSystem
                     announcement = buttonLabel;
                 }
 
-                // Bundle pending NPC chat with the first button announcement
-                if (!string.IsNullOrWhiteSpace(_pendingNpcChat))
-                {
-                    announcement = $"{_pendingNpcChat}. {announcement}";
-                    _pendingNpcChat = null;
-                }
+                // The NPC chat prefix was enqueued via EnqueuePrefix and will be
+                // automatically prepended by the speech controller
 
                 NarrationInstrumentationContext.SetPendingKey($"npc-dialogue:choice:{trimmed}");
                 ScreenReaderService.Announce(announcement, category: category, requestInterrupt: allowInterrupt);
             }
 
             lastState = true;
-        }
-
-        private bool IsWithinCooldown()
-        {
-            if (_lastButtonAnnouncementFrame == 0)
-            {
-                return false;
-            }
-
-            uint currentFrame = Main.GameUpdateCount;
-            uint elapsed = currentFrame >= _lastButtonAnnouncementFrame
-                ? currentFrame - _lastButtonAnnouncementFrame
-                : uint.MaxValue - _lastButtonAnnouncementFrame + currentFrame + 1;
-
-            return elapsed < ButtonAnnouncementCooldownFrames;
         }
 
         private string? GetCurrentFocusedButtonInfo(bool updateCooldown = false)
@@ -419,7 +399,7 @@ public sealed partial class InGameNarrationSystem
             if (updateCooldown)
             {
                 _lastAnnouncedButtonType = focusedType.Value;
-                _lastButtonAnnouncementFrame = Main.GameUpdateCount;
+                ScreenReaderService.SetCooldown(CooldownKeyButton, ButtonAnnouncementCooldownFrames);
             }
 
             string trimmed = label.Trim();
@@ -446,11 +426,11 @@ public sealed partial class InGameNarrationSystem
         {
             _lastNpc = -1;
             _lastChat = null;
-            _pendingNpcChat = null;
             _lastAnnouncedButtonIndex = -1;
-            _lastButtonAnnouncementFrame = 0;
             ResetFocus();
-            _suppressNextButtonAnnouncement = false;
+            // Clear speech queue state related to NPC dialogue
+            ScreenReaderService.ClearAllPrefixes();
+            ScreenReaderService.ClearCooldown(CooldownKeyButton);
             _currentPrimaryButton = null;
             _currentCloseButton = null;
             _currentSecondaryButton = null;

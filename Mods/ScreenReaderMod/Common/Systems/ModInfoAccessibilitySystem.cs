@@ -38,8 +38,8 @@ public sealed class ModInfoAccessibilitySystem : ModMenuAccessibilityBase
     private readonly List<PointBinding> _bottomRowBindings = new();
     private bool _inTopRow;
 
-    // Track if description was announced
-    private bool _descriptionAnnounced;
+    // Context key for one-time description announcement
+    private const string ContextKeyDescription = "modinfo:description";
 
     #endregion
 
@@ -107,7 +107,7 @@ public sealed class ModInfoAccessibilitySystem : ModMenuAccessibilityBase
         _topRowBindings.Clear();
         _bottomRowBindings.Clear();
         _inTopRow = false;
-        _descriptionAnnounced = false;
+        ScreenReaderService.ClearContexts("modinfo:");
 
         base.Unload();
     }
@@ -119,14 +119,14 @@ public sealed class ModInfoAccessibilitySystem : ModMenuAccessibilityBase
     protected override void OnMenuEntered(object menuState)
     {
         _inTopRow = false; // Start on bottom row (Back button)
-        _descriptionAnnounced = false;
+        ScreenReaderService.ClearContexts("modinfo:");
     }
 
     protected override void OnMenuExited()
     {
         _topRowBindings.Clear();
         _bottomRowBindings.Clear();
-        _descriptionAnnounced = false;
+        ScreenReaderService.ClearContexts("modinfo:");
     }
 
     protected override void ConfigureGamepadPoints(object menuState)
@@ -409,9 +409,9 @@ public sealed class ModInfoAccessibilitySystem : ModMenuAccessibilityBase
         }
 
         // On first focus, announce the mod name and description
-        if (!_descriptionAnnounced)
+        if (!ScreenReaderService.WasContextAnnounced(ContextKeyDescription))
         {
-            _descriptionAnnounced = true;
+            ScreenReaderService.MarkContextAnnounced(ContextKeyDescription);
 
             string? modDisplayName = ReflectionCache.UIModInfo.ModDisplayName?.GetValue(menuState) as string;
             string? description = ReflectionCache.UIModInfo.Info?.GetValue(menuState) as string;

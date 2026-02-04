@@ -45,7 +45,6 @@ public sealed partial class InGameNarrationSystem
         private int _lastCursorTileType = -1;
         private int _lastCursorAnnouncementKey = int.MinValue;
         private bool _lastSmartCursorEnabled;
-        private string? _pendingStatePrefix;
         private bool _lastIsToggleOn;
 
         public SmartCursorNarrator(CursorDescriptorService descriptorService)
@@ -73,34 +72,28 @@ public sealed partial class InGameNarrationSystem
 
             if (_lastSmartCursorEnabled != hasSmartCursor)
             {
+                // Use the speech service's prefix queue to bundle mode change with next announcement
                 if (hasSmartCursor)
                 {
-                    _pendingStatePrefix = LocalizationHelper.GetTextOrFallback(
+                    string smartCursorPrefix = LocalizationHelper.GetTextOrFallback(
                         "Mods.ScreenReaderMod.SmartCursor.Enabled",
                         "Smart cursor");
+                    ScreenReaderService.SetPendingPrefix(smartCursorPrefix);
                 }
                 else
                 {
-                    // Use the speech service's prefix queue to bundle with the next announcement
                     string unlockPrefix = LocalizationHelper.GetTextOrFallback(
                         "Mods.ScreenReaderMod.SmartCursor.UnlockedCursor",
                         "Unlocked cursor");
                     ScreenReaderService.SetPendingPrefix(unlockPrefix);
-                    _pendingStatePrefix = null;
                 }
 
                 ResetStateTracking();
                 _lastSmartCursorEnabled = hasSmartCursor;
-
-                if (!hasSmartCursor)
-                {
-                    AnnouncePendingStateIfAny(force: true);
-                }
             }
 
             if (!hasInteract && !hasSmartCursor)
             {
-                AnnouncePendingStateIfAny(force: true);
                 Reset();
                 return;
             }
@@ -109,14 +102,7 @@ public sealed partial class InGameNarrationSystem
             string? message = hasInteract ? DescribeSmartInteract(out category) : DescribeSmartCursor(player, out category);
             if (string.IsNullOrWhiteSpace(message))
             {
-                AnnouncePendingStateIfAny();
                 return;
-            }
-
-            if (!string.IsNullOrWhiteSpace(_pendingStatePrefix))
-            {
-                message = $"{_pendingStatePrefix}, {message}";
-                _pendingStatePrefix = null;
             }
 
             // Skip duplicate suppression when holding an axe so the player hears each tree announced
@@ -147,7 +133,6 @@ public sealed partial class InGameNarrationSystem
         private void Reset()
         {
             ResetStateTracking();
-            _pendingStatePrefix = null;
         }
 
         private void ResetSmartCursorRepeatTracking()
@@ -408,26 +393,6 @@ public sealed partial class InGameNarrationSystem
 
             // Strip shape suffix to prevent slope-only changes from triggering re-announcements
             return StripShapeSuffix(descriptor.Name);
-        }
-
-        private void AnnouncePendingStateIfAny(bool force = false)
-        {
-            if (string.IsNullOrWhiteSpace(_pendingStatePrefix))
-            {
-                return;
-            }
-
-            string prefix = _pendingStatePrefix;
-            _pendingStatePrefix = null;
-
-            if (string.Equals(prefix, _lastAnnouncement, StringComparison.Ordinal))
-            {
-                return;
-            }
-
-            _lastAnnouncement = prefix;
-            NarrationInstrumentationContext.SetPendingKey(BuildSmartCursorKey(prefix));
-            ScreenReaderService.Announce(prefix, force: force);
         }
 
         private static string BuildSmartCursorKey(string? message)

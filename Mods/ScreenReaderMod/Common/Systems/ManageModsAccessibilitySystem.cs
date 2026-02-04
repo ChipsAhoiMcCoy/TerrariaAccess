@@ -73,16 +73,15 @@ public sealed class ManageModsAccessibilitySystem : ModMenuAccessibilityBase
     private static bool _isDialogActive;
     private static int _dialogFocusIndex; // 0 = Yes, 1 = No
     private static readonly List<PointBinding> DialogBindings = new();
-    private static string? _dialogText; // The dialog text to announce with the first button
-    private static bool _dialogTextAnnounced; // Whether the dialog text has been announced
-    private static int _dialogActionCooldown; // Frames to wait after dialog closes before allowing actions
     private static int _savedFocusPointBeforeDialog; // Store focus point before dialog opens
 
     // Track the last known state for each mod to detect changes
     private static readonly Dictionary<object, bool> _lastKnownModStates = new();
 
-    // Track when we toggled to avoid double-announcement
-    private static int _toggleCooldownFrames;
+    // Cooldown and context keys for speech queue system
+    private const string CooldownKeyToggle = "managemods:toggle";
+    private const string CooldownKeyDialogAction = "managemods:dialog-action";
+    private const string ContextKeyDialogText = "managemods:dialog";
 
     // Dialog navigation input state
     private static bool _dialogUpWasPressed;
@@ -170,13 +169,13 @@ public sealed class ManageModsAccessibilitySystem : ModMenuAccessibilityBase
         _currentRegion = FocusRegion.ModList;
         _isDialogActive = false;
         _dialogFocusIndex = 0;
-        _dialogText = null;
-        _dialogTextAnnounced = false;
         _lastDialogAnnouncedIndex = -1;
-        _dialogActionCooldown = 0;
         _savedFocusPointBeforeDialog = 0;
         _lastKnownModStates.Clear();
-        _toggleCooldownFrames = 0;
+        // Clear speech queue state related to manage mods
+        ScreenReaderService.ClearContexts("managemods:");
+        ScreenReaderService.ClearCooldown(CooldownKeyToggle);
+        ScreenReaderService.ClearCooldown(CooldownKeyDialogAction);
     }
 
     protected override void OnMenuEntered(object menuState)
@@ -195,6 +194,10 @@ public sealed class ManageModsAccessibilitySystem : ModMenuAccessibilityBase
         TopActionBindingsList.Clear();
         BottomActionBindingsList.Clear();
         _currentModButtonIndex = 0;
+        // Clear speech queue state when leaving the menu
+        ScreenReaderService.ClearContexts("managemods:");
+        ScreenReaderService.ClearCooldown(CooldownKeyToggle);
+        ScreenReaderService.ClearCooldown(CooldownKeyDialogAction);
     }
 
     protected override bool ShouldProcessInput(object menuState)
@@ -768,20 +771,10 @@ public sealed class ManageModsAccessibilitySystem : ModMenuAccessibilityBase
             return;
         }
 
-        // Decrement cooldowns
-        if (_toggleCooldownFrames > 0)
-        {
-            _toggleCooldownFrames--;
-        }
-        if (_dialogActionCooldown > 0)
-        {
-            _dialogActionCooldown--;
-        }
-
         if (!CurrentInput.ActionPressed)
         {
             // Monitor for native toggles and re-toggle to counteract them
-            if (_toggleCooldownFrames > 0 && _toggleCooldownFrames <= 8)
+            if (ScreenReaderService.IsOnCooldown(CooldownKeyToggle))
             {
                 MonitorNativeToggles(menuState);
             }
@@ -789,7 +782,9 @@ public sealed class ManageModsAccessibilitySystem : ModMenuAccessibilityBase
         }
 
         // When action is pressed on a mod item, toggle it and announce
-        if (_currentRegion == FocusRegion.ModList && _toggleCooldownFrames == 0 && _dialogActionCooldown == 0)
+        bool toggleOnCooldown = ScreenReaderService.IsOnCooldown(CooldownKeyToggle);
+        bool dialogOnCooldown = ScreenReaderService.IsOnCooldown(CooldownKeyDialogAction);
+        if (_currentRegion == FocusRegion.ModList && !toggleOnCooldown && !dialogOnCooldown)
         {
             // Check if we're on a mod item button (More Info, Delete, Config)
             if (_currentModButtonIndex > 0)
@@ -840,7 +835,7 @@ public sealed class ManageModsAccessibilitySystem : ModMenuAccessibilityBase
 
                         Main.mouseLeft = false;
                         Main.mouseLeftRelease = false;
-                        _dialogActionCooldown = 30;
+                        ScreenReaderService.SetCooldown(CooldownKeyDialogAction, 30);
                         return;
                     }
                 }
@@ -890,7 +885,7 @@ public sealed class ManageModsAccessibilitySystem : ModMenuAccessibilityBase
                 Mod.Logger.Info($"[ManageMods] Toggled: {announcement}");
                 ScreenReaderService.Announce(announcement, force: true);
 
-                _toggleCooldownFrames = 10;
+                ScreenReaderService.SetCooldown(CooldownKeyToggle, 10);
                 _lastKnownModStates[modItem] = newState;
             }
         }
@@ -1124,15 +1119,20 @@ public sealed class ManageModsAccessibilitySystem : ModMenuAccessibilityBase
             _dialogFocusIndex = 0;
             LastAnnouncedPointId = -1;
             _lastDialogAnnouncedIndex = -1;
-            _dialogText = GetDialogText(menuState);
-            _dialogTextAnnounced = false;
+
+            // Get dialog text and enqueue it as a prefix for the first button announcement
+            string? dialogText = GetDialogText(menuState);
+            if (!string.IsNullOrEmpty(dialogText))
+            {
+                ScreenReaderService.EnqueuePrefix(dialogText);
+            }
 
             _savedFocusPointBeforeDialog = UILinkPointNavigator.CurrentPoint;
             SetupDialogLinkPoints();
 
             GamePadState gpState = GamePad.GetState(PlayerIndex.One);
             _dialogAWasPressed = gpState.Buttons.A == ButtonState.Pressed;
-            _dialogActionCooldown = 45;
+            ScreenReaderService.SetCooldown(CooldownKeyDialogAction, 45);
 
             Mod.Logger.Info("[ManageMods] Confirmation dialog opened");
         }
@@ -1140,17 +1140,16 @@ public sealed class ManageModsAccessibilitySystem : ModMenuAccessibilityBase
         {
             _isDialogActive = false;
             DialogBindings.Clear();
-            _dialogText = null;
-            _dialogTextAnnounced = false;
             _lastDialogAnnouncedIndex = -1;
             _dialogFocusIndex = 0;
 
             _currentModButtonIndex = 0;
             CleanupDialogLinkPoints();
 
-            GamePadState gpState = GamePad.GetState(PlayerIndex.One);
-            // Note: we use base class input tracking, so just set cooldown
-            _dialogActionCooldown = 15;
+            // Clear dialog-related speech state and set cooldown
+            ScreenReaderService.ClearAllPrefixes();
+            ScreenReaderService.ClearContexts("managemods:dialog");
+            ScreenReaderService.SetCooldown(CooldownKeyDialogAction, 15);
 
             Mod.Logger.Info("[ManageMods] Confirmation dialog closed, cooldown started");
         }
@@ -1384,17 +1383,9 @@ public sealed class ManageModsAccessibilitySystem : ModMenuAccessibilityBase
             _lastDialogAnnouncedIndex = _dialogFocusIndex;
             SoundEngine.PlaySound(SoundID.MenuTick);
 
-            if (!_dialogTextAnnounced && !string.IsNullOrEmpty(_dialogText))
-            {
-                string dialogText = TextSanitizer.Clean(_dialogText);
-                string announcement = $"{dialogText} {buttonLabel}";
-                ScreenReaderService.Announce(announcement, force: true);
-                _dialogTextAnnounced = true;
-            }
-            else
-            {
-                ScreenReaderService.Announce(buttonLabel, force: true);
-            }
+            // The dialog text was enqueued as a prefix and will be automatically
+            // prepended by the speech controller to the first announcement
+            ScreenReaderService.Announce(buttonLabel, force: true);
         }
     }
 
