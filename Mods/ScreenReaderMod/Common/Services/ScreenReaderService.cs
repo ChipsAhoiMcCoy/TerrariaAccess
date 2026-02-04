@@ -84,7 +84,7 @@ public static class ScreenReaderService
 
     private static SpeechController BuildController()
     {
-        var controller = new SpeechController(new NvdaSpeechProvider());
+        var controller = new SpeechController(new TolkSpeechProvider());
         controller.SetCategoryWindow(AnnouncementCategory.World, TimeSpan.FromSeconds(2));
         controller.SetCategoryWindow(AnnouncementCategory.Tile, TimeSpan.FromMilliseconds(150));
         controller.SetCategoryWindow(AnnouncementCategory.Wall, TimeSpan.FromMilliseconds(150));
