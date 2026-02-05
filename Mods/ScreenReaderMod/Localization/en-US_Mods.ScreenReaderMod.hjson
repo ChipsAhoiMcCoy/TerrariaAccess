@@ -125,6 +125,8 @@ Mods: {
 			Locked: Locked
 		}
 
+		WorldCreation.EmptyInputPlaceholder: empty, type to enter
+
 		CursorLiquids: {
 			Water: Water
 			Lava: Lava

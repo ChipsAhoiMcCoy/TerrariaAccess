@@ -5,6 +5,7 @@ using System.Collections.Generic;
 using System.Reflection;
 using Terraria;
 using Terraria.UI;
+using ScreenReaderMod.Common.Services;
 using ScreenReaderMod.Common.Utilities;
 
 namespace ScreenReaderMod.Common.Systems.MenuNarration;
@@ -15,6 +16,8 @@ internal sealed partial class MenuUiSelectionTracker
     private static readonly FieldInfo? WorldCreationSizeButtonsField = ResolveWorldCreationField("_sizeButtons");
     private static readonly FieldInfo? WorldCreationDifficultyButtonsField = ResolveWorldCreationField("_difficultyButtons");
     private static readonly FieldInfo? WorldCreationEvilButtonsField = ResolveWorldCreationField("_evilButtons");
+    private static readonly FieldInfo? WorldCreationNamePlateField = ResolveWorldCreationField("_namePlate");
+    private static readonly FieldInfo? WorldCreationSeedPlateField = ResolveWorldCreationField("_seedPlate");
 
     private static UIElement? _lastWorldCreationRoot;
     private static string? _lastWorldCreationGroup;
@@ -229,13 +232,18 @@ internal sealed partial class MenuUiSelectionTracker
         bool includeGroup = !sameGroup || string.IsNullOrWhiteSpace(_lastWorldCreationGroup);
         bool includeCount = includeGroup;
 
+        // Update tracking state first
+        _lastWorldCreationRoot = root;
+        _lastWorldCreationGroup = groupLabel;
+        _lastWorldCreationElement = element;
+
+        // Build the label with inline group concatenation
         string baseLabel = string.IsNullOrWhiteSpace(optionLabel) ? groupLabel : optionLabel;
         string label;
-        if (includeGroup)
+
+        if (includeGroup && !string.IsNullOrWhiteSpace(groupLabel) && !string.IsNullOrWhiteSpace(optionLabel))
         {
-            label = string.IsNullOrWhiteSpace(optionLabel)
-                ? groupLabel
-                : TextSanitizer.JoinWithComma(groupLabel, baseLabel);
+            label = TextSanitizer.JoinWithComma(groupLabel, baseLabel);
         }
         else
         {
@@ -252,28 +260,66 @@ internal sealed partial class MenuUiSelectionTracker
             label = TextSanitizer.JoinWithComma("Selected", label);
         }
 
-        _lastWorldCreationRoot = root;
-        _lastWorldCreationGroup = groupLabel;
-        _lastWorldCreationElement = element;
-
         return TextSanitizer.Clean(label);
     }
 
     private static bool TryDescribeWorldCreationInput(UIElement root, UIElement element, out string label)
     {
-        if (TryMatchWorldCreationInput(root, element, "name", out UIElement? nameInput))
+        // Try explicit field references first (UICharacterNameButton types)
+        if (TryMatchExplicitWorldCreationInput(root, element, WorldCreationNamePlateField, out UIElement? nameInput))
         {
             label = BuildWorldTextInputLabel("World name", nameInput!);
             return true;
         }
 
-        if (TryMatchWorldCreationInput(root, element, "seed", out UIElement? seedInput))
+        if (TryMatchExplicitWorldCreationInput(root, element, WorldCreationSeedPlateField, out UIElement? seedInput))
+        {
+            label = BuildWorldTextInputLabel("Seed", seedInput!);
+            return true;
+        }
+
+        // Fall back to dynamic matching for compatibility
+        if (TryMatchWorldCreationInput(root, element, "name", out nameInput))
+        {
+            label = BuildWorldTextInputLabel("World name", nameInput!);
+            return true;
+        }
+
+        if (TryMatchWorldCreationInput(root, element, "seed", out seedInput))
         {
             label = BuildWorldTextInputLabel("Seed", seedInput!);
             return true;
         }
 
         label = string.Empty;
+        return false;
+    }
+
+    private static bool TryMatchExplicitWorldCreationInput(UIElement root, UIElement element, FieldInfo? field, out UIElement inputElement)
+    {
+        inputElement = null!;
+
+        if (field is null)
+        {
+            return false;
+        }
+
+        try
+        {
+            if (field.GetValue(root) is UIElement candidate)
+            {
+                if (ReferenceEquals(candidate, element) || IsAncestor(candidate, element) || IsAncestor(element, candidate))
+                {
+                    inputElement = candidate;
+                    return true;
+                }
+            }
+        }
+        catch
+        {
+            // ignore reflection failures
+        }
+
         return false;
     }
 
@@ -354,11 +400,19 @@ internal sealed partial class MenuUiSelectionTracker
     private static string BuildWorldTextInputLabel(string prefix, UIElement input)
     {
         string value = TryGetInputText(input);
+
+        // Get placeholder for empty fields
+        string placeholder = LocalizationHelper.GetTextOrFallback(
+            "Mods.ScreenReaderMod.WorldCreation.EmptyInputPlaceholder",
+            "empty, type to enter");
+
+        // If no value, return prefix with placeholder
         if (string.IsNullOrWhiteSpace(value))
         {
-            return prefix;
+            return TextSanitizer.JoinWithComma(prefix, placeholder);
         }
 
+        // Return prefix with value
         return TextSanitizer.JoinWithComma(prefix, value);
     }
 
@@ -373,6 +427,27 @@ internal sealed partial class MenuUiSelectionTracker
         try
         {
             Type type = element.GetType();
+
+            // Check for UICharacterNameButton's actualContents field first
+            // This is used by world name and seed plates in world creation
+            FieldInfo? actualContentsField = type.GetField("actualContents", CharacterBindingFlags);
+            if (actualContentsField?.GetValue(element) is string actualContents && !string.IsNullOrWhiteSpace(actualContents))
+            {
+                return TextSanitizer.Clean(actualContents);
+            }
+
+            // Also handle empty actualContents explicitly - if the field exists but is empty,
+            // return empty string to indicate the field was found but has no content
+            if (actualContentsField is not null)
+            {
+                // Field exists, return whatever it contains (including empty)
+                object? value = actualContentsField.GetValue(element);
+                if (value is null || (value is string s && string.IsNullOrWhiteSpace(s)))
+                {
+                    return string.Empty;
+                }
+            }
+
             foreach (string propertyName in new[] { "CurrentString", "Text", "InputText", "Value" })
             {
                 PropertyInfo? property = type.GetProperty(propertyName, CharacterBindingFlags);
@@ -382,7 +457,7 @@ internal sealed partial class MenuUiSelectionTracker
                 }
             }
 
-            foreach (string fieldName in new[] { "_currentString", "_text", "_value" })
+            foreach (string fieldName in new[] { "_currentString", "_value" })
             {
                 FieldInfo? field = type.GetField(fieldName, CharacterBindingFlags);
                 if (field?.GetValue(element) is string fieldText && !string.IsNullOrWhiteSpace(fieldText))
@@ -477,8 +552,8 @@ internal sealed partial class MenuUiSelectionTracker
         WorldCreationSelection size = DescribeWorldCreationGroupSelection(root, WorldCreationSizeButtonsField, "World size", "size", hovered, out bool sizeFocused);
         WorldCreationSelection difficulty = DescribeWorldCreationGroupSelection(root, WorldCreationDifficultyButtonsField, "World difficulty", "difficulty", hovered, out bool difficultyFocused);
         WorldCreationSelection evil = DescribeWorldCreationGroupSelection(root, WorldCreationEvilButtonsField, "World evil", "evil", hovered, out bool evilFocused);
-        WorldCreationInput name = DescribeWorldCreationInputValue(root, "name", "World name", hovered, out bool nameFocused);
-        WorldCreationInput seed = DescribeWorldCreationInputValue(root, "seed", "Seed", hovered, out bool seedFocused);
+        WorldCreationInput name = DescribeWorldCreationInputValue(root, "name", "World name", hovered, WorldCreationNamePlateField, out bool nameFocused);
+        WorldCreationInput seed = DescribeWorldCreationInputValue(root, "seed", "Seed", hovered, WorldCreationSeedPlateField, out bool seedFocused);
 
         snapshot = new WorldCreationSnapshot(size, difficulty, evil, name, seed, sizeFocused, difficultyFocused, evilFocused, nameFocused, seedFocused);
         return true;
@@ -518,9 +593,36 @@ internal sealed partial class MenuUiSelectionTracker
         return new WorldCreationSelection(groupLabel, optionLabel, selectedIndex, buttons.Length, IsGroupOptionSelected(selected));
     }
 
-    private static WorldCreationInput DescribeWorldCreationInputValue(UIElement root, string hint, string prefix, UIElement? hovered, out bool isFocused)
+    private static WorldCreationInput DescribeWorldCreationInputValue(UIElement root, string hint, string prefix, UIElement? hovered, FieldInfo? explicitField, out bool isFocused)
     {
         isFocused = false;
+
+        // Try explicit field reference first
+        if (explicitField is not null)
+        {
+            try
+            {
+                if (explicitField.GetValue(root) is UIElement plateElement)
+                {
+                    // Check if hovered element matches this plate
+                    if (hovered is not null &&
+                        (ReferenceEquals(plateElement, hovered) ||
+                         IsAncestor(plateElement, hovered) ||
+                         IsAncestor(hovered, plateElement)))
+                    {
+                        isFocused = true;
+                    }
+
+                    return BuildWorldTextInputValue(prefix, plateElement);
+                }
+            }
+            catch
+            {
+                // ignore reflection failures
+            }
+        }
+
+        // Fall back to dynamic matching
         if (hovered is not null && TryMatchWorldCreationInput(root, hovered, hint, out UIElement? hoveredInput))
         {
             isFocused = true;
@@ -601,9 +703,12 @@ internal sealed partial class MenuUiSelectionTracker
         {
             string option = Option ?? string.Empty;
             string group = Group ?? string.Empty;
+
+            // Build the value part (option name + optional count + selected state)
             string baseLabel = string.IsNullOrWhiteSpace(option) ? group : option;
             string label;
-            if (includeGroup)
+
+            if (includeGroup && !string.IsNullOrWhiteSpace(group))
             {
                 label = string.IsNullOrWhiteSpace(option) ? group : TextSanitizer.JoinWithComma(group, baseLabel);
             }
@@ -611,6 +716,7 @@ internal sealed partial class MenuUiSelectionTracker
             {
                 label = baseLabel;
             }
+
             if (includeGroup && Total > 0)
             {
                 label = TextSanitizer.JoinWithComma(label, $"{Index + 1} of {Total}");
@@ -633,13 +739,21 @@ internal sealed partial class MenuUiSelectionTracker
         {
             string prefix = Prefix ?? string.Empty;
             string value = Value ?? string.Empty;
-            string baseLabel = string.IsNullOrWhiteSpace(value) ? prefix : value;
-            if (includePrefix)
+            bool valueIsEmpty = string.IsNullOrWhiteSpace(value);
+
+            // Get placeholder for empty fields
+            string placeholder = LocalizationHelper.GetTextOrFallback(
+                "Mods.ScreenReaderMod.WorldCreation.EmptyInputPlaceholder",
+                "empty, type to enter");
+
+            string valueOrPlaceholder = valueIsEmpty ? placeholder : value;
+
+            if (includePrefix && !string.IsNullOrWhiteSpace(prefix))
             {
-                return TextSanitizer.Clean(TextSanitizer.JoinWithComma(prefix, baseLabel));
+                return TextSanitizer.Clean(TextSanitizer.JoinWithComma(prefix, valueOrPlaceholder));
             }
 
-            return TextSanitizer.Clean(baseLabel);
+            return TextSanitizer.Clean(valueOrPlaceholder);
         }
     }
 
@@ -671,6 +785,18 @@ internal sealed partial class MenuUiSelectionTracker
             return true;
         }
 
+        // Check explicit field references for name/seed plates first
+        if (TryMatchExplicitWorldCreationInput(root, element, WorldCreationNamePlateField, out _))
+        {
+            return true;
+        }
+
+        if (TryMatchExplicitWorldCreationInput(root, element, WorldCreationSeedPlateField, out _))
+        {
+            return true;
+        }
+
+        // Fall back to dynamic matching
         if (TryMatchWorldCreationInput(root, element, "name", out _))
         {
             return true;

@@ -1,6 +1,8 @@
 #nullable enable
 using System;
 using System.Collections.Generic;
+using System.Reflection;
+using ScreenReaderMod.Common.Services;
 using ScreenReaderMod.Common.Systems;
 using ScreenReaderMod.Common.Systems.MenuNarration.ModConfig;
 using ScreenReaderMod.Common.Utilities;
@@ -15,6 +17,9 @@ namespace ScreenReaderMod.Common.Systems.MenuNarration;
 
 internal sealed class DefaultMenuNarrationHandler : IMenuNarrationHandler
 {
+    private static readonly FieldInfo? FocusMenuField = typeof(Main).GetField("focusMenu", BindingFlags.NonPublic | BindingFlags.Instance);
+    private static readonly FieldInfo? SelectedMenuField = typeof(Main).GetField("selectedMenu", BindingFlags.NonPublic | BindingFlags.Instance);
+
     private readonly MenuFocusResolver _focusResolver = new();
     private readonly MenuUiSelectionTracker _uiSelectionTracker = new();
     private readonly ModConfigNarrationCoordinator _modConfigCoordinator = new();
@@ -179,6 +184,13 @@ internal sealed class DefaultMenuNarrationHandler : IMenuNarrationHandler
             return true;
         }
 
+        // Skip hover announcements for tracked world creation elements - let TryHandleWorldCreationSnapshot handle them
+        if (MenuUiSelectionTracker.IsTrackedWorldCreationElement(hover.Element))
+        {
+            ScreenReaderMod.Instance?.Logger.Debug($"[DefaultHandler][HoverDiag] Suppressed hover for world creation element");
+            return true;
+        }
+
         string cleaned = TextSanitizer.Clean(hover.Text);
         if (string.IsNullOrWhiteSpace(cleaned))
         {
@@ -222,16 +234,71 @@ internal sealed class DefaultMenuNarrationHandler : IMenuNarrationHandler
         bool hasSpecialSlider = special == 1;
         bool hasSliderIndex = sliderIndex >= 0;
 
+        // For audio menu, check focusMenu first to detect back button regardless of slider state.
+        // This handles gamepad navigation where focusMenu can be 2 (back button) while rightHover
+        // is still on a slider position from mouse hover.
+        if (audioMenu)
+        {
+            int focusMenu = -1;
+            try
+            {
+                if (FocusMenuField?.GetValue(Main.instance) is int focusValue)
+                {
+                    focusMenu = focusValue;
+                }
+            }
+            catch
+            {
+                // ignore reflection failures
+            }
+
+            bool isOnBackButton = focusMenu == 2;
+
+            if (isOnBackButton)
+            {
+                // Handle back button - announce only if we just arrived
+                if (!_state.WasOnAudioMenuBackButton)
+                {
+                    _state.WasOnAudioMenuBackButton = true;
+                    _state.LastSliderId = -1;
+                    _state.LastSliderKind = MenuSliderKind.Unknown;
+
+                    string backLabel = TextSanitizer.Clean(Language.GetTextValue("UI.Back"));
+                    if (string.IsNullOrWhiteSpace(backLabel))
+                    {
+                        backLabel = TextSanitizer.Clean(Lang.menu[5].Value);
+                    }
+                    if (string.IsNullOrWhiteSpace(backLabel))
+                    {
+                        backLabel = "Back";
+                    }
+
+                    ScreenReaderMod.Instance?.Logger.Info($"[MenuNarration][AudioBack] Announcing back button: {backLabel}");
+                    events.Add(new MenuNarrationEvent(backLabel, true, MenuNarrationEventKind.Focus));
+                    _state.LastFocusAnnouncement = backLabel;
+                    _state.LastFocusAnnouncedAt = DateTime.UtcNow;
+                }
+                return true;
+            }
+            else if (_state.WasOnAudioMenuBackButton)
+            {
+                // Just left the back button - reset state but don't return yet,
+                // continue to process sliders below
+                _state.WasOnAudioMenuBackButton = false;
+                ResetSliderTracking();
+            }
+        }
+
         if (!hasSliderIndex && !hasSpecialSlider)
         {
-            ResetSliderTracking();
-
             if (audioMenu)
             {
-                // Wait for the slider links to appear before narrating to avoid duplicate preamble lines.
+                // No slider active and not on back button (handled above).
+                // Wait for slider links to appear before narrating.
                 return true;
             }
 
+            ResetSliderTracking();
             return false;
         }
 
@@ -277,12 +344,8 @@ internal sealed class DefaultMenuNarrationHandler : IMenuNarrationHandler
             }
         }
 
-        if (audioMenu && IsBackLabel(sliderLabel))
-        {
-            LogAudioMenuDebug(sliderIndex, sliderLabel, kind, percent: 0f, categoryId, special, note: "back label detected");
-            ResetSliderTracking();
-            return false;
-        }
+        // Note: Back button detection for audio menu is handled earlier via focusMenu == 2.
+        // The IsBackLabel check was removed as it was redundant and could cause conflicts.
 
         if (kind == MenuSliderKind.Unknown)
         {
@@ -331,13 +394,26 @@ internal sealed class DefaultMenuNarrationHandler : IMenuNarrationHandler
             LogAudioMenuDebug(sliderIndex, sliderLabel, kind, percent, categoryId, special, note: sliderChanged ? "audio slider focus changed" : "audio slider value changed");
         }
 
-        string announcement = BuildSliderAnnouncement(sliderLabel, kind, percent, includeLabel: sliderChanged);
+        // Use the speech queue system for slider announcements:
+        // - When slider focus changes: enqueue label as prefix, announce percentage
+        // - When only value changes: just announce percentage
+        string baseLabel = SliderNarrationHelper.ExtractBaseLabel(sliderLabel, kind);
+        string valueText = $"{percent:0} percent";
+
+        if (sliderChanged && !string.IsNullOrWhiteSpace(baseLabel))
+        {
+            ScreenReaderService.EnqueuePrefix(baseLabel);
+        }
+
         _state.LastSliderId = sliderId;
         _state.LastSliderKind = kind;
         lastValue = percent;
 
-        ScreenReaderMod.Instance?.Logger.Info($"[MenuNarration] Slider {sliderId} ({kind}) -> {announcement}");
-        events.Add(new MenuNarrationEvent(announcement, true, MenuNarrationEventKind.Slider));
+        // Clear last focus so that navigating back to menu buttons (like Back) is detected as a change
+        _state.LastFocus = null;
+
+        ScreenReaderMod.Instance?.Logger.Info($"[MenuNarration] Slider {sliderId} ({kind}) -> {(sliderChanged ? $"{baseLabel}. {valueText}" : valueText)}");
+        events.Add(new MenuNarrationEvent(valueText, true, MenuNarrationEventKind.Slider));
         return true;
     }
 

@@ -27,6 +27,7 @@ internal sealed class MenuNarrationState
     internal float LastInterfaceScale = -1f;
     internal float LastParallax = -1f;
     internal int LastCategoryId = -1;
+    internal bool WasOnAudioMenuBackButton;
 
     internal void ResetForMode(int mode)
     {
@@ -64,6 +65,7 @@ internal sealed class MenuNarrationState
         LastInterfaceScale = -1f;
         LastParallax = -1f;
         LastCategoryId = -1;
+        WasOnAudioMenuBackButton = false;
     }
 }
 

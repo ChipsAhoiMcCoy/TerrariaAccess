@@ -12,6 +12,7 @@ using Terraria.GameInput;
 using Terraria.Localization;
 using Terraria.ModLoader;
 using Terraria.UI;
+using ScreenReaderMod.Common.Services;
 using ScreenReaderMod.Common.Utilities;
 
 namespace ScreenReaderMod.Common.Systems;
@@ -371,10 +372,17 @@ internal static partial class MenuNarrationCatalog
     private static string DescribeResolutionMenu(int index)
     {
         bool borderlessAvailable = Platform.IsWindows;
-        var items = new List<string>
+
+        // Resolution setting at index 0 uses prefix queue for better speech structure
+        if (index == 0)
         {
-            TextSanitizer.Clean($"{Lang.menu[73].Value}: {Main.PendingResolutionWidth}x{Main.PendingResolutionHeight}"),
-        };
+            string resolutionLabel = TextSanitizer.Clean(Lang.menu[73].Value);
+            ScreenReaderService.EnqueuePrefix(resolutionLabel);
+            return $"{Main.PendingResolutionWidth}x{Main.PendingResolutionHeight}";
+        }
+
+        // Build remaining items with adjusted indices
+        var items = new List<string>();
 
         if (borderlessAvailable)
         {
@@ -385,7 +393,8 @@ internal static partial class MenuNarrationCatalog
         items.Add(TextSanitizer.Clean(Lang.menu[134].Value));
         items.Add(TextSanitizer.Clean(Lang.menu[5].Value));
 
-        return OptionOrEmpty(items, index);
+        // Adjust index since we handled index 0 separately
+        return OptionOrEmpty(items, index - 1);
     }
 
     private static string DescribeSettingsCursorMenu(int index)

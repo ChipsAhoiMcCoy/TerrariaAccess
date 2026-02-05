@@ -15,6 +15,7 @@ using Terraria.ModLoader.UI.ModBrowser;
 using Terraria.Social.Steam;
 using Terraria.ModLoader;
 using Terraria.UI;
+using ScreenReaderMod.Common.Services;
 using ScreenReaderMod.Common.Utilities;
 
 namespace ScreenReaderMod.Common.Systems.MenuNarration;
@@ -326,7 +327,7 @@ internal sealed partial class MenuUiSelectionTracker
         return string.Empty;
     }
 
-    private static string DescribeKeybindingListItem(UIElement element)
+    private static string DescribeKeybindingListItem(UIElement element, bool enqueueLabelAsPrefix = true)
     {
         Type type = element.GetType();
 
@@ -345,10 +346,16 @@ internal sealed partial class MenuUiSelectionTracker
             return friendly;
         }
 
-            return TextSanitizer.Clean($"{friendly}: {assignment}");
+        if (enqueueLabelAsPrefix)
+        {
+            ScreenReaderService.EnqueuePrefix(TextSanitizer.Clean(friendly));
+            return TextSanitizer.Clean(assignment);
+        }
+
+        return TextSanitizer.Clean($"{friendly}: {assignment}");
     }
 
-    private static string DescribeKeybindingSliderItem(UIElement element)
+    private static string DescribeKeybindingSliderItem(UIElement element, bool enqueueLabelAsPrefix = true)
     {
         string label = InvokeFunc<string>(element, "_TextDisplayFunction");
         float value = InvokeFunc<float>(element, "_GetStatusFunction");
@@ -367,10 +374,16 @@ internal sealed partial class MenuUiSelectionTracker
             return valueText;
         }
 
+        if (enqueueLabelAsPrefix)
+        {
+            ScreenReaderService.EnqueuePrefix(TextSanitizer.Clean(label));
+            return valueText;
+        }
+
         return TextSanitizer.Clean($"{label}: {valueText}");
     }
 
-    private static string DescribeKeybindingToggleItem(UIElement element)
+    private static string DescribeKeybindingToggleItem(UIElement element, bool enqueueLabelAsPrefix = true)
     {
         string label = InvokeFunc<string>(element, "_TextDisplayFunction");
         bool isOn = InvokeFunc<bool>(element, "_IsOnFunction");
@@ -380,6 +393,12 @@ internal sealed partial class MenuUiSelectionTracker
 
         if (string.IsNullOrWhiteSpace(label))
         {
+            return state;
+        }
+
+        if (enqueueLabelAsPrefix)
+        {
+            ScreenReaderService.EnqueuePrefix(TextSanitizer.Clean(label));
             return state;
         }
 
@@ -833,11 +852,23 @@ internal sealed partial class MenuUiSelectionTracker
         };
     }
 
-    private static string DescribeWorldSeed(WorldFileData? data)
+    private static string DescribeWorldSeed(WorldFileData? data, bool enqueueLabelAsPrefix = true)
     {
         string label = LocalizationHelper.GetTextOrFallback("UI.CopySeedToClipboard", "Copy seed");
         string seed = ExtractWorldSeed(data);
-        return string.IsNullOrWhiteSpace(seed) ? label : $"{label}: {seed}";
+
+        if (string.IsNullOrWhiteSpace(seed))
+        {
+            return label;
+        }
+
+        if (enqueueLabelAsPrefix)
+        {
+            ScreenReaderService.EnqueuePrefix(label);
+            return seed;
+        }
+
+        return $"{label}: {seed}";
     }
 
     private static string DescribeCloudToggle(bool isCloudSave)
@@ -984,7 +1015,7 @@ internal sealed partial class MenuUiSelectionTracker
                typeName.Contains("HeaderElement", StringComparison.Ordinal);
     }
 
-    private static string DescribeConfigElement(UIElement element)
+    private static string DescribeConfigElement(UIElement element, bool enqueueLabelAsPrefix = true)
     {
         if (element is null)
         {
@@ -1000,26 +1031,32 @@ internal sealed partial class MenuUiSelectionTracker
         // Try to get Value
         string value = TryGetConfigValue(element, type, flags);
 
-        // Build description
-        var parts = new List<string>();
+        bool hasLabel = !string.IsNullOrWhiteSpace(label);
+        bool hasValue = !string.IsNullOrWhiteSpace(value);
 
-        if (!string.IsNullOrWhiteSpace(label))
-        {
-            parts.Add(TextSanitizer.Clean(label));
-        }
-
-        if (!string.IsNullOrWhiteSpace(value))
-        {
-            parts.Add(TextSanitizer.Clean(value));
-        }
-
-        if (parts.Count == 0)
+        if (!hasLabel && !hasValue)
         {
             // Fallback to type name
             return type.Name;
         }
 
-        return string.Join(": ", parts);
+        if (!hasLabel)
+        {
+            return TextSanitizer.Clean(value);
+        }
+
+        if (!hasValue)
+        {
+            return TextSanitizer.Clean(label);
+        }
+
+        if (enqueueLabelAsPrefix)
+        {
+            ScreenReaderService.EnqueuePrefix(TextSanitizer.Clean(label));
+            return TextSanitizer.Clean(value);
+        }
+
+        return $"{TextSanitizer.Clean(label)}: {TextSanitizer.Clean(value)}";
     }
 
     private static string TryGetConfigLabel(UIElement element, Type type, BindingFlags flags)

@@ -6,6 +6,7 @@ using System.Reflection;
 using Terraria;
 using Terraria.Localization;
 using Terraria.UI;
+using ScreenReaderMod.Common.Services;
 using ScreenReaderMod.Common.Utilities;
 
 namespace ScreenReaderMod.Common.Systems.MenuNarration;
@@ -272,7 +273,7 @@ internal sealed partial class MenuUiSelectionTracker
         return TextSanitizer.JoinWithComma(title, $"{tabIndex} of {CharacterCreationTabCount}");
     }
 
-    private static string DescribeCharacterName(UIElement element)
+    private static string DescribeCharacterName(UIElement element, bool enqueueCategoryAsPrefix = false)
     {
         string? value = NameButtonContentsField?.GetValue(element) as string;
         if (string.IsNullOrWhiteSpace(value))
@@ -288,10 +289,16 @@ internal sealed partial class MenuUiSelectionTracker
         }
 
         string label = LocalizationHelper.GetTextOrFallback("UI.WorldCreationName", "Name");
+        if (enqueueCategoryAsPrefix)
+        {
+            ScreenReaderService.EnqueuePrefix(label);
+            return value;
+        }
+
         return TextSanitizer.JoinWithComma(label, value);
     }
 
-    private static string DescribeHairStyleOption(UIElement root, UIElement element)
+    private static string DescribeHairStyleOption(UIElement root, UIElement element, bool enqueueCategoryAsPrefix = false)
     {
         // If HairStyleNavigationSystem is actively handling navigation, defer to it
         // to avoid duplicate announcements
@@ -306,7 +313,8 @@ internal sealed partial class MenuUiSelectionTracker
 
         var parts = new List<string>(4);
         Player? player = TryGetCharacterCreationPlayer(root);
-        if (player is not null && styleId.HasValue && player.hair == styleId.Value)
+        bool isSelected = player is not null && styleId.HasValue && player.hair == styleId.Value;
+        if (isSelected)
         {
             parts.Add("Selected");
         }
@@ -320,15 +328,22 @@ internal sealed partial class MenuUiSelectionTracker
         {
             parts.Add(ordinal);
         }
-        else
+
+        // Enqueue or prepend the category label
+        if (enqueueCategoryAsPrefix)
         {
+            ScreenReaderService.EnqueuePrefix("Hair style");
+        }
+        else if (parts.Count == 0 || string.IsNullOrWhiteSpace(ordinal))
+        {
+            // Fallback: include category inline if no ordinal or no other content
             parts.Insert(0, "Hair style");
         }
 
         return TextSanitizer.Clean(TextSanitizer.JoinWithComma(parts.ToArray()));
     }
 
-    private static string DescribeClothingStyleOption(UIElement root, UIElement element)
+    private static string DescribeClothingStyleOption(UIElement root, UIElement element, bool enqueueCategoryAsPrefix = false)
     {
         int? styleId = ClothStyleIdField?.GetValue(element) is int value ? value : null;
         int totalStyles = ClothingStyleDescriptions.Length;
@@ -343,7 +358,8 @@ internal sealed partial class MenuUiSelectionTracker
         var parts = new List<string>(4);
 
         Player? player = TryGetCharacterCreationPlayer(root);
-        if (player is not null && styleId.HasValue && player.skinVariant == styleId.Value)
+        bool isSelected = player is not null && styleId.HasValue && player.skinVariant == styleId.Value;
+        if (isSelected)
         {
             parts.Add("Selected");
         }
@@ -357,8 +373,15 @@ internal sealed partial class MenuUiSelectionTracker
         {
             parts.Add(ordinal);
         }
-        else
+
+        // Enqueue or prepend the category label
+        if (enqueueCategoryAsPrefix)
         {
+            ScreenReaderService.EnqueuePrefix("Clothing style");
+        }
+        else if (parts.Count == 0 || string.IsNullOrWhiteSpace(ordinal))
+        {
+            // Fallback: include category inline if no ordinal or no other content
             parts.Insert(0, "Clothing style");
         }
 
@@ -477,7 +500,7 @@ internal sealed partial class MenuUiSelectionTracker
         return CharacterCreationPlayerField?.GetValue(root) as Player;
     }
 
-    private static string DescribeDifficultyButton(UIElement root, UIElement element)
+    private static string DescribeDifficultyButton(UIElement root, UIElement element, bool enqueueCategoryAsPrefix = false)
     {
         byte? difficulty = TryGetDifficultyValue(element);
         (string difficultyLabel, string? difficultyDescription) = DescribeDifficultyValue(difficulty);
@@ -491,7 +514,17 @@ internal sealed partial class MenuUiSelectionTracker
             parts.Add(LocalizationHelper.GetTextOrFallback("Mods.ScreenReaderMod.Controls.ToggleOn", "Selected"));
         }
 
-        parts.Add(difficultyLabel);
+        // Enqueue or include the difficulty label
+        if (enqueueCategoryAsPrefix)
+        {
+            ScreenReaderService.EnqueuePrefix("Difficulty");
+            // Include just the specific difficulty name (Classic, Mediumcore, etc.)
+            parts.Add(difficultyLabel);
+        }
+        else
+        {
+            parts.Add(difficultyLabel);
+        }
 
         if (!string.IsNullOrWhiteSpace(difficultyDescription))
         {
