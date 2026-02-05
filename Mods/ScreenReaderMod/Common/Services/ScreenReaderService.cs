@@ -4,54 +4,186 @@ using System.Collections.Generic;
 
 namespace ScreenReaderMod.Common.Services;
 
+/// <summary>
+/// Default implementation of <see cref="ISpeechService"/> that wraps a <see cref="SpeechController"/>.
+/// </summary>
+internal sealed class SpeechService : ISpeechService
+{
+    private readonly SpeechController _controller;
+
+    public SpeechService(SpeechController controller)
+    {
+        _controller = controller ?? throw new ArgumentNullException(nameof(controller));
+    }
+
+    public IReadOnlyCollection<string> RecentMessages => _controller.GetSnapshot().RecentMessages;
+    public bool SpeechEnabled => _controller.SpeechEnabled;
+    public bool SpeechInterruptEnabled => _controller.InterruptEnabled;
+    public bool HasPendingPrefix => _controller.HasPendingPrefix;
+
+    public void Initialize() => _controller.Initialize();
+    public void Unload() => _controller.Shutdown();
+
+    public void Announce(
+        string? message,
+        bool force = false,
+        ScreenReaderService.AnnouncementCategory category = ScreenReaderService.AnnouncementCategory.Default,
+        bool allowWhenMuted = false,
+        SpeechChannel channel = SpeechChannel.Primary,
+        bool requestInterrupt = true)
+    {
+        _controller.Enqueue(
+            new SpeechRequest(
+                Text: message ?? string.Empty,
+                Category: category,
+                Channel: channel,
+                Force: force,
+                AllowWhenMuted: allowWhenMuted,
+                RequestInterrupt: requestInterrupt));
+    }
+
+    public void Interrupt(SpeechChannel channel = SpeechChannel.Primary) => _controller.Interrupt(channel);
+
+    public bool ToggleSpeechEnabled() => _controller.ToggleMute();
+    public bool ToggleSpeechInterrupt() => _controller.ToggleInterrupts();
+
+    public void SetPendingPrefix(string? prefix) => _controller.SetPendingPrefix(prefix);
+    public void ClearPendingPrefix() => _controller.ClearPendingPrefix();
+    public void EnqueuePrefix(string prefix) => _controller.EnqueuePrefix(prefix);
+    public void ClearAllPrefixes() => _controller.ClearAllPrefixes();
+
+    public void SuppressNext(string key) => _controller.SuppressNext(key);
+    public bool CheckAndClearSuppression(string key) => _controller.CheckAndClearSuppression(key);
+
+    public void MarkContextAnnounced(string contextKey) => _controller.MarkContextAnnounced(contextKey);
+    public bool WasContextAnnounced(string contextKey) => _controller.WasContextAnnounced(contextKey);
+    public void ClearContexts(string? prefix = null) => _controller.ClearContexts(prefix);
+
+    public void SetCooldown(string key, uint frames) => _controller.SetCooldown(key, frames);
+    public bool IsOnCooldown(string key) => _controller.IsOnCooldown(key);
+    public void ClearCooldown(string key) => _controller.ClearCooldown(key);
+
+    /// <summary>
+    /// Gets the underlying controller for advanced operations.
+    /// </summary>
+    internal SpeechController Controller => _controller;
+
+    /// <summary>
+    /// Sets the log-only mode on the controller.
+    /// </summary>
+    internal void SetLogOnly(bool enabled) => _controller.SetLogOnly(enabled);
+
+    /// <summary>
+    /// Gets a diagnostic snapshot of the controller state.
+    /// </summary>
+    internal SpeechControllerSnapshot GetSnapshot() => _controller.GetSnapshot();
+}
+
+/// <summary>
+/// Static facade for the speech service, maintaining backward compatibility.
+/// Provides access to speech functionality through static methods.
+/// For new code, prefer injecting <see cref="ISpeechService"/> instead.
+/// </summary>
 public static class ScreenReaderService
 {
+    /// <summary>
+    /// Announcement category for rate limiting.
+    /// This type allows existing code using ScreenReaderService.AnnouncementCategory to continue working.
+    /// </summary>
     public enum AnnouncementCategory
     {
-        Default,
-        Tile,
-        Wall,
-        Pickup,
-        World,
+        /// <summary>Default announcements with standard rate limiting.</summary>
+        Default = 0,
+
+        /// <summary>Tile-related announcements with shorter rate limiting.</summary>
+        Tile = 1,
+
+        /// <summary>Wall-related announcements with shorter rate limiting.</summary>
+        Wall = 2,
+
+        /// <summary>Item pickup announcements with shorter rate limiting.</summary>
+        Pickup = 3,
+
+        /// <summary>World event announcements with longer rate limiting.</summary>
+        World = 4,
     }
 
-    private static SpeechController? _controller;
+    private static SpeechService? _service;
+    private static ISpeechService? _customService;
 
-    private static SpeechController Controller => _controller ??= BuildController();
+    private static SpeechService Service => _service ??= BuildService();
 
-    public static IReadOnlyCollection<string> Snapshot => Controller.GetSnapshot().RecentMessages;
-    public static bool SpeechEnabled => Controller.SpeechEnabled;
-    public static bool SpeechInterruptEnabled => Controller.InterruptEnabled;
+    /// <summary>
+    /// Gets or sets a custom speech service implementation.
+    /// When set, all static methods delegate to this service instead of the default.
+    /// Useful for testing or alternative implementations.
+    /// </summary>
+    public static ISpeechService? CustomService
+    {
+        get => _customService;
+        set => _customService = value;
+    }
 
+    /// <summary>
+    /// Gets the active speech service (custom if set, otherwise default).
+    /// </summary>
+    public static ISpeechService ActiveService => _customService ?? Service;
+
+    /// <summary>
+    /// Gets the collection of recent messages for diagnostics.
+    /// </summary>
+    public static IReadOnlyCollection<string> Snapshot => ActiveService.RecentMessages;
+
+    /// <summary>
+    /// Gets whether speech output is currently enabled.
+    /// </summary>
+    public static bool SpeechEnabled => ActiveService.SpeechEnabled;
+
+    /// <summary>
+    /// Gets whether speech interruption is enabled.
+    /// </summary>
+    public static bool SpeechInterruptEnabled => ActiveService.SpeechInterruptEnabled;
+
+    /// <summary>
+    /// Gets whether there is a pending prefix waiting to be used.
+    /// </summary>
+    public static bool HasPendingPrefix => ActiveService.HasPendingPrefix;
+
+    /// <summary>
+    /// Initializes the speech service.
+    /// </summary>
     public static void Initialize()
     {
-        SpeechController controller = Controller;
-        controller.SetLogOnly(ScreenReaderDiagnostics.IsSpeechLogOnlyEnabled());
-        controller.Initialize();
-        ScreenReaderDiagnostics.DumpStartupSnapshot(controller.GetSnapshot());
+        SpeechService service = Service;
+        service.SetLogOnly(ScreenReaderDiagnostics.IsSpeechLogOnlyEnabled());
+        service.Initialize();
+        ScreenReaderDiagnostics.DumpStartupSnapshot(service.GetSnapshot());
     }
 
+    /// <summary>
+    /// Shuts down the speech service and releases resources.
+    /// </summary>
     public static void Unload()
     {
-        _controller?.Shutdown();
-        _controller = null;
+        _service?.Unload();
+        _service = null;
+        _customService = null;
     }
 
+    /// <summary>
+    /// Interrupts current speech on the specified channel.
+    /// </summary>
     public static void Interrupt(SpeechChannel channel = SpeechChannel.Primary)
     {
-        Controller.Interrupt(channel);
+        ActiveService.Interrupt(channel);
     }
 
     /// <summary>
     /// Sets a prefix that will be prepended to the next announcement.
-    /// This enables coordinated announcements between narrators without
-    /// frame timing hacks or cross-narrator static queues.
-    /// For example, when switching cursor modes, the mode change can be
-    /// queued as a prefix and the next tile announcement will include it.
     /// </summary>
     public static void SetPendingPrefix(string? prefix)
     {
-        Controller.SetPendingPrefix(prefix);
+        ActiveService.SetPendingPrefix(prefix);
     }
 
     /// <summary>
@@ -59,23 +191,17 @@ public static class ScreenReaderService
     /// </summary>
     public static void ClearPendingPrefix()
     {
-        Controller.ClearPendingPrefix();
+        ActiveService.ClearPendingPrefix();
     }
-
-    /// <summary>
-    /// Returns whether there is a pending prefix waiting to be used.
-    /// </summary>
-    public static bool HasPendingPrefix => Controller.HasPendingPrefix;
 
     #region Extended Speech Queue System
 
     /// <summary>
     /// Enqueues a prefix to be prepended to the next announcement.
-    /// Multiple prefixes can be queued and will be combined with the next announcement.
     /// </summary>
     public static void EnqueuePrefix(string prefix)
     {
-        Controller.EnqueuePrefix(prefix);
+        ActiveService.EnqueuePrefix(prefix);
     }
 
     /// <summary>
@@ -83,34 +209,31 @@ public static class ScreenReaderService
     /// </summary>
     public static void ClearAllPrefixes()
     {
-        Controller.ClearAllPrefixes();
+        ActiveService.ClearAllPrefixes();
     }
 
     /// <summary>
-    /// Marks a key for one-shot suppression. The next announcement that checks
-    /// this key will be suppressed, and the key will be cleared.
+    /// Marks a key for one-shot suppression.
     /// </summary>
     public static void SuppressNext(string key)
     {
-        Controller.SuppressNext(key);
+        ActiveService.SuppressNext(key);
     }
 
     /// <summary>
     /// Checks if a suppression key is set and clears it if so.
-    /// Returns true if the key was set (meaning the announcement should be suppressed).
     /// </summary>
     public static bool CheckAndClearSuppression(string key)
     {
-        return Controller.CheckAndClearSuppression(key);
+        return ActiveService.CheckAndClearSuppression(key);
     }
 
     /// <summary>
-    /// Marks a context as having been announced. Used for one-time announcements
-    /// that should only happen once per context (e.g., description on first focus).
+    /// Marks a context as having been announced.
     /// </summary>
     public static void MarkContextAnnounced(string contextKey)
     {
-        Controller.MarkContextAnnounced(contextKey);
+        ActiveService.MarkContextAnnounced(contextKey);
     }
 
     /// <summary>
@@ -118,25 +241,23 @@ public static class ScreenReaderService
     /// </summary>
     public static bool WasContextAnnounced(string contextKey)
     {
-        return Controller.WasContextAnnounced(contextKey);
+        return ActiveService.WasContextAnnounced(contextKey);
     }
 
     /// <summary>
-    /// Clears announced context keys. If prefix is provided, only clears keys
-    /// that start with that prefix; otherwise clears all keys.
+    /// Clears announced context keys.
     /// </summary>
     public static void ClearContexts(string? prefix = null)
     {
-        Controller.ClearContexts(prefix);
+        ActiveService.ClearContexts(prefix);
     }
 
     /// <summary>
     /// Sets a cooldown for a key that expires after the specified number of frames.
-    /// Use IsOnCooldown() to check if the cooldown is still active.
     /// </summary>
     public static void SetCooldown(string key, uint frames)
     {
-        Controller.SetCooldown(key, frames);
+        ActiveService.SetCooldown(key, frames);
     }
 
     /// <summary>
@@ -144,7 +265,7 @@ public static class ScreenReaderService
     /// </summary>
     public static bool IsOnCooldown(string key)
     {
-        return Controller.IsOnCooldown(key);
+        return ActiveService.IsOnCooldown(key);
     }
 
     /// <summary>
@@ -152,21 +273,30 @@ public static class ScreenReaderService
     /// </summary>
     public static void ClearCooldown(string key)
     {
-        Controller.ClearCooldown(key);
+        ActiveService.ClearCooldown(key);
     }
 
     #endregion
 
+    /// <summary>
+    /// Toggles speech interruption on/off.
+    /// </summary>
     public static bool ToggleSpeechInterrupt()
     {
-        return Controller.ToggleInterrupts();
+        return ActiveService.ToggleSpeechInterrupt();
     }
 
+    /// <summary>
+    /// Toggles speech output on/off.
+    /// </summary>
     public static bool ToggleSpeechEnabled()
     {
-        return Controller.ToggleMute();
+        return ActiveService.ToggleSpeechEnabled();
     }
 
+    /// <summary>
+    /// Announces a message through the screen reader.
+    /// </summary>
     public static void Announce(
         string? message,
         bool force = false,
@@ -176,14 +306,13 @@ public static class ScreenReaderService
         bool requestInterrupt = true)
     {
         RecordInstrumentationKey(message);
-        Controller.Enqueue(
-            new SpeechRequest(
-                Text: message ?? string.Empty,
-                Category: category,
-                Channel: channel,
-                Force: force,
-                AllowWhenMuted: allowWhenMuted,
-                RequestInterrupt: requestInterrupt));
+        ActiveService.Announce(
+            message,
+            force,
+            category,
+            allowWhenMuted,
+            channel,
+            requestInterrupt);
     }
 
     private static void RecordInstrumentationKey(string? message)
@@ -197,13 +326,14 @@ public static class ScreenReaderService
         NarrationInstrumentationContext.RecordKey(key);
     }
 
-    private static SpeechController BuildController()
+    private static SpeechService BuildService()
     {
-        var controller = new SpeechController(new TolkSpeechProvider());
+        var provider = new TolkSpeechProvider();
+        var controller = new SpeechController(provider);
         controller.SetCategoryWindow(AnnouncementCategory.World, TimeSpan.FromSeconds(2));
         controller.SetCategoryWindow(AnnouncementCategory.Tile, TimeSpan.FromMilliseconds(150));
         controller.SetCategoryWindow(AnnouncementCategory.Wall, TimeSpan.FromMilliseconds(150));
         controller.SetCategoryWindow(AnnouncementCategory.Pickup, TimeSpan.FromMilliseconds(150));
-        return controller;
+        return new SpeechService(controller);
     }
 }

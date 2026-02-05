@@ -96,7 +96,7 @@ internal static class ScreenReaderDiagnostics
 
         logger.Info($"[Diagnostics][Speech] initialized={snapshot.Initialized} muted={snapshot.Muted} interruptEnabled={snapshot.InterruptEnabled} logOnly={snapshot.LogOnly}");
 
-        foreach (KeyValuePair<ScreenReaderService.AnnouncementCategory, string?> kvp in snapshot.LastCategoryMessages)
+        foreach (var kvp in snapshot.LastCategoryMessages)
         {
             if (!string.IsNullOrWhiteSpace(kvp.Value))
             {

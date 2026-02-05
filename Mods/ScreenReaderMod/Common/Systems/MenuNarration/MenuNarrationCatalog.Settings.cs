@@ -108,7 +108,7 @@ internal static partial class MenuNarrationCatalog
 
     private static bool TryGetTrackedAudioOption(int index, string backLabel, out string label)
     {
-        if (InGameNarrationSystem.IngameOptionsLabelTracker.TryGetCurrentOptionLabel(index, out string tracked) &&
+        if (InGameNarrationSystem.OptionsTracker?.TryGetCurrentOptionLabel(index, out string tracked) == true &&
             !string.IsNullOrWhiteSpace(tracked))
         {
             label = NormalizeBackLabel(tracked, backLabel);

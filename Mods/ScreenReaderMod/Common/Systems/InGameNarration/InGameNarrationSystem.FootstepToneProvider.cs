@@ -10,7 +10,7 @@ namespace ScreenReaderMod.Common.Systems;
 
 public sealed partial class InGameNarrationSystem
 {
-    private static class FootstepToneProvider
+    internal static class FootstepToneProvider
     {
         private const int SampleRate = 44100;
         private const float DurationSeconds = 0.08f;

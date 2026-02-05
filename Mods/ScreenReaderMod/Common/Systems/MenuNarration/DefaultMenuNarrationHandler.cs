@@ -15,6 +15,19 @@ using Terraria.UI.Gamepad;
 
 namespace ScreenReaderMod.Common.Systems.MenuNarration;
 
+/// <summary>
+/// Legacy monolithic menu narration handler.
+/// This class has been superseded by the handler-per-menu-type architecture in the Handlers/ folder.
+/// New code should use the specialized handlers:
+/// - TitleMenuHandler: Main title menu
+/// - SettingsMenuHandler: All settings menus including audio sliders
+/// - WorldCreationHandler: World creation UI
+/// - CharacterCreationHandler: Character creation UI
+/// - MultiplayerMenuHandler: Multiplayer menus
+/// - ModConfigHandler: Mod configuration screens
+/// - FallbackMenuHandler: Catch-all for other menus
+/// </summary>
+[System.Obsolete("Use the specialized handlers in ScreenReaderMod.Common.Systems.MenuNarration.Handlers instead")]
 internal sealed class DefaultMenuNarrationHandler : IMenuNarrationHandler
 {
     private static readonly FieldInfo? FocusMenuField = typeof(Main).GetField("focusMenu", BindingFlags.NonPublic | BindingFlags.Instance);
@@ -302,7 +315,7 @@ internal sealed class DefaultMenuNarrationHandler : IMenuNarrationHandler
             return false;
         }
 
-        int categoryId = InGameNarrationSystem.IngameOptionsLabelTracker.GetCurrentCategory();
+        int categoryId = InGameNarrationSystem.OptionsTracker?.GetCurrentCategory() ?? -1;
         if (categoryId != _state.LastCategoryId)
         {
             ResetSliderTracking();
@@ -511,7 +524,7 @@ internal sealed class DefaultMenuNarrationHandler : IMenuNarrationHandler
 
     private string GetSliderLabel(int sliderIndex)
     {
-        if (InGameNarrationSystem.IngameOptionsLabelTracker.TryGetCurrentOptionLabel(sliderIndex, out string label) &&
+        if (InGameNarrationSystem.OptionsTracker?.TryGetCurrentOptionLabel(sliderIndex, out string label) == true &&
             !string.IsNullOrWhiteSpace(label))
         {
             return TextSanitizer.Clean(label);

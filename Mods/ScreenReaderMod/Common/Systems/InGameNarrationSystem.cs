@@ -10,6 +10,7 @@ using Microsoft.Xna.Framework.Audio;
 using Microsoft.Xna.Framework.Graphics;
 using ScreenReaderMod.Common.Services;
 using ScreenReaderMod.Common.Systems.FirstLetterNavigation;
+using ScreenReaderMod.Common.Systems.InGame;
 using ScreenReaderMod.Common.Systems.MenuNarration;
 using ScreenReaderMod.Common.Systems.MenuNarration.ModConfig;
 using ScreenReaderMod.Common.Utilities;
@@ -108,8 +109,15 @@ public sealed partial class InGameNarrationSystem : ModSystem
     private readonly Dictionary<int, DateTime> _lastPickupAnnouncedAt = new();
     private DateTime _lastLowLightAnnouncementAt = DateTime.MinValue;
     private bool _inLowLight;
+    private readonly IngameOptionsLabelTracker _optionsLabelTracker = new();
 
     internal static CursorDescriptorService CursorDescriptors => _sharedCursorDescriptorService ??= new CursorDescriptorService();
+
+    /// <summary>
+    /// Provides access to the ingame options label tracker for external callers.
+    /// This static tracker is used by menu narration systems.
+    /// </summary>
+    internal static InGame.IngameOptionsLabelTracker? OptionsTracker { get; private set; }
 
     /// <summary>
     /// Event raised when player.chest transitions from -1 to a valid storage value.
@@ -148,6 +156,7 @@ public sealed partial class InGameNarrationSystem : ModSystem
         _wireColorMenuNarrator = new WireColorMenuNarrator();
         _narrationScheduler = new NarrationScheduler();
         _sharedCursorDescriptorService = _cursorDescriptorService;
+        OptionsTracker = _optionsLabelTracker;
 
         _hotbarNarrationService = new DelegatedNarrationService(
             "Hotbar",
@@ -675,9 +684,9 @@ public sealed partial class InGameNarrationSystem : ModSystem
         private void HandleIngameOptionsDraw(On_IngameOptions.orig_Draw orig, Main self, SpriteBatch spriteBatch)
         {
             _ingameSettingsNarrator.PrimeReflection();
-            IngameOptionsLabelTracker.BeginFrame();
+            _optionsLabelTracker.BeginFrame();
             orig(self, spriteBatch);
-            IngameOptionsLabelTracker.EndFrame();
+            _optionsLabelTracker.EndFrame();
 
             if (!Main.gameMenu)
             {
@@ -685,193 +694,22 @@ public sealed partial class InGameNarrationSystem : ModSystem
             }
         }
 
-        private static bool CaptureIngameOptionsLeft(On_IngameOptions.orig_DrawLeftSide orig, SpriteBatch spriteBatch, string label, int index, Vector2 anchorPosition, Vector2 offset, float[] scaleArray, float minScale, float maxScale, float scaleSpeed)
+        private bool CaptureIngameOptionsLeft(On_IngameOptions.orig_DrawLeftSide orig, SpriteBatch spriteBatch, string label, int index, Vector2 anchorPosition, Vector2 offset, float[] scaleArray, float minScale, float maxScale, float scaleSpeed)
         {
             bool result = orig(spriteBatch, label, index, anchorPosition, offset, scaleArray, minScale, maxScale, scaleSpeed);
-            IngameOptionsLabelTracker.RecordLeft(index, label);
+            _optionsLabelTracker.RecordLeft(index, label);
             return result;
         }
 
-        private static bool CaptureIngameOptionsRight(On_IngameOptions.orig_DrawRightSide orig, SpriteBatch spriteBatch, string label, int index, Vector2 anchorPosition, Vector2 offset, float scale, float lockedScale, Color color)
+        private bool CaptureIngameOptionsRight(On_IngameOptions.orig_DrawRightSide orig, SpriteBatch spriteBatch, string label, int index, Vector2 anchorPosition, Vector2 offset, float scale, float lockedScale, Color color)
         {
             bool result = orig(spriteBatch, label, index, anchorPosition, offset, scale, lockedScale, color);
-            IngameOptionsLabelTracker.RecordRight(index, label);
+            _optionsLabelTracker.RecordRight(index, label);
             return result;
         }
 
-        internal static class IngameOptionsLabelTracker
-        {
-            private static readonly Dictionary<int, string> LeftLabels = new();
-            private static readonly Dictionary<int, int> LeftIndexToCategory = new();
-            private static readonly Dictionary<int, string> CategoryLabels = new();
-            private static readonly Dictionary<(int category, int optionIndex), string> OptionLabels = new();
-            private static bool[] _skipRightSlotSnapshot = Array.Empty<bool>();
-
-            private static FieldInfo? _leftSideCategoryMappingField;
-            private static FieldInfo? _skipRightSlotField;
-            private static FieldInfo? _categoryField;
-
-            private static readonly Dictionary<int, int> EmptyMapping = new();
-
-            public static void Configure(FieldInfo? leftMapping, FieldInfo? skipField, FieldInfo? categoryField)
-            {
-                if (leftMapping is not null)
-                {
-                    _leftSideCategoryMappingField = leftMapping;
-                }
-
-                if (skipField is not null)
-                {
-                    _skipRightSlotField = skipField;
-                }
-
-                if (categoryField is not null)
-                {
-                    _categoryField = categoryField;
-                }
-            }
-
-            public static void BeginFrame()
-            {
-                LeftLabels.Clear();
-                LeftIndexToCategory.Clear();
-                CategoryLabels.Clear();
-                OptionLabels.Clear();
-
-                UpdateSkipSnapshot();
-            }
-
-            public static void EndFrame()
-            {
-                UpdateSkipSnapshot();
-            }
-
-            public static void RecordLeft(int index, string? label)
-            {
-                string sanitized = TextSanitizer.Clean(label ?? string.Empty);
-                if (!string.IsNullOrWhiteSpace(sanitized))
-                {
-                    LeftLabels[index] = sanitized;
-                }
-
-                foreach (KeyValuePair<int, int> kvp in GetLeftSideCategoryMapping())
-                {
-                    if (kvp.Key != index)
-                    {
-                        continue;
-                    }
-
-                    LeftIndexToCategory[index] = kvp.Value;
-                    if (!string.IsNullOrWhiteSpace(sanitized))
-                    {
-                        CategoryLabels[kvp.Value] = sanitized;
-                    }
-                    break;
-                }
-            }
-
-        public static void RecordRight(int index, string? label)
-        {
-            UpdateSkipSnapshot();
-
-            int category = GetCurrentCategory();
-            if (category < 0)
-            {
-                return;
-            }
-
-            if ((uint)index < (uint)_skipRightSlotSnapshot.Length && _skipRightSlotSnapshot[index])
-            {
-                return;
-            }
-
-            string sanitized = TextSanitizer.Clean(label ?? string.Empty);
-            string lower = sanitized.ToLowerInvariant();
-            if (Main.gameMenu && (lower.Contains("volume") || lower.Contains("audio") || lower.Contains("tmodloader")))
-            {
-                return;
-            }
-
-            if (!string.IsNullOrWhiteSpace(sanitized))
-            {
-                OptionLabels[(category, index)] = sanitized;
-            }
-        }
-
-            public static bool TryGetLeftLabel(int index, out string label)
-            {
-                return LeftLabels.TryGetValue(index, out label!);
-            }
-
-            public static bool TryGetCategoryLabel(int category, out string label)
-            {
-                return CategoryLabels.TryGetValue(category, out label!);
-            }
-
-            public static bool TryMapLeftToCategory(int leftIndex, out int category)
-            {
-                return LeftIndexToCategory.TryGetValue(leftIndex, out category);
-            }
-
-            public static bool TryGetOptionLabel(int category, int optionIndex, out string label)
-            {
-                return OptionLabels.TryGetValue((category, optionIndex), out label!);
-            }
-
-            public static bool TryGetCurrentOptionLabel(int optionIndex, out string label)
-            {
-                int category = GetCurrentCategory();
-                if (category < 0)
-                {
-                    label = string.Empty;
-                    return false;
-                }
-
-                return OptionLabels.TryGetValue((category, optionIndex), out label!);
-            }
-
-            public static bool IsOptionSkipped(int optionIndex)
-            {
-                return (uint)optionIndex < (uint)_skipRightSlotSnapshot.Length && _skipRightSlotSnapshot[optionIndex];
-            }
-
-            public static IReadOnlyDictionary<int, int> GetLeftMappingSnapshot()
-            {
-                return LeftIndexToCategory.Count == 0 ? EmptyMapping : new Dictionary<int, int>(LeftIndexToCategory);
-            }
-
-            private static void UpdateSkipSnapshot()
-            {
-                if (_skipRightSlotField?.GetValue(null) is bool[] array)
-                {
-                    _skipRightSlotSnapshot = array.Length == 0 ? Array.Empty<bool>() : (bool[])array.Clone();
-                }
-                else
-                {
-                    _skipRightSlotSnapshot = Array.Empty<bool>();
-                }
-            }
-
-            private static Dictionary<int, int> GetLeftSideCategoryMapping()
-            {
-                if (_leftSideCategoryMappingField?.GetValue(null) is Dictionary<int, int> mapping)
-                {
-                    return mapping;
-                }
-
-                return EmptyMapping;
-            }
-
-            public static int GetCurrentCategory()
-            {
-                if (_categoryField?.GetValue(null) is int value)
-                {
-                    return value;
-                }
-
-                return -1;
-            }
-        }
+        // Note: IngameOptionsLabelTracker has been moved to Common/Systems/InGame/IngameOptionsLabelTracker.cs
+        // Access via InGameNarrationSystem.OptionsTracker static property
 
 
 

@@ -5,14 +5,24 @@ using System.Linq;
 
 namespace ScreenReaderMod.Common.Services;
 
-using AnnouncementCategory = global::ScreenReaderMod.Common.Services.ScreenReaderService.AnnouncementCategory;
+// Use the AnnouncementCategory from ScreenReaderService for backward compatibility
+using AnnouncementCategory = ScreenReaderService.AnnouncementCategory;
 
+/// <summary>
+/// Speech channels for routing announcements to different providers.
+/// </summary>
 public enum SpeechChannel
 {
+    /// <summary>Primary speech channel for most announcements.</summary>
     Primary,
+
+    /// <summary>World announcement channel for event notifications.</summary>
     World,
 }
 
+/// <summary>
+/// Represents a request to speak a message.
+/// </summary>
 internal readonly record struct SpeechRequest(
     string Text,
     AnnouncementCategory Category,
@@ -21,6 +31,9 @@ internal readonly record struct SpeechRequest(
     bool AllowWhenMuted,
     bool RequestInterrupt);
 
+/// <summary>
+/// Snapshot of the speech controller state for diagnostics.
+/// </summary>
 internal readonly record struct SpeechControllerSnapshot(
     bool Initialized,
     bool Muted,
@@ -30,34 +43,473 @@ internal readonly record struct SpeechControllerSnapshot(
     IReadOnlyDictionary<AnnouncementCategory, string?> LastCategoryMessages,
     IReadOnlyList<SpeechProviderSnapshot> Providers);
 
-internal sealed class SpeechController
+/// <summary>
+/// Manages speech announcement coordination including prefix queues,
+/// suppression keys, context tracking, and cooldowns.
+/// Thread-safe for all operations.
+/// </summary>
+internal sealed class SpeechCoordinator
+{
+    private readonly object _syncRoot = new();
+
+    // Prefix queue system
+    private string? _pendingPrefix;
+    private readonly Queue<string> _pendingPrefixes = new();
+
+    // Suppression system
+    private readonly HashSet<string> _suppressionKeys = new();
+
+    // Context tracking (one-time announcements)
+    private readonly HashSet<string> _announcedOnceKeys = new();
+
+    // Frame-based cooldowns
+    private readonly Dictionary<string, uint> _cooldownEndFrames = new();
+
+    /// <summary>
+    /// Gets whether there is a pending prefix waiting to be used.
+    /// </summary>
+    public bool HasPendingPrefix
+    {
+        get
+        {
+            lock (_syncRoot)
+            {
+                return !string.IsNullOrWhiteSpace(_pendingPrefix) || _pendingPrefixes.Count > 0;
+            }
+        }
+    }
+
+    /// <summary>
+    /// Resets all coordinator state.
+    /// </summary>
+    public void Reset()
+    {
+        lock (_syncRoot)
+        {
+            _pendingPrefix = null;
+            _pendingPrefixes.Clear();
+            _suppressionKeys.Clear();
+            _announcedOnceKeys.Clear();
+            _cooldownEndFrames.Clear();
+        }
+    }
+
+    #region Prefix Queue
+
+    /// <summary>
+    /// Sets a prefix that will be prepended to the next announcement.
+    /// Replaces any existing single pending prefix.
+    /// </summary>
+    public void SetPendingPrefix(string? prefix)
+    {
+        lock (_syncRoot)
+        {
+            _pendingPrefix = prefix;
+        }
+    }
+
+    /// <summary>
+    /// Clears the pending prefix without using it.
+    /// </summary>
+    public void ClearPendingPrefix()
+    {
+        lock (_syncRoot)
+        {
+            _pendingPrefix = null;
+        }
+    }
+
+    /// <summary>
+    /// Enqueues a prefix to be prepended to the next announcement.
+    /// Multiple prefixes can be queued and will be combined.
+    /// </summary>
+    public void EnqueuePrefix(string prefix)
+    {
+        if (string.IsNullOrWhiteSpace(prefix))
+        {
+            return;
+        }
+
+        lock (_syncRoot)
+        {
+            _pendingPrefixes.Enqueue(prefix.Trim());
+        }
+    }
+
+    /// <summary>
+    /// Clears all pending prefixes (both single and queued) without using them.
+    /// </summary>
+    public void ClearAllPrefixes()
+    {
+        lock (_syncRoot)
+        {
+            _pendingPrefix = null;
+            _pendingPrefixes.Clear();
+        }
+    }
+
+    /// <summary>
+    /// Consumes and returns all pending prefixes, combining them into a single string.
+    /// Returns null if no prefixes are pending.
+    /// </summary>
+    public string? ConsumeAllPrefixes()
+    {
+        lock (_syncRoot)
+        {
+            var prefixParts = new List<string>();
+
+            if (!string.IsNullOrWhiteSpace(_pendingPrefix))
+            {
+                prefixParts.Add(_pendingPrefix);
+                _pendingPrefix = null;
+            }
+
+            while (_pendingPrefixes.Count > 0)
+            {
+                string queuedPrefix = _pendingPrefixes.Dequeue();
+                if (!string.IsNullOrWhiteSpace(queuedPrefix))
+                {
+                    prefixParts.Add(queuedPrefix);
+                }
+            }
+
+            return prefixParts.Count > 0 ? string.Join(". ", prefixParts) : null;
+        }
+    }
+
+    #endregion
+
+    #region Suppression
+
+    /// <summary>
+    /// Marks a key for one-shot suppression.
+    /// </summary>
+    public void SuppressNext(string key)
+    {
+        if (string.IsNullOrWhiteSpace(key))
+        {
+            return;
+        }
+
+        lock (_syncRoot)
+        {
+            _suppressionKeys.Add(key);
+        }
+    }
+
+    /// <summary>
+    /// Checks if a suppression key is set and clears it if so.
+    /// </summary>
+    /// <returns>True if the key was set (meaning the announcement should be suppressed).</returns>
+    public bool CheckAndClearSuppression(string key)
+    {
+        if (string.IsNullOrWhiteSpace(key))
+        {
+            return false;
+        }
+
+        lock (_syncRoot)
+        {
+            return _suppressionKeys.Remove(key);
+        }
+    }
+
+    #endregion
+
+    #region Context Tracking
+
+    /// <summary>
+    /// Marks a context as having been announced.
+    /// </summary>
+    public void MarkContextAnnounced(string contextKey)
+    {
+        if (string.IsNullOrWhiteSpace(contextKey))
+        {
+            return;
+        }
+
+        lock (_syncRoot)
+        {
+            _announcedOnceKeys.Add(contextKey);
+        }
+    }
+
+    /// <summary>
+    /// Checks if a context has already been announced.
+    /// </summary>
+    public bool WasContextAnnounced(string contextKey)
+    {
+        if (string.IsNullOrWhiteSpace(contextKey))
+        {
+            return false;
+        }
+
+        lock (_syncRoot)
+        {
+            return _announcedOnceKeys.Contains(contextKey);
+        }
+    }
+
+    /// <summary>
+    /// Clears announced context keys.
+    /// </summary>
+    /// <param name="prefix">If provided, only clears keys starting with this prefix.</param>
+    public void ClearContexts(string? prefix = null)
+    {
+        lock (_syncRoot)
+        {
+            if (string.IsNullOrWhiteSpace(prefix))
+            {
+                _announcedOnceKeys.Clear();
+                _suppressionKeys.Clear();
+            }
+            else
+            {
+                _announcedOnceKeys.RemoveWhere(k => k.StartsWith(prefix, StringComparison.Ordinal));
+                _suppressionKeys.RemoveWhere(k => k.StartsWith(prefix, StringComparison.Ordinal));
+            }
+        }
+    }
+
+    #endregion
+
+    #region Cooldowns
+
+    /// <summary>
+    /// Sets a cooldown for a key that expires after the specified number of frames.
+    /// </summary>
+    public void SetCooldown(string key, uint frames, uint currentFrame)
+    {
+        if (string.IsNullOrWhiteSpace(key))
+        {
+            return;
+        }
+
+        lock (_syncRoot)
+        {
+            _cooldownEndFrames[key] = currentFrame + frames;
+        }
+    }
+
+    /// <summary>
+    /// Checks if a cooldown is still active for the given key.
+    /// </summary>
+    public bool IsOnCooldown(string key, uint currentFrame)
+    {
+        if (string.IsNullOrWhiteSpace(key))
+        {
+            return false;
+        }
+
+        lock (_syncRoot)
+        {
+            if (!_cooldownEndFrames.TryGetValue(key, out uint endFrame))
+            {
+                return false;
+            }
+
+            // Handle frame counter wrap-around
+            if (currentFrame >= endFrame)
+            {
+                _cooldownEndFrames.Remove(key);
+                return false;
+            }
+
+            // Check for wrap-around case
+            if (endFrame - currentFrame > uint.MaxValue / 2)
+            {
+                _cooldownEndFrames.Remove(key);
+                return false;
+            }
+
+            return true;
+        }
+    }
+
+    /// <summary>
+    /// Clears a specific cooldown.
+    /// </summary>
+    public void ClearCooldown(string key)
+    {
+        if (string.IsNullOrWhiteSpace(key))
+        {
+            return;
+        }
+
+        lock (_syncRoot)
+        {
+            _cooldownEndFrames.Remove(key);
+        }
+    }
+
+    #endregion
+}
+
+/// <summary>
+/// Tracks announcement history for duplicate suppression.
+/// Thread-safe for all operations.
+/// </summary>
+internal sealed class AnnouncementTracker
 {
     private const int MaxRecentMessages = 25;
 
     private readonly object _syncRoot = new();
-    private readonly Queue<SpeechRequest> _pending = new();
     private readonly Queue<string> _recentMessages = new();
     private readonly Dictionary<AnnouncementCategory, string?> _lastCategoryAnnouncements = new();
     private readonly Dictionary<AnnouncementCategory, DateTime> _lastCategoryAnnouncedAt = new();
     private readonly Dictionary<AnnouncementCategory, TimeSpan> _categoryWindows = new();
-    private readonly Dictionary<SpeechChannel, ISpeechProvider> _providersByChannel = new();
-    private readonly List<ISpeechProvider> _providers = new();
 
     private string? _lastMessage;
     private DateTime _lastAnnouncedAt = DateTime.MinValue;
+
+    public AnnouncementTracker()
+    {
+        // Set default windows for each category
+        _categoryWindows[AnnouncementCategory.Default] = TimeSpan.FromMilliseconds(250);
+        _categoryWindows[AnnouncementCategory.Tile] = TimeSpan.FromMilliseconds(150);
+        _categoryWindows[AnnouncementCategory.Wall] = TimeSpan.FromMilliseconds(150);
+        _categoryWindows[AnnouncementCategory.Pickup] = TimeSpan.FromMilliseconds(150);
+        _categoryWindows[AnnouncementCategory.World] = TimeSpan.FromSeconds(2);
+    }
+
+    /// <summary>
+    /// Gets the recent messages for diagnostics.
+    /// </summary>
+    public IReadOnlyList<string> GetRecentMessages()
+    {
+        lock (_syncRoot)
+        {
+            return _recentMessages.ToArray();
+        }
+    }
+
+    /// <summary>
+    /// Gets a copy of the last category announcements for diagnostics.
+    /// </summary>
+    public IReadOnlyDictionary<AnnouncementCategory, string?> GetLastCategoryMessages()
+    {
+        lock (_syncRoot)
+        {
+            return new Dictionary<AnnouncementCategory, string?>(_lastCategoryAnnouncements);
+        }
+    }
+
+    /// <summary>
+    /// Sets the repeat suppression window for a category.
+    /// </summary>
+    public void SetCategoryWindow(AnnouncementCategory category, TimeSpan window)
+    {
+        lock (_syncRoot)
+        {
+            _categoryWindows[category] = window;
+        }
+    }
+
+    /// <summary>
+    /// Resets all tracking state.
+    /// </summary>
+    public void Reset()
+    {
+        lock (_syncRoot)
+        {
+            _recentMessages.Clear();
+            _lastCategoryAnnouncements.Clear();
+            _lastCategoryAnnouncedAt.Clear();
+            _lastMessage = null;
+            _lastAnnouncedAt = DateTime.MinValue;
+        }
+    }
+
+    /// <summary>
+    /// Checks if an announcement should be suppressed due to repeat within the window.
+    /// </summary>
+    public bool ShouldSuppress(string text, AnnouncementCategory category, DateTime now)
+    {
+        lock (_syncRoot)
+        {
+            // Check category-specific suppression
+            if (_lastCategoryAnnouncements.TryGetValue(category, out string? lastForCategory) &&
+                string.Equals(lastForCategory, text, StringComparison.OrdinalIgnoreCase))
+            {
+                DateTime lastAt = _lastCategoryAnnouncedAt.TryGetValue(category, out DateTime last)
+                    ? last
+                    : DateTime.MinValue;
+                if (now - lastAt < GetRepeatWindow(category))
+                {
+                    return true;
+                }
+            }
+
+            // Check global suppression for default category
+            if (category == AnnouncementCategory.Default &&
+                string.Equals(text, _lastMessage, StringComparison.OrdinalIgnoreCase) &&
+                now - _lastAnnouncedAt < GetRepeatWindow(AnnouncementCategory.Default))
+            {
+                return true;
+            }
+
+            return false;
+        }
+    }
+
+    /// <summary>
+    /// Records an announcement for tracking.
+    /// </summary>
+    public void Track(string text, AnnouncementCategory category, DateTime now)
+    {
+        lock (_syncRoot)
+        {
+            _lastCategoryAnnouncements[category] = text;
+            _lastCategoryAnnouncedAt[category] = now;
+
+            _lastMessage = text;
+            _lastAnnouncedAt = now;
+
+            _recentMessages.Enqueue(text);
+            while (_recentMessages.Count > MaxRecentMessages)
+            {
+                _recentMessages.Dequeue();
+            }
+        }
+    }
+
+    private TimeSpan GetRepeatWindow(AnnouncementCategory category)
+    {
+        if (_categoryWindows.TryGetValue(category, out TimeSpan window))
+        {
+            return window;
+        }
+
+        return _categoryWindows[AnnouncementCategory.Default];
+    }
+}
+
+/// <summary>
+/// Controls speech output, managing providers, queueing, and coordination.
+/// </summary>
+internal sealed class SpeechController
+{
+    private readonly object _syncRoot = new();
+    private readonly Queue<SpeechRequest> _pending = new();
+    private readonly Dictionary<SpeechChannel, ISpeechProvider> _providersByChannel = new();
+    private readonly List<ISpeechProvider> _providers = new();
+    private readonly SpeechCoordinator _coordinator = new();
+    private readonly AnnouncementTracker _tracker = new();
+
     private bool _initialized;
     private bool _muted;
     private bool _interruptEnabled = true;
     private bool _logOnly;
 
-    // Speech queueing: pending prefix gets prepended to next announcement
-    private string? _pendingPrefix;
+    /// <summary>
+    /// Gets the speech coordinator for prefix/suppression/context/cooldown management.
+    /// </summary>
+    internal SpeechCoordinator Coordinator => _coordinator;
 
-    // Extended speech queue system
-    private readonly Queue<string> _pendingPrefixes = new();
-    private readonly HashSet<string> _suppressionKeys = new();
-    private readonly HashSet<string> _announcedOnceKeys = new();
-    private readonly Dictionary<string, uint> _cooldownEndFrames = new();
+    /// <summary>
+    /// Gets the announcement tracker for history management.
+    /// </summary>
+    internal AnnouncementTracker Tracker => _tracker;
 
     internal SpeechController(ISpeechProvider primary, ISpeechProvider? worldAnnouncement = null)
     {
@@ -73,12 +525,6 @@ internal sealed class SpeechController
         {
             _providersByChannel[SpeechChannel.World] = primary;
         }
-
-        _categoryWindows[AnnouncementCategory.Default] = TimeSpan.FromMilliseconds(250);
-        _categoryWindows[AnnouncementCategory.Tile] = TimeSpan.FromMilliseconds(150);
-        _categoryWindows[AnnouncementCategory.Wall] = TimeSpan.FromMilliseconds(150);
-        _categoryWindows[AnnouncementCategory.Pickup] = TimeSpan.FromMilliseconds(150);
-        _categoryWindows[AnnouncementCategory.World] = TimeSpan.FromSeconds(2);
     }
 
     internal void Initialize()
@@ -94,19 +540,10 @@ internal sealed class SpeechController
             _muted = false;
             _interruptEnabled = true;
             _pending.Clear();
-            _recentMessages.Clear();
-            _lastCategoryAnnouncements.Clear();
-            _lastCategoryAnnouncedAt.Clear();
-            _lastMessage = null;
-            _lastAnnouncedAt = DateTime.MinValue;
-
-            // Clear extended speech queue state
-            _pendingPrefix = null;
-            _pendingPrefixes.Clear();
-            _suppressionKeys.Clear();
-            _announcedOnceKeys.Clear();
-            _cooldownEndFrames.Clear();
         }
+
+        _coordinator.Reset();
+        _tracker.Reset();
 
         foreach (ISpeechProvider provider in _providers)
         {
@@ -124,22 +561,13 @@ internal sealed class SpeechController
         lock (_syncRoot)
         {
             _pending.Clear();
-            _recentMessages.Clear();
-            _lastCategoryAnnouncements.Clear();
-            _lastCategoryAnnouncedAt.Clear();
-            _lastMessage = null;
-            _lastAnnouncedAt = DateTime.MinValue;
             _initialized = false;
             _muted = false;
             _interruptEnabled = false;
-
-            // Clear extended speech queue state
-            _pendingPrefix = null;
-            _pendingPrefixes.Clear();
-            _suppressionKeys.Clear();
-            _announcedOnceKeys.Clear();
-            _cooldownEndFrames.Clear();
         }
+
+        _coordinator.Reset();
+        _tracker.Reset();
     }
 
     internal bool ToggleMute()
@@ -168,256 +596,9 @@ internal sealed class SpeechController
         }
     }
 
-    /// <summary>
-    /// Sets a prefix that will be prepended to the next announcement.
-    /// This allows multiple narrators to coordinate announcements without
-    /// frame timing hacks or cross-narrator static queues.
-    /// </summary>
-    internal void SetPendingPrefix(string? prefix)
-    {
-        lock (_syncRoot)
-        {
-            _pendingPrefix = prefix;
-        }
-    }
-
-    /// <summary>
-    /// Clears any pending prefix without using it.
-    /// </summary>
-    internal void ClearPendingPrefix()
-    {
-        lock (_syncRoot)
-        {
-            _pendingPrefix = null;
-        }
-    }
-
-    /// <summary>
-    /// Returns whether there is a pending prefix waiting to be used.
-    /// </summary>
-    internal bool HasPendingPrefix
-    {
-        get
-        {
-            lock (_syncRoot)
-            {
-                return !string.IsNullOrWhiteSpace(_pendingPrefix) || _pendingPrefixes.Count > 0;
-            }
-        }
-    }
-
-    #region Extended Speech Queue System
-
-    /// <summary>
-    /// Enqueues a prefix to be prepended to the next announcement.
-    /// Multiple prefixes can be queued and will be combined with the next announcement.
-    /// </summary>
-    internal void EnqueuePrefix(string prefix)
-    {
-        if (string.IsNullOrWhiteSpace(prefix))
-        {
-            return;
-        }
-
-        lock (_syncRoot)
-        {
-            _pendingPrefixes.Enqueue(prefix.Trim());
-        }
-    }
-
-    /// <summary>
-    /// Clears all pending prefixes without using them.
-    /// </summary>
-    internal void ClearAllPrefixes()
-    {
-        lock (_syncRoot)
-        {
-            _pendingPrefix = null;
-            _pendingPrefixes.Clear();
-        }
-    }
-
-    /// <summary>
-    /// Marks a key for one-shot suppression. The next announcement that checks
-    /// this key will be suppressed, and the key will be cleared.
-    /// </summary>
-    internal void SuppressNext(string key)
-    {
-        if (string.IsNullOrWhiteSpace(key))
-        {
-            return;
-        }
-
-        lock (_syncRoot)
-        {
-            _suppressionKeys.Add(key);
-        }
-    }
-
-    /// <summary>
-    /// Checks if a suppression key is set and clears it if so.
-    /// Returns true if the key was set (meaning the announcement should be suppressed).
-    /// </summary>
-    internal bool CheckAndClearSuppression(string key)
-    {
-        if (string.IsNullOrWhiteSpace(key))
-        {
-            return false;
-        }
-
-        lock (_syncRoot)
-        {
-            return _suppressionKeys.Remove(key);
-        }
-    }
-
-    /// <summary>
-    /// Marks a context as having been announced. Used for one-time announcements
-    /// that should only happen once per context (e.g., description on first focus).
-    /// </summary>
-    internal void MarkContextAnnounced(string contextKey)
-    {
-        if (string.IsNullOrWhiteSpace(contextKey))
-        {
-            return;
-        }
-
-        lock (_syncRoot)
-        {
-            _announcedOnceKeys.Add(contextKey);
-        }
-    }
-
-    /// <summary>
-    /// Checks if a context has already been announced.
-    /// </summary>
-    internal bool WasContextAnnounced(string contextKey)
-    {
-        if (string.IsNullOrWhiteSpace(contextKey))
-        {
-            return false;
-        }
-
-        lock (_syncRoot)
-        {
-            return _announcedOnceKeys.Contains(contextKey);
-        }
-    }
-
-    /// <summary>
-    /// Clears announced context keys. If prefix is provided, only clears keys
-    /// that start with that prefix; otherwise clears all keys.
-    /// </summary>
-    internal void ClearContexts(string? prefix = null)
-    {
-        lock (_syncRoot)
-        {
-            if (string.IsNullOrWhiteSpace(prefix))
-            {
-                _announcedOnceKeys.Clear();
-                _suppressionKeys.Clear();
-            }
-            else
-            {
-                _announcedOnceKeys.RemoveWhere(k => k.StartsWith(prefix, StringComparison.Ordinal));
-                _suppressionKeys.RemoveWhere(k => k.StartsWith(prefix, StringComparison.Ordinal));
-            }
-        }
-    }
-
-    /// <summary>
-    /// Sets a cooldown for a key that expires after the specified number of frames.
-    /// Use IsOnCooldown() to check if the cooldown is still active.
-    /// </summary>
-    internal void SetCooldown(string key, uint frames)
-    {
-        if (string.IsNullOrWhiteSpace(key))
-        {
-            return;
-        }
-
-        lock (_syncRoot)
-        {
-            // We need access to the current game frame count
-            // This will be provided via a method parameter or we use a static accessor
-            uint currentFrame = GetCurrentFrame();
-            _cooldownEndFrames[key] = currentFrame + frames;
-        }
-    }
-
-    /// <summary>
-    /// Checks if a cooldown is still active for the given key.
-    /// </summary>
-    internal bool IsOnCooldown(string key)
-    {
-        if (string.IsNullOrWhiteSpace(key))
-        {
-            return false;
-        }
-
-        lock (_syncRoot)
-        {
-            if (!_cooldownEndFrames.TryGetValue(key, out uint endFrame))
-            {
-                return false;
-            }
-
-            uint currentFrame = GetCurrentFrame();
-
-            // Handle frame counter wrap-around
-            if (currentFrame >= endFrame)
-            {
-                // Cooldown expired, remove the key
-                _cooldownEndFrames.Remove(key);
-                return false;
-            }
-
-            // Check for wrap-around case: if endFrame is much larger than currentFrame,
-            // the cooldown might have wrapped around
-            if (endFrame - currentFrame > uint.MaxValue / 2)
-            {
-                // Likely wrapped, treat as expired
-                _cooldownEndFrames.Remove(key);
-                return false;
-            }
-
-            return true;
-        }
-    }
-
-    /// <summary>
-    /// Clears a specific cooldown.
-    /// </summary>
-    internal void ClearCooldown(string key)
-    {
-        if (string.IsNullOrWhiteSpace(key))
-        {
-            return;
-        }
-
-        lock (_syncRoot)
-        {
-            _cooldownEndFrames.Remove(key);
-        }
-    }
-
-    /// <summary>
-    /// Gets the current game frame count. Uses Terraria's Main.GameUpdateCount.
-    /// </summary>
-    private static uint GetCurrentFrame()
-    {
-        // Access Terraria's frame counter
-        return Terraria.Main.GameUpdateCount;
-    }
-
-    #endregion
-
     internal void SetCategoryWindow(AnnouncementCategory category, TimeSpan window)
     {
-        lock (_syncRoot)
-        {
-            _categoryWindows[category] = window;
-        }
+        _tracker.SetCategoryWindow(category, window);
     }
 
     internal bool SpeechEnabled
@@ -442,24 +623,72 @@ internal sealed class SpeechController
         }
     }
 
+    #region Coordinator Delegation (for backward compatibility)
+
+    internal bool HasPendingPrefix => _coordinator.HasPendingPrefix;
+    internal void SetPendingPrefix(string? prefix) => _coordinator.SetPendingPrefix(prefix);
+    internal void ClearPendingPrefix() => _coordinator.ClearPendingPrefix();
+    internal void EnqueuePrefix(string prefix) => _coordinator.EnqueuePrefix(prefix);
+    internal void ClearAllPrefixes() => _coordinator.ClearAllPrefixes();
+    internal void SuppressNext(string key) => _coordinator.SuppressNext(key);
+    internal bool CheckAndClearSuppression(string key) => _coordinator.CheckAndClearSuppression(key);
+    internal void MarkContextAnnounced(string contextKey) => _coordinator.MarkContextAnnounced(contextKey);
+    internal bool WasContextAnnounced(string contextKey) => _coordinator.WasContextAnnounced(contextKey);
+    internal void ClearContexts(string? prefix = null) => _coordinator.ClearContexts(prefix);
+
+    internal void SetCooldown(string key, uint frames)
+    {
+        _coordinator.SetCooldown(key, frames, GetCurrentFrame());
+    }
+
+    internal bool IsOnCooldown(string key)
+    {
+        return _coordinator.IsOnCooldown(key, GetCurrentFrame());
+    }
+
+    internal void ClearCooldown(string key)
+    {
+        _coordinator.ClearCooldown(key);
+    }
+
+    private static uint GetCurrentFrame()
+    {
+        return Terraria.Main.GameUpdateCount;
+    }
+
+    #endregion
+
     internal SpeechControllerSnapshot GetSnapshot()
     {
+        bool initialized, muted, interruptEnabled, logOnly;
+
         lock (_syncRoot)
         {
-            return new SpeechControllerSnapshot(
-                Initialized: _initialized,
-                Muted: _muted,
-                InterruptEnabled: _interruptEnabled,
-                LogOnly: _logOnly,
-                RecentMessages: _recentMessages.ToArray(),
-                LastCategoryMessages: new Dictionary<AnnouncementCategory, string?>(_lastCategoryAnnouncements),
-                Providers: _providers.Select(p => p.GetSnapshot()).ToArray());
+            initialized = _initialized;
+            muted = _muted;
+            interruptEnabled = _interruptEnabled;
+            logOnly = _logOnly;
         }
+
+        return new SpeechControllerSnapshot(
+            Initialized: initialized,
+            Muted: muted,
+            InterruptEnabled: interruptEnabled,
+            LogOnly: logOnly,
+            RecentMessages: _tracker.GetRecentMessages(),
+            LastCategoryMessages: _tracker.GetLastCategoryMessages(),
+            Providers: _providers.Select(p => p.GetSnapshot()).ToArray());
     }
 
     internal void Interrupt(SpeechChannel channel = SpeechChannel.Primary)
     {
-        if (!_interruptEnabled)
+        bool interruptEnabled;
+        lock (_syncRoot)
+        {
+            interruptEnabled = _interruptEnabled;
+        }
+
+        if (!interruptEnabled)
         {
             return;
         }
@@ -478,6 +707,7 @@ internal sealed class SpeechController
         string trimmed = request.Text.Trim();
         DateTime now = DateTime.UtcNow;
 
+        bool shouldProcess;
         lock (_syncRoot)
         {
             if (_muted && !request.AllowWhenMuted)
@@ -486,38 +716,34 @@ internal sealed class SpeechController
                 return;
             }
 
-            // Consume and prepend any pending prefixes (legacy single prefix + new queue)
-            var prefixParts = new List<string>();
+            shouldProcess = true;
+        }
 
-            if (!string.IsNullOrWhiteSpace(_pendingPrefix))
-            {
-                prefixParts.Add(_pendingPrefix);
-                _pendingPrefix = null;
-            }
+        if (!shouldProcess)
+        {
+            return;
+        }
 
-            while (_pendingPrefixes.Count > 0)
-            {
-                string queuedPrefix = _pendingPrefixes.Dequeue();
-                if (!string.IsNullOrWhiteSpace(queuedPrefix))
-                {
-                    prefixParts.Add(queuedPrefix);
-                }
-            }
+        // Consume and prepend any pending prefixes
+        string? combinedPrefix = _coordinator.ConsumeAllPrefixes();
+        if (combinedPrefix is not null)
+        {
+            trimmed = $"{combinedPrefix}. {trimmed}";
+        }
 
-            if (prefixParts.Count > 0)
-            {
-                string combinedPrefix = string.Join(". ", prefixParts);
-                trimmed = $"{combinedPrefix}. {trimmed}";
-            }
+        SpeechRequest normalized = request with { Text = trimmed };
 
-            SpeechRequest normalized = request with { Text = trimmed };
-            if (!normalized.Force && ShouldSuppress(normalized, now))
-            {
-                ScreenReaderDiagnostics.LogSpeechSuppressed(normalized, "repeat");
-                return;
-            }
+        // Check for repeat suppression
+        if (!normalized.Force && _tracker.ShouldSuppress(normalized.Text, normalized.Category, now))
+        {
+            ScreenReaderDiagnostics.LogSpeechSuppressed(normalized, "repeat");
+            return;
+        }
 
-            TrackAnnouncement(normalized, now);
+        _tracker.Track(normalized.Text, normalized.Category, now);
+
+        lock (_syncRoot)
+        {
             _pending.Enqueue(normalized);
         }
 
@@ -547,14 +773,21 @@ internal sealed class SpeechController
     {
         ISpeechProvider provider = ResolveProvider(request.Channel);
 
-        if (_logOnly)
+        bool logOnly, interruptEnabled;
+        lock (_syncRoot)
+        {
+            logOnly = _logOnly;
+            interruptEnabled = _interruptEnabled;
+        }
+
+        if (logOnly)
         {
             LogNarration(request, provider, logOnly: true);
             ScreenReaderDiagnostics.LogSpeechEvent(request, provider.Name, logOnly: true);
             return;
         }
 
-        if (_interruptEnabled && request.RequestInterrupt)
+        if (interruptEnabled && request.RequestInterrupt)
         {
             Interrupt(SpeechChannel.Primary);
         }
@@ -601,52 +834,5 @@ internal sealed class SpeechController
         }
 
         return provider ?? _providers.First();
-    }
-
-    private bool ShouldSuppress(SpeechRequest request, DateTime now)
-    {
-        if (_lastCategoryAnnouncements.TryGetValue(request.Category, out string? lastForCategory) &&
-            string.Equals(lastForCategory, request.Text, StringComparison.OrdinalIgnoreCase))
-        {
-            DateTime lastAt = _lastCategoryAnnouncedAt.TryGetValue(request.Category, out DateTime last) ? last : DateTime.MinValue;
-            if (now - lastAt < GetRepeatWindow(request.Category))
-            {
-                return true;
-            }
-        }
-
-        if (request.Category == AnnouncementCategory.Default &&
-            string.Equals(request.Text, _lastMessage, StringComparison.OrdinalIgnoreCase) &&
-            now - _lastAnnouncedAt < GetRepeatWindow(AnnouncementCategory.Default))
-        {
-            return true;
-        }
-
-        return false;
-    }
-
-    private void TrackAnnouncement(SpeechRequest request, DateTime now)
-    {
-        _lastCategoryAnnouncements[request.Category] = request.Text;
-        _lastCategoryAnnouncedAt[request.Category] = now;
-
-        _lastMessage = request.Text;
-        _lastAnnouncedAt = now;
-
-        _recentMessages.Enqueue(request.Text);
-        while (_recentMessages.Count > MaxRecentMessages)
-        {
-            _recentMessages.Dequeue();
-        }
-    }
-
-    private TimeSpan GetRepeatWindow(AnnouncementCategory category)
-    {
-        if (_categoryWindows.TryGetValue(category, out TimeSpan window))
-        {
-            return window;
-        }
-
-        return _categoryWindows[AnnouncementCategory.Default];
     }
 }

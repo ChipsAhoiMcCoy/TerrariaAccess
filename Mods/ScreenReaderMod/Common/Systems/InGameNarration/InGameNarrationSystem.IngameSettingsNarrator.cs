@@ -9,9 +9,13 @@ using Microsoft.Xna.Framework;
 using Microsoft.Xna.Framework.Audio;
 using Microsoft.Xna.Framework.Graphics;
 using ScreenReaderMod.Common.Services;
+using ScreenReaderMod.Common.Systems.InGame;
 using ScreenReaderMod.Common.Systems.MenuNarration;
 using ScreenReaderMod.Common.Utilities;
 using Terraria;
+
+// Alias to the new instance-based tracker accessed via static property
+using IngameOptionsLabelTracker = ScreenReaderMod.Common.Systems.InGame.IngameOptionsLabelTracker;
 using Terraria.Audio;
 using Terraria.GameContent;
 using Terraria.GameContent.UI.BigProgressBar;
@@ -37,6 +41,11 @@ public sealed partial class InGameNarrationSystem
         private const int NoFocusAnnouncementDelayTicks = 12;
         private const int NoFocusRepeatIntervalTicks = 90;
         private const int MenuOpenSettleDelayTicks = 6;
+
+        /// <summary>
+        /// Gets the options label tracker instance from the parent system.
+        /// </summary>
+        private static IngameOptionsLabelTracker? LabelTracker => InGameNarrationSystem.OptionsTracker;
 
         private static readonly string[] DefaultCategoryLabels =
         {
@@ -288,7 +297,7 @@ public sealed partial class InGameNarrationSystem
             bool optionIndicesChanged = rightHover != _lastRightHover || categoryId != _lastRightLock;
             bool optionActive = categoryId >= 0 &&
                 rightHover >= 0 &&
-                !IngameOptionsLabelTracker.IsOptionSkipped(rightHover);
+                LabelTracker?.IsOptionSkipped(rightHover) != true;
             bool specialActive = special == 1;
             bool handledAudioSlider = optionActive &&
                 TryHandleAudioSlider(categoryId, rightHover, special, categoryLabel, optionIndicesChanged);
@@ -437,7 +446,7 @@ public sealed partial class InGameNarrationSystem
                 _leftSideCategoryMappingField ??= optionsType.GetField("_leftSideCategoryMapping", flags);
                 _skipRightSlotField ??= optionsType.GetField("skipRightSlot", flags);
 
-                IngameOptionsLabelTracker.Configure(_leftSideCategoryMappingField, _skipRightSlotField, _categoryField);
+                LabelTracker?.Configure(_leftSideCategoryMappingField, _skipRightSlotField, _categoryField);
 
                 _fieldsResolved = true;
 
@@ -684,7 +693,7 @@ public sealed partial class InGameNarrationSystem
             }
 
             // Primary source: labels captured from DrawLeftSide calls
-            if (IngameOptionsLabelTracker.TryGetLeftLabel(leftIndex, out string label) && !string.IsNullOrWhiteSpace(label))
+            if (LabelTracker?.TryGetLeftLabel(leftIndex, out string label) == true && !string.IsNullOrWhiteSpace(label))
             {
                 return label;
             }
@@ -720,14 +729,14 @@ public sealed partial class InGameNarrationSystem
             _ = leftHover; // Previously used for mouseOverText fallback, now unused
 
             if (selectedLeftIndex >= 0 &&
-                IngameOptionsLabelTracker.TryGetLeftLabel(selectedLeftIndex, out string leftLabel) &&
+                LabelTracker?.TryGetLeftLabel(selectedLeftIndex, out string leftLabel) == true &&
                 !string.IsNullOrWhiteSpace(leftLabel))
             {
                 return leftLabel;
             }
 
             if (categoryId >= 0 &&
-                IngameOptionsLabelTracker.TryGetCategoryLabel(categoryId, out string label) &&
+                LabelTracker?.TryGetCategoryLabel(categoryId, out string label) == true &&
                 !string.IsNullOrWhiteSpace(label))
             {
                 return label;
@@ -751,7 +760,7 @@ public sealed partial class InGameNarrationSystem
         private int ResolveCategoryId(int rawCategory, int selectedLeftIndex)
         {
             if (selectedLeftIndex >= 0 &&
-                IngameOptionsLabelTracker.TryMapLeftToCategory(selectedLeftIndex, out int mappedCategory))
+                LabelTracker?.TryMapLeftToCategory(selectedLeftIndex, out int mappedCategory) == true)
             {
                 return mappedCategory;
             }
@@ -772,7 +781,7 @@ public sealed partial class InGameNarrationSystem
                 return null;
             }
 
-            if (IngameOptionsLabelTracker.TryGetOptionLabel(category, option, out string label) && !string.IsNullOrWhiteSpace(label))
+            if (LabelTracker?.TryGetOptionLabel(category, option, out string label) == true && !string.IsNullOrWhiteSpace(label))
             {
                 return BuildScaleAwareLabel(label, optionIndicesChanged, category, option, categoryLabel);
             }
@@ -989,7 +998,7 @@ public sealed partial class InGameNarrationSystem
 
         private string ResolveSliderLabel(int categoryId, int optionIndex, string? categoryLabel, MenuSliderKind kind)
         {
-            if (IngameOptionsLabelTracker.TryGetOptionLabel(categoryId, optionIndex, out string label) && !string.IsNullOrWhiteSpace(label))
+            if (LabelTracker?.TryGetOptionLabel(categoryId, optionIndex, out string label) == true && !string.IsNullOrWhiteSpace(label))
             {
                 return label;
             }
