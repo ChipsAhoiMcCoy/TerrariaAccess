@@ -10,6 +10,7 @@ using MonoMod.RuntimeDetour;
 using ScreenReaderMod.Common.Services;
 using ScreenReaderMod.Common.Systems.FirstLetterNavigation;
 using ScreenReaderMod.Common.Systems.GamepadEmulation;
+using ScreenReaderMod.Common.Systems.ModBrowser;
 using ScreenReaderMod.Common.Utilities;
 using Terraria;
 using Terraria.GameContent.UI.States;
@@ -478,7 +479,7 @@ public sealed class GamepadEmulationSystem : ModSystem
 
     private static void ApplyGlobalVirtualTriggers()
     {
-        if (!GamepadEmulationState.Enabled || Main.gameMenu || InputStateHelper.IsTextInputActive())
+        if (!GamepadEmulationState.Enabled || Main.gameMenu || Main.inFancyUI || InputStateHelper.IsTextInputActive())
         {
             return;
         }
@@ -489,12 +490,13 @@ public sealed class GamepadEmulationSystem : ModSystem
             return;
         }
 
-        // Skip LockOn (Tab) injection when in inventory and either:
-        // 1. First-letter navigation is already active, OR
-        // 2. Tab is being pressed (which will toggle first-letter navigation)
-        // This prevents Tab from triggering targeting when it's meant for first-letter nav toggle
+        // Skip LockOn (Tab) injection when:
+        // 1. In inventory and first-letter navigation is active or Tab is pressed
+        //    (Tab toggles first-letter nav, not targeting)
+        // 2. In a searchable menu (bestiary, mod browser, etc.) where Tab toggles search mode
         bool tabPressed = Main.keyState.IsKeyDown(Keys.Tab);
-        bool skipLockOn = Main.playerInventory && (FirstLetterNavigationManager.IsEnabled || tabPressed);
+        bool skipLockOn = (Main.playerInventory && (FirstLetterNavigationManager.IsEnabled || tabPressed))
+            || SearchModeManager.IsRelevantMenu;
         if (!skipLockOn)
         {
             VirtualTriggerService.InjectFromKeybind(GamepadEmulationKeybinds.LockOn, TriggerNames.LockOn);

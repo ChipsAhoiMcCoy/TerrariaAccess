@@ -25,6 +25,12 @@ public sealed partial class InGameNarrationSystem
                 return;
             }
 
+            // Don't announce lock-on while in a fancy UI overlay (bestiary, achievements, etc.)
+            if (Main.inFancyUI)
+            {
+                return;
+            }
+
             NPC? target = LockOnHelper.AimedTarget;
             if (target is null || !target.active)
             {

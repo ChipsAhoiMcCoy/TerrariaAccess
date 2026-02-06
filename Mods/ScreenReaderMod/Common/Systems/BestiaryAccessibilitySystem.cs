@@ -96,6 +96,9 @@ public sealed class BestiaryAccessibilitySystem : ModSystem
     // Page change tracking
     private int _lastPageOffset = -1;
 
+    // Search text tracking for audio feedback
+    private string? _lastSearchText;
+
     #endregion
 
     #region Input State
@@ -238,6 +241,7 @@ public sealed class BestiaryAccessibilitySystem : ModSystem
         _lastAnnouncedPointId = -1;
         _lastSeenPointId = -1;
         _lastPageOffset = -1;
+        _lastSearchText = null;
         _initialFocusFramesRemaining = 0;
 
         ScreenReaderService.ClearContexts("bestiary:");
@@ -272,6 +276,7 @@ public sealed class BestiaryAccessibilitySystem : ModSystem
         _instance._wasSortOverlayOpen = false;
         _instance._wasFilterOverlayOpen = false;
         _instance._lastPageOffset = -1;
+        _instance._lastSearchText = null;
 
         _instance._aButtonWasPressed = true;
         _instance._bButtonWasPressed = true;
@@ -315,6 +320,7 @@ public sealed class BestiaryAccessibilitySystem : ModSystem
             _wasSortOverlayOpen = false;
             _wasFilterOverlayOpen = false;
             _lastPageOffset = -1;
+            _lastSearchText = null;
 
             _aButtonWasPressed = true;
             _bButtonWasPressed = true;
@@ -326,6 +332,21 @@ public sealed class BestiaryAccessibilitySystem : ModSystem
         bool hasGamepadInput = PlayerInput.UsingGamepadUI ||
                                GamePad.GetState(PlayerIndex.One).IsConnected;
 
+        // Always process search mode toggling so Tab/Enter work during search
+        bool wasSearchActive = SearchModeManager.IsSearchModeActive;
+        SearchModeManager.Update();
+        bool isSearchActive = SearchModeManager.IsSearchModeActive;
+
+        // Sync the bestiary's UISearchBar with our search mode state
+        HandleSearchBarSync(menuState, wasSearchActive, isSearchActive);
+
+        if (isSearchActive && !wasSearchActive)
+        {
+            _lastAnnouncedPointId = -1;
+            _lastSeenPointId = -1;
+        }
+
+        // In search mode without gamepad, skip navigation processing
         if (!hasGamepadInput && !ShouldProcessKeyboardInput())
         {
             return;
@@ -333,16 +354,6 @@ public sealed class BestiaryAccessibilitySystem : ModSystem
 
         try
         {
-            bool wasSearchActive = SearchModeManager.IsSearchModeActive;
-            SearchModeManager.Update();
-            bool isSearchActive = SearchModeManager.IsSearchModeActive;
-
-            if (isSearchActive && !wasSearchActive)
-            {
-                _lastAnnouncedPointId = -1;
-                _lastSeenPointId = -1;
-            }
-
             UpdateInputState();
             ConfigureGamepadPoints(menuState);
 
@@ -414,6 +425,95 @@ public sealed class BestiaryAccessibilitySystem : ModSystem
         catch (Exception ex)
         {
             Mod.Logger.Warn($"[{SystemLogName}] Error processing menu: {ex}");
+        }
+    }
+
+    private void HandleSearchBarSync(object menuState, bool wasSearchActive, bool isSearchActive)
+    {
+        UISearchBar? searchBar = GetSearchBar(menuState);
+        if (searchBar is null)
+        {
+            return;
+        }
+
+        if (isSearchActive && !wasSearchActive)
+        {
+            // Entering search mode: activate the search bar's text input
+            if (!searchBar.IsWritingText)
+            {
+                searchBar.ToggleTakingText();
+                Mod.Logger.Info($"[{SystemLogName}] Activated search bar text input");
+            }
+            _lastSearchText = null;
+
+            // SearchModeManager.Toggle() enqueued a prefix, but we return early
+            // during search mode so no announcement would consume it. Clear it
+            // and announce directly instead.
+            ScreenReaderService.ClearAllPrefixes();
+            string searchAnnouncement = LocalizationHelper.GetTextOrFallback(
+                "Mods.ScreenReaderMod.SearchMode.SearchEnabled",
+                "Search mode. Type to filter. Press Tab to return to navigation");
+            ScreenReaderService.Announce(searchAnnouncement, force: true);
+        }
+        else if (!isSearchActive && wasSearchActive)
+        {
+            // Exiting search mode: deactivate the search bar's text input
+            if (searchBar.IsWritingText)
+            {
+                searchBar.ToggleTakingText();
+                Mod.Logger.Info($"[{SystemLogName}] Deactivated search bar text input");
+            }
+        }
+        else if (isSearchActive && !searchBar.IsWritingText)
+        {
+            // Desync: search bar was deactivated externally (e.g., Escape key in search bar)
+            SearchModeManager.ExitSearchMode();
+            Mod.Logger.Info($"[{SystemLogName}] Search bar desynced, exiting search mode");
+        }
+        else if (!isSearchActive && searchBar.IsWritingText)
+        {
+            // Desync: search bar still active but search mode ended
+            searchBar.ToggleTakingText();
+            Mod.Logger.Info($"[{SystemLogName}] Deactivated orphaned search bar");
+        }
+
+        // Track search text changes for audio feedback while searching
+        if (SearchModeManager.IsSearchModeActive)
+        {
+            string? currentText = GetSearchString(menuState);
+            if (_lastSearchText is not null && !string.Equals(currentText, _lastSearchText, StringComparison.Ordinal))
+            {
+                SoundEngine.PlaySound(SoundID.MenuTick);
+            }
+            _lastSearchText = currentText;
+        }
+        else
+        {
+            _lastSearchText = null;
+        }
+    }
+
+    private UISearchBar? GetSearchBar(object menuState)
+    {
+        try
+        {
+            return ReflectionCache.UIBestiaryTest.SearchBar?.GetValue(menuState) as UISearchBar;
+        }
+        catch
+        {
+            return null;
+        }
+    }
+
+    private string? GetSearchString(object menuState)
+    {
+        try
+        {
+            return ReflectionCache.UIBestiaryTest.SearchString?.GetValue(menuState) as string;
+        }
+        catch
+        {
+            return null;
         }
     }
 
