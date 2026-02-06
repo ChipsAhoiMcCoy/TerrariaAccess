@@ -172,9 +172,20 @@ internal sealed partial class MenuUiSelectionTracker
                 return text.Trim();
             }
 
+            // Handle LocalizedText explicitly for proper text extraction
+            if (value is LocalizedText localized)
+            {
+                return TextSanitizer.Clean(localized.Value ?? string.Empty);
+            }
+
             if (value is not null)
             {
-                return value.ToString() ?? string.Empty;
+                string? str = value.ToString();
+                // Filter out unhelpful type name strings
+                if (!string.IsNullOrWhiteSpace(str) && !str.StartsWith("Terraria.Localization.", StringComparison.Ordinal))
+                {
+                    return str;
+                }
             }
         }
 
@@ -193,6 +204,40 @@ internal sealed partial class MenuUiSelectionTracker
             if (value is string text)
             {
                 return text.Trim();
+            }
+        }
+
+        // Try HoverText property (used by UIImageButton and other vanilla buttons)
+        if (accessors.HoverTextProperty is not null)
+        {
+            object? value = accessors.HoverTextProperty.GetValue(element);
+            if (value is string hoverText && !string.IsNullOrWhiteSpace(hoverText))
+            {
+                return hoverText.Trim();
+            }
+
+            if (value is LocalizedText localized && !string.IsNullOrWhiteSpace(localized.Value))
+            {
+                return TextSanitizer.Clean(localized.Value);
+            }
+
+            if (value is not null)
+            {
+                string? str = value.ToString();
+                if (!string.IsNullOrWhiteSpace(str) && !str.StartsWith("Terraria.Localization.", StringComparison.Ordinal))
+                {
+                    return str;
+                }
+            }
+        }
+
+        // Try _hoverText field
+        if (accessors.HoverTextField is not null)
+        {
+            object? value = accessors.HoverTextField.GetValue(element);
+            if (value is string hoverText && !string.IsNullOrWhiteSpace(hoverText))
+            {
+                return hoverText.Trim();
             }
         }
 
@@ -1468,7 +1513,9 @@ internal sealed partial class MenuUiSelectionTracker
 internal sealed record LabelAccessors
 {
     public PropertyInfo? TextProperty { get; init; }
+    public PropertyInfo? HoverTextProperty { get; init; }
     public FieldInfo? TextField { get; init; }
+    public FieldInfo? HoverTextField { get; init; }
     public FieldInfo? ValueField { get; init; }
 }
 
@@ -1487,7 +1534,9 @@ internal static class LabelAccessorFactory
         return new LabelAccessors
         {
             TextProperty = type.GetProperty("Text", LabelFlags),
+            HoverTextProperty = type.GetProperty("HoverText", LabelFlags),
             TextField = type.GetField("_text", LabelFlags),
+            HoverTextField = type.GetField("_hoverText", LabelFlags),
             ValueField = type.GetField("_value", LabelFlags),
         };
     }

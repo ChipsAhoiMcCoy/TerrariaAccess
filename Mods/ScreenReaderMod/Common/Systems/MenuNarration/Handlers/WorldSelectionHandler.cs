@@ -8,15 +8,14 @@ using Terraria.UI;
 namespace ScreenReaderMod.Common.Systems.MenuNarration.Handlers;
 
 /// <summary>
-/// Handles character creation menus including hair, clothing styles, and character options.
+/// Handles world selection menus (UIWorldSelect, UIWorldList).
 /// </summary>
-internal sealed class CharacterCreationHandler : MenuHandlerBase
+internal sealed class WorldSelectionHandler : MenuHandlerBase
 {
-    public override int Priority => 70;
+    public override int Priority => 70; // Same as WorldCreationHandler and CharacterCreationHandler
 
     public override bool CanHandle(int menuMode, UIState? uiState)
     {
-        // Check if the UI state is a character creation screen
         if (uiState is null)
         {
             return false;
@@ -24,16 +23,9 @@ internal sealed class CharacterCreationHandler : MenuHandlerBase
 
         string? typeName = uiState.GetType().FullName;
 
-        // Handle UICharacterCreation (the actual creation screen)
-        if (typeName?.Contains("UICharacterCreation", StringComparison.Ordinal) == true)
-        {
-            return true;
-        }
-
-        // Handle UICharacterSelect (player selection screen) - appears in both menuMode 1 and 2
-        // menuMode 1 = Single player character selection
-        // menuMode 2 = Multiplayer character selection
-        if (typeName?.Contains("UICharacterSelect", StringComparison.Ordinal) == true)
+        // Handle UIWorldSelect and UIWorldList (world selection screens)
+        if (typeName?.Contains("UIWorldSelect", StringComparison.Ordinal) == true ||
+            typeName?.Contains("UIWorldList", StringComparison.Ordinal) == true)
         {
             return true;
         }
@@ -59,11 +51,12 @@ internal sealed class CharacterCreationHandler : MenuHandlerBase
             return events;
         }
 
-        // Handle hover events for character creation elements.
+        // Handle hover events for world list items.
         // This is a UIState-based screen — all navigation is via hover on UIElements,
         // not via Main.focusMenu / Main.menuItems. Do NOT call TryHandleFocus or
-        // AnnounceFallback here, as those read stale data from the previous menu.
-        TryHandleCharacterCreationHover(context, events);
+        // AnnounceFallback here, as those read stale data left over from the previous
+        // menu (e.g. "Singleplayer" from the title screen).
+        TryHandleWorldSelectionHover(context, events);
 
         return events;
     }
@@ -76,24 +69,22 @@ internal sealed class CharacterCreationHandler : MenuHandlerBase
 
         MenuNarrationCatalog.LogMenuSnapshot(context.MenuMode);
 
-        ScreenReaderMod.Instance?.Logger.Info($"[CharacterCreationHandler] Entered: {modeLabel}");
+        ScreenReaderMod.Instance?.Logger.Info($"[WorldSelectionHandler] Entered: {modeLabel}");
 
         // Handle hover first
-        if (TryHandleCharacterCreationHover(context, events))
+        if (TryHandleWorldSelectionHover(context, events))
         {
             return;
         }
 
-        // Announce the mode description and let hover events handle item-level navigation.
-        // Do NOT force-announce focus here — Main.focusMenu / menuItems may contain stale
-        // data from the previous screen (e.g., title menu items like "Singleplayer").
+        // Announce the mode description
         if (!string.IsNullOrWhiteSpace(modeLabel))
         {
             events.Add(new MenuNarrationEvent(modeLabel, true, MenuNarrationEventKind.ModeChanged));
         }
     }
 
-    private bool TryHandleCharacterCreationHover(MenuNarrationContext context, List<MenuNarrationEvent> events)
+    private bool TryHandleWorldSelectionHover(MenuNarrationContext context, List<MenuNarrationEvent> events)
     {
         if (!UiSelectionTracker.TryGetHoverLabel(Main.MenuUI, out MenuUiLabel hover))
         {
@@ -116,7 +107,7 @@ internal sealed class CharacterCreationHandler : MenuHandlerBase
             return false;
         }
 
-        ScreenReaderMod.Instance?.Logger.Info($"[CharacterCreationHandler] Announcing hover: {cleaned}");
+        ScreenReaderMod.Instance?.Logger.Info($"[WorldSelectionHandler] Announcing hover: {cleaned}");
         events.Add(new MenuNarrationEvent(cleaned, false, MenuNarrationEventKind.Hover));
         State.LastHoverAnnouncement = cleaned;
         State.LastHoverAnnouncedAt = context.Timestamp;

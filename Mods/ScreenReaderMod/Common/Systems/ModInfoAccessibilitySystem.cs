@@ -428,11 +428,31 @@ public sealed class ModInfoAccessibilitySystem : ModMenuAccessibilityBase
                     }
                     header = $"{header}. {TextSanitizer.Clean(description)}";
                 }
-                return $"{header}. {label}";
+
+                // Add button position context
+                string positionContext = BuildPositionContext();
+                return $"{header}. {label}{positionContext}";
             }
         }
 
-        return label;
+        // For subsequent announcements, include button position context
+        string position = BuildPositionContext();
+        return $"{label}{position}";
+    }
+
+    private string BuildPositionContext()
+    {
+        var currentList = _inTopRow ? _topRowBindings : _bottomRowBindings;
+        if (currentList.Count <= 1)
+        {
+            return string.Empty;
+        }
+
+        int buttonIndex = CurrentFocusIndex + 1;
+        int buttonTotal = currentList.Count;
+        string rowName = _inTopRow ? "top row" : "bottom row";
+
+        return $", {buttonIndex} of {buttonTotal} in {rowName}";
     }
 
     #endregion
@@ -466,61 +486,56 @@ public sealed class ModInfoAccessibilitySystem : ModMenuAccessibilityBase
             return null;
         }
 
-        // The Back button is at VAlign = 1f, Top = -20f, HAlign is not set (defaults to 0)
-        // It's a UIAutoScaleTextTextPanel<string> with "Back" text
-        // We need to iterate through children to find it
+        // The Back button is a UIAutoScaleTextTextPanel<string> with "Back" text
+        // Prioritize text matching for reliability
 
         try
         {
-            // Try Elements field
             var elementsField = typeof(UIElement).GetField("Elements", BindingFlags.NonPublic | BindingFlags.Instance);
-            if (elementsField?.GetValue(container) is List<UIElement> elements)
+            if (elementsField?.GetValue(container) is not List<UIElement> elements)
             {
-                string backText = Language.GetTextValue("UI.Back");
+                return null;
+            }
 
-                foreach (var element in elements)
+            string backText = Language.GetTextValue("UI.Back");
+
+            // First pass: find by text content (most reliable)
+            foreach (var element in elements)
+            {
+                string typeName = element.GetType().Name;
+                if (!typeName.Contains("UIAutoScaleTextTextPanel"))
                 {
-                    // Check if it's a UIAutoScaleTextTextPanel - look at the type name
-                    string typeName = element.GetType().Name;
-                    if (!typeName.Contains("UIAutoScaleTextTextPanel"))
-                    {
-                        continue;
-                    }
+                    continue;
+                }
 
-                    // Check position: VAlign = 1f, HAlign < 0.1f (left side), Top.Pixels = -20f
-                    if (element.VAlign < 0.9f)
-                    {
-                        continue;
-                    }
+                var textProperty = element.GetType().GetProperty("Text", BindingFlags.Public | BindingFlags.Instance);
+                string? text = textProperty?.GetValue(element) as string;
 
-                    // Left-aligned buttons have HAlign of 0
-                    if (element.HAlign > 0.1f)
-                    {
-                        continue;
-                    }
-
-                    // Check Top position (should be around -20f for bottom row)
-                    if (element.Top.Pixels < -30f || element.Top.Pixels > -10f)
-                    {
-                        continue;
-                    }
-
-                    // This is likely the Back button - verify by checking for the text
-                    // Try to get the Text property
-                    var textProperty = element.GetType().GetProperty("Text", BindingFlags.Public | BindingFlags.Instance);
-                    if (textProperty is not null)
-                    {
-                        string? text = textProperty.GetValue(element) as string;
-                        if (text == backText)
-                        {
-                            return element;
-                        }
-                    }
-
-                    // If we can't verify by text, use position as fallback
+                if (text == backText)
+                {
                     return element;
                 }
             }
+
+            // Fallback: find by position (VAlign ≈ 1f, HAlign ≈ 0, Top ≈ -20f)
+            foreach (var element in elements)
+            {
+                string typeName = element.GetType().Name;
+                if (!typeName.Contains("UIAutoScaleTextTextPanel"))
+                {
+                    continue;
+                }
+
+                // Check position with wider tolerances
+                if (element.VAlign < 0.85f) continue;
+                if (element.HAlign > 0.2f) continue;
+                if (element.Top.Pixels < -40f || element.Top.Pixels > 0f) continue;
+
+                ScreenReaderMod.Instance?.Logger.Debug($"[ModInfo] Found Back button by position fallback");
+                return element;
+            }
+
+            ScreenReaderMod.Instance?.Logger.Debug("[ModInfo] Back button not found");
         }
         catch (Exception ex)
         {

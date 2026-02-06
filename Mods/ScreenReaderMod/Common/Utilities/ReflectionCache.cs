@@ -479,6 +479,186 @@ internal static class ReflectionCache
 
     #endregion
 
+    #region UIModPacks (Mod Packs Screen)
+
+    /// <summary>
+    /// Reflection handles for Terraria.ModLoader.UI.UIModPacks (Mod Packs collection screen).
+    /// </summary>
+    internal static class UIModPacks
+    {
+        private static readonly Lazy<Type?> _type = new(() =>
+            Type.GetType("Terraria.ModLoader.UI.UIModPacks, tModLoader"));
+
+        private static readonly Lazy<FieldInfo?> _modPacks = new(() =>
+            Type?.GetField("_modPacks", InstanceNonPublic));
+
+        private static readonly Lazy<FieldInfo?> _scrollPanel = new(() =>
+            Type?.GetField("_scrollPanel", InstanceNonPublic));
+
+        private static readonly Lazy<FieldInfo?> _uiLoader = new(() =>
+            Type?.GetField("_uiLoader", InstanceNonPublic));
+
+        internal static Type? Type => _type.Value;
+        internal static FieldInfo? ModPacks => _modPacks.Value;
+        internal static FieldInfo? ScrollPanel => _scrollPanel.Value;
+        internal static FieldInfo? UiLoader => _uiLoader.Value;
+    }
+
+    #endregion
+
+    #region UIModPackItem (Mod Pack Item in List)
+
+    /// <summary>
+    /// Reflection handles for Terraria.ModLoader.UI.UIModPackItem (individual mod pack in list).
+    /// </summary>
+    internal static class UIModPackItem
+    {
+        private static readonly Lazy<Type?> _type = new(() =>
+            Type.GetType("Terraria.ModLoader.UI.UIModPackItem, tModLoader"));
+
+        private static readonly Lazy<FieldInfo?> _filename = new(() =>
+            Type?.GetField("_filename", InstanceNonPublic));
+
+        private static readonly Lazy<FieldInfo?> _mods = new(() =>
+            Type?.GetField("_mods", InstanceNonPublic));
+
+        private static readonly Lazy<FieldInfo?> _numMods = new(() =>
+            Type?.GetField("_numMods", InstanceNonPublic));
+
+        private static readonly Lazy<FieldInfo?> _numModsEnabled = new(() =>
+            Type?.GetField("_numModsEnabled", InstanceNonPublic));
+
+        private static readonly Lazy<FieldInfo?> _numModsDisabled = new(() =>
+            Type?.GetField("_numModsDisabled", InstanceNonPublic));
+
+        private static readonly Lazy<FieldInfo?> _missing = new(() =>
+            Type?.GetField("_missing", InstanceNonPublic));
+
+        private static readonly Lazy<FieldInfo?> _legacy = new(() =>
+            Type?.GetField("_legacy", InstanceNonPublic));
+
+        private static readonly Lazy<FieldInfo?> _enableListButton = new(() =>
+            Type?.GetField("_enableListButton", InstanceNonPublic));
+
+        private static readonly Lazy<FieldInfo?> _enableListOnlyButton = new(() =>
+            Type?.GetField("_enableListOnlyButton", InstanceNonPublic));
+
+        private static readonly Lazy<FieldInfo?> _viewInModBrowserButton = new(() =>
+            Type?.GetField("_viewInModBrowserButton", InstanceNonPublic));
+
+        private static readonly Lazy<FieldInfo?> _updateListWithEnabledButton = new(() =>
+            Type?.GetField("_updateListWithEnabledButton", InstanceNonPublic));
+
+        private static readonly Lazy<FieldInfo?> _deleteButton = new(() =>
+            Type?.GetField("_deleteButton", InstanceNonPublic));
+
+        private static readonly Lazy<FieldInfo?> _fakeDeleteButton = new(() =>
+            Type?.GetField("_fakeDeleteButton", InstanceNonPublic));
+
+        private static readonly Lazy<FieldInfo?> _importFromPackLocalButton = new(() =>
+            Type?.GetField("_importFromPackLocalButton", InstanceNonPublic));
+
+        private static readonly Lazy<FieldInfo?> _removePackLocalButton = new(() =>
+            Type?.GetField("_removePackLocalButton", InstanceNonPublic));
+
+        private static readonly Lazy<FieldInfo?> _exportPackInstanceButton = new(() =>
+            Type?.GetField("_exportPackInstanceButton", InstanceNonPublic));
+
+        private static readonly Lazy<FieldInfo?> _removePackInstanceButton = new(() =>
+            Type?.GetField("_removePackInstanceButton", InstanceNonPublic));
+
+        internal static Type? Type => _type.Value;
+        internal static FieldInfo? Filename => _filename.Value;
+        internal static FieldInfo? Mods => _mods.Value;
+        internal static FieldInfo? NumMods => _numMods.Value;
+        internal static FieldInfo? NumModsEnabled => _numModsEnabled.Value;
+        internal static FieldInfo? NumModsDisabled => _numModsDisabled.Value;
+        internal static FieldInfo? Missing => _missing.Value;
+        internal static FieldInfo? Legacy => _legacy.Value;
+        internal static FieldInfo? EnableListButton => _enableListButton.Value;
+        internal static FieldInfo? EnableListOnlyButton => _enableListOnlyButton.Value;
+        internal static FieldInfo? ViewInModBrowserButton => _viewInModBrowserButton.Value;
+        internal static FieldInfo? UpdateListWithEnabledButton => _updateListWithEnabledButton.Value;
+        internal static FieldInfo? DeleteButton => _deleteButton.Value;
+        internal static FieldInfo? FakeDeleteButton => _fakeDeleteButton.Value;
+        internal static FieldInfo? ImportFromPackLocalButton => _importFromPackLocalButton.Value;
+        internal static FieldInfo? RemovePackLocalButton => _removePackLocalButton.Value;
+        internal static FieldInfo? ExportPackInstanceButton => _exportPackInstanceButton.Value;
+        internal static FieldInfo? RemovePackInstanceButton => _removePackInstanceButton.Value;
+    }
+
+    #endregion
+
+    #region UIModSources (Mod Sources Screen)
+
+    /// <summary>
+    /// Reflection handles for Terraria.ModLoader.UI.UIModSources (Mod development sources screen).
+    /// </summary>
+    internal static class UIModSources
+    {
+        private static readonly Lazy<Type?> _type = new(() =>
+            Type.GetType("Terraria.ModLoader.UI.UIModSources, tModLoader"));
+
+        private static readonly Lazy<FieldInfo?> _modList = new(() =>
+            Type?.GetField("_modList", InstanceNonPublic));
+
+        private static readonly Lazy<FieldInfo?> _items = new(() =>
+            Type?.GetField("_items", InstanceNonPublic));
+
+        private static readonly Lazy<FieldInfo?> _uIPanel = new(() =>
+            Type?.GetField("_uIPanel", InstanceNonPublic));
+
+        private static readonly Lazy<FieldInfo?> _uIElement = new(() =>
+            Type?.GetField("_uIElement", InstanceNonPublic));
+
+        private static readonly Lazy<FieldInfo?> _filterTextBox = new(() =>
+            Type?.GetField("filterTextBox", InstanceNonPublic));
+
+        private static readonly Lazy<FieldInfo?> _links = new(() =>
+            Type?.GetField("_links", InstanceNonPublic));
+
+        private static readonly Lazy<FieldInfo?> _uiLoader = new(() =>
+            Type?.GetField("_uiLoader", InstanceNonPublic));
+
+        internal static Type? Type => _type.Value;
+        internal static FieldInfo? ModList => _modList.Value;
+        internal static FieldInfo? Items => _items.Value;
+        internal static FieldInfo? UIPanel => _uIPanel.Value;
+        internal static FieldInfo? UIElement => _uIElement.Value;
+        internal static FieldInfo? FilterTextBox => _filterTextBox.Value;
+        internal static FieldInfo? Links => _links.Value;
+        internal static FieldInfo? UiLoader => _uiLoader.Value;
+    }
+
+    #endregion
+
+    #region UIModSourceItem (Mod Source Item in List)
+
+    /// <summary>
+    /// Reflection handles for Terraria.ModLoader.UI.UIModSourceItem (individual mod source in list).
+    /// </summary>
+    internal static class UIModSourceItem
+    {
+        private static readonly Lazy<Type?> _type = new(() =>
+            Type.GetType("Terraria.ModLoader.UI.UIModSourceItem, tModLoader"));
+
+        private static readonly Lazy<FieldInfo?> _mod = new(() =>
+            Type?.GetField("_mod", InstanceNonPublic));
+
+        private static readonly Lazy<FieldInfo?> _modName = new(() =>
+            Type?.GetField("modName", InstancePublic));
+
+        private static readonly Lazy<FieldInfo?> _builtMod = new(() =>
+            Type?.GetField("_builtMod", InstanceNonPublic));
+
+        internal static Type? Type => _type.Value;
+        internal static FieldInfo? Mod => _mod.Value;
+        internal static FieldInfo? ModName => _modName.Value;
+        internal static FieldInfo? BuiltMod => _builtMod.Value;
+    }
+
+    #endregion
+
     #region LocalizedText (Terraria Localization)
 
     /// <summary>
@@ -520,6 +700,16 @@ internal static class ReflectionCache
         if (UIModConfigList.Type is null)
         {
             logger("[ReflectionCache] UIModConfigList type not found - Mod Config accessibility will be limited");
+        }
+
+        if (UIModPacks.Type is null)
+        {
+            logger("[ReflectionCache] UIModPacks type not found - Mod Packs accessibility will be limited");
+        }
+
+        if (UIModSources.Type is null)
+        {
+            logger("[ReflectionCache] UIModSources type not found - Mod Sources accessibility will be limited");
         }
     }
 

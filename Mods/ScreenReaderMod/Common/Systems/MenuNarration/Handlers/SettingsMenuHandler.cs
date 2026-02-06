@@ -1,7 +1,6 @@
 #nullable enable
 using System;
 using System.Collections.Generic;
-using ScreenReaderMod.Common.Services;
 using ScreenReaderMod.Common.Utilities;
 using Terraria;
 using Terraria.Localization;
@@ -267,22 +266,16 @@ internal sealed class SettingsMenuHandler : MenuHandlerBase
             return true;
         }
 
-        // Use the speech queue system for slider announcements
-        string baseLabel = SliderNarrationHelper.ExtractBaseLabel(sliderLabel, kind);
-        string valueText = $"{percent:0} percent";
-
-        if (sliderChanged && !string.IsNullOrWhiteSpace(baseLabel))
-        {
-            ScreenReaderService.EnqueuePrefix(baseLabel);
-        }
+        // Build slider announcement directly (no EnqueuePrefix) for fluid speech without pauses
+        string announcement = SliderNarrationHelper.BuildSliderAnnouncement(sliderLabel, kind, percent, includeLabel: sliderChanged);
 
         State.LastSliderId = sliderId;
         State.LastSliderKind = kind;
         lastValue = percent;
         State.LastFocus = null;
 
-        ScreenReaderMod.Instance?.Logger.Info($"[SettingsHandler] Slider {sliderId} ({kind}) -> {(sliderChanged ? $"{baseLabel}. {valueText}" : valueText)}");
-        events.Add(new MenuNarrationEvent(valueText, true, MenuNarrationEventKind.Slider));
+        ScreenReaderMod.Instance?.Logger.Info($"[SettingsHandler] Slider {sliderId} ({kind}) -> {announcement}");
+        events.Add(new MenuNarrationEvent(announcement, true, MenuNarrationEventKind.Slider));
         return true;
     }
 

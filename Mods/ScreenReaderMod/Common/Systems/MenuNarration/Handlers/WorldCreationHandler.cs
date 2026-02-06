@@ -114,6 +114,11 @@ internal sealed class WorldCreationHandler : MenuHandlerBase
             events.Add(new MenuNarrationEvent(modeLabel, true, MenuNarrationEventKind.ModeChanged));
         }
 
+        // Move focus to the Name field instead of Back button.
+        // UIWorldCreation never sets an initial focus, so UILinkPointNavigator
+        // defaults to link point 3000 (Back). Override to 3003 (Name).
+        UILinkPointNavigator.ChangePoint(MenuUiSelectionTracker.WcLinkName);
+
         // Announce current focus via link point
         if (TryHandleLinkPointNavigation(context, events))
         {

@@ -64,8 +64,17 @@ internal sealed class TitleMenuHandler : MenuHandlerBase
             return;
         }
 
-        // Force focus announcement on menu entry
-        TryHandleTitleMenuFocus(context, timestamp, events);
+        // Announce the default focused item immediately on mode entry,
+        // bypassing stabilization delays for instant feedback.
+        string defaultItem = MenuNarrationCatalog.DescribeMenuItem(context.MenuMode, 0);
+        if (!string.IsNullOrEmpty(defaultItem))
+        {
+            ScreenReaderMod.Instance?.Logger.Info($"[TitleMenuHandler] Immediate entry announcement: {defaultItem}");
+            events.Add(new MenuNarrationEvent(defaultItem, true, MenuNarrationEventKind.Focus));
+            State.LastFocusAnnouncement = defaultItem;
+            State.LastFocusAnnouncedAt = timestamp;
+            State.LastFocus = new MenuFocus(0, "ModeEntry");
+        }
     }
 
     private bool TryHandleTitleMenuHover(MenuNarrationContext context, List<MenuNarrationEvent> events)

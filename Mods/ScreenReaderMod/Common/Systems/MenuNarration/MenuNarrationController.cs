@@ -15,6 +15,11 @@ internal sealed class MenuNarrationController
 {
     private readonly MenuNarrationHandlerRegistry _registry;
 
+    // After a ModeChanged announcement (e.g. "Player selection"), subsequent events
+    // must not interrupt for this window so the screen reader finishes speaking.
+    private DateTime _lastModeChangeTime = DateTime.MinValue;
+    private static readonly TimeSpan ModeChangeProtectionWindow = TimeSpan.FromMilliseconds(800);
+
     internal MenuNarrationController()
     {
         _registry = new MenuNarrationHandlerRegistry();
@@ -23,6 +28,7 @@ internal sealed class MenuNarrationController
         // Higher priority handlers are checked first
         _registry.RegisterHandler(new ModConfigHandler());        // Priority 100 - highest, catches mod config screens
         _registry.RegisterHandler(new WorldCreationHandler());    // Priority 70
+        _registry.RegisterHandler(new WorldSelectionHandler());   // Priority 70 - world selection (UIWorldSelect, UIWorldList)
         _registry.RegisterHandler(new CharacterCreationHandler()); // Priority 70
         _registry.RegisterHandler(new SettingsMenuHandler());     // Priority 60
         _registry.RegisterHandler(new MultiplayerMenuHandler());  // Priority 55
@@ -43,6 +49,7 @@ internal sealed class MenuNarrationController
         if (!Main.gameMenu)
         {
             _registry.Reset();
+            _lastModeChangeTime = DateTime.MinValue;
             return;
         }
 
@@ -56,7 +63,22 @@ internal sealed class MenuNarrationController
                 continue;
             }
 
-            ScreenReaderService.Announce(narrationEvent.Text, narrationEvent.Force);
+            if (narrationEvent.Kind == MenuNarrationEventKind.ModeChanged)
+            {
+                _lastModeChangeTime = context.Timestamp;
+                ScreenReaderService.Announce(narrationEvent.Text, narrationEvent.Force);
+            }
+            else
+            {
+                // Within the protection window after a mode change, don't interrupt
+                // so the screen reader finishes speaking the mode label (e.g. "Player
+                // selection") before any follow-up hover/focus announcements.
+                bool inProtection = context.Timestamp - _lastModeChangeTime < ModeChangeProtectionWindow;
+                ScreenReaderService.Announce(
+                    narrationEvent.Text,
+                    narrationEvent.Force,
+                    requestInterrupt: !inProtection);
+            }
         }
     }
 }

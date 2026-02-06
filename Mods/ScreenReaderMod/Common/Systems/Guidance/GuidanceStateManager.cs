@@ -3,9 +3,6 @@ using System;
 using System.Collections.Generic;
 using Microsoft.Xna.Framework;
 using Microsoft.Xna.Framework.Audio;
-using Terraria;
-using Terraria.UI;
-using Terraria.GameContent.UI.States;
 
 namespace ScreenReaderMod.Common.Systems.Guidance;
 
@@ -51,14 +48,10 @@ internal sealed class GuidanceStateManager
     internal ProximityTargetKey ActiveProximityTarget = new(SelectionMode.None, -1);
     internal int LastProximityStepIndex = int.MaxValue;
 
-    internal bool NamingActive;
-
     internal int NextPingUpdateFrame = -1;
     internal bool ArrivalAnnounced;
     internal SoundEffect? WaypointTone;
     internal readonly List<SoundEffectInstance> ActiveWaypointInstances = new();
-    internal UIVirtualKeyboard? ActiveKeyboard;
-    internal InputSnapshot? CurrentInputSnapshot;
     internal uint LastTargetRefreshFrame;
     internal int LastTargetRefreshPlayerIndex = -1;
 
@@ -152,20 +145,6 @@ internal sealed class GuidanceStateManager
             WorldPosition = worldPosition;
             DistanceTiles = distanceTiles;
         }
-    }
-
-    internal sealed class InputSnapshot
-    {
-        public bool BlockInput;
-        public bool WritingText;
-        public bool PlayerInventory;
-        public bool EditSign;
-        public bool EditChest;
-        public bool DrawingPlayerChat;
-        public bool InFancyUI;
-        public bool GameMenu;
-        public string ChatText = string.Empty;
-        public UIState? PreviousUiState;
     }
 
     internal struct Waypoint

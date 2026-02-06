@@ -42,4 +42,16 @@ internal static class LinkIdRegistry
     /// Safe link point ID for dialog No button.
     /// </summary>
     internal const int DialogNo = 3401;
+
+    /// <summary>
+    /// Base link ID for ModPacksAccessibilitySystem (UIModPacks screen).
+    /// Range: 3500-3599
+    /// </summary>
+    internal const int ModPacks = 3500;
+
+    /// <summary>
+    /// Base link ID for ModSourcesAccessibilitySystem (UIModSources screen).
+    /// Range: 3600-3699
+    /// </summary>
+    internal const int ModSources = 3600;
 }

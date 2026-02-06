@@ -23,6 +23,8 @@ pwsh -NoProfile -ExecutionPolicy Bypass -File Tools/build.ps1 -NarrationLint
 
 The build script invokes tModLoader's build system (`dotnet tModLoader.dll -build`), not MSBuild directly. Output is `ScreenReaderMod.tmod`.
 
+When done with a task, build and deploy (without `-SkipDeploy`) so the mod is ready to test in tModLoader immediately.
+
 ## Architecture
 
 ### Core Systems (Mods/ScreenReaderMod/Common/)

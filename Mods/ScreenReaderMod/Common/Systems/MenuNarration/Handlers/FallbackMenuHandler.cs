@@ -81,13 +81,28 @@ internal sealed class FallbackMenuHandler : MenuHandlerBase
             return;
         }
 
-        // Handle hover
+        // Handle hover first - this is most reliable
         if (TryHandleUiHover(context, events))
         {
             return;
         }
 
-        // Force focus announcement
+        // For UIState-based screens (like world selection, character selection),
+        // do NOT force focus announcement because Main.focusMenu and Main.menuItems
+        // may contain stale data from the previous menu. Just announce the mode
+        // description and let hover events handle the rest.
+        if (context.UiState is not null)
+        {
+            // Announce the mode description if we have one
+            if (!string.IsNullOrWhiteSpace(modeLabel))
+            {
+                ScreenReaderMod.Instance?.Logger.Info($"[FallbackHandler] Mode entry: {modeLabel}");
+                events.Add(new MenuNarrationEvent(modeLabel, true, MenuNarrationEventKind.ModeChanged));
+            }
+            return;
+        }
+
+        // For traditional menu modes (no UIState), force focus announcement
         if (!TryHandleFocus(context, true, events))
         {
             AnnounceFallbackSafe(context, events);
@@ -101,6 +116,8 @@ internal sealed class FallbackMenuHandler : MenuHandlerBase
                Systems.ManageModsAccessibilitySystem.IsHandlingGamepadInput ||
                Systems.ModInfoAccessibilitySystem.IsHandlingGamepadInput ||
                Systems.DownloadModsAccessibilitySystem.IsHandlingGamepadInput ||
+               Systems.ModPacksAccessibilitySystem.IsHandlingGamepadInput ||
+               Systems.ModSourcesAccessibilitySystem.IsHandlingGamepadInput ||
                Systems.AchievementsMenuGamepadSystem.IsHandlingGamepadInput;
     }
 
