@@ -141,6 +141,12 @@ internal static partial class MenuNarrationCatalog
             return true;
         }
 
+        if (typeName.Contains("UIWorldCreation", StringComparison.Ordinal))
+        {
+            label = "World creation";
+            return true;
+        }
+
         if (typeName.Contains("UIManageControls", StringComparison.Ordinal))
         {
             label = "Controls menu";
@@ -201,6 +207,15 @@ internal static partial class MenuNarrationCatalog
             }
         }
 
+        // Modes that use UIState-based screens (e.g., player/world selection) don't
+        // populate Main.menuItems. The array may contain stale data from the previous
+        // screen (like "Single Player" or "Multiplayer" left over from the title menu).
+        // Skip both the menuItems lookup and Lang.menu fallback for these modes.
+        if (ShouldDeferLangMenuFallback(menuMode))
+        {
+            return string.Empty;
+        }
+
         string[] items = GetMenuItemArray();
         bool hasMenuItems = items.Length > 0;
         bool withinMenuItems = hasMenuItems && focusedIndex < items.Length;
@@ -216,11 +231,6 @@ internal static partial class MenuNarrationCatalog
             {
                 return string.Empty;
             }
-        }
-
-        if (!hasMenuItems && ShouldDeferLangMenuFallback(menuMode))
-        {
-            return string.Empty;
         }
 
         string label = TryGetFromLangMenu(focusedIndex);

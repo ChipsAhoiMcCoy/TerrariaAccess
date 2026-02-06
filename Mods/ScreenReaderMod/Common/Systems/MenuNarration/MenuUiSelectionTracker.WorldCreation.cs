@@ -2,8 +2,10 @@
 using System;
 using System.Collections;
 using System.Collections.Generic;
+using System.Linq;
 using System.Reflection;
 using Terraria;
+using Terraria.Localization;
 using Terraria.UI;
 using ScreenReaderMod.Common.Services;
 using ScreenReaderMod.Common.Utilities;
@@ -717,7 +719,8 @@ internal sealed partial class MenuUiSelectionTracker
                 label = baseLabel;
             }
 
-            if (includeGroup && Total > 0)
+            // Always include position context for better navigation awareness
+            if (Total > 0)
             {
                 label = TextSanitizer.JoinWithComma(label, $"{Index + 1} of {Total}");
             }
@@ -755,6 +758,199 @@ internal sealed partial class MenuUiSelectionTracker
 
             return TextSanitizer.Clean(valueOrPlaceholder);
         }
+    }
+
+    // World creation link point IDs (assigned in UIWorldCreation.SetupGamepadPoints, base 3000)
+    internal const int WcLinkBack = 3000;
+    internal const int WcLinkCreate = 3001;
+    internal const int WcLinkRandomizeName = 3002;
+    internal const int WcLinkName = 3003;
+    internal const int WcLinkRandomizeSeed = 3004;
+    internal const int WcLinkSeed = 3005;
+    internal const int WcLinkSizeBase = 3006;
+    internal const int WcLinkDifficultyBase = 3009;
+    internal const int WcLinkEvilBase = 3013;
+    internal const int WcLinkMax = 3015;
+
+    /// <summary>
+    /// Returns true if the link point ID is within the world creation range (3000-3015).
+    /// </summary>
+    internal static bool IsWorldCreationLinkPoint(int linkPointId)
+    {
+        return linkPointId >= WcLinkBack && linkPointId <= WcLinkMax;
+    }
+
+    /// <summary>
+    /// Returns the group name for a world creation link point (e.g., "size", "difficulty", "evil", "input", "bottom").
+    /// </summary>
+    internal static string GetWorldCreationLinkPointGroup(int linkPointId)
+    {
+        return linkPointId switch
+        {
+            >= WcLinkEvilBase => "evil",
+            >= WcLinkDifficultyBase => "difficulty",
+            >= WcLinkSizeBase => "size",
+            >= WcLinkRandomizeName => "input",
+            _ => "bottom",
+        };
+    }
+
+    /// <summary>
+    /// Describes a world creation element at the given link point ID.
+    /// </summary>
+    internal static string DescribeWorldCreationLinkPoint(UIState? state, int linkPointId, bool includeGroupName)
+    {
+        if (linkPointId == WcLinkBack)
+        {
+            string label = TextSanitizer.Clean(Language.GetTextValue("UI.Back"));
+            if (string.IsNullOrWhiteSpace(label)) label = "Back";
+            return $"{label}, 1 of 2";
+        }
+
+        if (linkPointId == WcLinkCreate)
+        {
+            string label = TextSanitizer.Clean(Language.GetTextValue("UI.Create"));
+            if (string.IsNullOrWhiteSpace(label)) label = "Create";
+            return $"{label}, 2 of 2";
+        }
+
+        if (linkPointId == WcLinkRandomizeName)
+        {
+            return "Randomize name";
+        }
+
+        if (linkPointId == WcLinkRandomizeSeed)
+        {
+            return "Randomize seed";
+        }
+
+        UIElement? root = FindWorldCreationRoot(state);
+        if (root is null) return string.Empty;
+
+        if (linkPointId == WcLinkName)
+        {
+            return DescribeNamePlate(root);
+        }
+
+        if (linkPointId == WcLinkSeed)
+        {
+            return DescribeSeedPlate(root);
+        }
+
+        // Group buttons (size, difficulty, evil)
+        if (linkPointId >= WcLinkSizeBase && linkPointId <= WcLinkSizeBase + 2)
+        {
+            return DescribeGroupButtonByIndex(root, WorldCreationSizeButtonsField, "World size", "size",
+                linkPointId - WcLinkSizeBase, includeGroupName);
+        }
+
+        if (linkPointId >= WcLinkDifficultyBase && linkPointId <= WcLinkDifficultyBase + 3)
+        {
+            return DescribeGroupButtonByIndex(root, WorldCreationDifficultyButtonsField, "World difficulty", "difficulty",
+                linkPointId - WcLinkDifficultyBase, includeGroupName);
+        }
+
+        if (linkPointId >= WcLinkEvilBase && linkPointId <= WcLinkEvilBase + 2)
+        {
+            return DescribeGroupButtonByIndex(root, WorldCreationEvilButtonsField, "World evil", "evil",
+                linkPointId - WcLinkEvilBase, includeGroupName);
+        }
+
+        return string.Empty;
+    }
+
+    /// <summary>
+    /// Checks if the group button at the given link point is currently selected.
+    /// </summary>
+    internal static bool IsWorldCreationLinkPointSelected(UIState? state, int linkPointId)
+    {
+        UIElement? root = FindWorldCreationRoot(state);
+        if (root is null) return false;
+
+        FieldInfo? field;
+        int index;
+        string hint;
+
+        if (linkPointId >= WcLinkSizeBase && linkPointId <= WcLinkSizeBase + 2)
+        {
+            field = WorldCreationSizeButtonsField; index = linkPointId - WcLinkSizeBase; hint = "size";
+        }
+        else if (linkPointId >= WcLinkDifficultyBase && linkPointId <= WcLinkDifficultyBase + 3)
+        {
+            field = WorldCreationDifficultyButtonsField; index = linkPointId - WcLinkDifficultyBase; hint = "difficulty";
+        }
+        else if (linkPointId >= WcLinkEvilBase && linkPointId <= WcLinkEvilBase + 2)
+        {
+            field = WorldCreationEvilButtonsField; index = linkPointId - WcLinkEvilBase; hint = "evil";
+        }
+        else
+        {
+            return false;
+        }
+
+        UIElement[] buttons = TryGetWorldCreationButtons(root, field, hint);
+        if (buttons.Length == 0 || index >= buttons.Length) return false;
+
+        return IsGroupOptionSelected(buttons[index]);
+    }
+
+    private static string DescribeGroupButtonByIndex(UIElement root, FieldInfo? field, string groupLabel, string hint,
+        int index, bool includeGroup)
+    {
+        UIElement[] buttons = TryGetWorldCreationButtons(root, field, hint);
+        if (buttons.Length == 0 || index >= buttons.Length) return string.Empty;
+
+        UIElement button = buttons[index];
+        string optionLabel = TryGetGroupOptionTitle(button);
+        bool selected = IsGroupOptionSelected(button);
+
+        string label = string.IsNullOrWhiteSpace(optionLabel) ? groupLabel : optionLabel;
+
+        if (includeGroup && !string.IsNullOrWhiteSpace(groupLabel) && !string.IsNullOrWhiteSpace(optionLabel))
+        {
+            label = TextSanitizer.JoinWithComma(groupLabel, label);
+        }
+
+        label = TextSanitizer.JoinWithComma(label, $"{index + 1} of {buttons.Length}");
+
+        if (selected)
+        {
+            label = TextSanitizer.JoinWithComma("Selected", label);
+        }
+
+        return TextSanitizer.Clean(label);
+    }
+
+    private static string DescribeNamePlate(UIElement root)
+    {
+        try
+        {
+            if (WorldCreationNamePlateField?.GetValue(root) is UIElement plate)
+            {
+                return BuildWorldTextInputLabel("World name", plate);
+            }
+        }
+        catch
+        {
+            // ignore reflection failures
+        }
+        return "World name";
+    }
+
+    private static string DescribeSeedPlate(UIElement root)
+    {
+        try
+        {
+            if (WorldCreationSeedPlateField?.GetValue(root) is UIElement plate)
+            {
+                return BuildWorldTextInputLabel("Seed", plate);
+            }
+        }
+        catch
+        {
+            // ignore reflection failures
+        }
+        return "Seed";
     }
 
     internal static bool IsTrackedWorldCreationElement(UIElement element)
@@ -808,6 +1004,241 @@ internal sealed partial class MenuUiSelectionTracker
         }
 
         return false;
+    }
+
+    /// <summary>
+    /// Tries to describe a world creation bottom button (Create or Back) if the element matches.
+    /// These buttons are UITextPanel&lt;LocalizedText&gt; positioned at the bottom of the screen.
+    /// </summary>
+    internal static bool TryDescribeWorldCreationBottomButton(UIElement element, out string description)
+    {
+        description = string.Empty;
+
+        if (UiWorldCreationType is null)
+        {
+            ScreenReaderMod.Instance?.Logger.Debug("[WorldCreation] UiWorldCreationType is null - type resolution failed");
+            return false;
+        }
+
+        UIElement? root = FindAncestor(element, static type => UiWorldCreationType.IsAssignableFrom(type));
+        if (root is null)
+        {
+            ScreenReaderMod.Instance?.Logger.Debug($"[WorldCreation] Element {element.GetType().Name} has no UIWorldCreation ancestor");
+            return false;
+        }
+
+        // Collect bottom buttons from the world creation screen
+        var bottomButtons = CollectWorldCreationBottomButtons(root);
+        if (bottomButtons.Count == 0)
+        {
+            ScreenReaderMod.Instance?.Logger.Debug("[WorldCreation] No bottom buttons found in UI tree");
+            return false;
+        }
+
+        ScreenReaderMod.Instance?.Logger.Debug($"[WorldCreation] Found {bottomButtons.Count} bottom buttons, checking for match with {element.GetType().Name}");
+
+        // Check if the element is one of the bottom buttons (or a child/ancestor of one)
+        int buttonIndex = -1;
+        UIElement? matchedButton = null;
+        for (int i = 0; i < bottomButtons.Count; i++)
+        {
+            UIElement button = bottomButtons[i];
+            bool isExact = ReferenceEquals(button, element);
+            bool isChild = IsAncestor(button, element);
+            bool isParent = IsAncestor(element, button);
+
+            if (isExact || isChild || isParent)
+            {
+                buttonIndex = i;
+                matchedButton = button;
+                ScreenReaderMod.Instance?.Logger.Debug(
+                    $"[WorldCreation] Matched button {i} ({button.GetType().Name}): exact={isExact}, child={isChild}, parent={isParent}");
+                break;
+            }
+        }
+
+        if (buttonIndex < 0 || matchedButton is null)
+        {
+            // Log what we couldn't match for debugging
+            ScreenReaderMod.Instance?.Logger.Debug(
+                $"[WorldCreation] No button match for element {element.GetType().FullName}");
+            for (int i = 0; i < bottomButtons.Count; i++)
+            {
+                ScreenReaderMod.Instance?.Logger.Debug(
+                    $"[WorldCreation] Button {i}: {bottomButtons[i].GetType().FullName}");
+            }
+            return false;
+        }
+
+        // Try to extract text from the matched button
+        string buttonText = ExtractButtonText(matchedButton);
+        ScreenReaderMod.Instance?.Logger.Debug($"[WorldCreation] ExtractButtonText returned: '{buttonText}'");
+
+        // If text extraction fails, use position-based fallback
+        // In world creation, Back is always on the left (index 0), Create on the right
+        if (string.IsNullOrWhiteSpace(buttonText))
+        {
+            buttonText = buttonIndex == 0
+                ? TextSanitizer.Clean(Language.GetTextValue("UI.Back"))
+                : TextSanitizer.Clean(Language.GetTextValue("UI.Create"));
+
+            // Final fallback to English if localization fails
+            if (string.IsNullOrWhiteSpace(buttonText))
+            {
+                buttonText = buttonIndex == 0 ? "Back" : "Create";
+            }
+
+            ScreenReaderMod.Instance?.Logger.Debug(
+                $"[WorldCreation] Using position fallback for button {buttonIndex}: {buttonText}");
+        }
+
+        description = $"{buttonText}, {buttonIndex + 1} of {bottomButtons.Count}";
+        ScreenReaderMod.Instance?.Logger.Debug($"[WorldCreation] Final description: {description}");
+        return true;
+    }
+
+    private static List<UIElement> CollectWorldCreationBottomButtons(UIElement root)
+    {
+        var buttons = new List<UIElement>();
+        CollectBottomButtonsRecursive(root, buttons);
+
+        if (buttons.Count == 0)
+        {
+            return buttons;
+        }
+
+        // Filter to only include buttons at the bottom of the screen (VAlign close to 1f or high Y position)
+        // The bottom buttons in world creation have VAlign = 1f and Top = -45f
+        float maxY = buttons.Max(static b => b.GetDimensions().Y);
+        const float rowTolerance = 50f; // Allow some tolerance for bottom row detection
+        buttons = buttons.Where(b => maxY - b.GetDimensions().Y < rowTolerance).ToList();
+
+        // Sort left-to-right by X position
+        buttons.Sort(static (a, b) => a.GetDimensions().X.CompareTo(b.GetDimensions().X));
+
+        return buttons;
+    }
+
+    private static void CollectBottomButtonsRecursive(UIElement current, List<UIElement> buttons)
+    {
+        // Check if this is a UITextPanel type (used for Back/Create buttons)
+        string? typeName = current.GetType().FullName;
+        if (typeName is not null && typeName.Contains("UITextPanel", StringComparison.Ordinal))
+        {
+            // Only include if it looks like a button (has reasonable dimensions and is clickable)
+            var dims = current.GetDimensions();
+            if (dims.Width > 50f && dims.Height > 20f)
+            {
+                buttons.Add(current);
+            }
+        }
+
+        // Also check for UIAutoScaleTextTextPanel which may be used
+        if (typeName is not null && typeName.Contains("UIAutoScaleTextTextPanel", StringComparison.Ordinal))
+        {
+            var dims = current.GetDimensions();
+            if (dims.Width > 50f && dims.Height > 20f)
+            {
+                buttons.Add(current);
+            }
+        }
+
+        IEnumerable<UIElement>? children = current.Children;
+        if (children is null)
+        {
+            return;
+        }
+
+        foreach (UIElement child in children)
+        {
+            CollectBottomButtonsRecursive(child, buttons);
+        }
+    }
+
+    private static string ExtractButtonText(UIElement button)
+    {
+        const BindingFlags flags = BindingFlags.Instance | BindingFlags.Public | BindingFlags.NonPublic;
+        Type type = button.GetType();
+
+        try
+        {
+            // Try Text property first (UITextPanel<T> has this)
+            PropertyInfo? textProp = type.GetProperty("Text", flags);
+            if (textProp is not null)
+            {
+                object? value = textProp.GetValue(button);
+
+                if (value is string text && !string.IsNullOrWhiteSpace(text))
+                {
+                    return TextSanitizer.Clean(text);
+                }
+
+                if (value is LocalizedText localized && !string.IsNullOrWhiteSpace(localized.Value))
+                {
+                    return TextSanitizer.Clean(localized.Value);
+                }
+
+                // For generic UITextPanel<T>, the Value might be convertible to string
+                if (value is not null)
+                {
+                    string? str = value.ToString();
+                    // Check if it's a meaningful string and not just a type name
+                    if (!string.IsNullOrWhiteSpace(str) &&
+                        !str.StartsWith("Terraria.", StringComparison.Ordinal) &&
+                        !str.Contains("LocalizedText", StringComparison.Ordinal))
+                    {
+                        return TextSanitizer.Clean(str);
+                    }
+
+                    // For LocalizedText, try to get the Value property
+                    PropertyInfo? valueProp = value.GetType().GetProperty("Value", flags);
+                    if (valueProp?.GetValue(value) is string localizedValue && !string.IsNullOrWhiteSpace(localizedValue))
+                    {
+                        return TextSanitizer.Clean(localizedValue);
+                    }
+                }
+            }
+
+            // Try _text field
+            FieldInfo? textField = type.GetField("_text", flags);
+            if (textField?.GetValue(button) is object textFieldValue)
+            {
+                if (textFieldValue is string fieldText && !string.IsNullOrWhiteSpace(fieldText))
+                {
+                    return TextSanitizer.Clean(fieldText);
+                }
+
+                if (textFieldValue is LocalizedText localizedField && !string.IsNullOrWhiteSpace(localizedField.Value))
+                {
+                    return TextSanitizer.Clean(localizedField.Value);
+                }
+
+                // Try Value property on the text object
+                PropertyInfo? valueProp = textFieldValue.GetType().GetProperty("Value", flags);
+                if (valueProp?.GetValue(textFieldValue) is string localizedValue && !string.IsNullOrWhiteSpace(localizedValue))
+                {
+                    return TextSanitizer.Clean(localizedValue);
+                }
+            }
+
+            // Try SetText method's backing field or similar
+            FieldInfo? innerTextField = type.GetField("_innerText", flags) ?? type.GetField("innerText", flags);
+            if (innerTextField?.GetValue(button) is UIElement innerTextElement)
+            {
+                // Try to get text from the inner element
+                PropertyInfo? innerTextProp = innerTextElement.GetType().GetProperty("Text", flags);
+                if (innerTextProp?.GetValue(innerTextElement) is string innerText && !string.IsNullOrWhiteSpace(innerText))
+                {
+                    return TextSanitizer.Clean(innerText);
+                }
+            }
+        }
+        catch (Exception ex)
+        {
+            ScreenReaderMod.Instance?.Logger.Debug($"[WorldCreation] Failed to extract button text: {ex.Message}");
+        }
+
+        return string.Empty;
     }
 
     private static bool MatchesWorldCreationGroup(UIElement root, UIElement element, FieldInfo? field, string hint)
