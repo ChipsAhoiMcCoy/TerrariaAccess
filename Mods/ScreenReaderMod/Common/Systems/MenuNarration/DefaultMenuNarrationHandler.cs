@@ -157,11 +157,11 @@ internal sealed class DefaultMenuNarrationHandler : IMenuNarrationHandler
     private bool TryHandleUiHover(MenuNarrationContext context, DateTime timestamp, List<MenuNarrationEvent> events)
     {
         // Suppress hover announcements when accessibility systems are handling gamepad navigation
-        // to avoid conflicting announcements (achievements menu uses hover for narration, so not included here)
         if (WorkshopHubAccessibilitySystem.IsHandlingGamepadInput ||
             ManageModsAccessibilitySystem.IsHandlingGamepadInput ||
             ModInfoAccessibilitySystem.IsHandlingGamepadInput ||
             DownloadModsAccessibilitySystem.IsHandlingGamepadInput ||
+            AchievementsAccessibilitySystem.IsHandlingGamepadInput ||
             ModConfigNarrationCoordinator.IsHandlingGamepadInput)
         {
             ScreenReaderMod.Instance?.Logger.Debug($"[DefaultHandler][HoverDiag] Suppressed by accessibility flag");
@@ -713,7 +713,7 @@ internal sealed class DefaultMenuNarrationHandler : IMenuNarrationHandler
             ManageModsAccessibilitySystem.IsHandlingGamepadInput ||
             ModInfoAccessibilitySystem.IsHandlingGamepadInput ||
             DownloadModsAccessibilitySystem.IsHandlingGamepadInput ||
-            AchievementsMenuGamepadSystem.IsHandlingGamepadInput ||
+            AchievementsAccessibilitySystem.IsHandlingGamepadInput ||
             ModConfigNarrationCoordinator.IsHandlingGamepadInput)
         {
             return false;
@@ -824,7 +824,7 @@ internal sealed class DefaultMenuNarrationHandler : IMenuNarrationHandler
         }
 
         // Suppress fallback when accessibility systems are handling gamepad navigation
-        if (AchievementsMenuGamepadSystem.IsHandlingGamepadInput)
+        if (AchievementsAccessibilitySystem.IsHandlingGamepadInput)
         {
             return;
         }

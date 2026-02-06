@@ -54,4 +54,10 @@ internal static class LinkIdRegistry
     /// Range: 3600-3699
     /// </summary>
     internal const int ModSources = 3600;
+
+    /// <summary>
+    /// Base link ID for AchievementsAccessibilitySystem (UIAchievementsMenu screen).
+    /// Range: 3700-3799
+    /// </summary>
+    internal const int Achievements = 3700;
 }

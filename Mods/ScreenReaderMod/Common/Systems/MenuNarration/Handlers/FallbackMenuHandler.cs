@@ -118,7 +118,7 @@ internal sealed class FallbackMenuHandler : MenuHandlerBase
                Systems.DownloadModsAccessibilitySystem.IsHandlingGamepadInput ||
                Systems.ModPacksAccessibilitySystem.IsHandlingGamepadInput ||
                Systems.ModSourcesAccessibilitySystem.IsHandlingGamepadInput ||
-               Systems.AchievementsMenuGamepadSystem.IsHandlingGamepadInput;
+               Systems.AchievementsAccessibilitySystem.IsHandlingGamepadInput;
     }
 
     private void AnnounceFallbackSafe(MenuNarrationContext context, List<MenuNarrationEvent> events)

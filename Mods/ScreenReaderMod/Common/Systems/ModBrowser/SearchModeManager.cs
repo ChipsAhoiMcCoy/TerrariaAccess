@@ -152,10 +152,11 @@ internal static class SearchModeManager
 
         if (_isSearchModeActive)
         {
-            // Play menu open sound and announce when entering search mode
+            // Play menu open sound and enqueue search mode text as a prefix
+            // so it plays before the next announcement rather than getting interrupted
             SoundEngine.PlaySound(SoundID.MenuOpen);
             string announcement = GetSearchModeAnnouncement();
-            ScreenReaderService.Announce(announcement, force: true);
+            ScreenReaderService.EnqueuePrefix(announcement);
         }
         else
         {
@@ -202,7 +203,7 @@ internal static class SearchModeManager
     {
         return LocalizationHelper.GetTextOrFallback(
             "Mods.ScreenReaderMod.SearchMode.NavigationEnabled",
-            "Navigation mode. Use arrow keys to browse, Enter to select. Press Tab to search.");
+            "Navigation mode. Use arrow keys to browse, Enter to select. Press Tab to search");
     }
 
     /// <summary>
@@ -212,6 +213,6 @@ internal static class SearchModeManager
     {
         return LocalizationHelper.GetTextOrFallback(
             "Mods.ScreenReaderMod.SearchMode.SearchEnabled",
-            "Search mode. Type to filter. Press Tab to return to navigation.");
+            "Search mode. Type to filter. Press Tab to return to navigation");
     }
 }

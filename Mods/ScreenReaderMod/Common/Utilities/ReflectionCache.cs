@@ -659,6 +659,62 @@ internal static class ReflectionCache
 
     #endregion
 
+    #region UIAchievementsMenu (Achievements Screen)
+
+    /// <summary>
+    /// Reflection handles for Terraria.GameContent.UI.States.UIAchievementsMenu (Achievements screen).
+    /// </summary>
+    internal static class UIAchievementsMenu
+    {
+        private static readonly Lazy<Type?> _type = new(() =>
+            Type.GetType("Terraria.GameContent.UI.States.UIAchievementsMenu, tModLoader")
+            ?? Type.GetType("Terraria.GameContent.UI.States.UIAchievementsMenu, Terraria"));
+
+        private static readonly Lazy<FieldInfo?> _achievementsList = new(() =>
+            Type?.GetField("_achievementsList", InstanceNonPublic));
+
+        private static readonly Lazy<FieldInfo?> _achievementElements = new(() =>
+            Type?.GetField("_achievementElements", InstanceNonPublic));
+
+        private static readonly Lazy<FieldInfo?> _categoryButtons = new(() =>
+            Type?.GetField("_categoryButtons", InstanceNonPublic));
+
+        private static readonly Lazy<FieldInfo?> _backpanel = new(() =>
+            Type?.GetField("_backpanel", InstanceNonPublic));
+
+        private static readonly Lazy<FieldInfo?> _outerContainer = new(() =>
+            Type?.GetField("_outerContainer", InstanceNonPublic));
+
+        private static readonly Lazy<FieldInfo?> _resetAchievementsButton = new(() =>
+            Type?.GetField("resetAchievementsButton", InstanceNonPublic));
+
+        private static readonly Lazy<FieldInfo?> _blockInput = new(() =>
+            Type?.GetField("blockInput", InstanceNonPublic));
+
+        private static readonly Lazy<FieldInfo?> _yesButton = new(() =>
+            Type?.GetField("yesButton", InstanceNonPublic));
+
+        private static readonly Lazy<FieldInfo?> _noButton = new(() =>
+            Type?.GetField("noButton", InstanceNonPublic));
+
+        private static readonly Lazy<FieldInfo?> _filterTextBox = new(() =>
+            Type?.GetField("filterTextBox", InstanceNonPublic));
+
+        internal static Type? Type => _type.Value;
+        internal static FieldInfo? AchievementsList => _achievementsList.Value;
+        internal static FieldInfo? AchievementElements => _achievementElements.Value;
+        internal static FieldInfo? CategoryButtons => _categoryButtons.Value;
+        internal static FieldInfo? Backpanel => _backpanel.Value;
+        internal static FieldInfo? OuterContainer => _outerContainer.Value;
+        internal static FieldInfo? ResetAchievementsButton => _resetAchievementsButton.Value;
+        internal static FieldInfo? BlockInput => _blockInput.Value;
+        internal static FieldInfo? YesButton => _yesButton.Value;
+        internal static FieldInfo? NoButton => _noButton.Value;
+        internal static FieldInfo? FilterTextBox => _filterTextBox.Value;
+    }
+
+    #endregion
+
     #region LocalizedText (Terraria Localization)
 
     /// <summary>
@@ -710,6 +766,11 @@ internal static class ReflectionCache
         if (UIModSources.Type is null)
         {
             logger("[ReflectionCache] UIModSources type not found - Mod Sources accessibility will be limited");
+        }
+
+        if (UIAchievementsMenu.Type is null)
+        {
+            logger("[ReflectionCache] UIAchievementsMenu type not found - Achievements accessibility will be limited");
         }
     }
 
