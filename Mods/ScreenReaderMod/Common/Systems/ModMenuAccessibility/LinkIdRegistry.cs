@@ -60,4 +60,10 @@ internal static class LinkIdRegistry
     /// Range: 3700-3799
     /// </summary>
     internal const int Achievements = 3700;
+
+    /// <summary>
+    /// Base link ID for BestiaryAccessibilitySystem (UIBestiaryTest screen).
+    /// Range: 3800-3899
+    /// </summary>
+    internal const int Bestiary = 3800;
 }

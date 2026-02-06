@@ -61,7 +61,8 @@ internal static class SearchModeManager
                     {
                         if (fullName == "Terraria.ModLoader.UI.ModBrowser.UIModBrowser" ||
                             fullName == "Terraria.ModLoader.UI.UIMods" ||
-                            fullName == "Terraria.GameContent.UI.States.UIAchievementsMenu")
+                            fullName == "Terraria.GameContent.UI.States.UIAchievementsMenu" ||
+                            fullName == "Terraria.GameContent.UI.States.UIBestiaryTest")
                         {
                             return true;
                         }
@@ -69,11 +70,12 @@ internal static class SearchModeManager
                 }
             }
 
-            // Check in-game fancy UI (for achievements accessed via pause menu)
+            // Check in-game fancy UI (for achievements/bestiary accessed via pause menu)
             if (!Main.gameMenu && Main.InGameUI?.CurrentState is not null)
             {
                 string? fullName = Main.InGameUI.CurrentState.GetType().FullName;
-                if (fullName == "Terraria.GameContent.UI.States.UIAchievementsMenu")
+                if (fullName == "Terraria.GameContent.UI.States.UIAchievementsMenu" ||
+                    fullName == "Terraria.GameContent.UI.States.UIBestiaryTest")
                 {
                     return true;
                 }

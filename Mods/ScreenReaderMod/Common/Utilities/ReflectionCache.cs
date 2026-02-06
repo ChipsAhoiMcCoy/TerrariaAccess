@@ -715,6 +715,182 @@ internal static class ReflectionCache
 
     #endregion
 
+    #region UIBestiaryTest (Bestiary Screen)
+
+    /// <summary>
+    /// Reflection handles for Terraria.GameContent.UI.States.UIBestiaryTest (Bestiary screen).
+    /// </summary>
+    internal static class UIBestiaryTest
+    {
+        private static readonly Lazy<Type?> _type = new(() =>
+            Type.GetType("Terraria.GameContent.UI.States.UIBestiaryTest, tModLoader")
+            ?? Type.GetType("Terraria.GameContent.UI.States.UIBestiaryTest, Terraria"));
+
+        private static readonly Lazy<FieldInfo?> _entryGrid = new(() =>
+            Type?.GetField("_entryGrid", InstanceNonPublic));
+
+        private static readonly Lazy<FieldInfo?> _infoSpace = new(() =>
+            Type?.GetField("_infoSpace", InstanceNonPublic));
+
+        private static readonly Lazy<FieldInfo?> _selectedEntryButton = new(() =>
+            Type?.GetField("_selectedEntryButton", InstanceNonPublic));
+
+        private static readonly Lazy<FieldInfo?> _workingSetEntries = new(() =>
+            Type?.GetField("_workingSetEntries", InstanceNonPublic));
+
+        private static readonly Lazy<FieldInfo?> _sortingGrid = new(() =>
+            Type?.GetField("_sortingGrid", InstanceNonPublic));
+
+        private static readonly Lazy<FieldInfo?> _filteringGrid = new(() =>
+            Type?.GetField("_filteringGrid", InstanceNonPublic));
+
+        private static readonly Lazy<FieldInfo?> _searchBar = new(() =>
+            Type?.GetField("_searchBar", InstanceNonPublic));
+
+        private static readonly Lazy<FieldInfo?> _searchString = new(() =>
+            Type?.GetField("_searchString", InstanceNonPublic));
+
+        private static readonly Lazy<FieldInfo?> _indexesRangeText = new(() =>
+            Type?.GetField("_indexesRangeText", InstanceNonPublic));
+
+        private static readonly Lazy<FieldInfo?> _sortingText = new(() =>
+            Type?.GetField("_sortingText", InstanceNonPublic));
+
+        private static readonly Lazy<FieldInfo?> _filteringText = new(() =>
+            Type?.GetField("_filteringText", InstanceNonPublic));
+
+        private static readonly Lazy<FieldInfo?> _progressReport = new(() =>
+            Type?.GetField("_progressReport", InstanceNonPublic));
+
+        internal static Type? Type => _type.Value;
+        internal static FieldInfo? EntryGrid => _entryGrid.Value;
+        internal static FieldInfo? InfoSpace => _infoSpace.Value;
+        internal static FieldInfo? SelectedEntryButton => _selectedEntryButton.Value;
+        internal static FieldInfo? WorkingSetEntries => _workingSetEntries.Value;
+        internal static FieldInfo? SortingGrid => _sortingGrid.Value;
+        internal static FieldInfo? FilteringGrid => _filteringGrid.Value;
+        internal static FieldInfo? SearchBar => _searchBar.Value;
+        internal static FieldInfo? SearchString => _searchString.Value;
+        internal static FieldInfo? IndexesRangeText => _indexesRangeText.Value;
+        internal static FieldInfo? SortingText => _sortingText.Value;
+        internal static FieldInfo? FilteringText => _filteringText.Value;
+        internal static FieldInfo? ProgressReport => _progressReport.Value;
+    }
+
+    #endregion
+
+    #region UIBestiaryEntryGrid (Bestiary Grid)
+
+    /// <summary>
+    /// Reflection handles for Terraria.GameContent.UI.Elements.UIBestiaryEntryGrid.
+    /// </summary>
+    internal static class UIBestiaryEntryGrid
+    {
+        private static readonly Lazy<Type?> _type = new(() =>
+            Type.GetType("Terraria.GameContent.UI.Elements.UIBestiaryEntryGrid, tModLoader")
+            ?? Type.GetType("Terraria.GameContent.UI.Elements.UIBestiaryEntryGrid, Terraria"));
+
+        private static readonly Lazy<FieldInfo?> _atEntryIndex = new(() =>
+            Type?.GetField("_atEntryIndex", InstanceNonPublic));
+
+        private static readonly Lazy<FieldInfo?> _lastEntry = new(() =>
+            Type?.GetField("_lastEntry", InstanceNonPublic));
+
+        private static readonly Lazy<FieldInfo?> _workingSetEntries = new(() =>
+            Type?.GetField("_workingSetEntries", InstanceNonPublic));
+
+        internal static Type? Type => _type.Value;
+        internal static FieldInfo? AtEntryIndex => _atEntryIndex.Value;
+        internal static FieldInfo? LastEntry => _lastEntry.Value;
+        internal static FieldInfo? WorkingSetEntries => _workingSetEntries.Value;
+    }
+
+    #endregion
+
+    #region UIBestiaryEntryInfoPage (Bestiary Info Panel)
+
+    /// <summary>
+    /// Reflection handles for Terraria.GameContent.UI.Elements.UIBestiaryEntryInfoPage.
+    /// </summary>
+    internal static class UIBestiaryEntryInfoPage
+    {
+        private static readonly Lazy<Type?> _type = new(() =>
+            Type.GetType("Terraria.GameContent.UI.Elements.UIBestiaryEntryInfoPage, tModLoader")
+            ?? Type.GetType("Terraria.GameContent.UI.Elements.UIBestiaryEntryInfoPage, Terraria"));
+
+        private static readonly Lazy<FieldInfo?> _list = new(() =>
+            Type?.GetField("_list", InstanceNonPublic));
+
+        internal static Type? Type => _type.Value;
+        internal static FieldInfo? List => _list.Value;
+    }
+
+    #endregion
+
+    #region Bestiary Info Element Types
+
+    /// <summary>
+    /// Reflection handles for Bestiary info element types used to extract creature data.
+    /// </summary>
+    internal static class BestiaryInfoElements
+    {
+        private static readonly Lazy<Type?> _namePlateType = new(() =>
+            Type.GetType("Terraria.GameContent.Bestiary.NamePlateInfoElement, tModLoader")
+            ?? Type.GetType("Terraria.GameContent.Bestiary.NamePlateInfoElement, Terraria"));
+
+        private static readonly Lazy<Type?> _statsType = new(() =>
+            Type.GetType("Terraria.GameContent.Bestiary.NPCStatsReportInfoElement, tModLoader")
+            ?? Type.GetType("Terraria.GameContent.Bestiary.NPCStatsReportInfoElement, Terraria"));
+
+        private static readonly Lazy<Type?> _flavorTextType = new(() =>
+            Type.GetType("Terraria.GameContent.Bestiary.FlavorTextBestiaryInfoElement, tModLoader")
+            ?? Type.GetType("Terraria.GameContent.Bestiary.FlavorTextBestiaryInfoElement, Terraria"));
+
+        private static readonly Lazy<Type?> _killCounterType = new(() =>
+            Type.GetType("Terraria.GameContent.Bestiary.NPCKillCounterInfoElement, tModLoader")
+            ?? Type.GetType("Terraria.GameContent.Bestiary.NPCKillCounterInfoElement, Terraria"));
+
+        private static readonly Lazy<FieldInfo?> _namePlateKey = new(() =>
+            NamePlateType?.GetField("_key", InstanceNonPublic));
+
+        private static readonly Lazy<FieldInfo?> _namePlateNpcNetId = new(() =>
+            NamePlateType?.GetField("_npcNetId", InstanceNonPublic));
+
+        private static readonly Lazy<FieldInfo?> _flavorTextKey = new(() =>
+            FlavorTextType?.GetField("_key", InstanceNonPublic));
+
+        // NPCStatsReportInfoElement has public fields
+        private static readonly Lazy<FieldInfo?> _statsDamage = new(() =>
+            StatsType?.GetField("Damage", InstancePublic));
+
+        private static readonly Lazy<FieldInfo?> _statsLifeMax = new(() =>
+            StatsType?.GetField("LifeMax", InstancePublic));
+
+        private static readonly Lazy<FieldInfo?> _statsDefense = new(() =>
+            StatsType?.GetField("Defense", InstancePublic));
+
+        private static readonly Lazy<FieldInfo?> _statsKnockbackResist = new(() =>
+            StatsType?.GetField("KnockbackResist", InstancePublic));
+
+        private static readonly Lazy<FieldInfo?> _statsMonetaryValue = new(() =>
+            StatsType?.GetField("MonetaryValue", InstancePublic));
+
+        internal static Type? NamePlateType => _namePlateType.Value;
+        internal static Type? StatsType => _statsType.Value;
+        internal static Type? FlavorTextType => _flavorTextType.Value;
+        internal static Type? KillCounterType => _killCounterType.Value;
+        internal static FieldInfo? NamePlateKey => _namePlateKey.Value;
+        internal static FieldInfo? NamePlateNpcNetId => _namePlateNpcNetId.Value;
+        internal static FieldInfo? FlavorTextKey => _flavorTextKey.Value;
+        internal static FieldInfo? StatsDamage => _statsDamage.Value;
+        internal static FieldInfo? StatsLifeMax => _statsLifeMax.Value;
+        internal static FieldInfo? StatsDefense => _statsDefense.Value;
+        internal static FieldInfo? StatsKnockbackResist => _statsKnockbackResist.Value;
+        internal static FieldInfo? StatsMonetaryValue => _statsMonetaryValue.Value;
+    }
+
+    #endregion
+
     #region LocalizedText (Terraria Localization)
 
     /// <summary>
@@ -771,6 +947,11 @@ internal static class ReflectionCache
         if (UIAchievementsMenu.Type is null)
         {
             logger("[ReflectionCache] UIAchievementsMenu type not found - Achievements accessibility will be limited");
+        }
+
+        if (UIBestiaryTest.Type is null)
+        {
+            logger("[ReflectionCache] UIBestiaryTest type not found - Bestiary accessibility will be limited");
         }
     }
 
