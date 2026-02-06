@@ -93,6 +93,9 @@ public sealed class BestiaryAccessibilitySystem : ModSystem
     private bool _wasSortOverlayOpen;
     private bool _wasFilterOverlayOpen;
 
+    // Page change tracking
+    private int _lastPageOffset = -1;
+
     #endregion
 
     #region Input State
@@ -234,6 +237,7 @@ public sealed class BestiaryAccessibilitySystem : ModSystem
         _lastMenuState = null;
         _lastAnnouncedPointId = -1;
         _lastSeenPointId = -1;
+        _lastPageOffset = -1;
         _initialFocusFramesRemaining = 0;
 
         ScreenReaderService.ClearContexts("bestiary:");
@@ -267,6 +271,7 @@ public sealed class BestiaryAccessibilitySystem : ModSystem
         _instance._currentSortIndex = 0;
         _instance._wasSortOverlayOpen = false;
         _instance._wasFilterOverlayOpen = false;
+        _instance._lastPageOffset = -1;
 
         _instance._aButtonWasPressed = true;
         _instance._bButtonWasPressed = true;
@@ -309,6 +314,7 @@ public sealed class BestiaryAccessibilitySystem : ModSystem
             _currentRegion = NavigationRegion.EntryGrid;
             _wasSortOverlayOpen = false;
             _wasFilterOverlayOpen = false;
+            _lastPageOffset = -1;
 
             _aButtonWasPressed = true;
             _bButtonWasPressed = true;
@@ -339,6 +345,26 @@ public sealed class BestiaryAccessibilitySystem : ModSystem
 
             UpdateInputState();
             ConfigureGamepadPoints(menuState);
+
+            // Detect page changes
+            int currentPageOffset = GetCurrentPageOffset(menuState);
+            if (_lastPageOffset >= 0 && currentPageOffset >= 0 && currentPageOffset != _lastPageOffset)
+            {
+                string currentRangeText = GetRangeText();
+                if (!string.IsNullOrEmpty(currentRangeText))
+                {
+                    ScreenReaderService.EnqueuePrefix($"Page {currentRangeText}.");
+                }
+
+                // Reset entry focus to first item on new page
+                _currentRegion = NavigationRegion.EntryGrid;
+                _currentEntryIndex = 0;
+                _lastAnnouncedPointId = -1;
+                _lastSeenPointId = -1;
+
+                Mod.Logger.Info($"[{SystemLogName}] Page changed to offset {currentPageOffset}");
+            }
+            _lastPageOffset = currentPageOffset;
 
             // Detect overlay state transitions
             bool isSortOpen = IsSortOverlayOpen(menuState);
@@ -608,6 +634,21 @@ public sealed class BestiaryAccessibilitySystem : ModSystem
 
             int pointId = _entryBindings[0].Binding.Id;
             UILinkPointNavigator.ChangePoint(pointId);
+        }
+
+        // Always keep UILinkPointNavigator synced to our current point.
+        // Terraria's SetupGamepadPoints (which runs in orig Draw before us) calls
+        // MoveToVisuallyClosestPoint when CurrentPoint >= its max ID, hijacking
+        // focus to a Terraria-managed point based on mouse position. We must
+        // override this every frame to prevent Terraria's gamepad navigation
+        // from processing D-pad input on the wrong entry.
+        if (_initialFocusFramesRemaining <= 0)
+        {
+            int? syncPointId = GetCurrentPointId();
+            if (syncPointId.HasValue)
+            {
+                UILinkPointNavigator.ChangePoint(syncPointId.Value);
+            }
         }
     }
 
@@ -971,7 +1012,7 @@ public sealed class BestiaryAccessibilitySystem : ModSystem
             if (_entryBindings.Count > 0)
             {
                 _currentRegion = NavigationRegion.EntryGrid;
-                _currentEntryIndex = 0;
+                _currentEntryIndex = Math.Min(_currentEntryIndex, _entryBindings.Count - 1);
                 return true;
             }
             if (_exitBinding.HasValue)
@@ -1015,7 +1056,7 @@ public sealed class BestiaryAccessibilitySystem : ModSystem
             if (_entryBindings.Count > 0)
             {
                 _currentRegion = NavigationRegion.EntryGrid;
-                _currentEntryIndex = 0;
+                _currentEntryIndex = Math.Min(_currentEntryIndex, _entryBindings.Count - 1);
                 return true;
             }
             if (_exitBinding.HasValue)
@@ -1611,6 +1652,15 @@ public sealed class BestiaryAccessibilitySystem : ModSystem
                     if (hp.HasValue) detailParts.Add($"HP {hp.Value}");
                     if (attack.HasValue) detailParts.Add($"Attack {attack.Value}");
                     if (defense.HasValue) detailParts.Add($"Defense {defense.Value}");
+
+                    float? knockback = ReflectionCache.BestiaryInfoElements.StatsKnockbackResist?.GetValue(info) as float?;
+                    if (knockback.HasValue) detailParts.Add($"Knockback resist {knockback.Value:P0}");
+
+                    float? coinValue = ReflectionCache.BestiaryInfoElements.StatsMonetaryValue?.GetValue(info) as float?;
+                    if (coinValue.HasValue && coinValue.Value > 0f)
+                    {
+                        detailParts.Add($"Worth {FormatCoinValue((long)coinValue.Value)}");
+                    }
                 }
 
                 // Flavor text
@@ -1627,6 +1677,28 @@ public sealed class BestiaryAccessibilitySystem : ModSystem
                         }
                     }
                 }
+
+                // Item drops
+                if (ReflectionCache.BestiaryInfoElements.ItemDropType is not null &&
+                    ReflectionCache.BestiaryInfoElements.ItemDropType.IsInstanceOfType(info))
+                {
+                    string? dropText = GetItemDropText(info);
+                    if (!string.IsNullOrEmpty(dropText))
+                    {
+                        detailParts.Add(dropText);
+                    }
+                }
+
+                // Kill count
+                if (ReflectionCache.BestiaryInfoElements.KillCounterType is not null &&
+                    ReflectionCache.BestiaryInfoElements.KillCounterType.IsInstanceOfType(info))
+                {
+                    string? killText = GetKillCountText(info);
+                    if (!string.IsNullOrEmpty(killText))
+                    {
+                        detailParts.Add(killText);
+                    }
+                }
             }
 
             return string.Join(", ", detailParts);
@@ -1636,6 +1708,109 @@ public sealed class BestiaryAccessibilitySystem : ModSystem
             Mod.Logger.Debug($"[{SystemLogName}] Error getting entry details: {ex.Message}");
             return string.Empty;
         }
+    }
+
+    private string? GetItemDropText(object dropInfo)
+    {
+        try
+        {
+            object? dropRateInfo = ReflectionCache.BestiaryInfoElements.ItemDropDropRateInfo?.GetValue(dropInfo);
+            if (dropRateInfo is null)
+            {
+                return null;
+            }
+
+            // DropRateInfo is a struct with public fields: itemId, dropRate, stackMin, stackMax
+            var drType = dropRateInfo.GetType();
+            var itemIdField = drType.GetField("itemId", BindingFlags.Public | BindingFlags.Instance);
+            var dropRateField = drType.GetField("dropRate", BindingFlags.Public | BindingFlags.Instance);
+            var stackMinField = drType.GetField("stackMin", BindingFlags.Public | BindingFlags.Instance);
+            var stackMaxField = drType.GetField("stackMax", BindingFlags.Public | BindingFlags.Instance);
+
+            int? itemId = itemIdField?.GetValue(dropRateInfo) as int?;
+            float? dropRate = dropRateField?.GetValue(dropRateInfo) as float?;
+
+            if (!itemId.HasValue || !dropRate.HasValue)
+            {
+                Mod.Logger.Debug($"[{SystemLogName}] Drop info missing fields. Available: {string.Join(", ", Array.ConvertAll(drType.GetFields(BindingFlags.Public | BindingFlags.Instance), f => $"{f.Name}:{f.FieldType.Name}"))}");
+                return null;
+            }
+
+            string itemName = Lang.GetItemNameValue(itemId.Value);
+            if (string.IsNullOrEmpty(itemName))
+                itemName = $"Item {itemId.Value}";
+
+            string rateText;
+            if (dropRate.Value >= 1f)
+                rateText = "100%";
+            else if (dropRate.Value <= 0f)
+                rateText = "0%";
+            else
+                rateText = $"{dropRate.Value:P2}".TrimEnd('0').TrimEnd('.');
+
+            int? stackMin = stackMinField?.GetValue(dropRateInfo) as int?;
+            int? stackMax = stackMaxField?.GetValue(dropRateInfo) as int?;
+
+            string stackText = string.Empty;
+            if (stackMin.HasValue && stackMax.HasValue && (stackMin.Value > 1 || stackMax.Value > 1))
+            {
+                stackText = stackMin.Value == stackMax.Value
+                    ? $" x{stackMin.Value}"
+                    : $" x{stackMin.Value}-{stackMax.Value}";
+            }
+
+            return $"Drops {itemName}{stackText} ({rateText})";
+        }
+        catch (Exception ex)
+        {
+            Mod.Logger.Debug($"[{SystemLogName}] Error getting drop info: {ex.Message}");
+        }
+        return null;
+    }
+
+    private string? GetKillCountText(object killInfo)
+    {
+        try
+        {
+            int? npcNetId = ReflectionCache.BestiaryInfoElements.KillCounterNpcId?.GetValue(killInfo) as int?;
+            if (npcNetId.HasValue)
+            {
+                // Convert net ID to NPC type, then to banner index for kill count lookup
+                int npcType = npcNetId.Value < 0 ? NPCID.FromNetId(npcNetId.Value) : npcNetId.Value;
+                int bannerId = Item.NPCtoBanner(npcType);
+                if (bannerId > 0 && bannerId < NPC.killCount.Length)
+                {
+                    int killCount = NPC.killCount[bannerId];
+                    if (killCount > 0)
+                        return $"Killed {killCount} times";
+                    else
+                        return "Never killed";
+                }
+            }
+        }
+        catch (Exception ex)
+        {
+            Mod.Logger.Debug($"[{SystemLogName}] Error getting kill count: {ex.Message}");
+        }
+        return null;
+    }
+
+    private static string FormatCoinValue(long copper)
+    {
+        long platinum = copper / 1000000;
+        copper %= 1000000;
+        long gold = copper / 10000;
+        copper %= 10000;
+        long silver = copper / 100;
+        copper %= 100;
+
+        var parts = new List<string>();
+        if (platinum > 0) parts.Add($"{platinum} platinum");
+        if (gold > 0) parts.Add($"{gold} gold");
+        if (silver > 0) parts.Add($"{silver} silver");
+        if (copper > 0) parts.Add($"{copper} copper");
+
+        return parts.Count > 0 ? string.Join(" ", parts) : "nothing";
     }
 
     private string GetProgressText(object menuState)
@@ -1661,6 +1836,25 @@ public sealed class BestiaryAccessibilitySystem : ModSystem
         }
 
         return string.Empty;
+    }
+
+    private int GetCurrentPageOffset(object menuState)
+    {
+        try
+        {
+            object? entryGrid = ReflectionCache.UIBestiaryTest.EntryGrid?.GetValue(menuState);
+            if (entryGrid is null) return -1;
+
+            if (ReflectionCache.UIBestiaryEntryGrid.AtEntryIndex?.GetValue(entryGrid) is int offset)
+            {
+                return offset;
+            }
+        }
+        catch (Exception ex)
+        {
+            Mod.Logger.Debug($"[{SystemLogName}] Error getting page offset: {ex.Message}");
+        }
+        return -1;
     }
 
     private string GetRangeText()

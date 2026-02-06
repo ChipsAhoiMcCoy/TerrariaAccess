@@ -850,6 +850,10 @@ internal static class ReflectionCache
             Type.GetType("Terraria.GameContent.Bestiary.NPCKillCounterInfoElement, tModLoader")
             ?? Type.GetType("Terraria.GameContent.Bestiary.NPCKillCounterInfoElement, Terraria"));
 
+        private static readonly Lazy<Type?> _itemDropType = new(() =>
+            Type.GetType("Terraria.GameContent.Bestiary.ItemDropBestiaryInfoElement, tModLoader")
+            ?? Type.GetType("Terraria.GameContent.Bestiary.ItemDropBestiaryInfoElement, Terraria"));
+
         private static readonly Lazy<FieldInfo?> _namePlateKey = new(() =>
             NamePlateType?.GetField("_key", InstanceNonPublic));
 
@@ -875,10 +879,17 @@ internal static class ReflectionCache
         private static readonly Lazy<FieldInfo?> _statsMonetaryValue = new(() =>
             StatsType?.GetField("MonetaryValue", InstancePublic));
 
+        private static readonly Lazy<FieldInfo?> _killCounterNpcId = new(() =>
+            KillCounterType?.GetField("_npcNetId", InstanceNonPublic));
+
+        private static readonly Lazy<FieldInfo?> _itemDropDropRateInfo = new(() =>
+            ItemDropType?.GetField("_droprateInfo", InstanceNonPublic));
+
         internal static Type? NamePlateType => _namePlateType.Value;
         internal static Type? StatsType => _statsType.Value;
         internal static Type? FlavorTextType => _flavorTextType.Value;
         internal static Type? KillCounterType => _killCounterType.Value;
+        internal static Type? ItemDropType => _itemDropType.Value;
         internal static FieldInfo? NamePlateKey => _namePlateKey.Value;
         internal static FieldInfo? NamePlateNpcNetId => _namePlateNpcNetId.Value;
         internal static FieldInfo? FlavorTextKey => _flavorTextKey.Value;
@@ -887,6 +898,8 @@ internal static class ReflectionCache
         internal static FieldInfo? StatsDefense => _statsDefense.Value;
         internal static FieldInfo? StatsKnockbackResist => _statsKnockbackResist.Value;
         internal static FieldInfo? StatsMonetaryValue => _statsMonetaryValue.Value;
+        internal static FieldInfo? KillCounterNpcId => _killCounterNpcId.Value;
+        internal static FieldInfo? ItemDropDropRateInfo => _itemDropDropRateInfo.Value;
     }
 
     #endregion

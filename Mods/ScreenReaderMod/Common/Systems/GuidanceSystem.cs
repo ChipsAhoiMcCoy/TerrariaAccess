@@ -101,7 +101,7 @@ public sealed partial class GuidanceSystem : ModSystem
 
     public override void PostUpdatePlayers()
     {
-        if (Main.dedServ || Main.gameMenu || _namingActive)
+        if (Main.dedServ || Main.gameMenu || Main.inFancyUI || _namingActive)
         {
             _nextPingUpdateFrame = -1;
             _arrivalAnnounced = false;
@@ -514,7 +514,7 @@ public sealed partial class GuidanceSystem : ModSystem
 
     internal static void HandleKeybinds(Player player)
     {
-        if (Main.dedServ || Main.gameMenu)
+        if (Main.dedServ || Main.gameMenu || Main.inFancyUI)
         {
             return;
         }

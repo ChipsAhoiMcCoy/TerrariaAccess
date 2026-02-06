@@ -108,6 +108,11 @@ public sealed class BuildModePlayer : ModPlayer
 
     public override void ProcessTriggers(TriggersSet triggersSet)
     {
+        if (Main.inFancyUI)
+        {
+            return;
+        }
+
         bool togglePressed = BuildModeKeybinds.Toggle?.JustPressed ?? false;
         if (togglePressed)
         {
