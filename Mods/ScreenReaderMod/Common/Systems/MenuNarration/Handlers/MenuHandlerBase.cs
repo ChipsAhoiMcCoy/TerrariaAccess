@@ -160,8 +160,10 @@ internal abstract class MenuHandlerBase : IMenuHandler
 
         State.FocusFailureCount = 0;
 
-        // Wait for UI to stabilize
-        if (context.UiState is not null && !State.SawHoverThisMode && timestamp - State.ModeEnteredAt < TimeSpan.FromMilliseconds(250))
+        // Wait for UI to stabilize after mode entry before announcing focus.
+        // Focus data (Main.focusMenu, menuItemScale) may be stale from the previous
+        // menu during the first few frames of a transition.
+        if (!State.SawHoverThisMode && timestamp - State.ModeEnteredAt < TimeSpan.FromMilliseconds(250))
         {
             return false;
         }
@@ -256,6 +258,8 @@ internal abstract class MenuHandlerBase : IMenuHandler
 
         ScreenReaderMod.Instance?.Logger.Info($"[MenuHandler] Fallback focus -> {fallback}");
         events.Add(new MenuNarrationEvent(fallback, true, MenuNarrationEventKind.Focus));
+        State.LastFocusAnnouncement = fallback;
+        State.LastFocusAnnouncedAt = timestamp;
         State.AnnouncedFallback = true;
         State.ForceNextFocus = true;
     }
