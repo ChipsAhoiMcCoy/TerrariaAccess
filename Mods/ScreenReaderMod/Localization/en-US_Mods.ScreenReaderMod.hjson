@@ -72,6 +72,11 @@ Mods: {
 					Tooltip: When enabled, a continuous tone tracks the ground depth ahead while moving. Lower pitch means a deeper drop ahead. The tone fades when you stop.
 				}
 
+				TerrainProfileScanRange: {
+					Label: Terrain Profile Scan Range
+					Tooltip: How many tiles ahead to scan for the terrain profile tone. Lower values react to closer terrain only, higher values detect drops and walls further ahead.
+				}
+
 				TerrainProfileVolume: {
 					Label: Terrain Profile Volume
 					Tooltip: Adjusts the volume of the terrain profile tone that indicates ground depth ahead of you.
@@ -573,6 +578,11 @@ Configs: {
 
 		TerrainProfileEnabled: {
 			Label: Terrain Profile
+			Tooltip: ""
+		}
+
+		TerrainProfileScanRange: {
+			Label: Terrain Profile Scan Range
 			Tooltip: ""
 		}
 

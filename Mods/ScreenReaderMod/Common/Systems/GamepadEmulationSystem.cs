@@ -438,8 +438,10 @@ public sealed class GamepadEmulationSystem : ModSystem
 
         // Inject housing-relevant triggers early so CheckHousingQueryOnMouseClick can see them.
         // Skip entirely when first letter navigation is active — keys are reserved for searching.
-        if (GamepadEmulationState.Enabled && Main.playerInventory && !InputStateHelper.IsTextInputActive()
-            && !FirstLetterNavigationManager.IsEnabled)
+        // Skip when fancy UI is active (mod config, bestiary, etc.) — injecting MouseLeft here
+        // causes clicks at the mouse cursor position instead of the focused element.
+        if (GamepadEmulationState.Enabled && Main.playerInventory && !Main.inFancyUI
+            && !InputStateHelper.IsTextInputActive() && !FirstLetterNavigationManager.IsEnabled)
         {
             VirtualTriggerService.InjectFromKeybind(GamepadEmulationKeybinds.InventorySelect, TriggerNames.MouseLeft);
         }
@@ -520,6 +522,14 @@ public sealed class GamepadEmulationSystem : ModSystem
         }
 
         if (!Main.playerInventory)
+        {
+            return;
+        }
+
+        // Skip MouseLeft/MouseRight injection when fancy UI is active (mod config, bestiary, etc.)
+        // These UIs process clicks at the mouse cursor position, not the focused element,
+        // so injecting MouseLeft causes the wrong element to be activated.
+        if (Main.inFancyUI)
         {
             return;
         }

@@ -23,7 +23,8 @@ internal sealed class TerrainProfileEmitter : AudioEmitterBase
     }
 
     // Scan parameters
-    private const int ScanRangeTiles = 16;
+    private const int MaxScanRangeTiles = 32;
+    private const int DefaultScanRange = 16;
     private const int MaxDepthScan = 30;
     private const int NearRangeEnd = 5;
 
@@ -55,7 +56,11 @@ internal sealed class TerrainProfileEmitter : AudioEmitterBase
     private int _fadeCounter;
     private int _lastDirection;
     private int _lastCliffChirpFrame;
-    private readonly float[] _depthBuffer = new float[ScanRangeTiles];
+    private readonly float[] _depthBuffer = new float[MaxScanRangeTiles];
+
+    private static int ScanRange => Math.Clamp(
+        ScreenReaderModConfig.Instance?.TerrainProfileScanRange ?? DefaultScanRange,
+        4, MaxScanRangeTiles);
 
     public override void Update(Player player)
     {
@@ -126,7 +131,7 @@ internal sealed class TerrainProfileEmitter : AudioEmitterBase
         _fadeCounter = 0;
         _lastDirection = 0;
         _lastCliffChirpFrame = 0;
-        Array.Clear(_depthBuffer, 0, _depthBuffer.Length);
+        Array.Clear(_depthBuffer);
     }
 
     private static bool IsGrounded(Player player)
@@ -143,7 +148,8 @@ internal sealed class TerrainProfileEmitter : AudioEmitterBase
 
     private void ScanTerrain(Point footTile, int direction)
     {
-        for (int i = 0; i < ScanRangeTiles; i++)
+        int scanRange = ScanRange;
+        for (int i = 0; i < scanRange; i++)
         {
             int tileX = footTile.X + direction * (i + 1);
             if (tileX < 0 || tileX >= Main.maxTilesX)
@@ -159,7 +165,7 @@ internal sealed class TerrainProfileEmitter : AudioEmitterBase
                 // Wall blocking — encode as negative depth (special)
                 _depthBuffer[i] = -1;
                 // Fill remaining columns as wall too
-                for (int j = i + 1; j < ScanRangeTiles; j++)
+                for (int j = i + 1; j < scanRange; j++)
                 {
                     _depthBuffer[j] = -1;
                 }
@@ -190,9 +196,11 @@ internal sealed class TerrainProfileEmitter : AudioEmitterBase
 
     private float ComputeTargetFrequency(Point footTile, int direction)
     {
+        int scanRange = ScanRange;
+
         // Check if there's a wall in near range
         bool wallAhead = false;
-        for (int i = 0; i < NearRangeEnd && i < ScanRangeTiles; i++)
+        for (int i = 0; i < NearRangeEnd && i < scanRange; i++)
         {
             if (_depthBuffer[i] < 0)
             {
@@ -210,7 +218,7 @@ internal sealed class TerrainProfileEmitter : AudioEmitterBase
         float weightedSum = 0f;
         float weightTotal = 0f;
 
-        for (int i = 0; i < ScanRangeTiles; i++)
+        for (int i = 0; i < scanRange; i++)
         {
             float depth = _depthBuffer[i];
             if (depth < 0) depth = 0; // wall = treat as floor-level for averaging
@@ -236,7 +244,7 @@ internal sealed class TerrainProfileEmitter : AudioEmitterBase
         }
 
         // Look for sudden depth changes between adjacent near columns
-        for (int i = 0; i < NearRangeEnd - 1 && i < ScanRangeTiles - 1; i++)
+        for (int i = 0; i < NearRangeEnd - 1 && i < ScanRange - 1; i++)
         {
             float d1 = _depthBuffer[i];
             float d2 = _depthBuffer[i + 1];
