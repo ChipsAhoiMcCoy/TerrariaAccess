@@ -105,6 +105,7 @@ public sealed class GamepadEmulationSystem : ModSystem
         _shiftInUseHook = null;
 
         _housingQueryHandler = null;
+        _mainMenuSelectWasPressed = false;
         VirtualTriggerService.ResetState();
     }
 
@@ -458,6 +459,7 @@ public sealed class GamepadEmulationSystem : ModSystem
         ApplyGlobalVirtualTriggers();
         ApplyInventoryVirtualTriggers(needsUiMode);
         ApplyMenuNavigationVirtualTriggers(needsUiMode);
+        ApplyMainMenuVirtualTriggers();
     }
 
     private static void ForceGamepadUiModeIfNeeded(bool needsUiMode)
@@ -608,6 +610,77 @@ public sealed class GamepadEmulationSystem : ModSystem
         VirtualTriggerService.InjectFromState(TriggerNames.MenuDown, down || stickDown);
         VirtualTriggerService.InjectFromState(TriggerNames.MenuLeft, left);
         VirtualTriggerService.InjectFromState(TriggerNames.MenuRight, right);
+    }
+
+    /// <summary>
+    /// When on the main menu (vanilla or tModLoader), injects MouseLeft from the InventorySelect
+    /// keybind so the I key can activate focused menu items just like Enter/Space.
+    /// The UILinkPointNavigator already positions the virtual cursor over the focused item,
+    /// so setting mouseLeft/mouseLeftRelease triggers the standard selection path.
+    /// </summary>
+    private static void ApplyMainMenuVirtualTriggers()
+    {
+        if (!GamepadEmulationState.Enabled || !Main.gameMenu || InputStateHelper.IsTextInputActive())
+        {
+            return;
+        }
+
+        // Skip menus where our accessibility systems handle the I key action internally
+        // (e.g., mod list, mod browser, bestiary). For vanilla menus like player/world select,
+        // allow MouseLeft injection so the I key activates the focused item.
+        if (Main.MenuUI?.IsVisible == true && IsMenuUiHandledByAccessibilitySystem())
+        {
+            return;
+        }
+
+        ModKeybind? selectKeybind = GamepadEmulationKeybinds.InventorySelect;
+        if (selectKeybind is null)
+        {
+            return;
+        }
+
+        bool pressed = selectKeybind.Current || VirtualTriggerService.IsKeybindPressedRaw(selectKeybind);
+        bool justPressed = pressed && !_mainMenuSelectWasPressed;
+        _mainMenuSelectWasPressed = pressed;
+
+        if (justPressed)
+        {
+            Main.mouseLeft = true;
+            Main.mouseLeftRelease = true;
+        }
+    }
+
+    private static bool _mainMenuSelectWasPressed;
+
+    /// <summary>
+    /// Menu type names where our accessibility systems handle the I key (InventorySelect) action
+    /// internally. For these menus, we must NOT inject Main.mouseLeft to avoid double-click.
+    /// All other MenuUI states (UICharacterSelect, UIWorldSelect, UIWorkshopHub, etc.) get
+    /// the standard MouseLeft injection so the I key activates the focused UILinkPoint.
+    /// </summary>
+    private static readonly HashSet<string> MenusWithOwnActionHandling = new(StringComparer.Ordinal)
+    {
+        "Terraria.ModLoader.UI.UIMods",
+        "Terraria.ModLoader.UI.ModBrowser.UIModBrowser",
+        "Terraria.ModLoader.UI.UIModInfo",
+        "Terraria.ModLoader.UI.UIModPacks",
+        "Terraria.ModLoader.UI.UIModSources",
+        "Terraria.GameContent.UI.States.UIBestiaryTest",
+    };
+
+    /// <summary>
+    /// Returns true if the current MenuUI state is handled by one of our accessibility systems
+    /// that processes the I key (InventorySelect) internally.
+    /// </summary>
+    private static bool IsMenuUiHandledByAccessibilitySystem()
+    {
+        string? typeName = Main.MenuUI?.CurrentState?.GetType().FullName;
+        if (string.IsNullOrEmpty(typeName))
+        {
+            return false;
+        }
+
+        return MenusWithOwnActionHandling.Contains(typeName);
     }
 
     private static bool IsModConfigUiActive()
