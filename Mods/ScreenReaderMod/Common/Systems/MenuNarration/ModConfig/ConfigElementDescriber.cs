@@ -77,6 +77,33 @@ internal static class ConfigElementDescriber
         string cleanLabel = !string.IsNullOrWhiteSpace(label) ? TextSanitizer.Clean(label) : string.Empty;
         string cleanValue = !string.IsNullOrWhiteSpace(value) ? TextSanitizer.Clean(value) : string.Empty;
 
+        // For slider elements, replace raw value with percentage from Proportion
+        if (accessors.ProportionProperty is not null && accessors.ProportionProperty.CanRead)
+        {
+            try
+            {
+                if (accessors.ProportionProperty.GetValue(element) is float proportion)
+                {
+                    string percentStr = $"{MathF.Round(proportion * 100f):0} percent";
+
+                    if (cleanLabel.Contains(':'))
+                    {
+                        int colonIndex = cleanLabel.IndexOf(':');
+                        string labelPart = cleanLabel[..colonIndex];
+                        return $"{labelPart}: {percentStr}";
+                    }
+
+                    return !string.IsNullOrWhiteSpace(cleanLabel)
+                        ? $"{cleanLabel}: {percentStr}"
+                        : percentStr;
+                }
+            }
+            catch
+            {
+                // Fall through to default formatting
+            }
+        }
+
         // Check if we should skip adding the value to avoid duplication
         bool labelAlreadyHasValue = cleanLabel.Contains(':');
         bool labelEndsWithValue = !string.IsNullOrWhiteSpace(cleanValue) &&

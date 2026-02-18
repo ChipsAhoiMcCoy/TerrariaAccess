@@ -149,7 +149,7 @@ internal static class ConfigSliderHandler
                 updateNeededField.SetValue(element, true);
             }
 
-            TryAutoSaveConfigChanges();
+            TryMarkPendingChanges();
             return true;
         }
         catch (Exception ex)
@@ -220,9 +220,10 @@ internal static class ConfigSliderHandler
     }
 
     /// <summary>
-    /// Attempts to auto-save config changes by clicking the save button.
+    /// Marks the config UI as having pending changes so tModLoader will save on exit.
+    /// This avoids clicking the save button which plays a menu sound.
     /// </summary>
-    public static void TryAutoSaveConfigChanges()
+    private static void TryMarkPendingChanges()
     {
         try
         {
@@ -245,28 +246,25 @@ internal static class ConfigSliderHandler
             }
 
             Type modConfigUIType = modConfigUI.GetType();
-            FieldInfo? saveButtonField = modConfigUIType.GetField("saveConfigButton", BindingFlags.Instance | BindingFlags.NonPublic);
-            if (saveButtonField is null)
+            MethodInfo? setPendingMethod = modConfigUIType.GetMethod("SetPendingChanges", BindingFlags.Instance | BindingFlags.Public | BindingFlags.NonPublic);
+            if (setPendingMethod is not null)
             {
+                setPendingMethod.Invoke(modConfigUI, new object[] { true });
+                ScreenReaderMod.Instance?.Logger.Debug("[ConfigSliderHandler] Marked config as having pending changes");
                 return;
             }
 
-            object? saveButton = saveButtonField.GetValue(modConfigUI);
-            if (saveButton is not UIElement saveButtonElement)
+            // Fallback: set the pendingChanges field directly
+            FieldInfo? pendingChangesField = modConfigUIType.GetField("pendingChanges", BindingFlags.Instance | BindingFlags.NonPublic);
+            if (pendingChangesField is not null)
             {
-                return;
+                pendingChangesField.SetValue(modConfigUI, true);
+                ScreenReaderMod.Instance?.Logger.Debug("[ConfigSliderHandler] Set pendingChanges field directly");
             }
-
-            CalculatedStyle dims = saveButtonElement.GetDimensions();
-            var mousePosition = new Vector2(dims.X + dims.Width / 2, dims.Y + dims.Height / 2);
-            var evt = new UIMouseEvent(saveButtonElement, mousePosition);
-            saveButtonElement.LeftClick(evt);
-
-            ScreenReaderMod.Instance?.Logger.Debug("[ConfigSliderHandler] Auto-saved config changes");
         }
         catch (Exception ex)
         {
-            ScreenReaderMod.Instance?.Logger.Debug($"[ConfigSliderHandler] Auto-save failed: {ex.Message}");
+            ScreenReaderMod.Instance?.Logger.Debug($"[ConfigSliderHandler] Failed to mark pending changes: {ex.Message}");
         }
     }
 }
