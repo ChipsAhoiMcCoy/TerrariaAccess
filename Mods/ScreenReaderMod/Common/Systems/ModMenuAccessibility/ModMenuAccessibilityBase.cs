@@ -152,6 +152,7 @@ public abstract class ModMenuAccessibilityBase : ModSystem
     private bool _keyDownWasPressed;
     private bool _keyEnterWasPressed;
     private bool _keySpaceWasPressed;
+    private bool _keyInventorySelectWasPressed;
 
     #endregion
 
@@ -361,9 +362,18 @@ public abstract class ModMenuAccessibilityBase : ModSystem
             bool enterNow = kbState.IsKeyDown(Keys.Enter);
             bool spaceNow = kbState.IsKeyDown(Keys.Space);
 
+            // Check gamepad emulation InventorySelect keybind (I key by default)
+            bool inventorySelectNow = false;
+            if (GamepadEmulation.GamepadEmulationKeybinds.InventorySelect is { } selectKeybind)
+            {
+                inventorySelectNow = selectKeybind.Current
+                    || GamepadEmulation.VirtualTriggerService.IsKeybindPressedRaw(selectKeybind);
+            }
+
             if (!input.ActionPressed)
             {
-                if ((enterNow && !_keyEnterWasPressed) || (spaceNow && !_keySpaceWasPressed))
+                if ((enterNow && !_keyEnterWasPressed) || (spaceNow && !_keySpaceWasPressed) ||
+                    (inventorySelectNow && !_keyInventorySelectWasPressed))
                 {
                     input.ActionPressed = true;
                 }
@@ -371,6 +381,7 @@ public abstract class ModMenuAccessibilityBase : ModSystem
 
             _keyEnterWasPressed = enterNow;
             _keySpaceWasPressed = spaceNow;
+            _keyInventorySelectWasPressed = inventorySelectNow;
         }
 
         input.HasNavigation = input.Left || input.Right || input.Up || input.Down;
@@ -396,6 +407,7 @@ public abstract class ModMenuAccessibilityBase : ModSystem
         _keyDownWasPressed = false;
         _keyEnterWasPressed = false;
         _keySpaceWasPressed = false;
+        _keyInventorySelectWasPressed = false;
     }
 
     #endregion
