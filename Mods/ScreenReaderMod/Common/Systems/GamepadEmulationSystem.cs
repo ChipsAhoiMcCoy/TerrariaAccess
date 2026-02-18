@@ -437,7 +437,9 @@ public sealed class GamepadEmulationSystem : ModSystem
         SuppressAllShiftTriggers();
 
         // Inject housing-relevant triggers early so CheckHousingQueryOnMouseClick can see them.
-        if (GamepadEmulationState.Enabled && Main.playerInventory && !InputStateHelper.IsTextInputActive())
+        // Skip entirely when first letter navigation is active — keys are reserved for searching.
+        if (GamepadEmulationState.Enabled && Main.playerInventory && !InputStateHelper.IsTextInputActive()
+            && !FirstLetterNavigationManager.IsEnabled)
         {
             VirtualTriggerService.InjectFromKeybind(GamepadEmulationKeybinds.InventorySelect, TriggerNames.MouseLeft);
         }
@@ -503,12 +505,8 @@ public sealed class GamepadEmulationSystem : ModSystem
         }
 
         // SmartSelect: Inject the SmartSelect trigger for in-world auto-tool selection
-        // When pressed, Terraria auto-selects the best tool for the targeted tile
-        // Skip injection when first letter navigation is active and keybind uses a letter key
-        bool skipSmartSelect = Main.playerInventory &&
-            FirstLetterNavigationManager.IsEnabled &&
-            VirtualTriggerService.IsKeybindBoundToLetterKey(GamepadEmulationKeybinds.SmartSelect);
-        if (!skipSmartSelect)
+        // Skip when first letter navigation is active in inventory — keys reserved for searching
+        if (!(Main.playerInventory && FirstLetterNavigationManager.IsEnabled))
         {
             VirtualTriggerService.InjectFromKeybind(GamepadEmulationKeybinds.SmartSelect, TriggerNames.SmartSelect);
         }
@@ -526,74 +524,46 @@ public sealed class GamepadEmulationSystem : ModSystem
             return;
         }
 
-        // When first letter navigation is active, skip injecting triggers from keybinds
-        // that use letter keys. This ensures letter keys are reserved for item searching.
-        bool firstLetterNavActive = FirstLetterNavigationManager.IsEnabled;
-
-        InjectIfNotLetterSuppressed(GamepadEmulationKeybinds.InventorySelect, TriggerNames.MouseLeft, firstLetterNavActive);
-
-        // Ensure Main.mouseLeft and Main.mouseLeftRelease are set for ItemSlot.LeftClick
-        // Only apply if the keybind was not suppressed
-        if (!firstLetterNavActive || !VirtualTriggerService.IsKeybindBoundToLetterKey(GamepadEmulationKeybinds.InventorySelect))
+        // When first letter navigation is active, skip ALL inventory trigger injection.
+        // Letter keys are exclusively reserved for item searching in this mode.
+        // This blanket approach avoids whack-a-mole suppression of individual keybinds.
+        if (FirstLetterNavigationManager.IsEnabled)
         {
-            VirtualTriggerService.ApplyMouseLeftFromTrigger();
+            VirtualTriggerService.ResetState();
+            return;
         }
 
-        // SmartSelect: Inject the SmartSelect trigger to mimic gamepad Select button behavior
-        // In inventory, this drops held items or performs Shift+Click depending on context
-        InjectIfNotLetterSuppressed(GamepadEmulationKeybinds.SmartSelect, TriggerNames.SmartSelect, firstLetterNavActive);
+        VirtualTriggerService.InjectFromKeybind(GamepadEmulationKeybinds.InventorySelect, TriggerNames.MouseLeft);
+        VirtualTriggerService.ApplyMouseLeftFromTrigger();
+
+        VirtualTriggerService.InjectFromKeybind(GamepadEmulationKeybinds.SmartSelect, TriggerNames.SmartSelect);
 
         // Only inject MouseRight if no chest/container is open.
         // When a container is open, continued MouseRight injection can cause it to toggle closed.
-        // The player needs to release the interact key and press again to interact with chest slots.
         Player player = Main.LocalPlayer;
         bool chestOpen = player is not null && (player.chest != -1 || player.tileEntityAnchor.InUse);
         if (!chestOpen)
         {
-            InjectIfNotLetterSuppressed(GamepadEmulationKeybinds.InventoryInteract, TriggerNames.MouseRight, firstLetterNavActive);
+            VirtualTriggerService.InjectFromKeybind(GamepadEmulationKeybinds.InventoryInteract, TriggerNames.MouseRight);
         }
 
-        InjectIfNotLetterSuppressed(GamepadEmulationKeybinds.InventorySectionPrevious, TriggerNames.HotbarMinus, firstLetterNavActive);
-        InjectIfNotLetterSuppressed(GamepadEmulationKeybinds.InventorySectionNext, TriggerNames.HotbarPlus, firstLetterNavActive);
+        VirtualTriggerService.InjectFromKeybind(GamepadEmulationKeybinds.InventorySectionPrevious, TriggerNames.HotbarMinus);
+        VirtualTriggerService.InjectFromKeybind(GamepadEmulationKeybinds.InventorySectionNext, TriggerNames.HotbarPlus);
 
         // Block Grapple trigger when E is used for section cycling to prevent accidental crafting.
-        // In vanilla Terraria, E is bound to Grapple, and Grapple triggers crafting in the crafting UI.
-        // Only do this if the keybind is not being suppressed for first letter navigation
-        if (!firstLetterNavActive || !VirtualTriggerService.IsKeybindBoundToLetterKey(GamepadEmulationKeybinds.InventorySectionNext))
+        if (GamepadEmulationKeybinds.InventorySectionNext is { } sectionNextKeybind &&
+            VirtualTriggerService.IsKeybindPressedRaw(sectionNextKeybind))
         {
-            if (GamepadEmulationKeybinds.InventorySectionNext is { } sectionNextKeybind &&
-                VirtualTriggerService.IsKeybindPressedRaw(sectionNextKeybind))
-            {
-                PlayerInput.Triggers.Current.KeyStatus[TriggerNames.Grapple] = false;
-                PlayerInput.Triggers.JustPressed.KeyStatus[TriggerNames.Grapple] = false;
-            }
+            PlayerInput.Triggers.Current.KeyStatus[TriggerNames.Grapple] = false;
+            PlayerInput.Triggers.JustPressed.KeyStatus[TriggerNames.Grapple] = false;
         }
 
-        // Quick Use: Simulate right stick click (QuickMount trigger in UI mode)
-        InjectIfNotLetterSuppressed(GamepadEmulationKeybinds.InventoryQuickUse, TriggerNames.QuickMount, firstLetterNavActive);
+        VirtualTriggerService.InjectFromKeybind(GamepadEmulationKeybinds.InventoryQuickUse, TriggerNames.QuickMount);
 
-        // Ensure MouseRight trigger from keyboard (Interact key) properly sets Main.mouseRight
-        // But skip when a container is open to prevent accidental closure
-        // Also skip if the keybind was suppressed for first letter navigation
-        if (!chestOpen &&
-            (!firstLetterNavActive || !VirtualTriggerService.IsKeybindBoundToLetterKey(GamepadEmulationKeybinds.InventoryInteract)))
+        if (!chestOpen)
         {
             VirtualTriggerService.ApplyMouseRightFromTrigger();
         }
-    }
-
-    /// <summary>
-    /// Injects a trigger from a keybind, but skips injection if first letter navigation
-    /// is active and the keybind uses a letter key (A-Z).
-    /// </summary>
-    private static void InjectIfNotLetterSuppressed(ModKeybind? keybind, string triggerName, bool firstLetterNavActive)
-    {
-        if (firstLetterNavActive && VirtualTriggerService.IsKeybindBoundToLetterKey(keybind))
-        {
-            return;
-        }
-
-        VirtualTriggerService.InjectFromKeybind(keybind, triggerName);
     }
 
     private static void ApplyMenuNavigationVirtualTriggers(bool uiModeActive)

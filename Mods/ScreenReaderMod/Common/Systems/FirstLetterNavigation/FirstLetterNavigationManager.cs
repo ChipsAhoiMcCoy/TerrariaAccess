@@ -465,6 +465,18 @@ internal static class FirstLetterNavigationManager
         // Creative menu toggle
         ClearTrigger(current, justPressed, "ToggleCreativeMenu");
 
+        // Block mouse action triggers that would interact with items while searching.
+        // This is a safety net against any injection paths outside the gamepad emulation system.
+        ClearTrigger(current, justPressed, "MouseLeft");
+        ClearTrigger(current, justPressed, "MouseRight");
+
+        // Clear Main.mouseLeft/mouseRight flags directly as these may be set
+        // by code paths outside the trigger system (e.g., ApplyMouseLeftFromTrigger).
+        Main.mouseLeft = false;
+        Main.mouseLeftRelease = false;
+        Main.mouseRight = false;
+        Main.mouseRightRelease = false;
+
         // Also clear the thumbstick to prevent any residual analog navigation
         PlayerInput.GamepadThumbstickLeft = Vector2.Zero;
     }

@@ -2,6 +2,7 @@
 using Microsoft.Xna.Framework;
 using Microsoft.Xna.Framework.Input;
 using ScreenReaderMod.Common.Services;
+using ScreenReaderMod.Common.Systems.FirstLetterNavigation;
 using Terraria;
 using Terraria.Audio;
 using Terraria.GameInput;
@@ -119,7 +120,13 @@ internal sealed class HousingQueryHandler
 
     private static bool IsInteractKeyDown()
     {
-        // Check mod keybind
+        // When first letter navigation is active, all keyboard input is reserved for searching.
+        if (FirstLetterNavigationManager.IsEnabled)
+        {
+            return false;
+        }
+
+        // Check mod keybind (default: I key)
         if (GamepadEmulationKeybinds.InventorySelect?.Current ?? false)
         {
             return true;

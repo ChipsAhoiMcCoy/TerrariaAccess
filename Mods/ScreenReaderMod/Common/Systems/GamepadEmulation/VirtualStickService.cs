@@ -51,9 +51,12 @@ internal static class VirtualStickService
         // In menu contexts, OKLS should always act as right stick for scrolling.
         bool smartCursorActive = Main.SmartCursorIsUsed || Main.SmartCursorWanted;
         bool inMenuContext = Main.gameMenu || InputStateHelper.IsFancyUiActive();
+        // Suppress right stick letter keys (O, K, L) when first letter navigation is active,
+        // so those keys are reserved for item searching instead of injecting stick input.
+        bool suppressRightStickLetterKeys = Main.playerInventory && FirstLetterNavigationManager.IsEnabled;
         bool aimOverride = false;
         Vector2 aim = Vector2.Zero;
-        if (smartCursorActive || inMenuContext)
+        if ((smartCursorActive || inMenuContext) && !suppressRightStickLetterKeys)
         {
             // OKLS keys act as analog stick when Smart Cursor is on OR in menu context
             aimOverride = TryReadStick(
