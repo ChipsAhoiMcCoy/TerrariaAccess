@@ -5,6 +5,7 @@ using ScreenReaderMod.Common.Services;
 using ScreenReaderMod.Common.Systems;
 using ScreenReaderMod.Common.Systems.BuildMode;
 using ScreenReaderMod.Common.Systems.Guidance;
+using ScreenReaderMod.Common.Systems.Audio;
 using ScreenReaderMod.Common.Systems.GamepadEmulation;
 using ScreenReaderMod.Common.Utilities;
 using Terraria;
@@ -38,6 +39,7 @@ public class ScreenReaderMod : Mod
         SpeechInterruptKeybinds.EnsureInitialized(this);
         StatusCheckKeybinds.EnsureInitialized(this);
         BuildModeKeybinds.EnsureInitialized(this);
+        CavitySonarKeybinds.EnsureInitialized(this);
     }
 
     public override void Unload()
@@ -46,6 +48,7 @@ public class ScreenReaderMod : Mod
         BuildModeKeybinds.Unload();
         StatusCheckKeybinds.Unload();
         SpeechInterruptKeybinds.Unload();
+        CavitySonarKeybinds.Unload();
         GuidanceKeybinds.Unload();
         UiTickSoundPlayer.Dispose();
         WorldAnnouncementService.Unload();

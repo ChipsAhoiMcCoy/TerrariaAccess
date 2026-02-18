@@ -72,6 +72,23 @@ public class ScreenReaderModConfig : ModConfig
     [Slider]
     public float CursorVolume { get; set; } = 1f;
 
+    // Terrain sonification
+    [DefaultValue(true)]
+    public bool TerrainProfileEnabled { get; set; } = true;
+
+    [DefaultValue(1f)]
+    [Range(0f, 1f)]
+    [Slider]
+    public float TerrainProfileVolume { get; set; } = 1f;
+
+    [DefaultValue(true)]
+    public bool CavitySonarEnabled { get; set; } = true;
+
+    [DefaultValue(1f)]
+    [Range(0f, 1f)]
+    [Slider]
+    public float CavitySonarVolume { get; set; } = 1f;
+
     // Chunk Mining
     [DefaultValue(true)]
     public bool ChunkMinerEnabled { get; set; } = true;

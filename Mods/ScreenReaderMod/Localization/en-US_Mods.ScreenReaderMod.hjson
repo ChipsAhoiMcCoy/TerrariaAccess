@@ -67,6 +67,26 @@ Mods: {
 					Tooltip: When enabled, keyboard inputs are translated to gamepad inputs for UI navigation. Disable this if you are using a physical controller. Toggle with F6.
 				}
 
+				TerrainProfileEnabled: {
+					Label: Terrain Profile
+					Tooltip: When enabled, a continuous tone tracks the ground depth ahead while moving. Lower pitch means a deeper drop ahead. The tone fades when you stop.
+				}
+
+				TerrainProfileVolume: {
+					Label: Terrain Profile Volume
+					Tooltip: Adjusts the volume of the terrain profile tone that indicates ground depth ahead of you.
+				}
+
+				CavitySonarEnabled: {
+					Label: Cavity Sonar
+					Tooltip: When enabled, press the Cavity Sonar keybind to scan the area around you. A left-to-right sweep plays tones for empty spaces, revealing cave shapes and openings.
+				}
+
+				CavitySonarVolume: {
+					Label: Cavity Sonar Volume
+					Tooltip: Adjusts the volume of the cavity sonar sweep tones.
+				}
+
 				ChunkMinerEnabled: {
 					Label: Chunk Miner
 					Tooltip: When enabled, mining an ore or gem will automatically mine all connected tiles of the same type in the vein. Great for quickly harvesting resource deposits.
@@ -447,6 +467,7 @@ Mods: {
 			GamepadEmulationArrowLeft.DisplayName: Gamepad Emulation Arrow Left
 			GamepadEmulationArrowRight.DisplayName: Gamepad Emulation Arrow Right
 			StatusCheck.DisplayName: Status Checker
+			CavitySonarScan.DisplayName: Cavity Sonar Scan
 		}
 	}
 }
@@ -483,6 +504,7 @@ Keybinds: {
 	GamepadEmulationArrowLeft.DisplayName: Gamepad Emulation Arrow Left
 	GamepadEmulationArrowRight.DisplayName: Gamepad Emulation Arrow Right
 	StatusCheck.DisplayName: Status Checker
+	CavitySonarScan.DisplayName: Cavity Sonar Scan
 }
 
 Configs: {
@@ -546,6 +568,26 @@ Configs: {
 
 		GamepadEmulationEnabled: {
 			Label: Gamepad Emulation Enabled
+			Tooltip: ""
+		}
+
+		TerrainProfileEnabled: {
+			Label: Terrain Profile
+			Tooltip: ""
+		}
+
+		TerrainProfileVolume: {
+			Label: Terrain Profile Volume
+			Tooltip: ""
+		}
+
+		CavitySonarEnabled: {
+			Label: Cavity Sonar
+			Tooltip: ""
+		}
+
+		CavitySonarVolume: {
+			Label: Cavity Sonar Volume
 			Tooltip: ""
 		}
 
