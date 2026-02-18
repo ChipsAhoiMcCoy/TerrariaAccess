@@ -31,7 +31,6 @@ internal sealed class TerrainProfileEmitter : AudioEmitterBase
     // Frequency mapping
     private const float BaseFrequency = 400f;   // floor at feet
     private const float MinFrequency = 80f;      // bottomless pit
-    private const float WallFrequency = 500f;    // wall ahead (higher than base)
 
     // Smoothing
     private const float LerpSpeed = 0.15f;
@@ -43,6 +42,13 @@ internal sealed class TerrainProfileEmitter : AudioEmitterBase
     private const float CliffChirpFrequency = 200f;
     private const float CliffChirpVolume = 0.3f;
     private const int CliffChirpCooldownFrames = 30;
+
+    // Flat-ground suppression — only play when terrain ahead has meaningful variation
+    private const float MinDepthVariation = 1.5f;          // tiles of depth range to trigger tone
+
+    // Wall thud — distinct impact sound when approaching a wall
+    private const float WallThudVolume = 0.4f;
+    private const int WallThudCooldownFrames = 30;         // game frames between thuds
 
     // Tone generation — use a longer looping buffer for smooth pitch control
     private const int SampleRate = 44100;
@@ -57,6 +63,11 @@ internal sealed class TerrainProfileEmitter : AudioEmitterBase
     private int _lastDirection;
     private int _lastCliffChirpFrame;
     private readonly float[] _depthBuffer = new float[MaxScanRangeTiles];
+
+    // Wall thud state
+    private SoundEffect? _wallThudEffect;
+    private SoundEffectInstance? _wallThudInstance;
+    private int _lastWallThudFrame;
 
     private static int ScanRange => Math.Clamp(
         ScreenReaderModConfig.Instance?.TerrainProfileScanRange ?? DefaultScanRange,
@@ -106,8 +117,23 @@ internal sealed class TerrainProfileEmitter : AudioEmitterBase
         Point footTile = GetFootTile(player);
         ScanTerrain(footTile, direction);
 
-        // Compute target frequency from depth data
-        float targetFreq = ComputeTargetFrequency(footTile, direction);
+        // Wall detection — play a distinct thud instead of the profile tone
+        if (IsWallInNearRange())
+        {
+            FadeOut();
+            PlayWallThud();
+            return;
+        }
+
+        // Flat-ground suppression: only play when terrain ahead has dips or rises
+        if (!HasMeaningfulTerrainVariation())
+        {
+            FadeOut();
+            return;
+        }
+
+        // Compute target frequency from depth data (terrain only)
+        float targetFreq = ComputeTerrainFrequency();
 
         // Check for cliff alert
         CheckCliffAlert(player);
@@ -125,12 +151,14 @@ internal sealed class TerrainProfileEmitter : AudioEmitterBase
     public override void Reset()
     {
         StopTone();
+        CleanupWallThud();
         _currentPitch = 0f;
         _targetPitch = 0f;
         _currentVolume = 0f;
         _fadeCounter = 0;
         _lastDirection = 0;
         _lastCliffChirpFrame = 0;
+        _lastWallThudFrame = 0;
         Array.Clear(_depthBuffer);
     }
 
@@ -194,25 +222,40 @@ internal sealed class TerrainProfileEmitter : AudioEmitterBase
         }
     }
 
-    private float ComputeTargetFrequency(Point footTile, int direction)
+    private bool IsWallInNearRange()
     {
         int scanRange = ScanRange;
-
-        // Check if there's a wall in near range
-        bool wallAhead = false;
         for (int i = 0; i < NearRangeEnd && i < scanRange; i++)
         {
             if (_depthBuffer[i] < 0)
             {
-                wallAhead = true;
-                break;
+                return true;
             }
         }
 
-        if (wallAhead)
+        return false;
+    }
+
+    private bool HasMeaningfulTerrainVariation()
+    {
+        int scanRange = ScanRange;
+        float minDepth = float.MaxValue;
+        float maxDepth = float.MinValue;
+
+        for (int i = 0; i < scanRange; i++)
         {
-            return WallFrequency;
+            float d = _depthBuffer[i];
+            if (d < 0) continue; // walls handled separately
+            if (d < minDepth) minDepth = d;
+            if (d > maxDepth) maxDepth = d;
         }
+
+        return (maxDepth - minDepth) >= MinDepthVariation;
+    }
+
+    private float ComputeTerrainFrequency()
+    {
+        int scanRange = ScanRange;
 
         // Weighted average: near columns weighted 2x, far columns 1x
         float weightedSum = 0f;
@@ -276,9 +319,10 @@ internal sealed class TerrainProfileEmitter : AudioEmitterBase
         _toneInstance = _toneEffect.CreateInstance();
         _toneInstance.IsLooped = true;
         _toneInstance.Volume = MathHelper.Clamp(volume, 0f, 1f) * Main.soundVolume * AudioVolumeDefaults.WorldCueVolumeScale;
-        _toneInstance.Pitch = 0f;
+        float initialPitch = MathHelper.Clamp(_targetPitch, -1f, 1f);
+        _toneInstance.Pitch = initialPitch;
         _toneInstance.Play();
-        _currentPitch = 0f;
+        _currentPitch = initialPitch;
         _currentVolume = volume;
     }
 
@@ -325,6 +369,85 @@ internal sealed class TerrainProfileEmitter : AudioEmitterBase
         }
 
         _fadeCounter = 0;
+    }
+
+    private void PlayWallThud()
+    {
+        int now = (int)Main.GameUpdateCount;
+        if (now - _lastWallThudFrame < WallThudCooldownFrames)
+        {
+            return;
+        }
+
+        // Cleanup finished previous instance
+        if (_wallThudInstance is not null && !_wallThudInstance.IsDisposed
+            && _wallThudInstance.State == SoundState.Stopped)
+        {
+            _wallThudInstance.Dispose();
+            _wallThudInstance = null;
+        }
+
+        if (_wallThudEffect is null || _wallThudEffect.IsDisposed)
+        {
+            _wallThudEffect = CreateWallThud();
+        }
+
+        float configVolume = ScreenReaderModConfig.Instance?.TerrainProfileVolume ?? 1f;
+        _wallThudInstance = _wallThudEffect.CreateInstance();
+        _wallThudInstance.IsLooped = false;
+        _wallThudInstance.Volume = MathHelper.Clamp(WallThudVolume * configVolume, 0f, 1f)
+            * Main.soundVolume * AudioVolumeDefaults.WorldCueVolumeScale;
+        _wallThudInstance.Play();
+        _lastWallThudFrame = now;
+    }
+
+    private void CleanupWallThud()
+    {
+        if (_wallThudInstance is not null && !_wallThudInstance.IsDisposed)
+        {
+            try { _wallThudInstance.Stop(); }
+            catch { /* ignore audio backend failures */ }
+            _wallThudInstance.Dispose();
+        }
+
+        _wallThudInstance = null;
+    }
+
+    /// <summary>
+    /// Creates a short, punchy "thud" sound for wall detection —
+    /// low tone with noise texture, rapid decay.
+    /// </summary>
+    private static SoundEffect CreateWallThud()
+    {
+        const float duration = 0.1f;
+        int sampleCount = (int)(SampleRate * duration);
+        byte[] buffer = new byte[sampleCount * sizeof(short)];
+        var rand = new Random(42); // deterministic seed for consistency
+
+        for (int i = 0; i < sampleCount; i++)
+        {
+            float t = i / (float)SampleRate;
+
+            // Fast exponential decay for a punchy impact feel
+            float envelope = MathF.Exp(-30f * t);
+
+            // Low 80Hz tone for the bass thud
+            float tone = MathF.Sin(MathHelper.TwoPi * 80f * t);
+
+            // Noise component for impact texture
+            float noise = (float)(rand.NextDouble() * 2.0 - 1.0);
+
+            // Mix: mostly tone with noise texture
+            float sample = (tone * 0.7f + noise * 0.3f) * envelope;
+
+            short quantized = (short)MathHelper.Clamp(
+                sample * short.MaxValue * 0.5f, short.MinValue, short.MaxValue);
+            int index = i * 2;
+            buffer[index] = (byte)(quantized & 0xFF);
+            buffer[index + 1] = (byte)((quantized >> 8) & 0xFF);
+        }
+
+        return new SoundEffect(buffer, SampleRate, AudioChannels.Mono);
     }
 
     internal static void DisposeStaticResources()
