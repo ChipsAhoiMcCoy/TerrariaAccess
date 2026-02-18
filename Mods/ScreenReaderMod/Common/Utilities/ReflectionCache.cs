@@ -15,6 +15,7 @@ internal static class ReflectionCache
     private const BindingFlags InstanceNonPublic = BindingFlags.Instance | BindingFlags.NonPublic;
     private const BindingFlags InstancePublic = BindingFlags.Instance | BindingFlags.Public;
     private const BindingFlags StaticPublic = BindingFlags.Static | BindingFlags.Public;
+    private const BindingFlags StaticNonPublic = BindingFlags.Static | BindingFlags.NonPublic;
 
     #region UIMods (Manage Mods Menu)
 
@@ -900,6 +901,23 @@ internal static class ReflectionCache
         internal static FieldInfo? StatsMonetaryValue => _statsMonetaryValue.Value;
         internal static FieldInfo? KillCounterNpcId => _killCounterNpcId.Value;
         internal static FieldInfo? ItemDropDropRateInfo => _itemDropDropRateInfo.Value;
+    }
+
+    #endregion
+
+    #region BuilderToggleLoader (Builder Accessory Toggles)
+
+    /// <summary>
+    /// Reflection handles for Terraria.ModLoader.BuilderToggleLoader.
+    /// </summary>
+    internal static class BuilderToggleLoaderRef
+    {
+        private static readonly Lazy<MethodInfo?> _activeBuilderTogglesList = new(() =>
+            typeof(Terraria.ModLoader.BuilderToggleLoader).GetMethod(
+                "ActiveBuilderTogglesList",
+                StaticNonPublic | StaticPublic));
+
+        internal static MethodInfo? ActiveBuilderTogglesList => _activeBuilderTogglesList.Value;
     }
 
     #endregion

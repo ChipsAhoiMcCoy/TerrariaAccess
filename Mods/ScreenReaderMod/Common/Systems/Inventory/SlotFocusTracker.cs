@@ -19,6 +19,7 @@ internal sealed class SlotFocusTracker
     private readonly Dictionary<int, FocusCapture> _linkPointFocus = new();
     private SlotFocus? _pendingFocus;
     private uint _pendingFrame;
+    private int _pendingLinkPoint = -1;
 
     /// <summary>
     /// Records a slot focus from an ItemSlot hook.
@@ -27,6 +28,7 @@ internal sealed class SlotFocusTracker
     {
         _pendingFocus = focus;
         _pendingFrame = Main.GameUpdateCount;
+        _pendingLinkPoint = PlayerInput.UsingGamepadUI ? UILinkPointNavigator.CurrentPoint : -1;
 
         CacheLinkPointFocus(focus);
         UiAreaNarrationContext.RecordSlotContext(focus.Context);
@@ -65,6 +67,7 @@ internal sealed class SlotFocusTracker
 
         _pendingFocus = null;
         _pendingFrame = 0;
+        _pendingLinkPoint = -1;
     }
 
     /// <summary>
@@ -74,6 +77,7 @@ internal sealed class SlotFocusTracker
     {
         _pendingFocus = null;
         _pendingFrame = 0;
+        _pendingLinkPoint = -1;
         _linkPointFocus.Clear();
     }
 
@@ -152,7 +156,58 @@ internal sealed class SlotFocusTracker
             return;
         }
 
+        // Validate the focus slot matches the link point to prevent cross-contamination.
+        // When navigation moves to a new slot, the ItemSlot hook can still fire for the
+        // old slot position. Without this check, stale data gets cached under the new
+        // link point, causing the narrator to report the wrong slot.
+        if (!IsFocusPlausibleForLinkPoint(focus, point))
+        {
+            return;
+        }
+
         _linkPointFocus[point] = new FocusCapture(focus, Main.GameUpdateCount);
+    }
+
+    /// <summary>
+    /// Checks whether a focus's slot index plausibly corresponds to the given link point.
+    /// Returns true for unknown ranges (where we can't validate).
+    /// </summary>
+    private static bool IsFocusPlausibleForLinkPoint(SlotFocus focus, int point)
+    {
+        int slot = focus.Slot;
+
+        // Inventory/hotbar 0-49: link point = slot index
+        if (point >= 0 && point < 50)
+        {
+            return slot == point;
+        }
+
+        // Coins 50-53: link point = inventory index
+        if (point >= 50 && point < 54)
+        {
+            return slot == point;
+        }
+
+        // Ammo 54-57: link point = inventory index
+        if (point >= 54 && point < 58)
+        {
+            return slot == point;
+        }
+
+        // Chest/storage 400-439: link point = 400 + slot
+        if (point >= 400 && point < 440)
+        {
+            return slot == point - 400;
+        }
+
+        // Shop 2700-2739: link point = 2700 + slot
+        if (point >= 2700 && point < 2740)
+        {
+            return slot == point - 2700;
+        }
+
+        // For other ranges (armor, dye, special buttons, etc.) we can't easily validate
+        return true;
     }
 
     private SlotFocus? ConsumePending()
@@ -166,12 +221,26 @@ internal sealed class SlotFocusTracker
         {
             _pendingFocus = null;
             _pendingFrame = 0;
+            _pendingLinkPoint = -1;
+            return null;
+        }
+
+        // If the link point changed since capture, the pending focus is stale
+        // (e.g., ItemSlot hook fired for old slot after navigation moved to new slot).
+        // Discard it so TryResolveFocusDirectly can provide correct data.
+        if (_pendingLinkPoint >= 0 && PlayerInput.UsingGamepadUI &&
+            UILinkPointNavigator.CurrentPoint != _pendingLinkPoint)
+        {
+            _pendingFocus = null;
+            _pendingFrame = 0;
+            _pendingLinkPoint = -1;
             return null;
         }
 
         SlotFocus focus = _pendingFocus.Value;
         _pendingFocus = null;
         _pendingFrame = 0;
+        _pendingLinkPoint = -1;
         return focus;
     }
 

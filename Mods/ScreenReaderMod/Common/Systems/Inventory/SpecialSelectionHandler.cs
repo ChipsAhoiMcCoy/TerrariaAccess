@@ -4,6 +4,7 @@ using ScreenReaderMod.Common.Utilities;
 using Terraria;
 using Terraria.GameInput;
 using Terraria.Localization;
+using Terraria.ModLoader;
 using Terraria.UI.Gamepad;
 
 namespace ScreenReaderMod.Common.Systems.Inventory;
@@ -35,6 +36,7 @@ internal sealed class SpecialSelectionHandler
             311 => FormatButtonLabel(LocalizationHelper.GetTextOrFallback("Mods.ScreenReaderMod.InventorySpecial.LoadoutControls", "Loadout controls")),
             int loadout when loadout >= 312 && loadout <= 320 => FormatButtonLabel(GetLoadoutLabel(loadout)),
             int chestButton when chestButton >= 500 && chestButton <= 505 => DescribeChestButton(chestButton),
+            int builderToggle when builderToggle >= 6000 && builderToggle < 6012 => DescribeBuilderToggle(builderToggle),
             1550 => FormatButtonLabel(GetPvpToggleText()),
             int teamButton when teamButton >= 1551 && teamButton <= 1556 => FormatButtonLabel(GetTeamButtonText(teamButton)),
             1557 => DescribeDefenseCounter(),
@@ -69,6 +71,7 @@ internal sealed class SpecialSelectionHandler
             >= 1551 and <= 1556 => true,
             1557 => true,
             1570 => true,
+            >= 6000 and < 6012 => true,
             _ => false,
         };
     }
@@ -87,6 +90,7 @@ internal sealed class SpecialSelectionHandler
             >= 500 and <= 505 => InventoryRegion.Storage,
             >= 1550 and <= 1557 => InventoryRegion.CharacterPanel,
             1570 => InventoryRegion.CharacterPanel,
+            >= 6000 and < 6012 => InventoryRegion.InventoryExtras,
             _ => InventoryRegion.None,
         };
     }
@@ -211,6 +215,49 @@ internal sealed class SpecialSelectionHandler
         };
 
         return LocalizationHelper.GetTextOrFallback(key, fallbacks[teamIndex]);
+    }
+
+    private static string? DescribeBuilderToggle(int point)
+    {
+        int linkOffset = point - 6000;
+
+        List<BuilderToggle>? activeToggles = GetActiveBuilderToggles();
+        if (activeToggles is null || activeToggles.Count == 0)
+        {
+            return null;
+        }
+
+        int startIndex = 12 * BuilderToggleLoader.BuilderTogglePage;
+        int toggleListIndex = startIndex + linkOffset;
+
+        if (toggleListIndex < 0 || toggleListIndex >= activeToggles.Count)
+        {
+            return null;
+        }
+
+        string displayValue = activeToggles[toggleListIndex].DisplayValue();
+        if (string.IsNullOrWhiteSpace(displayValue))
+        {
+            return null;
+        }
+
+        int totalOnPage = UILinkPointNavigator.Shortcuts.BUILDERACCCOUNT;
+        int positionOnPage = linkOffset + 1;
+        string cleaned = TextSanitizer.Clean(displayValue);
+        return $"{cleaned}, toggle {positionOnPage} of {totalOnPage}";
+    }
+
+    private static List<BuilderToggle>? GetActiveBuilderToggles()
+    {
+        try
+        {
+            return ReflectionCache.BuilderToggleLoaderRef.ActiveBuilderTogglesList?
+                .Invoke(null, null) as List<BuilderToggle>;
+        }
+        catch
+        {
+            return null;
+        }
     }
 
     private static string? DescribeDefenseCounter()
