@@ -8,6 +8,7 @@ using Microsoft.Xna.Framework.Graphics;
 using Microsoft.Xna.Framework.Input;
 using MonoMod.RuntimeDetour;
 using ScreenReaderMod.Common.Services;
+using ScreenReaderMod.Common.Systems.GamepadEmulation;
 using ScreenReaderMod.Common.Systems.ModBrowser;
 using ScreenReaderMod.Common.Systems.ModMenuAccessibility;
 using ScreenReaderMod.Common.Utilities;
@@ -122,6 +123,7 @@ public sealed class BestiaryAccessibilitySystem : ModSystem
     private bool _keyDownWasPressed;
     private bool _keyEnterWasPressed;
     private bool _keySpaceWasPressed;
+    private bool _keyInventorySelectWasPressed;
 
     private NavigationInput _currentInput;
 
@@ -344,6 +346,30 @@ public sealed class BestiaryAccessibilitySystem : ModSystem
         {
             _lastAnnouncedPointId = -1;
             _lastSeenPointId = -1;
+        }
+
+        // When exiting search mode, reset keyboard tracking to prevent stale
+        // key states from firing rapid navigation on the transition frame.
+        // Keys held during search were never tracked, so they'd appear as
+        // "new presses" and cause spam sounds and broken announcements.
+        if (!isSearchActive && wasSearchActive)
+        {
+            ResetInputState();
+            _lastAnnouncedPointId = -1;
+            _lastSeenPointId = -1;
+            Mod.Logger.Info($"[{SystemLogName}] Exited search mode, reset input state");
+
+            // Skip input processing this frame to let key states settle.
+            // ConfigureGamepadPoints still needs to run so focus can be set.
+            try
+            {
+                ConfigureGamepadPoints(menuState);
+            }
+            catch (Exception ex)
+            {
+                Mod.Logger.Warn($"[{SystemLogName}] Error configuring points on search exit: {ex}");
+            }
+            return;
         }
 
         // In search mode without gamepad, skip navigation processing
@@ -630,9 +656,17 @@ public sealed class BestiaryAccessibilitySystem : ModSystem
             bool enterNow = kbState.IsKeyDown(Keys.Enter);
             bool spaceNow = kbState.IsKeyDown(Keys.Space);
 
+            // Check gamepad emulation InventorySelect keybind (I key by default)
+            bool inventorySelectNow = false;
+            if (GamepadEmulationKeybinds.InventorySelect is { } selectKeybind)
+            {
+                inventorySelectNow = selectKeybind.Current || VirtualTriggerService.IsKeybindPressedRaw(selectKeybind);
+            }
+
             if (!input.ActionPressed)
             {
-                if ((enterNow && !_keyEnterWasPressed) || (spaceNow && !_keySpaceWasPressed))
+                if ((enterNow && !_keyEnterWasPressed) || (spaceNow && !_keySpaceWasPressed) ||
+                    (inventorySelectNow && !_keyInventorySelectWasPressed))
                 {
                     input.ActionPressed = true;
                 }
@@ -640,6 +674,7 @@ public sealed class BestiaryAccessibilitySystem : ModSystem
 
             _keyEnterWasPressed = enterNow;
             _keySpaceWasPressed = spaceNow;
+            _keyInventorySelectWasPressed = inventorySelectNow;
         }
 
         input.HasNavigation = input.Left || input.Right || input.Up || input.Down;
@@ -664,6 +699,7 @@ public sealed class BestiaryAccessibilitySystem : ModSystem
         _keyDownWasPressed = false;
         _keyEnterWasPressed = false;
         _keySpaceWasPressed = false;
+        _keyInventorySelectWasPressed = false;
     }
 
     #endregion
