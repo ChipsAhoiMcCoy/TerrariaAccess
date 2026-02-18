@@ -97,8 +97,8 @@ internal sealed class AnnouncementGate
             return false;
         }
 
-        // Check suppression
-        if (IsSuppressed)
+        // Check suppression (force bypasses both suppression and deduplication)
+        if (!force && IsSuppressed)
         {
             ScreenReaderMod.Instance?.Logger.Debug($"[AnnouncementGate] Suppressed: '{text}'");
             return false;
@@ -124,6 +124,15 @@ internal sealed class AnnouncementGate
         }
 
         return true;
+    }
+
+    /// <summary>
+    /// Clear frame-based suppression. Call when the user takes an explicit action
+    /// (e.g. navigation) that should always be announced regardless of prior suppression.
+    /// </summary>
+    public void ClearFrameSuppression()
+    {
+        _suppressFrames = 0;
     }
 
     /// <summary>

@@ -177,6 +177,7 @@ internal sealed class ModConfigEditHandler
         {
             _currentElementIndex = newIndex;
             _sliderState.ClearElementTracking();
+            _gate.ClearFrameSuppression();
             AnnounceCurrentElement(isMenuContext, menuEventSink);
             SoundEngine.PlaySound(SoundID.MenuTick);
         }
@@ -203,16 +204,16 @@ internal sealed class ModConfigEditHandler
         // Try toggle boolean
         if (ConfigSliderHandler.TryToggleBoolean(element))
         {
-            _gate.SuppressForFrames(30);
             AnnounceValueOnly(element, isMenuContext, menuEventSink);
+            _gate.SuppressForFrames(30);
             return;
         }
 
         // Try cycle enum
         if (ConfigSliderHandler.TryCycleEnum(element))
         {
-            _gate.SuppressForFrames(30);
             AnnounceValueOnly(element, isMenuContext, menuEventSink);
+            _gate.SuppressForFrames(30);
             return;
         }
 
@@ -220,8 +221,8 @@ internal sealed class ModConfigEditHandler
         if (ConfigSliderHandler.TryInvokeClick(element))
         {
             SoundEngine.PlaySound(SoundID.MenuTick);
-            _gate.SuppressForFrames(30);
             AnnounceCurrentElement(isMenuContext, menuEventSink);
+            _gate.SuppressForFrames(30);
         }
     }
 
