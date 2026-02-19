@@ -45,7 +45,10 @@ public sealed partial class GuidanceSystem
     private static readonly List<SweepTarget> SweepOrder = new();
     private static int _sweepCursor;
     private static int _nextSweepFrame;
-    private const int SweepIntervalFrames = 10;
+    private static bool _sweepCycleActive;
+    private const int TargetSweepDurationFrames = 60;  // ~1 second at 60 FPS
+    private const int MinSweepIntervalFrames = 3;      // ~50ms floor so tones stay distinct
+    private const int SweepCycleGapFrames = 15;        // ~250ms pause between cycles
 
     private readonly struct SweepTarget
     {
@@ -132,6 +135,7 @@ public sealed partial class GuidanceSystem
         SweepOrder.Clear();
         _sweepCursor = 0;
         _nextSweepFrame = 0;
+        _sweepCycleActive = false;
         ResetProximityProgress();
         ClearCategoryAnnouncement();
         _lastAnnouncedCategory = SelectionMode.None;

@@ -57,9 +57,14 @@ public sealed partial class InGameNarrationSystem
         private readonly Dictionary<TrackedInteractableKey, int> _nextCueFrame = new();
         private readonly List<SoundEffectInstance> _liveInstances = new();
 
+        private const int TargetSweepDurationFrames = 60;  // ~1 second at 60 FPS
+        private const int MinSweepStepFrames = 3;          // ~50ms floor so tones stay distinct
+        private const int SweepCycleGapFrames = 15;        // ~250ms pause between cycles
+
         private int _ticksUntilNextScan;
         private int _nextSweepFrame;
         private int _sweepCursor;
+        private bool _sweepCycleActive;
         private bool _isEnabled;
 
         public WorldInteractableTracker()
@@ -293,49 +298,54 @@ public sealed partial class InGameNarrationSystem
 
             _visibleThisFrame.Clear();
 
-            int limit = _distanceScratch.Count;
-            if (limit <= 0)
-            {
-                ResetSweepSchedule();
-                TrimInactiveKeys();
-                CleanupFinishedInstances();
-                return;
-            }
-
-            _sweepOrder.Clear();
-            _sweepOrder.AddRange(_distanceScratch);
-            _sweepOrder.Sort(static (left, right) =>
-            {
-                int compareX = left.Candidate.WorldPosition.X.CompareTo(right.Candidate.WorldPosition.X);
-                if (compareX != 0)
-                {
-                    return compareX;
-                }
-
-                int compareY = left.Candidate.WorldPosition.Y.CompareTo(right.Candidate.WorldPosition.Y);
-                if (compareY != 0)
-                {
-                    return compareY;
-                }
-
-                return left.DistanceTiles.CompareTo(right.DistanceTiles);
-            });
-
-            if (_sweepOrder.Count > limit)
-            {
-                _sweepOrder.RemoveRange(limit, _sweepOrder.Count - limit);
-            }
-
-            bool orderChanged = SyncSweepOrder();
-            foreach (CandidateDistance entry in _sweepOrder)
+            // Track arrival state for all currently-visible items regardless of sweep cycle
+            foreach (CandidateDistance entry in _distanceScratch)
             {
                 _visibleThisFrame.Add(entry.Candidate.Key);
                 UpdateArrivalState(entry);
             }
 
-            if (orderChanged)
+            // Snapshot the sweep order only when starting a new cycle.
+            // During an active cycle, play through the existing snapshot so
+            // player movement doesn't cause jitter or restart mid-sweep.
+            if (!_sweepCycleActive)
             {
-                StartNewSweepWindow();
+                if (_distanceScratch.Count == 0)
+                {
+                    ResetSweepSchedule();
+                    TrimInactiveKeys();
+                    CleanupFinishedInstances();
+                    return;
+                }
+
+                _sweepOrder.Clear();
+                _sweepOrder.AddRange(_distanceScratch);
+                _sweepOrder.Sort(static (left, right) =>
+                {
+                    int compareX = left.Candidate.WorldPosition.X.CompareTo(right.Candidate.WorldPosition.X);
+                    if (compareX != 0)
+                    {
+                        return compareX;
+                    }
+
+                    int compareY = left.Candidate.WorldPosition.Y.CompareTo(right.Candidate.WorldPosition.Y);
+                    if (compareY != 0)
+                    {
+                        return compareY;
+                    }
+
+                    return left.DistanceTiles.CompareTo(right.DistanceTiles);
+                });
+
+                _currentSweepKeys.Clear();
+                foreach (CandidateDistance entry in _sweepOrder)
+                {
+                    _currentSweepKeys.Add(entry.Candidate.Key);
+                }
+
+                _sweepCursor = 0;
+                _sweepCycleActive = true;
+                _emittedThisSweep.Clear();
             }
 
             EmitNextSweepCue(playerCenter);
@@ -410,13 +420,9 @@ public sealed partial class InGameNarrationSystem
         {
             if (_sweepOrder.Count == 0)
             {
+                _sweepCycleActive = false;
                 _emittedThisSweep.Clear();
                 return;
-            }
-
-            if (_sweepCursor >= _sweepOrder.Count)
-            {
-                _sweepCursor = 0;
             }
 
             if (Main.GameUpdateCount < (uint)Math.Max(0, _nextSweepFrame))
@@ -424,71 +430,39 @@ public sealed partial class InGameNarrationSystem
                 return;
             }
 
-            if (_sweepCursor == 0 && _emittedThisSweep.Count > 0)
+            // Cycle complete — pause briefly then start a fresh snapshot
+            if (_sweepCursor >= _sweepOrder.Count)
             {
+                _sweepCycleActive = false;
                 _emittedThisSweep.Clear();
+                _nextSweepFrame = ScheduleNextFrame(SweepCycleGapFrames);
+                return;
             }
 
             CandidateDistance entry = _sweepOrder[_sweepCursor];
             if (_emittedThisSweep.Contains(entry.Candidate.Key))
             {
-                _sweepCursor = (_sweepCursor + 1) % _sweepOrder.Count;
+                _sweepCursor++;
                 return;
             }
 
             PlayCue(playerCenter, entry, isPrimaryCue: true);
 
             _emittedThisSweep.Add(entry.Candidate.Key);
+            _sweepCursor++;
 
+            // Dynamic interval: target ~1 second total sweep, with a minimum floor
             int delay = ComputeSweepStepDelay(entry, _sweepOrder.Count);
             _nextSweepFrame = delay <= 0 ? 0 : ScheduleNextFrame(delay);
-            _sweepCursor = (_sweepCursor + 1) % _sweepOrder.Count;
-            if (_sweepCursor == 0)
-            {
-                _emittedThisSweep.Clear();
-            }
         }
 
-        private bool SyncSweepOrder()
-        {
-            bool changed = _sweepOrder.Count != _currentSweepKeys.Count;
-            if (!changed)
-            {
-                for (int i = 0; i < _sweepOrder.Count; i++)
-                {
-                    if (!_sweepOrder[i].Candidate.Key.Equals(_currentSweepKeys[i]))
-                    {
-                        changed = true;
-                        break;
-                    }
-                }
-            }
 
-            if (changed)
-            {
-                _currentSweepKeys.Clear();
-                foreach (CandidateDistance entry in _sweepOrder)
-                {
-                    _currentSweepKeys.Add(entry.Candidate.Key);
-                }
 
-                _sweepCursor = 0;
-            }
-            else if (_sweepCursor >= _sweepOrder.Count)
-            {
-                _sweepCursor = 0;
-            }
-
-            return changed;
-        }
 
         private static int ComputeSweepStepDelay(CandidateDistance entry, int sweepCount)
         {
-            InteractableCueProfile profile = entry.Candidate.Profile;
-            int targetSweepFrames = Math.Max(profile.MinIntervalFrames, profile.MaxIntervalFrames);
-            int interval = targetSweepFrames / Math.Max(1, sweepCount);
-            interval = Math.Clamp(interval, profile.MinIntervalFrames, profile.MaxIntervalFrames);
-            return interval;
+            int interval = TargetSweepDurationFrames / Math.Max(1, sweepCount);
+            return Math.Max(MinSweepStepFrames, interval);
         }
 
         private void TrimInactiveKeys()
@@ -692,6 +666,7 @@ public sealed partial class InGameNarrationSystem
             _emittedThisSweep.Clear();
             _nextSweepFrame = 0;
             _sweepCursor = 0;
+            _sweepCycleActive = false;
         }
 
         private void ClearAllCueSchedules()
@@ -700,12 +675,8 @@ public sealed partial class InGameNarrationSystem
             _nextCueFrame.Clear();
         }
 
-        private void StartNewSweepWindow()
-        {
-            _emittedThisSweep.Clear();
-            _sweepCursor = 0;
-            _nextSweepFrame = (int)Main.GameUpdateCount;
-        }
+
+
 
         private static int ScheduleNextFrame(int delayFrames)
         {

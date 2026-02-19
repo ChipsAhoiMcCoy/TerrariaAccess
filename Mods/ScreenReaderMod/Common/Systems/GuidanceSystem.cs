@@ -135,6 +135,9 @@ public sealed partial class GuidanceSystem : ModSystem
                 return;
             }
 
+            // Not in sweep mode - reset cycle so next sweep starts fresh
+            _sweepCycleActive = false;
+
             if (!TryGetCurrentTrackingTarget(player, out Vector2 targetPosition, out string arrivalLabel))
             {
                 _nextPingUpdateFrame = -1;
@@ -225,10 +228,23 @@ public sealed partial class GuidanceSystem : ModSystem
 
     private static void UpdateSweepPings(Player player)
     {
-        RefreshSweepOrder(player);
+        // Snapshot the sweep order once per cycle so player movement doesn't
+        // cause jitter or restart the sweep mid-cycle.
+        if (!_sweepCycleActive)
+        {
+            RefreshSweepOrder(player);
+            if (SweepOrder.Count == 0)
+            {
+                return;
+            }
+
+            _sweepCursor = 0;
+            _sweepCycleActive = true;
+        }
 
         if (SweepOrder.Count == 0)
         {
+            _sweepCycleActive = false;
             return;
         }
 
@@ -237,9 +253,12 @@ public sealed partial class GuidanceSystem : ModSystem
             return;
         }
 
+        // Cycle complete - pause briefly then start a fresh snapshot
         if (_sweepCursor >= SweepOrder.Count)
         {
-            _sweepCursor = 0;
+            _sweepCycleActive = false;
+            _nextSweepFrame = (int)Main.GameUpdateCount + SweepCycleGapFrames;
+            return;
         }
 
         SweepTarget target = SweepOrder[_sweepCursor];
@@ -255,12 +274,10 @@ public sealed partial class GuidanceSystem : ModSystem
         }
 
         _sweepCursor++;
-        if (_sweepCursor >= SweepOrder.Count)
-        {
-            _sweepCursor = 0;
-        }
 
-        _nextSweepFrame = (int)Main.GameUpdateCount + SweepIntervalFrames;
+        // Dynamic interval: target ~1 second total sweep, with a minimum floor
+        int interval = Math.Max(MinSweepIntervalFrames, TargetSweepDurationFrames / SweepOrder.Count);
+        _nextSweepFrame = (int)Main.GameUpdateCount + interval;
     }
 
     private static void RefreshSweepOrder(Player player)
