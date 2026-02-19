@@ -138,6 +138,10 @@ internal sealed class CursorDescriptorService
         if (IsChestTile(tileType))
         {
             name = ResolveChestTypeName(tile, tileType);
+            if (IsChestLocked(tileX, tileY) && (name == null || !name.Contains("Locked", StringComparison.OrdinalIgnoreCase)))
+            {
+                name = $"Locked {name ?? "Chest"}";
+            }
             OverrideChestName(tileX, tileY, tileType, ref name);
             name = AppendTileStateLabels(tile, name);
             descriptor = BuildDescriptor(tileType, name);
@@ -485,7 +489,30 @@ internal sealed class CursorDescriptorService
     }
 
     /// <summary>
+    /// Checks if the chest at the given tile coordinates is locked.
+    /// Wraps Terraria's Chest.IsLocked with safety checks.
+    /// </summary>
+    private static bool IsChestLocked(int tileX, int tileY)
+    {
+        if (!WorldGen.InWorld(tileX, tileY))
+        {
+            return false;
+        }
+
+        try
+        {
+            return Chest.IsLocked(tileX, tileY);
+        }
+        catch
+        {
+            return false;
+        }
+    }
+
+    /// <summary>
     /// Resolves the proper chest type name (e.g., "Wooden Chest", "Frozen Chest") using item lookup then map lookup.
+    /// For locked chest styles, falls back to the unlocked counterpart's name since locked variants
+    /// typically have no corresponding item and may return a generic map name.
     /// </summary>
     private static string ResolveChestTypeName(Tile tile, int tileType)
     {
@@ -493,7 +520,30 @@ internal sealed class CursorDescriptorService
         int frameWidth = tileType == TileID.Dressers ? 54 : 36;
         int style = tile.TileFrameX / frameWidth;
 
-        // First try item-based lookup for more specific names (e.g., "Gold Chest" vs just "Chest")
+        string? name = TryResolveChestNameForStyle(tileType, style);
+
+        // For locked chest styles, the direct lookup may return only a generic name ("Chest")
+        // because no item creates a locked chest. Try the unlocked counterpart to get the
+        // specific chest type name (e.g., "Shadow Chest" instead of "Chest").
+        string genericFallback = tileType == TileID.Dressers ? "Dresser" : "Chest";
+        if ((string.IsNullOrWhiteSpace(name) || string.Equals(name, genericFallback, StringComparison.OrdinalIgnoreCase))
+            && TryGetUnlockedChestStyle(tileType, style, out int unlockedStyle))
+        {
+            string? unlockedName = TryResolveChestNameForStyle(tileType, unlockedStyle);
+            if (!string.IsNullOrWhiteSpace(unlockedName))
+            {
+                return unlockedName;
+            }
+        }
+
+        return !string.IsNullOrWhiteSpace(name) ? name : genericFallback;
+    }
+
+    /// <summary>
+    /// Tries to resolve a chest name for a specific tile type and style via item lookup then map lookup.
+    /// </summary>
+    private static string? TryResolveChestNameForStyle(int tileType, int style)
+    {
         if (TryResolveStyleItemType(tileType, style, out int itemType) && itemType > ItemID.None)
         {
             string itemName = Lang.GetItemNameValue(itemType);
@@ -503,7 +553,6 @@ internal sealed class CursorDescriptorService
             }
         }
 
-        // Fall back to map lookup
         try
         {
             int lookup = MapHelper.TileToLookup(tileType, style);
@@ -515,11 +564,50 @@ internal sealed class CursorDescriptorService
         }
         catch
         {
-            // Fall through to default
+            // Fall through
         }
 
-        // Fallback to generic name
-        return tileType == TileID.Dressers ? "Dresser" : "Chest";
+        return null;
+    }
+
+    /// <summary>
+    /// Maps locked chest tile styles to their unlocked counterparts.
+    /// Based on Terraria's Chest.Unlock frame offset logic.
+    /// </summary>
+    private static bool TryGetUnlockedChestStyle(int tileType, int lockedStyle, out int unlockedStyle)
+    {
+        unlockedStyle = -1;
+
+        if (tileType == TileID.Containers)
+        {
+            switch (lockedStyle)
+            {
+                case 2:  // Locked Gold Chest → Gold Chest
+                case 4:  // Locked Shadow Chest → Shadow Chest
+                case 36: // Locked Dungeon Chest variant
+                case 38: // Locked Dungeon Chest variant
+                case 40: // Locked Dungeon Chest variant
+                    unlockedStyle = lockedStyle - 1;
+                    return true;
+                case 23: // Locked Jungle Chest
+                case 24: // Locked Corruption Chest
+                case 25: // Locked Crimson Chest
+                case 26: // Locked Hallowed Chest
+                case 27: // Locked Frozen Chest
+                    unlockedStyle = lockedStyle - 5;
+                    return true;
+            }
+        }
+        else if (tileType == TileID.Containers2)
+        {
+            if (lockedStyle == 13) // Locked Desert Chest
+            {
+                unlockedStyle = lockedStyle - 1;
+                return true;
+            }
+        }
+
+        return false;
     }
 
     private static bool TryDescribeBanner(Tile tile, out string? name)

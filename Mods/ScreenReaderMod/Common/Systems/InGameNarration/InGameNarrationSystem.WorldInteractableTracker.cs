@@ -926,6 +926,19 @@ public sealed partial class InGameNarrationSystem
                 return descriptor.Name;
             }
 
+            // Fallback: at minimum distinguish locked from unlocked
+            try
+            {
+                if (Chest.IsLocked(anchor.X, anchor.Y))
+                {
+                    return "Locked Chest";
+                }
+            }
+            catch
+            {
+                // Chest.IsLocked may fail for edge cases; fall through to generic
+            }
+
             return "Chest";
         }
     }
