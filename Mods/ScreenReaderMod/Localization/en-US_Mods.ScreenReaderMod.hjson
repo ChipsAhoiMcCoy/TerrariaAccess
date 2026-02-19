@@ -67,21 +67,6 @@ Mods: {
 					Tooltip: When enabled, keyboard inputs are translated to gamepad inputs for UI navigation. Disable this if you are using a physical controller. Toggle with F6.
 				}
 
-				TerrainProfileEnabled: {
-					Label: Terrain Profile
-					Tooltip: When enabled, a continuous tone tracks the ground depth ahead while moving. Lower pitch means a deeper drop ahead. The tone fades when you stop.
-				}
-
-				TerrainProfileScanRange: {
-					Label: Terrain Profile Scan Range
-					Tooltip: How many tiles ahead to scan for the terrain profile tone. Lower values react to closer terrain only, higher values detect drops and walls further ahead.
-				}
-
-				TerrainProfileVolume: {
-					Label: Terrain Profile Volume
-					Tooltip: Adjusts the volume of the terrain profile tone that indicates ground depth ahead of you.
-				}
-
 				CavitySonarEnabled: {
 					Label: Cavity Sonar
 					Tooltip: When enabled, press the Cavity Sonar keybind to scan the area around you. A left-to-right sweep plays tones for empty spaces, revealing cave shapes and openings.
@@ -573,21 +558,6 @@ Configs: {
 
 		GamepadEmulationEnabled: {
 			Label: Gamepad Emulation Enabled
-			Tooltip: ""
-		}
-
-		TerrainProfileEnabled: {
-			Label: Terrain Profile
-			Tooltip: ""
-		}
-
-		TerrainProfileScanRange: {
-			Label: Terrain Profile Scan Range
-			Tooltip: ""
-		}
-
-		TerrainProfileVolume: {
-			Label: Terrain Profile Volume
 			Tooltip: ""
 		}
 

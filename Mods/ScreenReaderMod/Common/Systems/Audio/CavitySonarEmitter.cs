@@ -51,7 +51,7 @@ internal sealed class CavitySonarEmitter : AudioEmitterBase
 
     /// <summary>
     /// Whether a sonar scan is currently in progress.
-    /// Used by TerrainProfileEmitter to suppress during scan.
+    /// Used by other emitters to suppress during scan.
     /// </summary>
     internal bool IsScanning => _isScanning;
 

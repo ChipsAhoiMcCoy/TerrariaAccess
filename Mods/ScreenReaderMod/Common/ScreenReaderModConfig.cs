@@ -74,19 +74,6 @@ public class ScreenReaderModConfig : ModConfig
 
     // Terrain sonification
     [DefaultValue(true)]
-    public bool TerrainProfileEnabled { get; set; } = true;
-
-    [DefaultValue(16)]
-    [Range(4, 32)]
-    [Slider]
-    public int TerrainProfileScanRange { get; set; } = 16;
-
-    [DefaultValue(1f)]
-    [Range(0f, 1f)]
-    [Slider]
-    public float TerrainProfileVolume { get; set; } = 1f;
-
-    [DefaultValue(true)]
     public bool CavitySonarEnabled { get; set; } = true;
 
     [DefaultValue(1f)]

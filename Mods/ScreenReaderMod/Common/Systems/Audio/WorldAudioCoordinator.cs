@@ -17,7 +17,6 @@ internal sealed class WorldAudioCoordinator
     private readonly ClimbEmitter _climbEmitter;
     private readonly BiomeEmitter _biomeEmitter;
     private readonly MultiplayerFootstepEmitter _multiplayerFootstepEmitter;
-    private readonly TerrainProfileEmitter _terrainProfileEmitter;
     private readonly CavitySonarEmitter _cavitySonarEmitter;
     private readonly CadenceGate _cadenceGate = new();
 
@@ -29,7 +28,6 @@ internal sealed class WorldAudioCoordinator
         _biomeEmitter = new BiomeEmitter();
         _multiplayerFootstepEmitter = new MultiplayerFootstepEmitter();
         _cavitySonarEmitter = new CavitySonarEmitter();
-        _terrainProfileEmitter = new TerrainProfileEmitter(_cavitySonarEmitter);
     }
 
     public WorldAudioCoordinator(
@@ -38,8 +36,7 @@ internal sealed class WorldAudioCoordinator
         ClimbEmitter climbEmitter,
         BiomeEmitter biomeEmitter,
         MultiplayerFootstepEmitter multiplayerFootstepEmitter,
-        CavitySonarEmitter cavitySonarEmitter,
-        TerrainProfileEmitter terrainProfileEmitter)
+        CavitySonarEmitter cavitySonarEmitter)
     {
         _hostileStaticEmitter = hostileStaticEmitter;
         _footstepEmitter = footstepEmitter;
@@ -47,7 +44,6 @@ internal sealed class WorldAudioCoordinator
         _biomeEmitter = biomeEmitter;
         _multiplayerFootstepEmitter = multiplayerFootstepEmitter;
         _cavitySonarEmitter = cavitySonarEmitter;
-        _terrainProfileEmitter = terrainProfileEmitter;
     }
 
     /// <summary>
@@ -68,7 +64,6 @@ internal sealed class WorldAudioCoordinator
         Run("climb", 1, () => _climbEmitter.Update(player));
         Run("biome", 12, () => _biomeEmitter.Update(player));
         Run("multiplayer-footstep", 1, () => _multiplayerFootstepEmitter.Update(player));
-        Run("terrain-profile", 2, () => _terrainProfileEmitter.Update(player));
         Run("cavity-sonar", 1, () => _cavitySonarEmitter.Update(player));
     }
 
@@ -82,7 +77,6 @@ internal sealed class WorldAudioCoordinator
         _climbEmitter.Reset();
         _biomeEmitter.Reset();
         _multiplayerFootstepEmitter.Reset();
-        _terrainProfileEmitter.Reset();
         _cavitySonarEmitter.Reset();
         _cadenceGate.Reset();
     }
