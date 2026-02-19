@@ -16,6 +16,7 @@ namespace ScreenReaderMod.Common.Systems.Audio;
 internal sealed class FootstepEmitter : AudioEmitterBase
 {
     private const float MinLandingDisplacement = 6f;
+    private const float ElevationPitchShiftHz = 20f; // Pitch shift per tile of elevation change
 
     // Edge detection configuration
     private const int EdgeScanRangeTiles = 18;      // How far ahead to scan
@@ -103,11 +104,14 @@ internal sealed class FootstepEmitter : AudioEmitterBase
             return;
         }
 
+        // Compute elevation change before updating last tile.
+        // Terraria Y increases downward, so lastY > currentY means player went up.
+        int elevationDelta = (_lastFootTile.Y >= 0) ? _lastFootTile.Y - footTile.Y : 0;
         _lastFootTile = footTile;
         _lastFootX = footX;
         bool onPlatform = IsPlatform(footTile.X, footTile.Y);
         bool onHarmfulTile = IsHarmfulTile(player, footTile);
-        PlayStep(player, onPlatform, onHarmfulTile);
+        PlayStep(player, onPlatform, onHarmfulTile, elevationDelta);
     }
 
     public override void Reset()
@@ -141,9 +145,9 @@ internal sealed class FootstepEmitter : AudioEmitterBase
         return new Point(tileX, tileY);
     }
 
-    private void PlayStep(Player player, bool onPlatform, bool onHarmfulTile)
+    private void PlayStep(Player player, bool onPlatform, bool onHarmfulTile, int elevationDelta)
     {
-        ComputeStepAudio(player, onPlatform, out float frequency, out float loudness);
+        ComputeStepAudio(player, onPlatform, elevationDelta, out float frequency, out float loudness);
         float configVolume = ScreenReaderModConfig.Instance?.FootstepVolume ?? 1f;
         FootstepToneProvider.Play(frequency, loudness * configVolume, useTriangleWave: onHarmfulTile);
     }
@@ -329,13 +333,22 @@ internal sealed class FootstepEmitter : AudioEmitterBase
         return false;
     }
 
-    private static void ComputeStepAudio(Player player, bool onPlatform, out float frequency, out float loudness)
+    private static void ComputeStepAudio(Player player, bool onPlatform, int elevationDelta, out float frequency, out float loudness)
     {
         float horizontalSpeed = Math.Abs(player.velocity.X);
         float normalized = MathHelper.Clamp(horizontalSpeed / 6f, 0f, 1f);
         frequency = onPlatform
             ? MathHelper.Lerp(360f, 430f, normalized)
             : MathHelper.Lerp(190f, 220f, normalized);
+
+        // Shift pitch when elevation changes: up = higher pitch, down = lower pitch.
+        // 20 Hz per tile, capped at 3 tiles (60 Hz max shift).
+        if (elevationDelta != 0)
+        {
+            int clampedDelta = Math.Clamp(elevationDelta, -3, 3);
+            frequency += ElevationPitchShiftHz * clampedDelta;
+        }
+
         float baseVolume = 0.45f;
         loudness = SoundLoudnessUtility.ApplyDistanceFalloff(baseVolume, distanceTiles: 0f, referenceTiles: 1f);
     }
