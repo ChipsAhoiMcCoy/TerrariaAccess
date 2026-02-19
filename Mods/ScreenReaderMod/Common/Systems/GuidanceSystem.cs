@@ -994,8 +994,7 @@ public sealed partial class GuidanceSystem : ModSystem
                     _selectedNpcIndex = -1;
                     ClearCategoryAnnouncement();
                     RescheduleGuidancePing(player);
-                    int rangeTiles = (int)MathF.Round(ScanRangeTiles);
-                    AnnounceCategorySelection("NPCs", $"No nearby NPCs within {rangeTiles} tiles.");
+                    AnnounceCategorySelection("NPCs", "No NPCs detected nearby.");
                     return;
                 }
 
@@ -1080,8 +1079,7 @@ public sealed partial class GuidanceSystem : ModSystem
                     _selectedCritterIndex = -1;
                     ClearCategoryAnnouncement();
                     RescheduleGuidancePing(player);
-                    int rangeTiles = (int)MathF.Round(ScanRangeTiles);
-                    AnnounceCategorySelection("Critters", $"No critters within {rangeTiles} tiles.");
+                    AnnounceCategorySelection("Critters", "No critters detected nearby.");
                     return;
                 }
 
@@ -1188,8 +1186,7 @@ public sealed partial class GuidanceSystem : ModSystem
                     _selectedNpcIndex = -1;
                     ClearCategoryAnnouncement();
                     RescheduleGuidancePing(player);
-                    int rangeTiles = (int)MathF.Round(ScanRangeTiles);
-                    AnnounceCategorySelection("NPCs", $"No NPCs within {rangeTiles} tiles.");
+                    AnnounceCategorySelection("NPCs", "No NPCs detected nearby.");
                     return;
                 }
 
@@ -1314,8 +1311,7 @@ public sealed partial class GuidanceSystem : ModSystem
                     _selectedCritterIndex = -1;
                     ClearCategoryAnnouncement();
                     RescheduleGuidancePing(player);
-                    int rangeTiles = (int)MathF.Round(ScanRangeTiles);
-                    AnnounceCategorySelection("Critters", $"No critters within {rangeTiles} tiles.");
+                    AnnounceCategorySelection("Critters", "No critters detected nearby.");
                     return;
                 }
 
@@ -1449,9 +1445,8 @@ public sealed partial class GuidanceSystem : ModSystem
 
         if (!TryGetSelectedNpc(player, out NPC npc, out GuidanceEntry entry))
         {
-            int rangeTiles = (int)MathF.Round(ScanRangeTiles);
             ClearCategoryAnnouncement();
-            AnnounceCategorySelection("NPCs", $"No nearby NPCs within {rangeTiles} tiles.");
+            AnnounceCategorySelection("NPCs", "No NPCs detected nearby.");
             return;
         }
 
@@ -1580,9 +1575,8 @@ public sealed partial class GuidanceSystem : ModSystem
 
         if (!TryGetSelectedCritter(player, out GuidanceEntry entry))
         {
-            int rangeTiles = (int)MathF.Round(ScanRangeTiles);
             ClearCategoryAnnouncement();
-            AnnounceCategorySelection("Critters", $"No critters within {rangeTiles} tiles.");
+            AnnounceCategorySelection("Critters", "No critters detected nearby.");
             return;
         }
 

@@ -120,14 +120,7 @@ public sealed partial class GuidanceSystem
 
         if (preservedNpcIndex >= 0 && !NearbyNpcs.Exists(entry => entry.Index == preservedNpcIndex))
         {
-            if (TryCreateNpcEntry(preservedNpcIndex, origin, includeOutOfRange: true, out GuidanceEntry preservedEntry))
-            {
-                NearbyNpcs.Add(preservedEntry);
-            }
-            else
-            {
-                preservedNpcIndex = -1;
-            }
+            preservedNpcIndex = -1;
         }
 
         NearbyNpcs.Sort((left, right) => left.DistanceTiles.CompareTo(right.DistanceTiles));
@@ -364,7 +357,7 @@ public sealed partial class GuidanceSystem
                         continue;
                     }
 
-                    if (TryCreateInteractableEntry(definition, anchor, origin, isPreservedAnchor, out GuidanceEntry entry))
+                    if (TryCreateInteractableEntry(definition, anchor, origin, includeOutOfRange: false, out GuidanceEntry entry))
                     {
                         NearbyInteractables.Add(entry);
                         if (isPreservedAnchor)
@@ -376,9 +369,9 @@ public sealed partial class GuidanceSystem
             }
         }
 
-        if (hasPreservedAnchor && !preservedIncluded && TryCreateInteractableEntryForAnchor(preservedAnchor, origin, includeOutOfRange: true, out GuidanceEntry preservedEntry))
+        if (hasPreservedAnchor && !preservedIncluded)
         {
-            NearbyInteractables.Add(preservedEntry);
+            hasPreservedAnchor = false;
         }
 
         NearbyInteractables.Sort((left, right) => left.DistanceTiles.CompareTo(right.DistanceTiles));
