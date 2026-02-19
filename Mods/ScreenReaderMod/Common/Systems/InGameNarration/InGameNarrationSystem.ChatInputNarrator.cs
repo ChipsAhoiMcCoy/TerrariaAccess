@@ -30,6 +30,10 @@ public sealed partial class InGameNarrationSystem
         {
             if (!ShouldHandle(context.Runtime))
             {
+                if (_chatActive)
+                {
+                    ScreenReaderService.Announce("Chat closed", category: ScreenReaderService.AnnouncementCategory.Default, force: true);
+                }
                 Reset();
                 return;
             }
@@ -38,6 +42,7 @@ public sealed partial class InGameNarrationSystem
 
             if (!_chatActive)
             {
+                ScreenReaderService.Announce("Chat opened", category: category, force: true);
                 _hasHistoryCursor = false;
                 _historyCursor = ChatHistoryService.Count - 1;
             }

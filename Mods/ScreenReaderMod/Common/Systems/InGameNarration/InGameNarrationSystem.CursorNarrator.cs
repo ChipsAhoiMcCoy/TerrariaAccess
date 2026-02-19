@@ -257,7 +257,8 @@ public sealed partial class InGameNarrationSystem
             }
 
             if (Main.gameMenu || Main.ingameOptionsWindow || Main.InGameUI?.CurrentState is not null ||
-                PlayerInput.UsingGamepadUI || AccessibleWireColorMenu.Instance.IsOpen)
+                PlayerInput.UsingGamepadUI || AccessibleWireColorMenu.Instance.IsOpen ||
+                Main.drawingPlayerChat || Main.editSign || Main.editChest)
             {
                 ResetCursorFeedback();
                 return;
