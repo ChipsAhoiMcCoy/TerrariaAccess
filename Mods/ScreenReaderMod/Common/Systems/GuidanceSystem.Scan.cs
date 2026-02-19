@@ -94,6 +94,17 @@ public sealed partial class GuidanceSystem
         return map;
     }
 
+    private static int CompareGuidanceEntries(GuidanceEntry left, GuidanceEntry right)
+    {
+        int cmp = left.DistanceTiles.CompareTo(right.DistanceTiles);
+        if (cmp != 0) return cmp;
+        cmp = string.Compare(left.DisplayName, right.DisplayName, StringComparison.OrdinalIgnoreCase);
+        if (cmp != 0) return cmp;
+        cmp = left.WorldPosition.X.CompareTo(right.WorldPosition.X);
+        if (cmp != 0) return cmp;
+        return left.WorldPosition.Y.CompareTo(right.WorldPosition.Y);
+    }
+
     private static void RefreshNpcEntries(Player player)
     {
         int preservedNpcIndex = -1;
@@ -123,7 +134,7 @@ public sealed partial class GuidanceSystem
             preservedNpcIndex = -1;
         }
 
-        NearbyNpcs.Sort((left, right) => left.DistanceTiles.CompareTo(right.DistanceTiles));
+        NearbyNpcs.Sort(CompareGuidanceEntries);
 
         if (NearbyNpcs.Count == 0)
         {
@@ -176,7 +187,7 @@ public sealed partial class GuidanceSystem
             return;
         }
 
-        NearbyPlayers.Sort((left, right) => left.DistanceTiles.CompareTo(right.DistanceTiles));
+        NearbyPlayers.Sort(CompareGuidanceEntries);
 
         if (preservedPlayerIndex >= 0)
         {
@@ -374,7 +385,7 @@ public sealed partial class GuidanceSystem
             hasPreservedAnchor = false;
         }
 
-        NearbyInteractables.Sort((left, right) => left.DistanceTiles.CompareTo(right.DistanceTiles));
+        NearbyInteractables.Sort(CompareGuidanceEntries);
 
         if (NearbyInteractables.Count == 0)
         {
@@ -655,7 +666,7 @@ public sealed partial class GuidanceSystem
             NearbyDroppedItems.Add(GuidanceEntry.CreateDroppedItem(i, displayName, itemCenter, distanceTiles));
         }
 
-        NearbyDroppedItems.Sort((left, right) => left.DistanceTiles.CompareTo(right.DistanceTiles));
+        NearbyDroppedItems.Sort(CompareGuidanceEntries);
 
         if (NearbyDroppedItems.Count == 0)
         {
@@ -730,7 +741,7 @@ public sealed partial class GuidanceSystem
             NearbyCritters.Add(GuidanceEntry.CreateCritter(i, displayName, npc.Center, distanceTiles));
         }
 
-        NearbyCritters.Sort((left, right) => left.DistanceTiles.CompareTo(right.DistanceTiles));
+        NearbyCritters.Sort(CompareGuidanceEntries);
 
         if (NearbyCritters.Count == 0)
         {
@@ -823,7 +834,7 @@ public sealed partial class GuidanceSystem
             }
         }
 
-        NearbyPlantlife.Sort((left, right) => left.DistanceTiles.CompareTo(right.DistanceTiles));
+        NearbyPlantlife.Sort(CompareGuidanceEntries);
 
         if (NearbyPlantlife.Count == 0)
         {
@@ -937,7 +948,7 @@ public sealed partial class GuidanceSystem
             NearbyHostileMobs.Add(GuidanceEntry.CreateHostileMob(i, displayName, npc.Center, distanceTiles));
         }
 
-        NearbyHostileMobs.Sort((left, right) => left.DistanceTiles.CompareTo(right.DistanceTiles));
+        NearbyHostileMobs.Sort(CompareGuidanceEntries);
 
         if (NearbyHostileMobs.Count == 0)
         {

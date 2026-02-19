@@ -1296,19 +1296,11 @@ public sealed partial class GuidanceSystem : ModSystem
                     return;
                 }
 
-                if (_selectedDroppedItemIndex < 0)
                 {
-                    // On "All" - always go to first item (index 0) regardless of direction
-                    _selectedDroppedItemIndex = 0;
-                }
-                else
-                {
-                    _selectedDroppedItemIndex += direction;
-                    if (_selectedDroppedItemIndex < 0 || _selectedDroppedItemIndex >= totalItems)
-                    {
-                        // Wrapped - go to "All"
-                        _selectedDroppedItemIndex = -1;
-                    }
+                    int totalSlots = totalItems + 1;
+                    int currentSlot = _selectedDroppedItemIndex + 1;
+                    int nextSlot = Modulo(currentSlot + direction, totalSlots);
+                    _selectedDroppedItemIndex = nextSlot - 1;
                 }
 
                 RescheduleGuidancePing(player);
@@ -1332,25 +1324,11 @@ public sealed partial class GuidanceSystem : ModSystem
                     return;
                 }
 
-                if (_selectedCritterIndex < 0)
                 {
-                    // On "All" - always go to first item (index 0) regardless of direction
-                    // User can then navigate from there
-                    _selectedCritterIndex = 0;
-                }
-                else
-                {
-                    _selectedCritterIndex += direction;
-                    if (_selectedCritterIndex < 0)
-                    {
-                        // Wrapped past first - go to "All"
-                        _selectedCritterIndex = -1;
-                    }
-                    else if (_selectedCritterIndex >= totalCritters)
-                    {
-                        // Wrapped past last - go to "All"
-                        _selectedCritterIndex = -1;
-                    }
+                    int totalSlots = totalCritters + 1;
+                    int currentSlot = _selectedCritterIndex + 1;
+                    int nextSlot = Modulo(currentSlot + direction, totalSlots);
+                    _selectedCritterIndex = nextSlot - 1;
                 }
 
                 RescheduleGuidancePing(player);
@@ -1374,19 +1352,11 @@ public sealed partial class GuidanceSystem : ModSystem
                     return;
                 }
 
-                if (_selectedPlantlifeIndex < 0)
                 {
-                    // On "All" - always go to first item (index 0) regardless of direction
-                    _selectedPlantlifeIndex = 0;
-                }
-                else
-                {
-                    _selectedPlantlifeIndex += direction;
-                    if (_selectedPlantlifeIndex < 0 || _selectedPlantlifeIndex >= totalPlants)
-                    {
-                        // Wrapped - go to "All"
-                        _selectedPlantlifeIndex = -1;
-                    }
+                    int totalSlots = totalPlants + 1;
+                    int currentSlot = _selectedPlantlifeIndex + 1;
+                    int nextSlot = Modulo(currentSlot + direction, totalSlots);
+                    _selectedPlantlifeIndex = nextSlot - 1;
                 }
 
                 RescheduleGuidancePing(player);
