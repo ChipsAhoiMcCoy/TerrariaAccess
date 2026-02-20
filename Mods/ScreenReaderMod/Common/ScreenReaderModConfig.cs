@@ -85,6 +85,15 @@ public class ScreenReaderModConfig : ModConfig
     [Slider]
     public float CavitySonarVolume { get; set; } = 1f;
 
+    // Health heartbeat
+    [DefaultValue(true)]
+    public bool HeartbeatEnabled { get; set; } = true;
+
+    [DefaultValue(1f)]
+    [Range(0f, 1f)]
+    [Slider]
+    public float HeartbeatVolume { get; set; } = 1f;
+
     // Chunk Mining
     [DefaultValue(true)]
     public bool ChunkMinerEnabled { get; set; } = true;

@@ -585,6 +585,16 @@ Configs: {
 			Label: Passage Detection Enabled
 			Tooltip: ""
 		}
+
+		HeartbeatEnabled: {
+			Label: Heartbeat Enabled
+			Tooltip: ""
+		}
+
+		HeartbeatVolume: {
+			Label: Heartbeat Volume
+			Tooltip: ""
+		}
 	}
 
 	EdgeDetectionMode: {
