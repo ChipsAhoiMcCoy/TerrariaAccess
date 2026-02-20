@@ -580,6 +580,11 @@ Configs: {
 			Label: Chunk Miner Max Tiles
 			Tooltip: ""
 		}
+
+		PassageDetectionEnabled: {
+			Label: Passage Detection Enabled
+			Tooltip: ""
+		}
 	}
 
 	EdgeDetectionMode: {

@@ -18,6 +18,7 @@ internal sealed class WorldAudioCoordinator
     private readonly BiomeEmitter _biomeEmitter;
     private readonly MultiplayerFootstepEmitter _multiplayerFootstepEmitter;
     private readonly CavitySonarEmitter _cavitySonarEmitter;
+    private readonly PassageDetectorEmitter _passageDetectorEmitter;
     private readonly CadenceGate _cadenceGate = new();
 
     public WorldAudioCoordinator()
@@ -28,6 +29,7 @@ internal sealed class WorldAudioCoordinator
         _biomeEmitter = new BiomeEmitter();
         _multiplayerFootstepEmitter = new MultiplayerFootstepEmitter();
         _cavitySonarEmitter = new CavitySonarEmitter();
+        _passageDetectorEmitter = new PassageDetectorEmitter();
     }
 
     public WorldAudioCoordinator(
@@ -44,6 +46,7 @@ internal sealed class WorldAudioCoordinator
         _biomeEmitter = biomeEmitter;
         _multiplayerFootstepEmitter = multiplayerFootstepEmitter;
         _cavitySonarEmitter = cavitySonarEmitter;
+        _passageDetectorEmitter = new PassageDetectorEmitter();
     }
 
     /// <summary>
@@ -65,6 +68,7 @@ internal sealed class WorldAudioCoordinator
         Run("biome", 12, () => _biomeEmitter.Update(player));
         Run("multiplayer-footstep", 1, () => _multiplayerFootstepEmitter.Update(player));
         Run("cavity-sonar", 1, () => _cavitySonarEmitter.Update(player));
+        Run("passage-detector", 1, () => _passageDetectorEmitter.Update(player));
     }
 
     /// <summary>
@@ -78,6 +82,7 @@ internal sealed class WorldAudioCoordinator
         _biomeEmitter.Reset();
         _multiplayerFootstepEmitter.Reset();
         _cavitySonarEmitter.Reset();
+        _passageDetectorEmitter.Reset();
         _cadenceGate.Reset();
     }
 
@@ -89,6 +94,7 @@ internal sealed class WorldAudioCoordinator
         _cadenceGate.Reset();
         HostileStaticEmitter.DisposeStaticResources();
         FootstepToneProvider.DisposeStaticResources();
+        PassageDetectorEmitter.DisposeStaticResources();
     }
 
     private void Run(string key, uint intervalFrames, Action action)

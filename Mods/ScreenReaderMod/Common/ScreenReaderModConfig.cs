@@ -72,6 +72,10 @@ public class ScreenReaderModConfig : ModConfig
     [Slider]
     public float CursorVolume { get; set; } = 1f;
 
+    // Passage detection (side tunnel chirps while falling)
+    [DefaultValue(true)]
+    public bool PassageDetectionEnabled { get; set; } = true;
+
     // Terrain sonification
     [DefaultValue(true)]
     public bool CavitySonarEnabled { get; set; } = true;
