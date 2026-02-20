@@ -5,6 +5,7 @@ using Microsoft.Xna.Framework;
 using Microsoft.Xna.Framework.Audio;
 using ScreenReaderMod.Common.Services;
 using Terraria;
+using Terraria.ID;
 
 namespace ScreenReaderMod.Common.Systems.Audio;
 
@@ -22,10 +23,10 @@ internal sealed class PassageDetectorEmitter : AudioEmitterBase
     private const int MinPassageHeight = 3;
 
     /// <summary>
-    /// Minimum downward speed (pixels/frame) to consider the player as falling.
-    /// Terraria Y increases downward, so positive velocity.Y = falling.
+    /// Minimum vertical speed (pixels/frame) to consider the player as moving vertically.
+    /// Checked as absolute value so it triggers for both upward and downward movement.
     /// </summary>
-    private const float MinFallSpeed = 1.5f;
+    private const float MinVerticalSpeed = 1.5f;
 
     /// <summary>
     /// Maximum distance (in tiles) to scan outward from the player's hitbox edge
@@ -37,6 +38,12 @@ internal sealed class PassageDetectorEmitter : AudioEmitterBase
     /// Vertical scan range (tiles above and below the player center) when checking a wall column for gaps.
     /// </summary>
     private const int VerticalScanRange = 6;
+
+    /// <summary>
+    /// Number of consecutive frames the player must be moving vertically before scanning activates.
+    /// Filters out brief velocity spikes from spawning, walking over bumps, etc.
+    /// </summary>
+    private const int MinSustainedFrames = 3;
 
     /// <summary>
     /// Base volume for the passage chirp before config scaling.
@@ -68,9 +75,15 @@ internal sealed class PassageDetectorEmitter : AudioEmitterBase
     private readonly HashSet<(int side, int gapStartY)> _announcedPassages = new();
 
     /// <summary>
-    /// Whether the player was falling on the previous frame, used to reset state on landing.
+    /// Whether the player was moving vertically on the previous frame, used to reset state on stopping.
     /// </summary>
-    private bool _wasFalling;
+    private bool _wasMovingVertically;
+
+    /// <summary>
+    /// Counts consecutive frames of vertical movement. Scanning only activates after
+    /// <see cref="MinSustainedFrames"/> to filter brief velocity spikes.
+    /// </summary>
+    private int _verticalFrameCount;
 
     public override void Update(Player player)
     {
@@ -87,22 +100,31 @@ internal sealed class PassageDetectorEmitter : AudioEmitterBase
             return;
         }
 
-        // Only active while falling (positive Y velocity = downward in Terraria)
-        bool isFalling = player.velocity.Y >= MinFallSpeed;
+        // Active while moving vertically in either direction (falling or rising)
+        bool isMovingVertically = Math.Abs(player.velocity.Y) >= MinVerticalSpeed;
 
-        if (!isFalling)
+        if (!isMovingVertically)
         {
-            if (_wasFalling)
+            if (_wasMovingVertically)
             {
                 _announcedPassages.Clear();
-                _wasFalling = false;
+                _wasMovingVertically = false;
             }
 
+            _verticalFrameCount = 0;
             CleanupFinishedInstances();
             return;
         }
 
-        _wasFalling = true;
+        _verticalFrameCount++;
+        _wasMovingVertically = true;
+
+        // Require sustained vertical movement to filter brief velocity spikes (spawn drops, bumps)
+        if (_verticalFrameCount < MinSustainedFrames)
+        {
+            CleanupFinishedInstances();
+            return;
+        }
 
         Rectangle hitbox = player.Hitbox;
         int playerCenterTileY = hitbox.Center.Y / 16;
@@ -127,7 +149,8 @@ internal sealed class PassageDetectorEmitter : AudioEmitterBase
     public override void Reset()
     {
         _announcedPassages.Clear();
-        _wasFalling = false;
+        _wasMovingVertically = false;
+        _verticalFrameCount = 0;
         StopAllInstances();
     }
 
@@ -304,8 +327,9 @@ internal sealed class PassageDetectorEmitter : AudioEmitterBase
     }
 
     /// <summary>
-    /// Returns true if the tile at the given coordinates is solid (blocks movement).
-    /// Actuated tiles and platforms are not considered solid.
+    /// Returns true if the tile at the given coordinates blocks passage detection.
+    /// This includes solid tiles AND door/gate tiles (even when open), since doorways
+    /// are player-placed structures and should not trigger passage chirps.
     /// </summary>
     private static bool IsSolidAt(int x, int y)
     {
@@ -315,7 +339,16 @@ internal sealed class PassageDetectorEmitter : AudioEmitterBase
             return false;
         }
 
-        return Main.tileSolid[tile.TileType] && !Main.tileSolidTop[tile.TileType];
+        // Treat open doors and tall gates as solid obstructions for passage detection.
+        // Closed doors/gates are already in tileSolid, but open variants are not,
+        // yet they represent player-placed doorways that shouldn't trigger chirps.
+        ushort type = tile.TileType;
+        if (type == TileID.OpenDoor || type == TileID.TallGateOpen || type == TileID.TrapdoorOpen)
+        {
+            return true;
+        }
+
+        return Main.tileSolid[type] && !Main.tileSolidTop[type];
     }
 
     /// <summary>
