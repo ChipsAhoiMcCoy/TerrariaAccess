@@ -19,6 +19,7 @@ internal sealed class WorldAudioCoordinator
     private readonly MultiplayerFootstepEmitter _multiplayerFootstepEmitter;
     private readonly CavitySonarEmitter _cavitySonarEmitter;
     private readonly PassageDetectorEmitter _passageDetectorEmitter;
+    private readonly BreathEmitter _breathEmitter;
     private readonly CadenceGate _cadenceGate = new();
 
     public WorldAudioCoordinator()
@@ -30,6 +31,7 @@ internal sealed class WorldAudioCoordinator
         _multiplayerFootstepEmitter = new MultiplayerFootstepEmitter();
         _cavitySonarEmitter = new CavitySonarEmitter();
         _passageDetectorEmitter = new PassageDetectorEmitter();
+        _breathEmitter = new BreathEmitter();
     }
 
     public WorldAudioCoordinator(
@@ -47,6 +49,7 @@ internal sealed class WorldAudioCoordinator
         _multiplayerFootstepEmitter = multiplayerFootstepEmitter;
         _cavitySonarEmitter = cavitySonarEmitter;
         _passageDetectorEmitter = new PassageDetectorEmitter();
+        _breathEmitter = new BreathEmitter();
     }
 
     /// <summary>
@@ -69,6 +72,7 @@ internal sealed class WorldAudioCoordinator
         Run("multiplayer-footstep", 1, () => _multiplayerFootstepEmitter.Update(player));
         Run("cavity-sonar", 1, () => _cavitySonarEmitter.Update(player));
         Run("passage-detector", 1, () => _passageDetectorEmitter.Update(player));
+        Run("breath", 1, () => _breathEmitter.Update(player));
     }
 
     /// <summary>
@@ -83,6 +87,7 @@ internal sealed class WorldAudioCoordinator
         _multiplayerFootstepEmitter.Reset();
         _cavitySonarEmitter.Reset();
         _passageDetectorEmitter.Reset();
+        _breathEmitter.Reset();
         _cadenceGate.Reset();
     }
 
