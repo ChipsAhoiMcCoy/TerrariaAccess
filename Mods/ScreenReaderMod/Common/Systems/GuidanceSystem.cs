@@ -8,12 +8,11 @@ using ScreenReaderMod.Common.Services;
 using ScreenReaderMod.Common.Systems.Guidance;
 using ScreenReaderMod.Common.Utilities;
 using Terraria;
-using Terraria.GameContent.UI.States;
+using Terraria.Audio;
 using Terraria.GameInput;
 using Terraria.ID;
 using Terraria.ModLoader;
 using Terraria.ModLoader.IO;
-using Terraria.UI;
 
 namespace ScreenReaderMod.Common.Systems;
 
@@ -44,8 +43,11 @@ public sealed partial class GuidanceSystem : ModSystem
     {
         ResetTrackingState();
         _namingActive = false;
+        _namingText = string.Empty;
+        _namingPreviousText = string.Empty;
+        _namingFallbackName = string.Empty;
+        _namingPlayerIndex = -1;
         DisposeToneResources();
-        _activeKeyboard = null;
         _inputSnapshot = null;
     }
 
@@ -57,28 +59,14 @@ public sealed partial class GuidanceSystem : ModSystem
         }
 
         ResetTrackingState();
-        CloseNamingUi();
+        CloseNaming();
         DisposeToneResources();
         _inputSnapshot = null;
-        _activeKeyboard = null;
     }
 
     public override void UpdateUI(GameTime gameTime)
     {
-        if (!_namingActive)
-        {
-            return;
-        }
-
-        UIState? currentState = Main.InGameUI?.CurrentState;
-        if (currentState is UIVirtualKeyboard keyboard && ReferenceEquals(keyboard, _activeKeyboard))
-        {
-            return;
-        }
-
-        // The naming UI was dismissed externally (e.g. Escape on keyboard or controller B),
-        // so restore the captured input snapshot to avoid leaving the game in a blocked state.
-        CloseNamingUi();
+        // Naming state is now driven by UpdateNaming() in HandleKeybinds path; no UI watchdog needed.
     }
 
     public override void LoadWorldData(TagCompound tag)
@@ -340,11 +328,12 @@ public sealed partial class GuidanceSystem : ModSystem
             return;
         }
 
-        Vector2 worldPosition = player.Center;
-        string fallbackName = BuildDefaultName();
+        _namingWorldPosition = player.Center;
+        _namingFallbackName = BuildDefaultName();
+        _namingPlayerIndex = player.whoAmI;
+        _namingText = string.Empty;
+        _namingPreviousText = string.Empty;
         _nextPingUpdateFrame = -1;
-
-        int playerIndex = player.whoAmI;
         _namingActive = true;
 
         _inputSnapshot = new InputSnapshot
@@ -357,81 +346,20 @@ public sealed partial class GuidanceSystem : ModSystem
             DrawingPlayerChat = Main.drawingPlayerChat,
             InFancyUI = Main.inFancyUI,
             GameMenu = Main.gameMenu,
-            ChatText = Main.chatText ?? string.Empty,
-            PreviousUiState = Main.InGameUI?.CurrentState
+            ChatText = Main.chatText ?? string.Empty
         };
 
         Main.blockInput = true;
+        Main.drawingPlayerChat = false;
         PlayerInput.WritingText = true;
         Main.clrInput();
 
-        Player? ResolvePlayer()
-        {
-            if (playerIndex < 0 || playerIndex >= Main.maxPlayers)
-            {
-                return null;
-            }
-
-            Player candidate = Main.player[playerIndex];
-            return candidate?.active == true ? candidate : null;
-        }
-
-        void FinalizeCreation(string rawInput, string logContext)
-        {
-            string resolvedName = TextSanitizer.Clean(string.IsNullOrWhiteSpace(rawInput) ? fallbackName : rawInput.Trim());
-            global::ScreenReaderMod.ScreenReaderMod.Instance?.Logger.Info($"[WaypointNaming:{logContext}] Resolved name: \"{resolvedName}\" (input: \"{rawInput}\")");
-
-            Waypoint waypoint = new(resolvedName, worldPosition);
-            Waypoints.Add(waypoint);
-            SendWaypointAddedToServer(waypoint);
-            _selectedIndex = Waypoints.Count - 1;
-            _selectionMode = SelectionMode.Waypoint;
-
-            Player? owner = ResolvePlayer();
-            if (owner is not null)
-            {
-                RescheduleGuidancePing(owner);
-                string creationAnnouncement = ComposeCreationAnnouncement(resolvedName, owner, worldPosition);
-                ScreenReaderService.Announce(creationAnnouncement);
-                EmitPing(owner, worldPosition);
-            }
-            else
-            {
-                ScreenReaderService.Announce($"Created waypoint {resolvedName}");
-            }
-
-            CloseNamingUi();
-        }
-
-        void Submit(string input) => FinalizeCreation(input, "Submit");
-
-        void Cancel()
-        {
-            Player? owner = ResolvePlayer();
-            ScreenReaderService.Announce("Waypoint creation cancelled");
-            string discarded = Main.chatText?.Trim() ?? string.Empty;
-            if (!string.IsNullOrEmpty(discarded))
-            {
-                global::ScreenReaderMod.ScreenReaderMod.Instance?.Logger.Info($"[WaypointNaming:Cancel] Discarded input: \"{discarded}\"");
-            }
-
-            if (owner is not null && _selectionMode == SelectionMode.Waypoint && _selectedIndex >= 0 && _selectedIndex < Waypoints.Count)
-            {
-                RescheduleGuidancePing(owner);
-            }
-
-            CloseNamingUi();
-        }
-
-        UIVirtualKeyboard keyboard = new("Create Waypoint", string.Empty, Submit, Cancel, 0, true);
-        _activeKeyboard = keyboard;
-        IngameFancyUI.OpenUIState(keyboard);
-
+        SoundEngine.PlaySound(SoundID.MenuOpen);
         Main.NewText("Waypoint naming: type a name, press Enter to save, or Escape to cancel.", Color.LightSkyBlue);
         ScreenReaderService.Announce("Type the waypoint name, then press Enter to save or Escape to cancel.");
     }
 
-    private static void CloseNamingUi()
+    private static void CloseNaming()
     {
         if (!_namingActive)
         {
@@ -439,17 +367,10 @@ public sealed partial class GuidanceSystem : ModSystem
         }
 
         _namingActive = false;
-        if (Main.InGameUI is not null)
-        {
-            if (_activeKeyboard is not null && ReferenceEquals(Main.InGameUI.CurrentState, _activeKeyboard))
-            {
-                IngameFancyUI.Close();
-            }
-            else if (Main.InGameUI.CurrentState is UIVirtualKeyboard)
-            {
-                IngameFancyUI.Close();
-            }
-        }
+        _namingText = string.Empty;
+        _namingPreviousText = string.Empty;
+        _namingFallbackName = string.Empty;
+        _namingPlayerIndex = -1;
 
         Main.clrInput();
 
@@ -464,18 +385,6 @@ public sealed partial class GuidanceSystem : ModSystem
             Main.inFancyUI = snapshot.InFancyUI;
             Main.gameMenu = snapshot.GameMenu;
             Main.chatText = snapshot.ChatText;
-
-            if (Main.InGameUI is not null)
-            {
-                if (snapshot.PreviousUiState is null)
-                {
-                    Main.InGameUI.SetState(null);
-                }
-                else if (!ReferenceEquals(Main.InGameUI.CurrentState, snapshot.PreviousUiState))
-                {
-                    Main.InGameUI.SetState(snapshot.PreviousUiState);
-                }
-            }
         }
         else
         {
@@ -491,7 +400,96 @@ public sealed partial class GuidanceSystem : ModSystem
         }
 
         _inputSnapshot = null;
-        _activeKeyboard = null;
+    }
+
+    private static void UpdateNaming()
+    {
+        if (!_namingActive)
+        {
+            return;
+        }
+
+        PlayerInput.WritingText = true;
+
+        // Suppress the chat toggle every frame while naming is active.
+        // DoUpdate_Enter_ToggleChat() runs BEFORE ProcessTriggers in the frame,
+        // so we must clear chatRelease here so it's false when checked next frame.
+        Main.chatRelease = false;
+
+        string newText = Main.GetInputText(_namingText);
+
+        // Enforce max length (40 chars, generous for waypoint names)
+        if (newText.Length > 40)
+        {
+            newText = newText.Substring(0, 40);
+        }
+
+        if (Main.inputTextEnter)
+        {
+            string resolvedName = TextSanitizer.Clean(
+                string.IsNullOrWhiteSpace(newText) ? _namingFallbackName : newText.Trim());
+
+            Waypoint waypoint = new(resolvedName, _namingWorldPosition);
+            Waypoints.Add(waypoint);
+            SendWaypointAddedToServer(waypoint);
+            _selectedIndex = Waypoints.Count - 1;
+            _selectionMode = SelectionMode.Waypoint;
+
+            Player? owner = ResolveNamingPlayer();
+            if (owner is not null)
+            {
+                RescheduleGuidancePing(owner);
+                string announcement = ComposeCreationAnnouncement(resolvedName, owner, _namingWorldPosition);
+                ScreenReaderService.Announce(announcement);
+                EmitPing(owner, _namingWorldPosition);
+            }
+            else
+            {
+                ScreenReaderService.Announce($"Created waypoint {resolvedName}");
+            }
+
+            // Suppress redundant "Arrived at X" since we just announced creation at player's position
+            ScreenReaderService.SuppressNext(SuppressionKeyArrival);
+
+            SoundEngine.PlaySound(SoundID.MenuOpen);
+            CloseNaming();
+            return;
+        }
+
+        if (Main.inputTextEscape)
+        {
+            ScreenReaderService.Announce("Waypoint creation cancelled");
+            SoundEngine.PlaySound(SoundID.MenuClose);
+
+            Player? owner = ResolveNamingPlayer();
+            if (owner is not null && _selectionMode == SelectionMode.Waypoint
+                && _selectedIndex >= 0 && _selectedIndex < Waypoints.Count)
+            {
+                RescheduleGuidancePing(owner);
+            }
+
+            CloseNaming();
+            return;
+        }
+
+        // Keystroke sound feedback (like chat/search mode)
+        if (!string.Equals(newText, _namingText, StringComparison.Ordinal))
+        {
+            SoundEngine.PlaySound(SoundID.MenuTick);
+        }
+
+        _namingText = newText;
+    }
+
+    private static Player? ResolveNamingPlayer()
+    {
+        if (_namingPlayerIndex < 0 || _namingPlayerIndex >= Main.maxPlayers)
+        {
+            return null;
+        }
+
+        Player candidate = Main.player[_namingPlayerIndex];
+        return candidate?.active == true ? candidate : null;
     }
 
     private static void LogPing(string message)
@@ -531,17 +529,18 @@ public sealed partial class GuidanceSystem : ModSystem
 
     internal static void HandleKeybinds(Player player)
     {
+        if (_namingActive)
+        {
+            UpdateNaming();
+            return;
+        }
+
         if (Main.dedServ || Main.gameMenu || Main.inFancyUI)
         {
             return;
         }
 
         if (player is null || !player.active || player.whoAmI != Main.myPlayer)
-        {
-            return;
-        }
-
-        if (_namingActive || Main.InGameUI?.CurrentState is UIVirtualKeyboard)
         {
             return;
         }

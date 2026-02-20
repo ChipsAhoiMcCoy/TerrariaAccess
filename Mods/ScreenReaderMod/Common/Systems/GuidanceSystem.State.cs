@@ -2,8 +2,6 @@
 using System.Collections.Generic;
 using Microsoft.Xna.Framework;
 using Microsoft.Xna.Framework.Audio;
-using Terraria.UI;
-using Terraria.GameContent.UI.States;
 
 namespace ScreenReaderMod.Common.Systems;
 
@@ -76,8 +74,14 @@ public sealed partial class GuidanceSystem
     private static bool _arrivalAnnounced;
     private static SoundEffect? _waypointTone;
     private static readonly List<SoundEffectInstance> ActiveWaypointInstances = new();
-    private static UIVirtualKeyboard? _activeKeyboard;
     private static InputSnapshot? _inputSnapshot;
+
+    // Direct text-input naming state
+    private static string _namingText = string.Empty;
+    private static string _namingPreviousText = string.Empty;
+    private static Vector2 _namingWorldPosition;
+    private static string _namingFallbackName = string.Empty;
+    private static int _namingPlayerIndex = -1;
     private static readonly bool LogGuidancePings = false;
     private static uint _lastTargetRefreshFrame;
     private static int _lastTargetRefreshPlayerIndex = -1;
@@ -93,7 +97,6 @@ public sealed partial class GuidanceSystem
         public bool InFancyUI;
         public bool GameMenu;
         public string ChatText = string.Empty;
-        public UIState? PreviousUiState;
     }
 
     private struct Waypoint
