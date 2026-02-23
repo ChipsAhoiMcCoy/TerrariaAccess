@@ -39,10 +39,9 @@ Tools/Decompiled/
 TModLoader Decompiled/
 Terraria Decompiled/
 
-# Ignore installer build output and bundled binaries
+# Ignore installer build output (but keep bundled release files)
 Release/Output/
-Release/files/tmodloader/*.dll
-Release/files/mods/*.tmod
+!Release/files/**/*.tmod
 
 # Ignore local Claude Code settings
 .claude/
