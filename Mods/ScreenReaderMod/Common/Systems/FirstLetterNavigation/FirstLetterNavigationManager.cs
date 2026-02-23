@@ -7,6 +7,7 @@ using ScreenReaderMod.Common.Services;
 using ScreenReaderMod.Common.Utilities;
 using Terraria;
 using Terraria.Audio;
+using Terraria.Localization;
 using Terraria.GameInput;
 using Terraria.ID;
 using Terraria.ModLoader;
@@ -240,6 +241,8 @@ internal static class FirstLetterNavigationManager
 
     /// <summary>
     /// Tries to add an item to the matches list if it starts with the specified letter.
+    /// Uses the base item name (without prefix) for matching so that e.g. "Legendary Copper Shortsword"
+    /// matches on 'C' (for Copper Shortsword), not 'L' (for Legendary).
     /// </summary>
     private static void TryAddMatch(List<ItemMatch> matches, Item item, int linkPointId, string location, char upperLetter)
     {
@@ -254,7 +257,15 @@ internal static class FirstLetterNavigationManager
             return;
         }
 
-        if (char.ToUpperInvariant(name[0]) == upperLetter)
+        // Use base item name (without reforge prefix) for letter matching
+        string baseName = TextSanitizer.Clean(item.Name);
+        if (string.IsNullOrEmpty(baseName))
+        {
+            baseName = TextSanitizer.Clean(Lang.GetItemNameValue(item.type));
+        }
+        string matchTarget = !string.IsNullOrEmpty(baseName) ? baseName : name;
+
+        if (char.ToUpperInvariant(matchTarget[0]) == upperLetter)
         {
             matches.Add(new ItemMatch(name, linkPointId, item, location));
         }
