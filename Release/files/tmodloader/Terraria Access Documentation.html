@@ -1,0 +1,1528 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>Terraria Access Documentation</title>
+</head>
+<body>
+
+  <h1>Terraria Access Documentation</h1>
+
+  <h2>Game Overview</h2>
+  <p>
+    Terraria is a side-scrolling action RPG where the core loop is simple:
+    defeat enemies to get loot, use that loot to defeat harder enemies, and repeat.
+    Wrapped around this loop is a rich sandbox: diverse biomes with unique drops,
+    artificial biomes you can create, and a hostile underground that ranges from
+    cavern layers all the way down to hell.
+  </p>
+  <p>
+    <strong>Terraria Access</strong> is a mod designed to make this experience accessible
+    for blind and visually impaired players. It adds screen reader support, audio cues,
+    and specialized navigation tools. This documentation explains how to use those features
+    effectively, from basic navigation to combat and building.
+  </p>
+
+  <h2>Installation</h2>
+  <p>
+    Follow these steps to install Terraria Access:
+  </p>
+  <ol>
+    <li>
+      Install Terraria and TModLoader. Open TModLoader once to generate the necessary folders.
+    </li>
+    <li>
+      Place <strong>NVDAController64.dll</strong> in your
+      <code>/steamapps/common/tModLoader</code> directory.
+    </li>
+    <li>
+      Place <strong>ScreenReaderMod.tmod</strong> in your
+      <code>/Documents/My Games/Terraria/tModLoader/Mods</code> directory.
+    </li>
+    <li>
+      Place the <strong>enabled.json</strong> file in your
+      <code>/Documents/My Games/Terraria/tModLoader/Mods</code> directory.
+    </li>
+    <li>
+      Place the <strong>inputs</strong> file in your
+      <code>/Documents/My Games/Terraria/tModLoader</code> directory.
+    </li>
+  </ol>
+
+  <h2>Quick Start: Surviving Your First Night</h2>
+  <p>
+    This section will walk you through your first moments in Terraria, from spawning into the world
+    to building your first home. If you want the detailed technical explanations, feel free to skip
+    ahead to the rest of the documentation, but this guide should get you up and running quickly.
+  </p>
+
+  <h3>First Steps</h3>
+  <p>
+    When you first load up your world, you are going to be thrown into a Forest Biome, surrounded
+    by trees and your Guide NPC. If you want to speak to the Guide, you can use the Guidance System
+    by pressing the <strong>Left or Right Brackets</strong> to switch to the NPC guidance category,
+    and it will direct you to exactly where he is. When near him, press <strong>B</strong> on Xbox
+    gamepads, <strong>Circle</strong> on PlayStation gamepads, or <strong>P</strong> on keyboard.
+    He will tell you several interesting and useful facts, so definitely walk up to him and speak
+    with him every now and again—it will be worth it.
+  </p>
+
+  <h3>Gathering Resources</h3>
+  <p>
+    The first thing you are going to want to create is a home. Nothing fancy, just a little shack
+    at this point to avoid being hit by those pesky slimes. Use your number row on keyboard or
+    bumpers on gamepad to swap to your <strong>Axe</strong>, then enable Smart Cursor by pressing
+    <strong>Ctrl</strong> on keyboard or clicking down your <strong>Left Stick</strong> on gamepad.
+  </p>
+  <p>
+    Once in Smart Cursor mode, walk left and right until you hear "Forest Tree." When you hear this,
+    hold down <strong>Right Trigger</strong> on gamepad or the <strong>I</strong> key on keyboard
+    to begin destroying the tree. This might take a moment. Be mindful of those slimes though—they
+    are incredibly annoying. You will hear them creeping up on you with the audio cues they emit.
+  </p>
+  <p>
+    Once you have broken several trees and feel like you have collected a good amount of wood, you
+    will be ready to build your home. Do not worry if you run out—the world is your oyster, and there
+    are plenty of trees on this oyster. Be mindful though: you may want to plant those acorns that
+    the trees drop, or you will eventually run out.
+  </p>
+
+  <h3>Building Your First Home</h3>
+  <p>
+    In Terraria Access, you have a few approaches to building. Your best approach would be to use
+    <strong>Build Mode</strong>, which is a feature unique to this mod. In Build Mode, you can select
+    two points and use either Fill Mode or Outline Mode to build structures or terraform your world.
+    For building a home, Outline Mode is recommended.
+  </p>
+  <p>
+    Your home needs to be approximately <strong>9 tiles wide</strong> and <strong>7 tiles tall</strong>
+    in order to house NPCs. Enable Build Mode by pressing <strong>Start</strong> on gamepad or
+    <strong>X</strong> on keyboard until you hear "Build Mode: Outline." If you hear "Build Mode: Fill,"
+    press the bind again to cycle to Outline.
+  </p>
+  <p>
+    Now, place your Unlocked Cursor above ground level. Ground level is generally one tile below your
+    player's feet. Move the cursor around using the <strong>Directional Pad</strong> or
+    <strong>O, K, L, ;</strong> keys on keyboard. If no tile-by-tile announcements are happening,
+    press the Smart Cursor button to switch to Unlocked Cursor mode.
+  </p>
+  <p>
+    Place your cursor somewhere at ground level and press <strong>A</strong> on gamepad or
+    <strong>C</strong> on keyboard. This places your first Build Mode point. Now, as you move your
+    Unlocked Cursor around, you will hear announcements like "2 by 3" or "4 by 8"—this is the total
+    width and height of your selection. Since we need 9 wide and 7 tall, move your cursor until you
+    hear that announcement, then press the same button to place your second point.
+  </p>
+  <p>
+    Next, we need to select our building material. Wood is recommended since it is abundant, but you
+    can use Stone instead. Open your Inventory by pressing <strong>Y</strong> on gamepad,
+    <strong>Triangle</strong> on PlayStation, or <strong>Escape</strong> on keyboard. You should hear
+    that your focus is in your Hotbar. Navigate through the Inventory with the Directional Pad or
+    Left Analog Stick on gamepad, or <strong>WASD</strong> on keyboard.
+  </p>
+  <p>
+    If your Wood is already in your Hotbar, you are golden. If not, navigate to your Wood in the
+    Inventory and press <strong>A</strong> on gamepad, <strong>Cross</strong> on PlayStation, or
+    <strong>I</strong> on keyboard to pick it up. Then navigate back to an empty Hotbar slot and
+    press the same button to place it there. Close your inventory.
+  </p>
+  <p>
+    With your Outline selection set and Wood in your Hotbar, use your number row or bumpers to select
+    Wood, then hold your Place bind (<strong>Right Trigger</strong> or <strong>P</strong> on keyboard).
+    You will hear several placement sounds. Eventually, Build Mode will notify you that your blocks
+    are placed. Turn off Build Mode by pressing the same bind until you hear "Build Mode: Disabled."
+  </p>
+
+  <h3>Entering Your Home</h3>
+  <p>
+    You now have the skeleton of your home—a hollow rectangle. The thing is, we do not have superpowers,
+    so we cannot phase through tiles. Your player model is 3 tiles tall and 2 tiles wide, which means
+    you need to break a three-tile gap in one of your walls to enter.
+  </p>
+  <p>
+    Switch to Unlocked Cursor mode and navigate around until you hear the Wood you placed. You will
+    probably hear many "Empty" announcements—that is fine. To verify you are on the wall and not the
+    ceiling, move your cursor down one tile. If it says Wood again, you are on the wall. If it says
+    Empty, you were on the ceiling—navigate left or right to find the wall.
+  </p>
+  <p>
+    Once you find the wall, keep moving down until you hear Grass or Dirt (ground level), then move
+    back up one tile. This is your floorboard. Move up one more tile—this will be the bottom of your
+    door frame. Now equip your <strong>Pickaxe</strong> from your Hotbar, and with this tile in focus,
+    hold <strong>Right Trigger</strong> or <strong>I</strong> on keyboard to break it. Then move up
+    and break the next two tiles above it. You now have a three-tile gap to enter your home.
+  </p>
+  <p>
+    Take note of the position announcements like "4 right, 2 up"—these tell you how far you have moved
+    from the starting position under your feet. This helps build your mental map, as do the panning
+    and pitching tones you hear when moving the cursor.
+  </p>
+
+  <h3>Crafting Your First Items</h3>
+  <p>
+    Walk into your new home and open your Inventory. We are going to craft a <strong>Workbench</strong>,
+    which requires approximately 10 Wood. On gamepad, press <strong>Left Trigger</strong> to move from
+    your Hotbar to the Crafting List. On keyboard, use <strong>Q</strong>. Navigate the Crafting List
+    (it is vertical, so use up and down) until you find Workbench. Craft it by pressing <strong>A</strong>
+    on gamepad or <strong>I</strong> on keyboard.
+  </p>
+  <p>
+    Now move the Workbench to your Hotbar. Press <strong>Right Trigger</strong> or <strong>E</strong>
+    on keyboard to move back to your Hotbar area, find an empty slot, and place it there. For future
+    reference, both triggers on gamepad or Q and E on keyboard move you through the various areas of
+    your Inventory screen.
+  </p>
+  <p>
+    Close your inventory. Important note: Crafting Stations and objects in Terraria are not always
+    1×1 tiles. Workbenches are 2×2, meaning you need a 2×2 empty space to place one. Also, you cannot
+    place them in the air. Move your Unlocked Cursor to just above the floorboards (with the latest
+    mod version, your cursor starts there automatically), then press your Place bind to set down
+    the Workbench.
+  </p>
+
+  <h3>Completing Your Home</h3>
+  <p>
+    In Terraria, suitable housing requires: a light source, safe walls, a chair, and a table. Your
+    Workbench counts as a table. Let us tackle these one by one.
+  </p>
+  <p>
+    <strong>Chair:</strong> Stand near your Workbench, open your Inventory, go to the Crafting List,
+    find Chair, craft it, move it to your Hotbar, and place it next to your Workbench.
+  </p>
+  <p>
+    <strong>Torch:</strong> If you have been defeating slimes, you have Gel. Torches require Gel and
+    Wood. If you started in Journey Mode, you begin with 100 Torches. Torches need to be placed on
+    a tile or background wall—place yours on the floor or wall inside your home.
+  </p>
+  <p>
+    <strong>Door:</strong> Stand near your Workbench, find Wooden Door in the Crafting List, craft
+    one, and move it to your Hotbar. Go to your door gap, unlock your cursor, and position it one
+    tile above the floorboard on the last Wood tile (the door frame). Doors are three tiles tall and
+    need to connect to tiles on top and bottom. Press your Place bind, and you have a door. Note:
+    you can also place doors with Smart Cursor if you prefer less precision.
+  </p>
+  <p>
+    <strong>Walls:</strong> Walls in Terraria are like wallpaper—you can walk through them, but they
+    prevent monsters from spawning inside your home. Stand near your Workbench, find Wood Wall in
+    the Crafting List, and hold the craft button to make many (you will need quite a few). Move them
+    to your Hotbar.
+  </p>
+  <p>
+    Enable Build Mode and cycle to "Build Mode: Fill." This time, we want to select the space
+    <em>inside</em> the home. Move your Unlocked Cursor to an empty tile in the corner—one tile up
+    from the floorboards and one tile from the wall. Place your first point, then do the same in
+    the opposite corner. Select Wood Wall in your Hotbar and hold your Place bind to fill the
+    interior with walls.
+  </p>
+  <p>
+    Note: to avoid announcement spam, the mod says "Empty" when moving your cursor without a wall
+    item equipped. If you are holding a Wall or Hammer, you will hear the actual wall tiles instead.
+  </p>
+  <p>
+    Congratulations—you can finally call this husk a home! Be prepared to build many more throughout
+    your playthrough, because there are a lot of NPCs in this game.
+  </p>
+
+  <h3>Setting a Waypoint</h3>
+  <p>
+    Before venturing out, create a Waypoint so you can find your way home. Press the
+    <strong>Backslash</strong> key, type a name for your waypoint, and press <strong>Enter</strong>.
+    You can navigate to this Waypoint using the Guidance System—press the Left or Right Brackets
+    until you hear "Waypoints," and you will hear your waypoint name along with how many tiles away
+    you are. Use this information and the audio cues to find your way back if you ever get lost.
+    If you are truly lost, press <strong>Home</strong> to warp to your focused waypoint (this works
+    for every Guidance category).
+  </p>
+
+  <h3>What Next?</h3>
+  <p>
+    The world is your oyster. You have your home and your waypoint, so feel free to start exploring!
+    Use the <strong>Explore</strong> Guidance category (accessed with the Brackets) to hear sound
+    cues from key objects around the world. Use <strong>Page Up</strong> and <strong>Page Down</strong>
+    to track specific objects and learn both what and where they are.
+  </p>
+  <p>
+    Note: objects will not emit sounds unless there is sufficient light around them—this matches how
+    sighted players experience the game. There are light-emitting pets you can collect, and torches
+    are abundant, so place one every now and again or you might miss items. When an area is too dark,
+    the mod will tell you. You can also get a Mining Helmet or other gear that makes you essentially
+    a human torch.
+  </p>
+  <p>
+    Keep this documentation open for reference, read through the technical sections to become a pro,
+    and join our Discord community—we have helpful people who do not mind questions from new players!
+  </p>
+
+  <h2>Cursor Systems</h2>
+
+  <h3>Smart Cursor</h3>
+  <p>
+    Smart cursor is your main tool for basic navigation and interaction on gamepad.
+    When enabled, it hides the regular cursor and lets the game automatically decide
+    what to interact with:
+  </p>
+  <ul>
+    <li>Targets tiles for mining (such as ore and stone).</li>
+    <li>Interacts with doors, chests, and other objects.</li>
+  </ul>
+  <p>
+    You can influence smart cursor by moving the right analog stick. Think of this as a
+    radial selection around your character:
+  </p>
+  <ul>
+    <li>
+      If you are mining and it keeps focusing on stone, tilt the right stick toward the
+      ore you want (for example, up to reach iron above you).
+    </li>
+    <li>
+      Whatever direction you tilt the right stick is where smart cursor will look
+      for interactables near your character.
+    </li>
+  </ul>
+  <p>
+    Smart cursor is the "bread and butter" of world navigation and mining on gamepad.
+    It is a big part of why Terraria is playable with a controller and accessible with this mod.
+  </p>
+
+  <h3>Unlocked Cursor (Tile-by-Tile Mode)</h3>
+  <p>
+    The unlocked cursor lets you move a cursor tile by tile, which is ideal for precise
+    building and targeting:
+  </p>
+  <ul>
+    <li>
+      On gamepad, use the <strong>directional pad</strong> to move the cursor one tile at a time.
+      On keyboard, use <strong>O</strong> (up), <strong>K</strong> (left), <strong>L</strong> (down),
+      and <strong>semicolon (;)</strong> (right).
+    </li>
+    <li>
+      A tone plays whose pitch changes with vertical position:
+      higher pitch above your character, lower pitch below.
+    </li>
+    <li>
+      The tone also pans left or right according to where the cursor is on the screen.
+    </li>
+  </ul>
+  <p>
+    Your player is roughly three tiles tall. When you unlock the cursor, its starting
+    position is one tile below your character's feet. This makes it significantly easier
+    to quickly build walls for a home, towers to build upward, and other vertical structures.
+    The screen reader will tell you how far the cursor is from that starting position in tiles:
+  </p>
+  <ul>
+    <li><strong>"1 right"</strong> means one tile to the right of the starting position.</li>
+    <li><strong>"4 right, 1 up"</strong> means four tiles right and one tile up from the starting position.</li>
+  </ul>
+  <p>
+    This lets you always know the exact relationship between your character and the cursor,
+    which is crucial for precise building and navigation.
+  </p>
+
+  <h3>Scanning with the Right Stick in Unlocked Mode</h3>
+  <p>
+    You can also move the unlocked cursor using the <strong>right analog stick</strong> on gamepad
+    or the <strong>arrow keys</strong> on keyboard:
+  </p>
+  <ul>
+    <li>
+      Directional pad movement (or O, K, L, semicolon on keyboard) is slow and precise,
+      announcing every single tile (for example, "empty, empty, empty" for open air).
+    </li>
+    <li>
+      Right stick movement (or arrow keys on keyboard) is designed for rapid scanning.
+      Duplicate announcements are suppressed, so it only speaks when it crosses a new type of tile.
+    </li>
+  </ul>
+  <p>
+    Example: if you are searching for a rope somewhere in the sky:
+  </p>
+  <ul>
+    <li>Put the unlocked cursor somewhere in the upper-left sky area.</li>
+    <li>Hold the right stick to the right to sweep across.</li>
+    <li>
+      When the cursor hits the rope tile, the screen reader announces the rope
+      and its position (for example, "Rope, 7 right, 4 up").
+    </li>
+  </ul>
+  <p>
+    This makes it easy to quickly explore an area and find important tiles,
+    then switch back to precise movement with the directional pad if needed.
+  </p>
+
+  <h2>Gamepad Emulation Mode</h2>
+  <p>
+    Gamepad Emulation mode, developed primarily by community member Leos (also known as Khai),
+    allows players to navigate and interact with Terraria entirely through a keyboard,
+    providing an alternative to gamepad controls.
+    Press <strong>F6</strong> to enable or disable Gamepad Emulation mode.
+  </p>
+
+  <h3>Basic Movement and Actions</h3>
+  <p>
+    Movement uses the standard <strong>WASD</strong> keys. Your right hand handles aiming
+    and various other actions:
+  </p>
+  <ul>
+    <li>
+      <strong>I key</strong>: Simulates left click (use items). This is how you fire weapons,
+      break tiles with your pickaxe, and generally use whatever item is in your hand.
+      If you are familiar with gamepad controls, this is equivalent to the right trigger.
+    </li>
+    <li>
+      <strong>P key</strong>: Simulates right click (interact). Use this to talk to NPCs,
+      open chests, open doors, and place blocks.
+    </li>
+  </ul>
+
+  <h3>Smart Cursor and Virtual Analog Stick</h3>
+  <p>
+    The <strong>Control key</strong> toggles smart cursor on and off. This toggle affects
+    how the directional keys for your right hand behave:
+  </p>
+  <ul>
+    <li>
+      <strong>Smart cursor enabled</strong>: The directional keys simulate the right analog stick,
+      allowing you to aim in any direction around your character. This is ideal for combat
+      and general exploration.
+    </li>
+    <li>
+      <strong>Smart cursor disabled</strong>: The directional keys simulate the directional pad,
+      allowing tile-by-tile cursor movement. This is ideal for precise building.
+    </li>
+  </ul>
+  <p>
+    The directional keys for the virtual right analog stick and directional pad are:
+  </p>
+  <ul>
+    <li><strong>O</strong>: Up</li>
+    <li><strong>K</strong>: Left</li>
+    <li><strong>L</strong>: Down</li>
+    <li><strong>Semicolon (;)</strong>: Right</li>
+  </ul>
+  <p>
+    This layout keeps your right hand comfortably positioned so you can quickly
+    switch between aiming and using items.
+  </p>
+
+  <h3>Inventory Management</h3>
+  <p>
+    When you are in your inventory, several keys help you manage items:
+  </p>
+  <ul>
+    <li>
+      <strong>Q and E keys</strong>: Switch between inventory sections. The inventory screen
+      has multiple sections (inventory, crafting, equipment, etc.), and these keys let you
+      move between them. Press Q to move to the previous section and E to move to the next.
+    </li>
+    <li>
+      <strong>F key</strong>: Smart select. This versatile key handles multiple inventory actions:
+      quickly moves items between your inventory and an open chest, stores items in nearby chests,
+      sells items when interacting with an NPC shop, and trashes items when no chest is open.
+      Be careful with this last behavior—if no chest is open, pressing F will move the focused
+      item to the trash slot.
+    </li>
+    <li>
+      <strong>J key</strong>: Quick use. This is how you consume items like Lesser Healing Potions,
+      Night Owl Potions, food buffs (chicken nuggets, cheeseburgers, etc.), and other consumables.
+      Simply focus on the item and press J.
+    </li>
+    <li>
+      <strong>P key</strong>: Equip armor and accessories. When focusing on an armor piece
+      or accessory in your inventory, pressing P will equip it.
+    </li>
+  </ul>
+
+  <h3>Enemy Targeting</h3>
+  <p>
+    Press the <strong>Tab key</strong> to target an enemy. This works the same way as
+    targeting on gamepad: the screen reader will announce the enemy's name and health.
+    Press Tab again to untarget.
+  </p>
+
+  <h3>Main Menu Navigation</h3>
+  <p>
+    When navigating the main menu (Single Player, Multiplayer, Settings, etc.):
+  </p>
+  <ul>
+    <li>Use <strong>WASD</strong> to move through menu items.</li>
+    <li>
+      Use <strong>Spacebar</strong> to select menu items. Note that the I key does not
+      work for menu selection—you must use Spacebar.
+    </li>
+    <li><strong>Escape</strong> acts as the back button, returning you to previous menus.</li>
+  </ul>
+
+  <h3>Workshop Navigation</h3>
+  <p>
+    When browsing mods in the Workshop or Manage Mods screens, press <strong>Tab</strong>
+    to enter search mode, type your query, then press <strong>Enter</strong> to perform
+    the search. This allows you to quickly find specific mods by name.
+  </p>
+
+  <h2>Footsteps & World Traversal</h2>
+
+  <h3>Footstep Chimes & Counting Tiles</h3>
+  <p>
+    Terraria normally does not have any meaningful footstep sounds. Terraria Access adds
+    footstep chimes with real utility:
+  </p>
+  <ul>
+    <li>
+      Every time your character passes the center of a tile while walking,
+      a chime plays under your feet.
+    </li>
+    <li>
+      You can count these chimes to know exactly how many tiles you have moved.
+    </li>
+  </ul>
+  <p>
+    Combined with the unlocked cursor's distance readouts, this lets you position yourself precisely.
+    For example, if a rope is at "7 right, 4 up":
+  </p>
+  <ul>
+    <li>
+      Walk right and count seven footstep chimes. You know you are now directly below the rope.
+    </li>
+    <li>
+      Jump or climb to reach it when your cursor says the right vertical distance.
+    </li>
+  </ul>
+
+  <h3>Platforms & Drop-Through Tiles</h3>
+  <p>
+    Platforms are special tiles you can stand on but also drop down through.
+    Terraria Access uses distinct chimes to make them clear:
+  </p>
+  <ul>
+    <li>
+      When walking on a platform, you hear a <strong>higher-pitched chime</strong>.
+      This indicates a tile you can drop through.
+    </li>
+    <li>
+      Platforms are great for building safe mineshafts and sky bridges you can move through vertically.
+    </li>
+  </ul>
+
+  <h3>Hazardous Tiles</h3>
+  <p>
+    Some tiles damage you on contact, such as:
+  </p>
+  <ul>
+    <li>Meteorite</li>
+    <li>Certain cactus types</li>
+    <li>Spike traps and similar hazards</li>
+  </ul>
+  <p>
+    Standing on these tiles triggers a special warning sound in the footstep system,
+    letting you immediately know that you are on something dangerous and should move.
+  </p>
+
+  <h3>Ropes & Vertical Traversal</h3>
+  <p>
+    Ropes are an essential part of vertical navigation. Terraria Access provides:
+  </p>
+  <ul>
+    <li>
+      Clear announcements when the unlocked cursor finds rope tiles
+      (for example, "Rope, 7 right, 4 up").
+    </li>
+    <li>
+      Sound effects while you climb, indicating whether you are moving <strong>up</strong> or <strong>down</strong> the rope.
+    </li>
+  </ul>
+  <p>
+    Together with tile counts and footstep chimes, rope sounds make it much easier
+    to understand your vertical position in shafts, caves, and other large vertical spaces.
+  </p>
+
+  <h2>Building & Housing</h2>
+
+  <h3>Player Size & Basic Building Rules</h3>
+  <p>
+    Your player's collision box is:
+  </p>
+  <ul>
+    <li>About <strong>3 tiles tall</strong>.</li>
+    <li>About <strong>2 tiles wide</strong>.</li>
+  </ul>
+  <p>
+    Any area that is at least 3 tiles tall and 2 tiles wide will physically fit your character.
+    This is important for:
+  </p>
+  <ul>
+    <li>Designing doorways and hallways.</li>
+    <li>Ensuring your house has enough space to walk around.</li>
+  </ul>
+  <p>
+    Basic building without build mode works like this:
+  </p>
+  <ul>
+    <li>Use the unlocked cursor to move next to an existing tile.</li>
+    <li>Select the block you want to place in your hotbar.</li>
+    <li>Press the placement button (right trigger) to place a tile.</li>
+    <li>
+      The screen reader will announce the tile you placed; move the cursor up one tile
+      (now empty) and repeat to build walls upward.
+    </li>
+  </ul>
+  <p>
+    Doors are roughly the same height as the player but need room for hinges:
+  </p>
+  <ul>
+    <li>Leave at least three empty vertical tiles for the door itself.</li>
+    <li>Have one tile above and one tile below that space for proper placement.</li>
+  </ul>
+
+  <h3>Build Mode (Extended Placement & Selections)</h3>
+  <p>
+    Build mode is a powerful tool that:
+  </p>
+  <ul>
+    <li>Removes the requirement to attach new tiles directly to existing ones.</li>
+    <li>
+      Greatly extends your placement range from about 5 tiles to roughly the entire screen.
+    </li>
+  </ul>
+  <p>
+    Build mode has three modes you can cycle through by pressing the build mode key repeatedly:
+  </p>
+  <ul>
+    <li><strong>Fill</strong>: Fills the entire selection with tiles.</li>
+    <li><strong>Outline</strong>: Places or breaks tiles only around the perimeter of the selection.
+        This is exceptionally useful for building house frames very quickly.</li>
+    <li><strong>Disabled</strong>: Turns off build mode.</li>
+  </ul>
+  <p>
+    You can make <strong>selections</strong> and then fill or outline them:
+  </p>
+  <ol>
+    <li>
+      Move the unlocked cursor to a first point.
+    </li>
+    <li>
+      Press the build mode selection button to mark this as point A.
+    </li>
+    <li>
+      Move the cursor to another point.
+    </li>
+    <li>
+      Press the selection button again to mark point B.
+    </li>
+  </ol>
+  <p>
+    This creates a virtual line or rectangle between points A and B:
+  </p>
+  <ul>
+    <li>
+      Holding the placement button fills or outlines the selection with the
+      currently selected block (depending on which mode is active).
+    </li>
+    <li>
+      Using a tool like a pickaxe instead allows you to destroy everything
+      inside the selection, excellent for flattening terrain.
+    </li>
+  </ul>
+
+  <h3>Terraforming with Build Mode</h3>
+  <p>
+    For large-scale flattening:
+  </p>
+  <ul>
+    <li>
+      Select from just right and down from your chest to a point near the top right
+      of your screen.
+    </li>
+    <li>
+      Use a pickaxe within build mode to remove hills, trees, and other obstacles
+      inside that region.
+    </li>
+  </ul>
+  <p>
+    This makes it much easier to create flat surfaces for building towns,
+    arenas, or other structures.
+  </p>
+
+  <h3>Suitable Housing & NPC Requirements</h3>
+  <p>
+    To get NPCs to move into your buildings, each house must qualify as
+    <strong>suitable housing</strong>. For detailed housing requirements including exact
+    dimensions, visit the <a href="https://terraria.fandom.com/wiki/House">Terraria Wiki House page</a>.
+    In general, valid housing includes:
+  </p>
+  <ul>
+    <li>Enough interior space meeting minimum size requirements.</li>
+    <li>At least one <strong>table</strong> (or equivalent surface).</li>
+    <li>At least one <strong>chair</strong>.</li>
+    <li>At least one <strong>door</strong>.</li>
+    <li>At least one <strong>light source</strong> (like a torch).</li>
+    <li>Walls placed in the background (see "Safe vs Unsafe Walls" below).</li>
+  </ul>
+  <p>
+    NPCs provide various benefits once they move in:
+  </p>
+  <ul>
+    <li><strong>Nurse:</strong> heals you.</li>
+    <li><strong>Dryad:</strong> sells seeds and world-altering items.</li>
+    <li><strong>Arms Dealer:</strong> sells guns and ammunition.</li>
+    <li><strong>Merchant:</strong> sells basic supplies like healing potions.</li>
+  </ul>
+
+  <h3>Safe vs Unsafe Walls</h3>
+  <p>
+    Terraria distinguishes between safe and unsafe wall tiles:
+  </p>
+  <ul>
+    <li>
+      <strong>Unsafe walls</strong> (such as naturally generated dirt walls or dungeon walls)
+      allow enemies to spawn in front of them.
+    </li>
+    <li>
+      <strong>Safe walls</strong> are <em>player-placed</em> walls (wooden, stone, etc.)
+      and prevent enemy spawns in that area.
+    </li>
+  </ul>
+  <p>
+    When building houses, you should always place safe walls behind your interior spaces
+    so enemies cannot spawn inside your home. Walls are placed in the background only and
+    do not physically block you, so you can think of them like wallpaper.
+  </p>
+
+  <h3>Tools for Breaking Tiles</h3>
+  <p>
+    Different tools break different things:
+  </p>
+  <ul>
+    <li><strong>Pickaxe:</strong> used to break almost all solid tiles, including blocks and ores.</li>
+    <li><strong>Axe:</strong> used to chop down trees.</li>
+    <li><strong>Hammer:</strong> used to break background walls.</li>
+  </ul>
+  <p>
+    The exact tool tiers and breakable blocks are documented on the Terraria wiki and
+    follow the standard Terraria rules.
+  </p>
+
+  <h2>Guidance System</h2>
+
+  <h3>Overview</h3>
+  <p>
+    The guidance system is your primary tool for finding important objects in the world:
+  </p>
+  <ul>
+    <li>NPCs</li>
+    <li>Crafting stations</li>
+    <li>Ores and gemstones</li>
+    <li>Chests and life crystals</li>
+    <li>Dropped items</li>
+    <li>Critters</li>
+    <li>Plants</li>
+  </ul>
+  <p>
+    The guidance system covers all ores and gems, many important interactables,
+    all NPCs and crafting stations, dropped items, critters, and harvestable plants.
+  </p>
+
+  <h3>Exploration Mode</h3>
+  <p>
+    In exploration mode, the guidance system:
+  </p>
+  <ul>
+    <li>
+      Makes nearby trackable objects emit unique sounds
+      (for example, a pickaxe-like sound for nearby ore).
+    </li>
+    <li>
+      Lets you hear multiple things at once so you know you are near something valuable.
+    </li>
+  </ul>
+
+  <h3>Focusing Specific Targets</h3>
+  <p>
+    When exploration mode detects multiple objects, you can cycle and focus on one:
+  </p>
+  <ul>
+    <li>
+      Use <strong>Page Up</strong> and <strong>Page Down</strong> (by default)
+      to move through the list of detected objects.
+    </li>
+    <li>
+      The screen reader announces the selected object and its position relative to your chest,
+      such as: <em>"Iron Ore, 36 right, 10 down."</em>
+    </li>
+  </ul>
+  <p>
+    Sound cues follow the same logic as other cues:
+  </p>
+  <ul>
+    <li>Pan left or right according to horizontal distance.</li>
+    <li>
+      Pitch changes according to vertical position (lower for below, higher for above).
+    </li>
+  </ul>
+
+  <h3>Light Detection & Visibility</h3>
+  <p>
+    The guidance system respects light levels to provide a more authentic experience
+    that matches what sighted players see. This means:
+  </p>
+  <ul>
+    <li>
+      Objects in complete darkness will not be detected by the guidance system. For example,
+      an ore vein surrounded by stone with no light source nearby will not emit guidance sounds.
+    </li>
+    <li>
+      You must bring light to an area (using torches, a mining helmet, light-emitting pets, or
+      other equipment) before the guidance system can detect objects there.
+    </li>
+    <li>
+      When you enter a dark area, you will hear an alert indicating you have entered darkness.
+      This is your cue to place a torch or activate a light source.
+    </li>
+  </ul>
+  <p>
+    This change makes the guidance system significantly less overwhelming, as it will not
+    constantly ping ores and objects that you would not normally be able to see anyway.
+  </p>
+  <p>
+    Some objects naturally emit light and remain detectable even without an external light source:
+  </p>
+  <ul>
+    <li>Heart crystals</li>
+    <li>Chests</li>
+    <li>Certain other special objects</li>
+  </ul>
+
+  <h3>Teleporting to Targets</h3>
+  <p>
+    The guidance system supports teleporting to targeted NPCs or crafting stations
+    by pressing the <strong>Home</strong> key. This feature is optional and can feel
+    powerful; nothing in the mod requires using this teleport to function.
+  </p>
+
+  <h2>Player Information & Status Feedback</h2>
+  <p>
+    Terraria Access provides player status information through the mod. Press the
+    <strong>Select</strong> button on gamepad or <strong>Backspace</strong> on keyboard to hear
+    your current status. Pressing the status button repeatedly cycles through different
+    status categories:
+  </p>
+  <ul>
+    <li>Current health</li>
+    <li>Current mana</li>
+    <li>Defense level</li>
+    <li>Current biome</li>
+    <li>Time of day</li>
+    <li>Active buffs</li>
+  </ul>
+  <p>
+    When cycling to the buffs category, all active buffs are read aloud.
+  </p>
+
+  <h2>Mod Configuration</h2>
+  <p>
+    Terraria Access includes in-game mod configuration. To access these settings:
+  </p>
+  <ol>
+    <li>While in-game, open the Settings menu.</li>
+    <li>Navigate to Mod Configuration.</li>
+    <li>You will see a list of all installed mods. Find Terraria Access and select it.</li>
+  </ol>
+  <p>
+    Within the Terraria Access configuration, you can adjust:
+  </p>
+  <ul>
+    <li>Whether a tone plays when smart cursor is enabled.</li>
+    <li>The volume of footstep sounds.</li>
+    <li>Various other mod-related sound settings.</li>
+    <li>Edge detection (on or off).</li>
+  </ul>
+  <p>
+    This gives you fine-grained control over your accessibility experience without
+    needing to edit configuration files manually.
+  </p>
+
+  <h2>Workshop Support</h2>
+  <p>
+    Terraria Access provides accessibility support for the TModLoader Workshop,
+    allowing you to browse and download mods directly from within the game.
+  </p>
+  <p>
+    Accessible Workshop features:
+  </p>
+  <ul>
+    <li><strong>Download Mods</strong>: Browse and download new mods from the Workshop.</li>
+    <li><strong>Manage Mods</strong>: Enable, disable, and organize your installed mods.</li>
+  </ul>
+  <p>
+    Features not yet accessible:
+  </p>
+  <ul>
+    <li><strong>Develop Mods</strong>: The mod development interface is not yet accessible.</li>
+    <li><strong>Create Modpacks</strong>: The modpack creation interface is not yet accessible.</li>
+  </ul>
+  <p>
+    When navigating Workshop or Manage Mods screens, press <strong>Tab</strong> to enter
+    search mode, type your search query, then press <strong>Enter</strong> to perform the search.
+    This allows you to quickly find specific mods by name.
+  </p>
+
+  <h2>UI & Menu Accessibility</h2>
+
+  <h3>Interface Audio Cues</h3>
+  <p>
+    Terraria Access provides audio feedback when navigating the inventory and other interfaces.
+    As you move focus between items:
+  </p>
+  <ul>
+    <li>
+      Audio cues <strong>pan left or right</strong> based on the horizontal position of the
+      focused item on the screen.
+    </li>
+    <li>
+      Audio cues <strong>adjust pitch</strong> based on the vertical position—higher pitch
+      for items near the top, lower pitch for items near the bottom.
+    </li>
+  </ul>
+  <p>
+    Additionally, interface sections are announced with prefixes to help you orient yourself.
+    These prefixes include:
+  </p>
+  <ul>
+    <li><strong>Inventory</strong>: Your main item storage slots.</li>
+    <li><strong>Hotbar</strong>: The quick-access bar at the top of your inventory.</li>
+    <li><strong>Crafting List</strong>: The list of available recipes.</li>
+    <li><strong>Crafting Grid</strong>: The grid showing craftable items.</li>
+  </ul>
+  <p>
+    These audio cues and prefixes make it much easier to understand where you are
+    within the interface without needing visual feedback.
+  </p>
+
+  <h3>Controls Menu & Scrolling Quirks</h3>
+  <p>
+    The Controls menu behaves differently than typical menus:
+  </p>
+  <ul>
+    <li>
+      Once you reach the apparent bottom, you cannot move further just by pressing
+      up or down on the directional pad.
+    </li>
+    <li>
+      You must use the <strong>right analog stick</strong> (or <strong>O, K, L, ;</strong> keys
+      in Gamepad Emulation mode) to scroll down further and reveal more options.
+    </li>
+  </ul>
+  <p>
+    The same type of scrolling requirement appears when selecting hairstyles:
+  </p>
+  <ul>
+    <li>
+      After reaching the bottom of the initially visible hairstyles, scroll with the
+      right analog stick (or O, K, L, ; keys) to reveal more.
+    </li>
+  </ul>
+
+  <h2>Character Creation & Customization</h2>
+
+  <h3>Hairstyles & Clothing Descriptions</h3>
+  <p>
+    On the character creation screen:
+  </p>
+  <ul>
+    <li>
+      All <strong>165 hairstyles</strong> have been given custom audio descriptions.
+    </li>
+    <li>
+      All <strong>10 clothing variants</strong> (base outfits) are also described.
+    </li>
+  </ul>
+  <p>
+    This is intended to give you a clear mental picture of how your character looks,
+    avoiding accidental "random goofball" appearances unless that is what you want.
+  </p>
+
+  <h3>Color Selection via Codes</h3>
+  <p>
+    Character colors (hair, eyes, shirt, pants, shoes, etc.) are handled using a
+    slider-based system in vanilla Terraria that is not screen-reader-friendly:
+  </p>
+  <ul>
+    <li>Hue</li>
+    <li>Saturation</li>
+    <li>Brightness</li>
+  </ul>
+  <p>
+    Instead of making these sliders accessible, Terraria Access:
+  </p>
+  <ul>
+    <li>
+      Makes the <strong>color code fields</strong> accessible, where you can paste
+      specific color codes.
+    </li>
+    <li>
+      Lets you obtain color codes from external sources (for example, a website)
+      and paste them in so you know exactly which color you are choosing.
+    </li>
+  </ul>
+
+  <h2>World Creation</h2>
+  <p>
+    The world creation screen is generally straightforward with screen reader support:
+  </p>
+  <ul>
+    <li>
+      You can choose the <strong>world evil</strong>: Corruption, Crimson, or Random.
+      This determines the main hostile biome.
+    </li>
+    <li>Select the <strong>world size</strong> (small, medium, large).</li>
+    <li>Pick the <strong>world difficulty</strong> (Classic, Expert, Master, etc.).</li>
+  </ul>
+  <p>
+    For more information about how worlds are generated and what to expect in each biome,
+    visit the <a href="https://terraria-archive.fandom.com/wiki/World_Generation">Terraria Wiki World Generation page</a>.
+    One strong recommendation:
+  </p>
+  <ul>
+    <li>
+      If you are playing <strong>single player</strong>, choose a <strong>small world</strong>
+      to make navigation much easier.
+    </li>
+  </ul>
+
+  <h2>Biomes & Music Feedback</h2>
+  <p>
+    Terraria Access announces biome transitions:
+  </p>
+  <ul>
+    <li>"Entering Snow Biome"</li>
+    <li>"Entering Forest Biome"</li>
+    <li>"Entering Desert Biome"</li>
+    <li>"Entering Beach Biome"</li>
+    <li>"Entering Space Biome"</li>
+    <li>"Entering Hell"</li>
+    <li>"Entering Underground"</li>
+    <li>"Entering Cavern Layer"</li>
+  </ul>
+  <p>
+    In addition to these announcements, Terraria's music changes based on biome.
+    Each biome has its own track, providing another way to confirm where you are.
+  </p>
+
+  <h2>World Events & Chat</h2>
+  <p>
+    Terraria includes many world events, such as:
+  </p>
+  <ul>
+    <li>Blood Moons</li>
+    <li>Lantern Nights</li>
+    <li>Parties</li>
+    <li>Lunar Eclipses</li>
+    <li>Goblin Invasions</li>
+    <li>Pirate Invasions</li>
+  </ul>
+  <p>
+    All of these world events are announced through the standard narration pipeline.
+  </p>
+  <p>
+    Chat messages are automatically read aloud as they appear. Press <strong>Enter</strong>
+    to open the chat and type a message. To review older chat messages, use
+    <strong>Page Up</strong> and <strong>Page Down</strong> to scroll through the chat history.
+    This includes player messages, system announcements, and notifications about players
+    joining and leaving in multiplayer.
+  </p>
+
+  <h2>Combat</h2>
+
+  <h3>Basic Combat on Gamepad</h3>
+  <p>
+    On gamepad, combat generally works as follows:
+  </p>
+  <ul>
+    <li>
+      Aim using the <strong>right analog stick</strong> with a ranged weapon
+      (bow, gun, etc.).
+    </li>
+    <li>Press the <strong>right trigger</strong> to attack or shoot.</li>
+    <li>
+      For precise targeting with ranged weapons, use the <strong>lock-on</strong> feature
+      by pressing <strong>X</strong> on Xbox controllers or <strong>Square</strong> on PlayStation.
+      On keyboard, press <strong>Tab</strong> to lock onto an enemy.
+    </li>
+  </ul>
+  <p>
+    Many early melee weapons, such as the starting copper shortsword, do not require
+    precise aiming and simply swing in front of you.
+  </p>
+
+  <h3>Enemy Audio Cues</h3>
+  <p>
+    Enemies emit sound effects that:
+  </p>
+  <ul>
+    <li>
+      Pan left or right based on their position relative to you.
+    </li>
+    <li>
+      Change pitch based on vertical position (above or below).
+    </li>
+  </ul>
+  <p>
+    Tracking these sounds alongside your footstep chimes makes it easier to know
+    how close enemies are and from which direction they are approaching.
+  </p>
+
+  <h3 id="targeting-enemies">Targeting & Enemies</h3>
+  <p>
+    To automatically target enemies:
+  </p>
+  <ul>
+    <li>
+      <strong>Gamepad</strong>: Press <strong>X</strong> on an Xbox controller or
+      <strong>Square</strong> on a PlayStation controller.
+    </li>
+    <li>
+      <strong>Keyboard</strong>: Press the <strong>Tab</strong> key.
+    </li>
+  </ul>
+  <p>
+    The screen reader announces the enemy's name and its current health.
+    This makes it much easier to:
+  </p>
+  <ul>
+    <li>Keep track of which enemy you are focusing on.</li>
+    <li>Monitor its remaining health during combat.</li>
+  </ul>
+
+  <h3>Auto-Fire & Weapon Types</h3>
+  <p>
+    In the in-game settings, enabling <strong>auto-fire</strong> is highly recommended:
+  </p>
+  <ul>
+    <li>
+      Instead of repeatedly tapping the right trigger, you hold it down and attack
+      at the fastest rate allowed for that weapon.
+    </li>
+  </ul>
+  <p>
+    As you progress, you will obtain bows and guns that work very well with auto-targeting,
+    making combat feel smooth and manageable. There is also a <strong>summoner</strong> class
+    archetype that largely removes the need to aim at all, since minions attack automatically.
+  </p>
+
+  <h2>Keybind Reference</h2>
+
+  <p>
+    This section covers both Terraria's default controls and the additional keybinds added by Terraria Access.
+    For complete details on Terraria's controls across all platforms, visit the
+    <a href="https://terraria.fandom.com/wiki/Game_controls">Terraria Wiki Game Controls page</a>.
+  </p>
+
+  <h3>Default Keyboard Controls</h3>
+  <p>
+    The following table lists Terraria's default keyboard and mouse controls on PC.
+    These can be changed in the game's Settings menu under Controls.
+  </p>
+
+  <table border="1">
+    <caption>Terraria Default Keyboard Controls</caption>
+    <thead>
+      <tr>
+        <th scope="col">Action</th>
+        <th scope="col">Key</th>
+        <th scope="col">Description</th>
+      </tr>
+    </thead>
+    <tbody>
+      <tr>
+        <td>Use Item / Attack</td>
+        <td>Left Mouse Button</td>
+        <td>Attack with held weapon, consume potion, use tool, etc.</td>
+      </tr>
+      <tr>
+        <td>Interact</td>
+        <td>Right Mouse Button</td>
+        <td>Open doors, chests, talk to NPCs, activate switches, place blocks.</td>
+      </tr>
+      <tr>
+        <td>Aim</td>
+        <td>Mouse Movement</td>
+        <td>Move the cursor to aim attacks and interactions.</td>
+      </tr>
+      <tr>
+        <td>Move Up</td>
+        <td>W</td>
+        <td>Climb ropes, toggle gravity with Gravitation Potion, slow fall with Featherfall.</td>
+      </tr>
+      <tr>
+        <td>Move Down</td>
+        <td>S</td>
+        <td>Drop through platforms, climb down ropes, go underwater with water walking items.</td>
+      </tr>
+      <tr>
+        <td>Move Left</td>
+        <td>A</td>
+        <td>Move character to the left.</td>
+      </tr>
+      <tr>
+        <td>Move Right</td>
+        <td>D</td>
+        <td>Move character to the right.</td>
+      </tr>
+      <tr>
+        <td>Jump</td>
+        <td>Space</td>
+        <td>Jump, swim upward, activate double jump accessories, fly with wings.</td>
+      </tr>
+      <tr>
+        <td>Grapple</td>
+        <td>E</td>
+        <td>Launch grappling hook toward cursor.</td>
+      </tr>
+      <tr>
+        <td>Auto Select</td>
+        <td>Left Shift</td>
+        <td>Automatically selects appropriate tool for the tile under cursor.</td>
+      </tr>
+      <tr>
+        <td>Smart Cursor</td>
+        <td>Left Ctrl</td>
+        <td>Toggle smart cursor for semi-automated mining and building.</td>
+      </tr>
+      <tr>
+        <td>Quick Mount</td>
+        <td>R</td>
+        <td>Mount or dismount from mount in equipment slot.</td>
+      </tr>
+      <tr>
+        <td>Quick Heal</td>
+        <td>H</td>
+        <td>Consume best healing item from inventory.</td>
+      </tr>
+      <tr>
+        <td>Quick Mana</td>
+        <td>J</td>
+        <td>Consume first mana restoration item in inventory.</td>
+      </tr>
+      <tr>
+        <td>Quick Buff</td>
+        <td>B</td>
+        <td>Consume one of each buff potion in inventory.</td>
+      </tr>
+      <tr>
+        <td>Throw / Discard</td>
+        <td>T</td>
+        <td>Drop the currently selected item on the ground.</td>
+      </tr>
+      <tr>
+        <td>Inventory</td>
+        <td>Escape</td>
+        <td>Open inventory, crafting, and settings menu.</td>
+      </tr>
+      <tr>
+        <td>Chat</td>
+        <td>Enter</td>
+        <td>Open chat box (multiplayer only).</td>
+      </tr>
+      <tr>
+        <td>Hotbar Selection</td>
+        <td>1-9, 0</td>
+        <td>Select items from hotbar (1 is leftmost, 0 is rightmost).</td>
+      </tr>
+      <tr>
+        <td>Loadout 1 / 2 / 3</td>
+        <td>F1 / F2 / F3</td>
+        <td>Switch between equipment loadouts.</td>
+      </tr>
+      <tr>
+        <td>Toggle Camera Mode</td>
+        <td>F4</td>
+        <td>Toggle camera mode for screenshots.</td>
+      </tr>
+    </tbody>
+  </table>
+
+  <h3>Default Gamepad Controls</h3>
+  <p>
+    The following table lists Terraria's default gamepad controls.
+    Button labels use Xbox naming; PlayStation equivalents are shown in parentheses.
+  </p>
+
+  <table border="1">
+    <caption>Terraria Default Gamepad Controls</caption>
+    <thead>
+      <tr>
+        <th scope="col">Action</th>
+        <th scope="col">Button</th>
+        <th scope="col">Description</th>
+      </tr>
+    </thead>
+    <tbody>
+      <tr>
+        <td>Use Item / Attack</td>
+        <td>RT (R2)</td>
+        <td>Attack with held weapon, consume potion, use tool, etc.</td>
+      </tr>
+      <tr>
+        <td>Interact</td>
+        <td>B (Circle)</td>
+        <td>Open doors, chests, talk to NPCs, activate switches.</td>
+      </tr>
+      <tr>
+        <td>Aim</td>
+        <td>Right Stick</td>
+        <td>Aim attacks and interactions around your character.</td>
+      </tr>
+      <tr>
+        <td>Movement</td>
+        <td>Left Stick</td>
+        <td>Move character in any direction.</td>
+      </tr>
+      <tr>
+        <td>Jump</td>
+        <td>LT (L2)</td>
+        <td>Jump, swim upward, activate double jump accessories, fly with wings.</td>
+      </tr>
+      <tr>
+        <td>Grapple</td>
+        <td>LB (L1)</td>
+        <td>Launch grappling hook in aimed direction.</td>
+      </tr>
+      <tr>
+        <td>Smart Cursor</td>
+        <td>R3 (Right Stick Press)</td>
+        <td>Toggle smart cursor for semi-automated mining and building.</td>
+      </tr>
+      <tr>
+        <td>Quick Mount</td>
+        <td>A (Cross)</td>
+        <td>Mount or dismount from mount in equipment slot.</td>
+      </tr>
+      <tr>
+        <td>Throw / Discard</td>
+        <td>X (Square)</td>
+        <td>Drop the currently selected item on the ground.</td>
+      </tr>
+      <tr>
+        <td>Inventory</td>
+        <td>Y (Triangle)</td>
+        <td>Open inventory, crafting, and equipment menu.</td>
+      </tr>
+      <tr>
+        <td>Cycle Hotbar</td>
+        <td>LB / RB (L1 / R1)</td>
+        <td>Cycle selected hotbar item left or right.</td>
+      </tr>
+      <tr>
+        <td>Radial Hotbar</td>
+        <td>Hold RB (R1)</td>
+        <td>Open radial menu to quickly select hotbar items.</td>
+      </tr>
+      <tr>
+        <td>D-Pad Hotbar</td>
+        <td>D-Pad</td>
+        <td>Use items bound to D-Pad directions. Must be enabled in settings; otherwise, the D-Pad will toggle smart cursor off and begin tile-by-tile navigation.</td>
+      </tr>
+      <tr>
+        <td>Lock On</td>
+        <td>X (Square)</td>
+        <td>Lock onto an enemy to auto-aim attacks.</td>
+      </tr>
+    </tbody>
+  </table>
+
+  <h3>Terraria Access Gamepad Controls</h3>
+  <p>
+    The following keybinds are added or modified by Terraria Access for gamepad users.
+  </p>
+
+  <table border="1">
+    <caption>Terraria Access Gamepad Keybinds</caption>
+    <thead>
+      <tr>
+        <th scope="col">Action</th>
+        <th scope="col">Button</th>
+        <th scope="col">Description</th>
+      </tr>
+    </thead>
+    <tbody>
+      <tr>
+        <td>Announce player status</td>
+        <td>Select</td>
+        <td>Cycles through status categories: health, mana, defense, biome, time, and buffs.</td>
+      </tr>
+      <tr>
+        <td>Toggle build mode</td>
+        <td>Start</td>
+        <td>Cycles through build modes: Fill, Outline, and Disabled.</td>
+      </tr>
+      <tr>
+        <td>Mark build selection point</td>
+        <td>A (Xbox) / Cross (PlayStation)</td>
+        <td>Sets points A and B for build mode selections (lines or rectangles to fill or destroy).</td>
+      </tr>
+      <tr>
+        <td>Target enemy</td>
+        <td>X (Xbox) / Square (PlayStation)</td>
+        <td>Targets the nearest enemy. The screen reader announces the enemy's name and health.</td>
+      </tr>
+      <tr>
+        <td>Toggle smart cursor</td>
+        <td>Left Stick (press)</td>
+        <td>Toggles smart cursor on or off. When off, the directional pad moves the cursor tile by tile.</td>
+      </tr>
+    </tbody>
+  </table>
+
+  <h3>Terraria Access Keyboard Controls</h3>
+  <p>
+    The following keybinds are added or modified by Terraria Access for keyboard users
+    using Gamepad Emulation mode.
+  </p>
+
+  <table border="1">
+    <caption>Terraria Access Keyboard Keybinds</caption>
+    <thead>
+      <tr>
+        <th scope="col">Action</th>
+        <th scope="col">Key</th>
+        <th scope="col">Description</th>
+      </tr>
+    </thead>
+    <tbody>
+      <tr>
+        <td>Toggle Gamepad Emulation</td>
+        <td>F6</td>
+        <td>Enables or disables Gamepad Emulation mode.</td>
+      </tr>
+      <tr>
+        <td>Change guidance category</td>
+        <td>Left / Right Brackets</td>
+        <td>Cycles the guidance system's current category (ores, NPCs, crafting stations, dropped items, critters, plants, etc.).</td>
+      </tr>
+      <tr>
+        <td>Cycle items in current guidance category</td>
+        <td>Page Up / Page Down</td>
+        <td>Moves through the list of detected objects and focuses one at a time.</td>
+      </tr>
+      <tr>
+        <td>Teleport to targeted object</td>
+        <td>Home</td>
+        <td>Teleports to the currently targeted NPC or crafting station.</td>
+      </tr>
+      <tr>
+        <td>Announce player status</td>
+        <td>Backspace</td>
+        <td>Cycles through status categories: health, mana, defense, biome, time, and buffs.</td>
+      </tr>
+      <tr>
+        <td>Toggle build mode</td>
+        <td>X</td>
+        <td>Cycles through build modes: Fill, Outline, and Disabled.</td>
+      </tr>
+      <tr>
+        <td>Mark build selection point</td>
+        <td>C</td>
+        <td>Sets points A and B for build mode selections (lines or rectangles to fill or destroy).</td>
+      </tr>
+      <tr>
+        <td>Target enemy</td>
+        <td>Tab</td>
+        <td>Targets or untargets an enemy. Press again to untarget.</td>
+      </tr>
+      <tr>
+        <td>Search Workshop mods</td>
+        <td>Tab</td>
+        <td>Enters search mode in the Workshop menu. Type your query and press Enter to search.</td>
+      </tr>
+      <tr>
+        <td>Use item / Attack</td>
+        <td>I</td>
+        <td>Simulates left click. Use items, fire weapons, break tiles.</td>
+      </tr>
+      <tr>
+        <td>Interact / Place</td>
+        <td>P</td>
+        <td>Simulates right click. Talk to NPCs, open chests/doors, place blocks, equip armor.</td>
+      </tr>
+      <tr>
+        <td>Toggle smart cursor</td>
+        <td>Control</td>
+        <td>Toggles smart cursor on or off. When off, directional keys become tile-by-tile movement.</td>
+      </tr>
+      <tr>
+        <td>Virtual right stick / d-pad up</td>
+        <td>O</td>
+        <td>Navigate upward (analog stick when smart cursor on, d-pad when off).</td>
+      </tr>
+      <tr>
+        <td>Virtual right stick / d-pad left</td>
+        <td>K</td>
+        <td>Navigate left (analog stick when smart cursor on, d-pad when off).</td>
+      </tr>
+      <tr>
+        <td>Virtual right stick / d-pad down</td>
+        <td>L</td>
+        <td>Navigate downward (analog stick when smart cursor on, d-pad when off).</td>
+      </tr>
+      <tr>
+        <td>Virtual right stick / d-pad right</td>
+        <td>Semicolon (;)</td>
+        <td>Navigate right (analog stick when smart cursor on, d-pad when off).</td>
+      </tr>
+      <tr>
+        <td>Virtual right stick (alternate)</td>
+        <td>Arrow Keys</td>
+        <td>Move the virtual right analog stick when Gamepad Emulation mode is enabled. Provides an alternate way to aim around your character.</td>
+      </tr>
+      <tr>
+        <td>Smart select</td>
+        <td>F</td>
+        <td>Quickly moves items between your inventory and a chest, trashes items when no chest is open, or sells items to NPCs.</td>
+      </tr>
+      <tr>
+        <td>Quick use</td>
+        <td>J</td>
+        <td>Consumes the focused item, such as potions or food buffs.</td>
+      </tr>
+      <tr>
+        <td>Previous inventory section</td>
+        <td>Q</td>
+        <td>Move to the previous section of the inventory screen (inventory, crafting, equipment, etc.).</td>
+      </tr>
+      <tr>
+        <td>Next inventory section</td>
+        <td>E</td>
+        <td>Move to the next section of the inventory screen (inventory, crafting, equipment, etc.).</td>
+      </tr>
+      <tr>
+        <td>Menu select</td>
+        <td>Spacebar</td>
+        <td>Select menu items on the main menu. Use with WASD to navigate menus.</td>
+      </tr>
+      <tr>
+        <td>Menu back</td>
+        <td>Escape</td>
+        <td>Go back to the previous menu.</td>
+      </tr>
+      <tr>
+        <td>Previous Chat Message</td>
+        <td>Page Up</td>
+        <td>Moves the screen reader focus to the previous chat message so you can read older messages in the chat log.</td>
+      </tr>
+      <tr>
+        <td>Next Chat Message</td>
+        <td>Page Down</td>
+        <td>Moves the screen reader focus to the next chat message so you can read newer messages in the chat log.</td>
+      </tr>
+    </tbody>
+  </table>
+
+  <h3>Menus Requiring Scrolling</h3>
+  <p>
+    Remember that both the Controls menu and the hairstyle selection list require
+    scrolling once you reach the bottom of the initially visible options. On gamepad,
+    use the <strong>right analog stick</strong>. On keyboard in Gamepad Emulation mode,
+    use the <strong>O, K, L, ;</strong> keys. Without scrolling, additional options will not appear.
+  </p>
+
+</body>
+</html>

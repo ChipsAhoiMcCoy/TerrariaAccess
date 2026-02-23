@@ -33,9 +33,18 @@ The mod uses the Tolk library for universal screen reader support:
 
 If you prefer to install manually instead of using the installer:
 
-1. Place `Tolk.dll`, `nvdaControllerClient64.dll`, and `SAAPI64.dll` in your tModLoader Steam directory (e.g., `steamapps/common/tModLoader`).
-2. Place `ScreenReaderMod.tmod` and `enabled.json` in your tModLoader Mods folder (e.g., `Documents/My Games/Terraria/tModLoader/Mods`).
-3. Place `input profiles.json` in your tModLoader user folder (e.g., `Documents/My Games/Terraria/tModLoader`).
+1. Install Terraria and tModLoader from Steam.
+2. Launch tModLoader at least once, then close it. This creates the necessary folders.
+3. Clone this repository or download the source code using your preferred method.
+4. Place the following files in your tModLoader Steam directory (e.g., `C:\Program Files (x86)\Steam\steamapps\common\tModLoader`):
+   - `Tolk.dll`
+   - `nvdaControllerClient64.dll`
+   - `SAAPI64.dll`
+5. Place the following files in your tModLoader Mods folder (e.g., `Documents\My Games\Terraria\tModLoader\Mods`):
+   - `ScreenReaderMod.tmod`
+   - `enabled.json`
+6. Place `input profiles.json` in your tModLoader user folder (e.g., `Documents\My Games\Terraria\tModLoader`).
+7. Make sure your screen reader is running before launching tModLoader.
 
 ## Building from Source
 

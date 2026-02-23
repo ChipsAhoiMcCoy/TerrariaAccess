@@ -2,7 +2,7 @@
 ; Terraria Access - Inno Setup Installer Script
 ; ============================================================================
 ; Builds a single Setup.exe that installs:
-;   - Screen reader DLLs + license into the tModLoader Steam directory
+;   - Screen reader DLLs, license, and documentation into the tModLoader Steam directory
 ;   - ScreenReaderMod.tmod + enabled.json into the tModLoader Mods folder
 ;   - Input profiles into the tModLoader user data folder
 ;
@@ -69,6 +69,7 @@ Source: "files\tmodloader\Tolk.dll";                    DestDir: "{app}"; Flags:
 Source: "files\tmodloader\nvdaControllerClient64.dll";   DestDir: "{app}"; Flags: ignoreversion
 Source: "files\tmodloader\SAAPI64.dll";                  DestDir: "{app}"; Flags: ignoreversion
 Source: "files\tmodloader\THIRD-PARTY-LICENSES.txt";     DestDir: "{app}"; Flags: ignoreversion
+Source: "files\tmodloader\Terraria Access Documentation.html"; DestDir: "{app}"; Flags: ignoreversion
 
 ; Mod file and enabled list -> Documents/My Games/Terraria/tModLoader/Mods/
 Source: "files\mods\ScreenReaderMod.tmod";  DestDir: "{userdocs}\My Games\Terraria\tModLoader\Mods"; Flags: ignoreversion
