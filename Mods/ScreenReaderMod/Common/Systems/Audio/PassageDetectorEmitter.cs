@@ -266,11 +266,23 @@ internal sealed class PassageDetectorEmitter : AudioEmitterBase
 
         int midY = gapStart + gapHeight / 2;
 
-        // Verify the passage extends horizontally beyond the wall (not just a 1-tile notch)
-        int deeperX = wallX + side;
-        if (deeperX < 0 || deeperX >= Main.maxTilesX || IsSolidAt(deeperX, midY))
+        // Skip passages inside player-built structures. Player bases have background walls
+        // behind their rooms; natural cave shafts and passages typically do not.
+        if (GapHasBackgroundWalls(wallX, gapStart, gapHeight))
         {
             return;
+        }
+
+        // Verify the passage extends at least 3 tiles deep (filters shallow doorway-sized notches
+        // and 1-tile wall irregularities that aren't real explorable passages).
+        const int minPassageDepth = 3;
+        for (int d = 1; d <= minPassageDepth; d++)
+        {
+            int checkX = wallX + side * d;
+            if (checkX < 0 || checkX >= Main.maxTilesX || IsSolidAt(checkX, midY))
+            {
+                return;
+            }
         }
 
         // Fire immediately when the player's body overlaps with the gap
@@ -305,6 +317,25 @@ internal sealed class PassageDetectorEmitter : AudioEmitterBase
         }
 
         PlayChirp(volume, sample.Pan);
+    }
+
+    /// <summary>
+    /// Returns true if every empty tile in the gap has a background wall.
+    /// Background walls indicate the gap is inside a player-built structure (rooms, doorways)
+    /// rather than a natural cave opening, which should not trigger passage chirps.
+    /// </summary>
+    private static bool GapHasBackgroundWalls(int columnX, int gapStart, int gapHeight)
+    {
+        for (int y = gapStart; y < gapStart + gapHeight; y++)
+        {
+            Tile tile = Framing.GetTileSafely(columnX, y);
+            if (tile.WallType == 0)
+            {
+                return false;
+            }
+        }
+
+        return true;
     }
 
     /// <summary>
