@@ -520,14 +520,11 @@ internal sealed class CursorDescriptorService
         int frameWidth = tileType == TileID.Dressers ? 54 : 36;
         int style = tile.TileFrameX / frameWidth;
 
-        string? name = TryResolveChestNameForStyle(tileType, style);
-
-        // For locked chest styles, the direct lookup may return only a generic name ("Chest")
-        // because no item creates a locked chest. Try the unlocked counterpart to get the
-        // specific chest type name (e.g., "Shadow Chest" instead of "Chest").
+        // For locked chest styles, resolve via the unlocked counterpart first.
+        // Locked styles have no corresponding item and MapHelper.TileToLookup returns
+        // incorrect map object names (e.g., "Thorns", "Candle") for some styles.
         string genericFallback = tileType == TileID.Dressers ? "Dresser" : "Chest";
-        if ((string.IsNullOrWhiteSpace(name) || string.Equals(name, genericFallback, StringComparison.OrdinalIgnoreCase))
-            && TryGetUnlockedChestStyle(tileType, style, out int unlockedStyle))
+        if (TryGetUnlockedChestStyle(tileType, style, out int unlockedStyle))
         {
             string? unlockedName = TryResolveChestNameForStyle(tileType, unlockedStyle);
             if (!string.IsNullOrWhiteSpace(unlockedName))
@@ -536,6 +533,7 @@ internal sealed class CursorDescriptorService
             }
         }
 
+        string? name = TryResolveChestNameForStyle(tileType, style);
         return !string.IsNullOrWhiteSpace(name) ? name : genericFallback;
     }
 
