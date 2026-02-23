@@ -4,9 +4,7 @@ A tModLoader mod that makes Terraria playable for blind and low-vision players. 
 
 ## Latest Release
 
-Download the [latest ScreenReaderMod.tmod](https://drive.google.com/file/d/1Hm7q4lqIMEQE4_J8KxPZWmIBDCWc_zgr/view) and follow the installation steps below.
-
-Full documentation is included with each release.
+Download the latest `TerrariaAccessSetup.exe` from the [Releases page](https://github.com/Terraria-Accessibility-Mod/ScreenReaderMod/releases) and run the installer.
 
 ## Supported Screen Readers
 
@@ -27,10 +25,17 @@ The mod uses the Tolk library for universal screen reader support:
 ## Installation
 
 1. Install Terraria and tModLoader from Steam.
-2. Place `Tolk.dll`, `nvdaControllerClient64.dll`, and `SAAPI64.dll` in `/steamapps/common/tmodloader`.
-3. Place `ScreenReaderMod.tmod` in `/documents/my games/terraria/tmodloader/mods`.
-4. Place the `enabled.json` in `/documents/my games/terraria/tmodloader/mods`.
-5. Place the inputs file in `/documents/my games/terraria/tmodloader`.
+2. Download and run `TerrariaAccessSetup.exe` from the [Releases page](https://github.com/Terraria-Accessibility-Mod/ScreenReaderMod/releases).
+3. The installer will auto-detect your tModLoader installation and place all files in the correct locations.
+4. Make sure your screen reader is running before launching tModLoader.
+
+### Manual Installation
+
+If you prefer to install manually instead of using the installer:
+
+1. Place `Tolk.dll`, `nvdaControllerClient64.dll`, and `SAAPI64.dll` in your tModLoader Steam directory (e.g., `steamapps/common/tModLoader`).
+2. Place `ScreenReaderMod.tmod` and `enabled.json` in your tModLoader Mods folder (e.g., `Documents/My Games/Terraria/tModLoader/Mods`).
+3. Place `input profiles.json` in your tModLoader user folder (e.g., `Documents/My Games/Terraria/tModLoader`).
 
 ## Building from Source
 
