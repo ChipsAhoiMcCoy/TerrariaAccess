@@ -11,6 +11,12 @@ public enum EdgeDetectionMode
     Beeps
 }
 
+public enum FallProximityMode
+{
+    Tone,
+    Beeps
+}
+
 public class ScreenReaderModConfig : ModConfig
 {
     public static ScreenReaderModConfig Instance { get; private set; } = null!;
@@ -93,6 +99,18 @@ public class ScreenReaderModConfig : ModConfig
     [Range(0f, 1f)]
     [Slider]
     public float HeartbeatVolume { get; set; } = 1f;
+
+    // Fall detection
+    [DefaultValue(true)]
+    public bool FallDetectionEnabled { get; set; } = true;
+
+    [DefaultValue(FallProximityMode.Tone)]
+    public FallProximityMode FallDetectionMode { get; set; } = FallProximityMode.Tone;
+
+    [DefaultValue(1f)]
+    [Range(0f, 1f)]
+    [Slider]
+    public float FallDetectionVolume { get; set; } = 1f;
 
     // Chunk Mining
     [DefaultValue(true)]

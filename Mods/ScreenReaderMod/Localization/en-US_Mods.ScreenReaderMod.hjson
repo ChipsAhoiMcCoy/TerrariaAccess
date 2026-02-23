@@ -86,6 +86,23 @@ Mods: {
 					Label: Chunk Miner Max Tiles
 					Tooltip: Maximum number of tiles that can be mined at once when chunk mining. Higher values allow larger veins to be mined in one hit, but may cause brief lag on very large deposits.
 				}
+
+				FallDetectionEnabled: {
+					Label: Fall Detection
+					Tooltip: When enabled, plays audio cues while falling to indicate ground proximity and warn about fall damage.
+				}
+
+				FallDetectionMode: {
+					Label: Fall Detection Mode
+					Tooltip: Controls the type of audio cue played during falls. Tone plays a continuous rising-pitch sound as you approach the ground. Beeps plays accelerating pips that speed up as you get closer.
+					Tone.Label: Tone
+					Beeps.Label: Beeps
+				}
+
+				FallDetectionVolume: {
+					Label: Fall Detection Volume
+					Tooltip: Adjusts the volume of fall detection audio cues including proximity tones and fall damage warnings.
+				}
 			}
 		}
 
@@ -595,6 +612,21 @@ Configs: {
 			Label: Heartbeat Volume
 			Tooltip: ""
 		}
+
+		FallDetectionEnabled: {
+			Label: Fall Detection
+			Tooltip: ""
+		}
+
+		FallDetectionMode: {
+			Label: Fall Detection Mode
+			Tooltip: ""
+		}
+
+		FallDetectionVolume: {
+			Label: Fall Detection Volume
+			Tooltip: ""
+		}
 	}
 
 	EdgeDetectionMode: {
@@ -607,6 +639,20 @@ Configs: {
 
 		Static: {
 			Label: Static
+			Tooltip: ""
+		}
+
+		Beeps: {
+			Label: Beeps
+			Tooltip: ""
+		}
+	}
+
+	FallProximityMode: {
+		Tooltip: ""
+
+		Tone: {
+			Label: Tone
 			Tooltip: ""
 		}
 
