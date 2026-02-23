@@ -22,6 +22,7 @@ internal sealed class WorldAudioCoordinator
     private readonly BreathEmitter _breathEmitter;
     private readonly HeartbeatEmitter _heartbeatEmitter;
     private readonly FallDetectionEmitter _fallDetectionEmitter;
+    private readonly WallCollisionEmitter _wallCollisionEmitter;
     private readonly CadenceGate _cadenceGate = new();
 
     public WorldAudioCoordinator()
@@ -36,6 +37,7 @@ internal sealed class WorldAudioCoordinator
         _breathEmitter = new BreathEmitter();
         _heartbeatEmitter = new HeartbeatEmitter();
         _fallDetectionEmitter = new FallDetectionEmitter();
+        _wallCollisionEmitter = new WallCollisionEmitter();
     }
 
     public WorldAudioCoordinator(
@@ -56,6 +58,7 @@ internal sealed class WorldAudioCoordinator
         _breathEmitter = new BreathEmitter();
         _heartbeatEmitter = new HeartbeatEmitter();
         _fallDetectionEmitter = new FallDetectionEmitter();
+        _wallCollisionEmitter = new WallCollisionEmitter();
     }
 
     /// <summary>
@@ -81,6 +84,7 @@ internal sealed class WorldAudioCoordinator
         Run("breath", 1, () => _breathEmitter.Update(player));
         Run("heartbeat", 1, () => _heartbeatEmitter.Update(player));
         Run("fall-detection", 1, () => _fallDetectionEmitter.Update(player));
+        Run("wall-collision", 1, () => _wallCollisionEmitter.Update(player));
     }
 
     /// <summary>
@@ -98,6 +102,7 @@ internal sealed class WorldAudioCoordinator
         _breathEmitter.Reset();
         _heartbeatEmitter.Reset();
         _fallDetectionEmitter.Reset();
+        _wallCollisionEmitter.Reset();
         _cadenceGate.Reset();
     }
 
@@ -112,6 +117,7 @@ internal sealed class WorldAudioCoordinator
         PassageDetectorEmitter.DisposeStaticResources();
         HeartbeatEmitter.DisposeStaticResources();
         FallDetectionEmitter.DisposeStaticResources();
+        WallCollisionEmitter.DisposeStaticResources();
     }
 
     private void Run(string key, uint intervalFrames, Action action)

@@ -100,6 +100,15 @@ public class ScreenReaderModConfig : ModConfig
     [Slider]
     public float HeartbeatVolume { get; set; } = 1f;
 
+    // Wall collision
+    [DefaultValue(true)]
+    public bool WallCollisionEnabled { get; set; } = true;
+
+    [DefaultValue(1f)]
+    [Range(0f, 1f)]
+    [Slider]
+    public float WallCollisionVolume { get; set; } = 1f;
+
     // Fall detection
     [DefaultValue(true)]
     public bool FallDetectionEnabled { get; set; } = true;

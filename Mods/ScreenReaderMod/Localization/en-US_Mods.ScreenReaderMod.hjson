@@ -87,6 +87,16 @@ Mods: {
 					Tooltip: Maximum number of tiles that can be mined at once when chunk mining. Higher values allow larger veins to be mined in one hit, but may cause brief lag on very large deposits.
 				}
 
+				WallCollisionEnabled: {
+					Label: Wall Collision
+					Tooltip: When enabled, plays a repeating tap sound when you walk into a solid wall. The tap is panned toward the wall so you can tell which side is blocked.
+				}
+
+				WallCollisionVolume: {
+					Label: Wall Collision Volume
+					Tooltip: Adjusts the volume of the wall collision tap sounds.
+				}
+
 				FallDetectionEnabled: {
 					Label: Fall Detection
 					Tooltip: When enabled, plays audio cues while falling to indicate ground proximity and warn about fall damage.
@@ -610,6 +620,16 @@ Configs: {
 
 		HeartbeatVolume: {
 			Label: Heartbeat Volume
+			Tooltip: ""
+		}
+
+		WallCollisionEnabled: {
+			Label: Wall Collision
+			Tooltip: ""
+		}
+
+		WallCollisionVolume: {
+			Label: Wall Collision Volume
 			Tooltip: ""
 		}
 
