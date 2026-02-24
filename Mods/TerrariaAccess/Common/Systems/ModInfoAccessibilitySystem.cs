@@ -129,6 +129,8 @@ public sealed class ModInfoAccessibilitySystem : ModMenuAccessibilityBase
         ScreenReaderService.ClearContexts("modinfo:");
     }
 
+    protected override int GetInitialFocusFrameCount() => 15;
+
     protected override void ConfigureGamepadPoints(object menuState)
     {
         BindingById.Clear();
@@ -139,6 +141,11 @@ public sealed class ModInfoAccessibilitySystem : ModMenuAccessibilityBase
 
         // Get the main container element to check which buttons are attached
         UIElement? mainContainer = ReflectionCache.UIModInfo.UIElement?.GetValue(menuState) as UIElement;
+
+        if (mainContainer is null)
+        {
+            Mod.Logger.Debug("[ModInfo] ConfigureGamepadPoints: mainContainer is null, UI may not be initialized yet");
+        }
 
         // Get button references
         UIElement? homepageButton = ReflectionCache.UIModInfo.ModHomepageButton?.GetValue(menuState) as UIElement;
@@ -226,8 +233,11 @@ public sealed class ModInfoAccessibilitySystem : ModMenuAccessibilityBase
         _topRowBindings.Sort((a, b) => a.Position.X.CompareTo(b.Position.X));
         _bottomRowBindings.Sort((a, b) => a.Position.X.CompareTo(b.Position.X));
 
+        Mod.Logger.Debug($"[ModInfo] ConfigureGamepadPoints: {_topRowBindings.Count} top buttons, {_bottomRowBindings.Count} bottom buttons, {BindingById.Count} total bindings");
+
         if (BindingById.Count == 0)
         {
+            Mod.Logger.Warn("[ModInfo] ConfigureGamepadPoints: No bindings found - UI buttons may not be populated yet");
             return;
         }
 

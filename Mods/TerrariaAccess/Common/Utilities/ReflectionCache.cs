@@ -148,6 +148,9 @@ internal static class ReflectionCache
         private static readonly Lazy<FieldInfo?> _dialogText = new(() =>
             Type?.GetField("_dialogText", InstanceNonPublic));
 
+        private static readonly Lazy<MethodInfo?> _showMoreInfo = new(() =>
+            Type?.GetMethod("ShowMoreInfo", InstanceNonPublic));
+
         internal static Type? Type => _type.Value;
         internal static FieldInfo? Mod => _mod.Value;
         internal static PropertyInfo? DisplayNameClean => _displayNameClean.Value;
@@ -159,6 +162,7 @@ internal static class ReflectionCache
         internal static FieldInfo? DialogYesButton => _dialogYesButton.Value;
         internal static FieldInfo? DialogNoButton => _dialogNoButton.Value;
         internal static FieldInfo? DialogText => _dialogText.Value;
+        internal static MethodInfo? ShowMoreInfo => _showMoreInfo.Value;
     }
 
     #endregion

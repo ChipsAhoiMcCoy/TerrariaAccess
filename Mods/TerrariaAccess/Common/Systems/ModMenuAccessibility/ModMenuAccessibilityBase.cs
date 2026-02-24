@@ -236,9 +236,14 @@ public abstract class ModMenuAccessibilityBase : ModSystem
             InitialFocusFramesRemaining = GetInitialFocusFrameCount();
             CurrentFocusIndex = 0;
 
-            // Prevent immediate button triggers on menu entry
+            // Prevent immediate button triggers on menu entry by pretending all
+            // action keys were already pressed last frame. This ensures edge detection
+            // won't fire until the user releases and re-presses the key/button.
             _aButtonWasPressed = true;
             _bButtonWasPressed = true;
+            _keyEnterWasPressed = true;
+            _keySpaceWasPressed = true;
+            _keyInventorySelectWasPressed = true;
 
             Mod.Logger.Info($"[{SystemLogName}] Entered menu");
             OnMenuEntered(currentState!);

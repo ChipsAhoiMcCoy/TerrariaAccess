@@ -811,7 +811,7 @@ public sealed class ManageModsAccessibilitySystem : ModMenuAccessibilityBase
             return;
         }
 
-        Mod.Logger.Info($"[ManageMods] Clicking mod button: {binding.Label}");
+        Mod.Logger.Info($"[ManageMods] Clicking mod button: {binding.Label} (type: {buttonElement.GetType().Name})");
         SoundEngine.PlaySound(SoundID.MenuTick);
 
         try
@@ -820,27 +820,47 @@ public sealed class ManageModsAccessibilitySystem : ModMenuAccessibilityBase
             Vector2 buttonCenter = new(dims.X + dims.Width / 2f, dims.Y + dims.Height / 2f);
             var clickEvent = new UIMouseEvent(buttonElement, buttonCenter);
 
-            // For Delete button, invoke the QuickModDelete method directly
-            if (binding.Label == "Delete" && CurrentFocusIndex >= 0 && CurrentFocusIndex < ModItemBindings.Count)
+            // For More Info and Delete buttons, invoke the handler method directly on the UIModItem
+            // to avoid click propagation via UIElement.LeftClick which bubbles up to the parent
+            // UIModItem panel and can interfere with the screen transition.
+            if (CurrentFocusIndex >= 0 && CurrentFocusIndex < ModItemBindings.Count)
             {
                 var modItemBinding = ModItemBindings[CurrentFocusIndex];
                 object? modItem = modItemBinding.ModItem;
+
                 if (modItem is not null && ReflectionCache.UIModItem.Type is not null)
                 {
-                    var quickModDeleteMethod = ReflectionCache.UIModItem.Type.GetMethod("QuickModDelete", BindingFlags.NonPublic | BindingFlags.Instance);
-                    if (quickModDeleteMethod is not null)
+                    // More Info button: invoke ShowMoreInfo directly
+                    if (binding.Label == "More Info" && ReflectionCache.UIModItem.ShowMoreInfo is { } showMoreInfoMethod)
                     {
-                        Mod.Logger.Info($"[ManageMods] Invoking QuickModDelete directly");
-                        quickModDeleteMethod.Invoke(modItem, new object[] { clickEvent, buttonElement });
+                        Mod.Logger.Info($"[ManageMods] Invoking ShowMoreInfo directly to avoid click propagation");
+                        showMoreInfoMethod.Invoke(modItem, new object[] { clickEvent, buttonElement });
 
                         Main.mouseLeft = false;
                         Main.mouseLeftRelease = false;
-                        ScreenReaderService.SetCooldown(CooldownKeyDialogAction, 30);
                         return;
+                    }
+
+                    // Delete button: invoke QuickModDelete directly
+                    if (binding.Label == "Delete")
+                    {
+                        var quickModDeleteMethod = ReflectionCache.UIModItem.Type.GetMethod("QuickModDelete", BindingFlags.NonPublic | BindingFlags.Instance);
+                        if (quickModDeleteMethod is not null)
+                        {
+                            Mod.Logger.Info($"[ManageMods] Invoking QuickModDelete directly");
+                            quickModDeleteMethod.Invoke(modItem, new object[] { clickEvent, buttonElement });
+
+                            Main.mouseLeft = false;
+                            Main.mouseLeftRelease = false;
+                            ScreenReaderService.SetCooldown(CooldownKeyDialogAction, 30);
+                            return;
+                        }
                     }
                 }
             }
 
+            // Fallback: use LeftClick for other buttons (Config, etc.)
+            Mod.Logger.Info($"[ManageMods] Using LeftClick fallback for button: {binding.Label}");
             buttonElement.LeftClick(clickEvent);
         }
         catch (Exception ex)
