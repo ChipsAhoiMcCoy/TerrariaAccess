@@ -102,7 +102,7 @@ accessibility for Terraria. These files are not affiliated with or
 endorsed by Re-Logic (the developers of Terraria).
 
 The Terraria Access source code is available at:
-https://github.com/Terraria-Accessibility-Mod/ScreenReaderMod
+https://github.com/ChipsAhoiMcCoy/TerrariaAccess
 
 If you have received this software without source code for the LGPL-licensed
 libraries listed above, you may obtain it at the URLs provided in each

@@ -4,7 +4,7 @@ A tModLoader mod that makes Terraria playable for blind and low-vision players. 
 
 ## Latest Release
 
-Download the latest `TerrariaAccessSetup.exe` from the [Releases page](https://github.com/Terraria-Accessibility-Mod/ScreenReaderMod/releases) and run the installer.
+Download the latest `TerrariaAccessSetup.exe` from the [Releases page](https://github.com/ChipsAhoiMcCoy/TerrariaAccess/releases) and run the installer.
 
 ## Supported Screen Readers
 
@@ -25,7 +25,7 @@ The mod uses the Tolk library for universal screen reader support:
 ## Installation
 
 1. Install Terraria and tModLoader from Steam.
-2. Download and run `TerrariaAccessSetup.exe` from the [Releases page](https://github.com/Terraria-Accessibility-Mod/ScreenReaderMod/releases).
+2. Download and run `TerrariaAccessSetup.exe` from the [Releases page](https://github.com/ChipsAhoiMcCoy/TerrariaAccess/releases).
 3. The installer will auto-detect your tModLoader installation and place all files in the correct locations.
 4. Make sure your screen reader is running before launching tModLoader.
 
@@ -56,4 +56,4 @@ The script builds the mod and copies `ScreenReaderMod.tmod` into your local tMod
 
 ## Issues & Feedback
 
-Report issues at https://github.com/Terraria-Accessibility-Mod/ScreenReaderMod/issues
+Report issues at https://github.com/ChipsAhoiMcCoy/TerrariaAccess/issues

@@ -18,8 +18,8 @@
 
 #define MyAppName "Terraria Access"
 #define MyAppVersion "0.1.16"
-#define MyAppPublisher "Accessibility Agents"
-#define MyAppURL "https://github.com/Terraria-Accessibility-Mod/ScreenReaderMod"
+#define MyAppPublisher "ChipsAhoiMcCoy"
+#define MyAppURL "https://github.com/ChipsAhoiMcCoy/TerrariaAccess"
 
 [Setup]
 AppId={{B7E3F2A1-9C84-4D5E-A6B0-1234567890AB}
