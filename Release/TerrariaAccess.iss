@@ -3,7 +3,7 @@
 ; ============================================================================
 ; Builds a single Setup.exe that installs:
 ;   - Screen reader DLLs, license, and documentation into the tModLoader Steam directory
-;   - ScreenReaderMod.tmod + enabled.json into the tModLoader Mods folder
+;   - TerrariaAccess.tmod + enabled.json into the tModLoader Mods folder
 ;   - Input profiles into the tModLoader user data folder
 ;
 ; Prerequisites:
@@ -17,7 +17,7 @@
 ; ============================================================================
 
 #define MyAppName "Terraria Access"
-#define MyAppVersion "0.1.16"
+#define MyAppVersion "0.1.9"
 #define MyAppPublisher "ChipsAhoiMcCoy"
 #define MyAppURL "https://github.com/ChipsAhoiMcCoy/TerrariaAccess"
 
@@ -72,7 +72,7 @@ Source: "files\tmodloader\THIRD-PARTY-LICENSES.txt";     DestDir: "{app}"; Flags
 Source: "files\tmodloader\Terraria Access Documentation.html"; DestDir: "{app}"; Flags: ignoreversion
 
 ; Mod file and enabled list -> Documents/My Games/Terraria/tModLoader/Mods/
-Source: "files\mods\ScreenReaderMod.tmod";  DestDir: "{userdocs}\My Games\Terraria\tModLoader\Mods"; Flags: ignoreversion
+Source: "files\mods\TerrariaAccess.tmod";  DestDir: "{userdocs}\My Games\Terraria\tModLoader\Mods"; Flags: ignoreversion
 Source: "files\mods\enabled.json";          DestDir: "{userdocs}\My Games\Terraria\tModLoader\Mods"; Flags: ignoreversion
 
 ; Input profiles -> Documents/My Games/Terraria/tModLoader/

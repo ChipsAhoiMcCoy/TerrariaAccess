@@ -1,0 +1,5 @@
+displayName = Terraria Access
+author = Accessibility Agents
+version = 0.1.9
+homepage = https://github.com/ChipsAhoiMcCoy/TerrariaAccess
+side = Client

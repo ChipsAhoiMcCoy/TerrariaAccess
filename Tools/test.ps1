@@ -1,6 +1,6 @@
 <#
 .SYNOPSIS
-    Run unit tests for the ScreenReaderMod project.
+    Run unit tests for the TerrariaAccess project.
 
 .DESCRIPTION
     Executes the xUnit test suite for the Terraria Access mod.
@@ -43,7 +43,7 @@ $ErrorActionPreference = "Stop"
 
 $scriptDir = Split-Path -Parent $MyInvocation.MyCommand.Path
 $repoRoot = Split-Path -Parent $scriptDir
-$testProject = Join-Path $repoRoot "Tests\ScreenReaderMod.Tests"
+$testProject = Join-Path $repoRoot "Tests\TerrariaAccess.Tests"
 
 Write-Host "Running tests from: $testProject" -ForegroundColor Cyan
 Write-Host ""

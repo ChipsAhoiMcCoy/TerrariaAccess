@@ -41,7 +41,7 @@ If you prefer to install manually instead of using the installer:
    - `nvdaControllerClient64.dll`
    - `SAAPI64.dll`
 5. Place the following files in your tModLoader Mods folder (e.g., `Documents\My Games\Terraria\tModLoader\Mods`):
-   - `ScreenReaderMod.tmod`
+   - `TerrariaAccess.tmod`
    - `enabled.json`
 6. Place `input profiles.json` in your tModLoader user folder (e.g., `Documents\My Games\Terraria\tModLoader`).
 7. Make sure your screen reader is running before launching tModLoader.
@@ -52,7 +52,7 @@ If you prefer to install manually instead of using the installer:
 pwsh -NoProfile -ExecutionPolicy Bypass -File Tools/build.ps1
 ```
 
-The script builds the mod and copies `ScreenReaderMod.tmod` into your local tModLoader Mods folder. Pass `-SkipDeploy` to only produce the `.tmod` artifact.
+The script builds the mod and copies `TerrariaAccess.tmod` into your local tModLoader Mods folder. Pass `-SkipDeploy` to only produce the `.tmod` artifact.
 
 ## Issues & Feedback
 

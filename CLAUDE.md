@@ -21,15 +21,15 @@ pwsh -NoProfile -ExecutionPolicy Bypass -File Tools/build.ps1 -SkipDeploy
 pwsh -NoProfile -ExecutionPolicy Bypass -File Tools/build.ps1 -NarrationLint
 ```
 
-The build script invokes tModLoader's build system (`dotnet tModLoader.dll -build`), not MSBuild directly. Output is `ScreenReaderMod.tmod`.
+The build script invokes tModLoader's build system (`dotnet tModLoader.dll -build`), not MSBuild directly. Output is `TerrariaAccess.tmod`.
 
 When done with a task, build and deploy (without `-SkipDeploy`) so the mod is ready to test in tModLoader immediately.
 
 ## Architecture
 
-### Core Systems (Mods/ScreenReaderMod/Common/)
+### Core Systems (Mods/TerrariaAccess/Common/)
 
-**Entry Point:** `ScreenReaderMod.cs` - Initializes services and keybinds on mod load.
+**Entry Point:** `TerrariaAccess.cs` - Initializes services and keybinds on mod load.
 
 **Services Layer (`Services/`):**
 - `ScreenReaderService` - Central speech API. Manages announcement categories (Default, Tile, Wall, Pickup, World) with per-category rate limiting. Routes to `SpeechController` -> `TolkSpeechProvider`.
@@ -184,8 +184,8 @@ ModMenuAccessibilityBase (abstract)
 
 ### Configuration
 
-- `ScreenReaderModConfig.cs` - Client-side mod settings (volumes, toggles)
-- `Localization/en-US_Mods.ScreenReaderMod.hjson` - All user-facing strings
+- `TerrariaAccessConfig.cs` - Client-side mod settings (volumes, toggles)
+- `Localization/en-US_Mods.TerrariaAccess.hjson` - All user-facing strings
 
 ### Keybinds
 
@@ -224,5 +224,5 @@ Use these to understand Terraria's internal APIs, find hook points, or verify me
 
 ## Mod Metadata
 
-- Version defined in `Mods/ScreenReaderMod/build.txt`
+- Version defined in `Mods/TerrariaAccess/build.txt`
 - Client-side only (`side = Client`)

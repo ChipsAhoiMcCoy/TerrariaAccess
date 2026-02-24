@@ -1,6 +1,6 @@
 <#
 .SYNOPSIS
-    Launches tModLoader with debug logging enabled for ScreenReaderMod.
+    Launches tModLoader with debug logging enabled for TerrariaAccess.
 
 .DESCRIPTION
     Sets the SRM_DEBUG_INPUT environment variable and launches tModLoader.
@@ -51,7 +51,7 @@ if (-not (Test-Path $dotnetPath)) {
 $env:SRM_DEBUG_INPUT = "1"
 
 Write-Host "========================================" -ForegroundColor Cyan
-Write-Host "ScreenReaderMod Debug Launch" -ForegroundColor Cyan
+Write-Host "TerrariaAccess Debug Launch" -ForegroundColor Cyan
 Write-Host "========================================" -ForegroundColor Cyan
 Write-Host ""
 Write-Host "Debug logging ENABLED for:" -ForegroundColor Green
