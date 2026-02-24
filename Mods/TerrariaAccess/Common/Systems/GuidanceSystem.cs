@@ -66,7 +66,10 @@ public sealed partial class GuidanceSystem : ModSystem
 
     public override void UpdateUI(GameTime gameTime)
     {
-        // Naming state is now driven by UpdateNaming() in HandleKeybinds path; no UI watchdog needed.
+        if (_namingActive)
+        {
+            UpdateNaming();
+        }
     }
 
     public override void LoadWorldData(TagCompound tag)
@@ -353,6 +356,7 @@ public sealed partial class GuidanceSystem : ModSystem
         Main.drawingPlayerChat = false;
         PlayerInput.WritingText = true;
         Main.clrInput();
+        Main.chatRelease = false;
 
         SoundEngine.PlaySound(SoundID.MenuOpen);
         Main.NewText("Waypoint naming: type a name, press Enter to save, or Escape to cancel.", Color.LightSkyBlue);
@@ -531,7 +535,6 @@ public sealed partial class GuidanceSystem : ModSystem
     {
         if (_namingActive)
         {
-            UpdateNaming();
             return;
         }
 
