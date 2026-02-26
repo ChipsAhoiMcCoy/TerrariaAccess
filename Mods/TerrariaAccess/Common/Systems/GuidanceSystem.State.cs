@@ -12,6 +12,7 @@ public sealed partial class GuidanceSystem
     private static readonly List<Waypoint> Waypoints = new();
 
     internal static bool HasWaypointState => Waypoints.Count > 0 || _selectionMode != SelectionMode.None;
+    internal static bool IsNamingActive => _namingActive;
 
     private enum SelectionMode
     {

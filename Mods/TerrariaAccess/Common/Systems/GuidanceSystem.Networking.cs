@@ -83,13 +83,19 @@ public sealed partial class GuidanceSystem
 
     private static void ReceiveWaypointAdded(BinaryReader reader, int sender)
     {
+        LogWaypoint($"ReceiveWaypointAdded: Sender={sender}, NetMode={Main.netMode}, " +
+                    $"CurrentWaypointCount={Waypoints.Count}");
+
         if (!TryReadWaypoint(reader, Waypoints.Count, "waypoint add packet", out Waypoint waypoint))
         {
+            LogWaypoint("ReceiveWaypointAdded: Failed to read waypoint from packet.");
             return;
         }
 
         Waypoints.Add(waypoint);
         ClampSelectedWaypointIndex();
+        LogWaypoint($"ReceiveWaypointAdded: Added \"{waypoint.Name}\" at ({waypoint.WorldPosition.X:F1}, {waypoint.WorldPosition.Y:F1}). " +
+                    $"TotalWaypoints={Waypoints.Count}");
 
         if (Main.netMode == NetmodeID.Server)
         {
@@ -104,13 +110,19 @@ public sealed partial class GuidanceSystem
     private static void ReceiveWaypointDeleted(BinaryReader reader, int sender)
     {
         int removedIndex = reader.ReadInt32();
+        LogWaypoint($"ReceiveWaypointDeleted: Sender={sender}, RemovedIndex={removedIndex}, " +
+                    $"WaypointCount={Waypoints.Count}, NetMode={Main.netMode}");
+
         if (removedIndex < 0 || removedIndex >= Waypoints.Count)
         {
+            LogWaypoint($"ReceiveWaypointDeleted: Index {removedIndex} out of range [0, {Waypoints.Count}). Ignoring.");
             return;
         }
 
+        string removedName = Waypoints[removedIndex].Name;
         Waypoints.RemoveAt(removedIndex);
         ClampSelectedWaypointIndex();
+        LogWaypoint($"ReceiveWaypointDeleted: Removed \"{removedName}\". TotalWaypoints={Waypoints.Count}");
 
         if (Main.netMode == NetmodeID.Server)
         {
@@ -205,12 +217,15 @@ public sealed partial class GuidanceSystem
     {
         if (Main.netMode != NetmodeID.MultiplayerClient || !CanUseNetworkSync())
         {
+            LogWaypoint($"SendWaypointAddedToServer: Skipped (NetMode={Main.netMode}, " +
+                        $"CanUseNetworkSync={CanUseNetworkSync()})");
             return;
         }
 
         ModPacket? packet = TerrariaAccess.Instance?.GetPacket();
         if (packet is null)
         {
+            LogWaypoint("SendWaypointAddedToServer: Failed to get ModPacket.");
             return;
         }
 
@@ -221,24 +236,29 @@ public sealed partial class GuidanceSystem
         packet.Write(waypoint.WorldPosition.X);
         packet.Write(waypoint.WorldPosition.Y);
         packet.Send();
+        LogWaypoint($"SendWaypointAddedToServer: Sent waypoint \"{name}\" at ({waypoint.WorldPosition.X:F1}, {waypoint.WorldPosition.Y:F1})");
     }
 
     private static void SendWaypointDeletedToServer(int index)
     {
         if (Main.netMode != NetmodeID.MultiplayerClient || !CanUseNetworkSync())
         {
+            LogWaypoint($"SendWaypointDeletedToServer: Skipped (NetMode={Main.netMode}, " +
+                        $"CanUseNetworkSync={CanUseNetworkSync()})");
             return;
         }
 
         ModPacket? packet = TerrariaAccess.Instance?.GetPacket();
         if (packet is null)
         {
+            LogWaypoint("SendWaypointDeletedToServer: Failed to get ModPacket.");
             return;
         }
 
         packet.Write((byte)GuidancePacketType.WaypointDeleted);
         packet.Write(index);
         packet.Send();
+        LogWaypoint($"SendWaypointDeletedToServer: Sent delete for index {index}.");
     }
 
     private static void ClampSelectedWaypointIndex()

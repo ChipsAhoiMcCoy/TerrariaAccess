@@ -17,6 +17,18 @@ public sealed class GuidancePlayer : ModPlayer
 
     private readonly Dictionary<string, TagCompound> _waypointCache = new();
 
+    public override void PreUpdate()
+    {
+        // While the waypoint naming dialog is active, suppress the Inventory trigger
+        // (Escape key) so it doesn't open the ingame settings / pause menu.
+        // PreUpdate runs before Player.UpdateNPC() → TryOpeningInGameOptionsBasedOnInput(),
+        // so clearing controlInv here prevents Escape from bypassing the naming dialog.
+        if (GuidanceSystem.IsNamingActive)
+        {
+            Player.controlInv = false;
+        }
+    }
+
     public override void ProcessTriggers(TriggersSet triggersSet)
     {
         GuidanceSystem.HandleKeybinds(Player);
@@ -26,6 +38,7 @@ public sealed class GuidancePlayer : ModPlayer
     {
         if (Main.netMode != NetmodeID.MultiplayerClient)
         {
+            Mod.Logger.Info($"[Waypoint] GuidancePlayer.OnEnterWorld: Skipped cache load (NetMode={Main.netMode}, not multiplayer client).");
             return;
         }
 
@@ -33,9 +46,17 @@ public sealed class GuidancePlayer : ModPlayer
         GuidanceSystem.ResetTrackingState();
 
         string cacheKey = BuildWorldCacheKey();
-        if (_waypointCache.TryGetValue(cacheKey, out TagCompound? cached) && cached is not null)
+        bool hasCachedData = _waypointCache.TryGetValue(cacheKey, out TagCompound? cached) && cached is not null;
+        Mod.Logger.Info($"[Waypoint] GuidancePlayer.OnEnterWorld: Player={Player.whoAmI}, CacheKey=\"{cacheKey}\", " +
+                        $"HasCachedData={hasCachedData}, TotalCacheEntries={_waypointCache.Count}");
+
+        if (hasCachedData)
         {
-            GuidanceSystem.LoadWaypointData(cached, "player cache", announceSelection: true);
+            GuidanceSystem.LoadWaypointData(cached!, "player cache", announceSelection: true);
+        }
+        else
+        {
+            Mod.Logger.Info("[Waypoint] GuidancePlayer.OnEnterWorld: No cached waypoints for this world.");
         }
     }
 
@@ -87,22 +108,28 @@ public sealed class GuidancePlayer : ModPlayer
     {
         if (Main.netMode != NetmodeID.MultiplayerClient)
         {
+            Mod.Logger.Info($"[Waypoint] CacheWaypointState: Skipped (NetMode={Main.netMode}, not multiplayer client).");
             return;
         }
 
         if (GuidanceSystem.CanUseNetworkSync())
         {
+            Mod.Logger.Info("[Waypoint] CacheWaypointState: Skipped (network sync available, server handles state).");
             return;
         }
 
         string cacheKey = BuildWorldCacheKey();
         TagCompound serialized = new();
-        if (!GuidanceSystem.SaveWaypointData(serialized, "player cache", normalizeRuntime: false))
+        bool hasData = GuidanceSystem.SaveWaypointData(serialized, "player cache", normalizeRuntime: false);
+        Mod.Logger.Info($"[Waypoint] CacheWaypointState: CacheKey=\"{cacheKey}\", HasData={hasData}");
+
+        if (!hasData)
         {
             return;
         }
 
         _waypointCache[cacheKey] = serialized;
+        Mod.Logger.Info($"[Waypoint] CacheWaypointState: Saved to cache. TotalCacheEntries={_waypointCache.Count}");
     }
 
     private static string BuildWorldCacheKey()

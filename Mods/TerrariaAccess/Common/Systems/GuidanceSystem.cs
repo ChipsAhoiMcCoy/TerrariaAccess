@@ -53,6 +53,9 @@ public sealed partial class GuidanceSystem : ModSystem
 
     public override void OnWorldUnload()
     {
+        LogWaypoint($"OnWorldUnload: NetMode={Main.netMode}, WaypointCount={Waypoints.Count}, " +
+                    $"SelectionMode={_selectionMode}, SelectedIndex={_selectedIndex}, NamingActive={_namingActive}");
+
         if (Main.netMode == NetmodeID.MultiplayerClient && Main.LocalPlayer is not null)
         {
             Main.LocalPlayer.GetModPlayer<GuidancePlayer>().CacheWaypointState();
@@ -62,6 +65,7 @@ public sealed partial class GuidanceSystem : ModSystem
         CloseNaming();
         DisposeToneResources();
         _inputSnapshot = null;
+        LogWaypoint("OnWorldUnload: Cleanup complete.");
     }
 
     public override void UpdateUI(GameTime gameTime)
@@ -74,20 +78,37 @@ public sealed partial class GuidanceSystem : ModSystem
 
     public override void LoadWorldData(TagCompound tag)
     {
+        LogWaypoint($"LoadWorldData: NetMode={Main.netMode}, WorldID={Main.worldID}, WorldName=\"{Main.worldName}\"");
+
         // Multiplayer clients use per-player cache via GuidancePlayer.OnEnterWorld
         // instead of world data (which won't exist since mod is client-side only)
         if (Main.netMode == NetmodeID.MultiplayerClient)
         {
+            LogWaypoint("LoadWorldData: Skipped (multiplayer client uses player cache instead).");
             return;
         }
 
         ResetTrackingState();
-        LoadWaypointData(tag, "world save", announceSelection: false);
+        bool loaded = LoadWaypointData(tag, "world save", announceSelection: false);
+        LogWaypoint($"LoadWorldData: Complete. HasData={loaded}, WaypointCount={Waypoints.Count}");
     }
 
     public override void SaveWorldData(TagCompound tag)
     {
+        LogWaypoint($"SaveWorldData: NetMode={Main.netMode}, WaypointCount={Waypoints.Count}");
         SaveWaypointData(tag, "world save");
+    }
+
+    public override void PostUpdateInput()
+    {
+        // PlayerInput.UpdateInput() resets WritingText = false every frame (line 742 in PlayerInput.cs).
+        // This causes HandleIME() in the draw phase to disable the IME service, which stops
+        // OS text input events from being delivered. Re-assert WritingText here so the IME
+        // stays enabled and GetInputText() receives keystrokes (including Enter/Escape).
+        if (_namingActive)
+        {
+            PlayerInput.WritingText = true;
+        }
     }
 
     public override void PostUpdatePlayers()
@@ -328,6 +349,7 @@ public sealed partial class GuidanceSystem : ModSystem
     {
         if (_namingActive)
         {
+            LogWaypoint("BeginNaming skipped: naming already active.");
             return;
         }
 
@@ -338,6 +360,10 @@ public sealed partial class GuidanceSystem : ModSystem
         _namingPreviousText = string.Empty;
         _nextPingUpdateFrame = -1;
         _namingActive = true;
+
+        LogWaypoint($"BeginNaming: WorldPos=({_namingWorldPosition.X:F1}, {_namingWorldPosition.Y:F1}), " +
+                    $"FallbackName=\"{_namingFallbackName}\", PlayerIndex={_namingPlayerIndex}, " +
+                    $"ExistingWaypoints={Waypoints.Count}");
 
         _inputSnapshot = new InputSnapshot
         {
@@ -352,23 +378,37 @@ public sealed partial class GuidanceSystem : ModSystem
             ChatText = Main.chatText ?? string.Empty
         };
 
+        LogWaypoint($"BeginNaming: InputSnapshot saved [BlockInput={_inputSnapshot.BlockInput}, " +
+                    $"WritingText={_inputSnapshot.WritingText}, PlayerInventory={_inputSnapshot.PlayerInventory}, " +
+                    $"EditSign={_inputSnapshot.EditSign}, EditChest={_inputSnapshot.EditChest}, " +
+                    $"DrawingPlayerChat={_inputSnapshot.DrawingPlayerChat}, InFancyUI={_inputSnapshot.InFancyUI}, " +
+                    $"GameMenu={_inputSnapshot.GameMenu}, ChatText=\"{_inputSnapshot.ChatText}\"]");
+
         Main.blockInput = true;
         Main.drawingPlayerChat = false;
         PlayerInput.WritingText = true;
         Main.clrInput();
         Main.chatRelease = false;
 
+        LogWaypoint("BeginNaming: Input state configured [blockInput=true, drawingPlayerChat=false, " +
+                    "WritingText=true, clrInput called, chatRelease=false]");
+
         SoundEngine.PlaySound(SoundID.MenuOpen);
         Main.NewText("Waypoint naming: type a name, press Enter to save, or Escape to cancel.", Color.LightSkyBlue);
         ScreenReaderService.Announce("Type the waypoint name, then press Enter to save or Escape to cancel.");
+        LogWaypoint("BeginNaming: Naming dialog opened, awaiting user input.");
     }
 
     private static void CloseNaming()
     {
         if (!_namingActive)
         {
+            LogWaypoint("CloseNaming skipped: naming not active.");
             return;
         }
+
+        LogWaypoint($"CloseNaming: Closing naming dialog. FinalText=\"{_namingText}\", " +
+                    $"HasSnapshot={_inputSnapshot is not null}");
 
         _namingActive = false;
         _namingText = string.Empty;
@@ -389,6 +429,9 @@ public sealed partial class GuidanceSystem : ModSystem
             Main.inFancyUI = snapshot.InFancyUI;
             Main.gameMenu = snapshot.GameMenu;
             Main.chatText = snapshot.ChatText;
+            LogWaypoint($"CloseNaming: Input state restored from snapshot [BlockInput={snapshot.BlockInput}, " +
+                        $"WritingText={snapshot.WritingText}, PlayerInventory={snapshot.PlayerInventory}, " +
+                        $"DrawingPlayerChat={snapshot.DrawingPlayerChat}]");
         }
         else
         {
@@ -401,9 +444,11 @@ public sealed partial class GuidanceSystem : ModSystem
             Main.inFancyUI = false;
             Main.gameMenu = false;
             Main.chatText = string.Empty;
+            LogWaypoint("CloseNaming: No snapshot found, reset all input state to defaults.");
         }
 
         _inputSnapshot = null;
+        LogWaypoint("CloseNaming: Naming dialog closed.");
     }
 
     private static void UpdateNaming()
@@ -425,19 +470,28 @@ public sealed partial class GuidanceSystem : ModSystem
         // Enforce max length (40 chars, generous for waypoint names)
         if (newText.Length > 40)
         {
+            LogWaypoint($"UpdateNaming: Text truncated from {newText.Length} to 40 chars.");
             newText = newText.Substring(0, 40);
         }
 
         if (Main.inputTextEnter)
         {
-            string resolvedName = TextSanitizer.Clean(
-                string.IsNullOrWhiteSpace(newText) ? _namingFallbackName : newText.Trim());
+            string rawInput = string.IsNullOrWhiteSpace(newText) ? _namingFallbackName : newText.Trim();
+            string resolvedName = TextSanitizer.Clean(rawInput);
+
+            LogWaypoint($"UpdateNaming: Enter pressed. RawInput=\"{rawInput}\", ResolvedName=\"{resolvedName}\", " +
+                        $"WorldPos=({_namingWorldPosition.X:F1}, {_namingWorldPosition.Y:F1}), " +
+                        $"WaypointCountBefore={Waypoints.Count}");
 
             Waypoint waypoint = new(resolvedName, _namingWorldPosition);
             Waypoints.Add(waypoint);
             SendWaypointAddedToServer(waypoint);
             _selectedIndex = Waypoints.Count - 1;
             _selectionMode = SelectionMode.Waypoint;
+
+            LogWaypoint($"UpdateNaming: Waypoint added. SelectedIndex={_selectedIndex}, " +
+                        $"SelectionMode={_selectionMode}, TotalWaypoints={Waypoints.Count}, " +
+                        $"NetMode={Main.netMode}");
 
             Player? owner = ResolveNamingPlayer();
             if (owner is not null)
@@ -446,10 +500,13 @@ public sealed partial class GuidanceSystem : ModSystem
                 string announcement = ComposeCreationAnnouncement(resolvedName, owner, _namingWorldPosition);
                 ScreenReaderService.Announce(announcement);
                 EmitPing(owner, _namingWorldPosition);
+                LogWaypoint($"UpdateNaming: Announced creation: \"{announcement}\", Ping emitted for player {owner.whoAmI}.");
             }
             else
             {
                 ScreenReaderService.Announce($"Created waypoint {resolvedName}");
+                LogWaypoint($"UpdateNaming: Owner player could not be resolved (index={_namingPlayerIndex}). " +
+                            "Announced without ping.");
             }
 
             // Suppress redundant "Arrived at X" since we just announced creation at player's position
@@ -462,6 +519,7 @@ public sealed partial class GuidanceSystem : ModSystem
 
         if (Main.inputTextEscape)
         {
+            LogWaypoint("UpdateNaming: Escape pressed. Cancelling waypoint creation.");
             ScreenReaderService.Announce("Waypoint creation cancelled");
             SoundEngine.PlaySound(SoundID.MenuClose);
 
@@ -480,6 +538,7 @@ public sealed partial class GuidanceSystem : ModSystem
         if (!string.Equals(newText, _namingText, StringComparison.Ordinal))
         {
             SoundEngine.PlaySound(SoundID.MenuTick);
+            _namingPreviousText = _namingText;
         }
 
         _namingText = newText;
@@ -504,6 +563,11 @@ public sealed partial class GuidanceSystem : ModSystem
         }
 
         global::TerrariaAccess.TerrariaAccess.Instance?.Logger.Info($"[GuidancePing] {message}");
+    }
+
+    private static void LogWaypoint(string message)
+    {
+        TerrariaAccess.Instance?.Logger.Info($"[Waypoint] {message}");
     }
 
     private static void EnsureTargetsUpToDate(Player player)
@@ -552,6 +616,10 @@ public sealed partial class GuidanceSystem : ModSystem
 
         if (GuidanceKeybinds.Create?.JustPressed ?? false)
         {
+            LogWaypoint($"Create keybind pressed. Player={player.whoAmI}, Position=({player.Center.X:F1}, {player.Center.Y:F1}), " +
+                        $"NamingActive={_namingActive}, GameMenu={Main.gameMenu}, InFancyUI={Main.inFancyUI}, " +
+                        $"BlockInput={Main.blockInput}, WritingText={PlayerInput.WritingText}, " +
+                        $"DrawingPlayerChat={Main.drawingPlayerChat}, EditSign={Main.editSign}, EditChest={Main.editChest}");
             BeginNaming(player);
             return;
         }
@@ -734,7 +802,11 @@ public sealed partial class GuidanceSystem : ModSystem
 
     internal static bool SaveWaypointData(TagCompound tag, string source, bool normalizeRuntime = true)
     {
+        LogWaypoint($"SaveWaypointData: source=\"{source}\", WaypointCount={Waypoints.Count}, " +
+                    $"SelectionMode={_selectionMode}, SelectedIndex={_selectedIndex}, NormalizeRuntime={normalizeRuntime}");
         (List<Waypoint> waypoints, SelectionMode selectionMode, int selectedIndex) = BuildSerializableWaypointState(source, normalizeRuntime: normalizeRuntime);
+        LogWaypoint($"SaveWaypointData: After sanitize: {waypoints.Count} waypoints, " +
+                    $"SelectionMode={selectionMode}, SelectedIndex={selectedIndex}");
         bool hasData = false;
 
         if (waypoints.Count > 0)
@@ -783,15 +855,23 @@ public sealed partial class GuidanceSystem : ModSystem
 
     internal static bool LoadWaypointData(TagCompound tag, string source, bool announceSelection)
     {
+        LogWaypoint($"LoadWaypointData: source=\"{source}\", AnnounceSelection={announceSelection}, " +
+                    $"HasWaypointList={tag.ContainsKey(WaypointListKey)}, " +
+                    $"HasSelectedIndex={tag.ContainsKey(SelectedIndexKey)}, " +
+                    $"HasExplorationMode={tag.ContainsKey(ExplorationModeKey)}");
+
         ResetWaypointSelectionState();
 
         if (tag.ContainsKey(WaypointListKey))
         {
+            int loadedCount = 0;
+            int droppedCount = 0;
             foreach (TagCompound entry in tag.GetList<TagCompound>(WaypointListKey))
             {
                 if (!entry.ContainsKey("x") || !entry.ContainsKey("y"))
                 {
                     LogWaypointWarning($"Dropped waypoint from {source}: missing coordinates.");
+                    droppedCount++;
                     continue;
                 }
 
@@ -802,13 +882,27 @@ public sealed partial class GuidanceSystem : ModSystem
                 if (TryCreateWaypoint(name, x, y, Waypoints.Count, source, out Waypoint waypoint))
                 {
                     Waypoints.Add(waypoint);
+                    loadedCount++;
+                    LogWaypoint($"LoadWaypointData: Loaded waypoint \"{waypoint.Name}\" at ({x:F1}, {y:F1})");
+                }
+                else
+                {
+                    droppedCount++;
                 }
             }
+
+            LogWaypoint($"LoadWaypointData: Loaded {loadedCount} waypoints, dropped {droppedCount}.");
+        }
+        else
+        {
+            LogWaypoint("LoadWaypointData: No waypoint list found in tag data.");
         }
 
         if (tag.ContainsKey(SelectedIndexKey))
         {
-            _selectedIndex = Math.Clamp(tag.GetInt(SelectedIndexKey), -1, Waypoints.Count - 1);
+            int rawIndex = tag.GetInt(SelectedIndexKey);
+            _selectedIndex = Math.Clamp(rawIndex, -1, Waypoints.Count - 1);
+            LogWaypoint($"LoadWaypointData: SelectedIndex raw={rawIndex}, clamped={_selectedIndex}");
         }
 
         bool explorationMode = tag.ContainsKey(ExplorationModeKey) && tag.GetBool(ExplorationModeKey);
@@ -826,6 +920,9 @@ public sealed partial class GuidanceSystem : ModSystem
             _selectedIndex = -1;
         }
 
+        LogWaypoint($"LoadWaypointData: Final state: SelectionMode={_selectionMode}, SelectedIndex={_selectedIndex}, " +
+                    $"TotalWaypoints={Waypoints.Count}, ExplorationMode={explorationMode}");
+
         ClearCategoryAnnouncement();
         ResetProximityProgress();
 
@@ -833,6 +930,7 @@ public sealed partial class GuidanceSystem : ModSystem
         {
             if (Main.LocalPlayer is { active: true } player)
             {
+                LogWaypoint($"LoadWaypointData: Rescheduling ping for waypoint \"{Waypoints[_selectedIndex].Name}\".");
                 RescheduleGuidancePing(player);
             }
         }
@@ -848,11 +946,16 @@ public sealed partial class GuidanceSystem : ModSystem
         if (!IsValidWaypointPosition(worldPosition))
         {
             LogWaypointWarning($"Dropped waypoint {fallbackIndex + 1} from {source}: invalid position ({x}, {y}).");
+            LogWaypoint($"TryCreateWaypoint FAILED: RawName=\"{rawName}\", Pos=({x}, {y}), " +
+                        $"Source=\"{source}\", Reason=InvalidPosition, " +
+                        $"WorldBounds=(16..{(Main.maxTilesX - 2) * 16f}, 16..{(Main.maxTilesY - 2) * 16f})");
             return false;
         }
 
         string resolvedName = ResolveWaypointName(rawName, fallbackIndex);
         waypoint = new Waypoint(resolvedName, worldPosition);
+        LogWaypoint($"TryCreateWaypoint OK: RawName=\"{rawName}\", ResolvedName=\"{resolvedName}\", " +
+                    $"Pos=({x:F1}, {y:F1}), Source=\"{source}\"");
         return true;
     }
 
@@ -1795,18 +1898,24 @@ public sealed partial class GuidanceSystem : ModSystem
     {
         if (Waypoints.Count == 0)
         {
+            LogWaypoint("DeleteSelectedWaypoint: No waypoints exist.");
             ScreenReaderService.Announce("No waypoints saved.");
             return;
         }
 
         if (_selectionMode != SelectionMode.Waypoint || _selectedIndex < 0 || _selectedIndex >= Waypoints.Count)
         {
+            LogWaypoint($"DeleteSelectedWaypoint: No waypoint selected. SelectionMode={_selectionMode}, " +
+                        $"SelectedIndex={_selectedIndex}, WaypointCount={Waypoints.Count}");
             ScreenReaderService.Announce("No waypoint selected.");
             return;
         }
 
         int removedIndex = _selectedIndex;
         Waypoint removed = Waypoints[removedIndex];
+        LogWaypoint($"DeleteSelectedWaypoint: Removing waypoint at index {removedIndex}. " +
+                    $"Name=\"{removed.Name}\", Position=({removed.WorldPosition.X:F1}, {removed.WorldPosition.Y:F1}), " +
+                    $"TotalBefore={Waypoints.Count}, NetMode={Main.netMode}");
         Waypoints.RemoveAt(removedIndex);
         SendWaypointDeletedToServer(removedIndex);
 
