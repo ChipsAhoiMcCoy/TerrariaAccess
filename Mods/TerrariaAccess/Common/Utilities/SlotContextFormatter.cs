@@ -55,11 +55,11 @@ internal static class SlotContextFormatter
     {
         return index switch
         {
-            0 => "Grappling hook slot",
-            1 => "Mount slot",
+            0 => "Pet slot",
+            1 => "Light pet slot",
             2 => "Minecart slot",
-            3 => "Pet slot",
-            4 => "Light pet slot",
+            3 => "Mount slot",
+            4 => "Grappling hook slot",
             _ => $"Misc equipment slot {index + 1}",
         };
     }
@@ -68,11 +68,11 @@ internal static class SlotContextFormatter
     {
         return index switch
         {
-            0 => "Grappling hook dye slot",
-            1 => "Mount dye slot",
+            0 => "Pet dye slot",
+            1 => "Light pet dye slot",
             2 => "Minecart dye slot",
-            3 => "Pet dye slot",
-            4 => "Light pet dye slot",
+            3 => "Mount dye slot",
+            4 => "Grappling hook dye slot",
             _ => $"Misc dye slot {index + 1}",
         };
     }

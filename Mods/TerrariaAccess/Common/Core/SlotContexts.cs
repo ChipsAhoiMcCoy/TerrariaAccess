@@ -92,27 +92,27 @@ public static class SlotContexts
     public const int EquipMiscDye = ItemSlot.Context.EquipMiscDye;
 
     /// <summary>
-    /// Grappling hook slot (context = 19).
+    /// Grappling hook slot (context = 16).
     /// </summary>
     public const int EquipGrapple = ItemSlot.Context.EquipGrapple;
 
     /// <summary>
-    /// Mount slot (context = 20).
+    /// Mount slot (context = 17).
     /// </summary>
     public const int EquipMount = ItemSlot.Context.EquipMount;
 
     /// <summary>
-    /// Minecart slot (context = 21).
+    /// Minecart slot (context = 18).
     /// </summary>
     public const int EquipMinecart = ItemSlot.Context.EquipMinecart;
 
     /// <summary>
-    /// Pet slot (context = 22).
+    /// Pet slot (context = 19).
     /// </summary>
     public const int EquipPet = ItemSlot.Context.EquipPet;
 
     /// <summary>
-    /// Light pet slot (context = 23).
+    /// Light pet slot (context = 20).
     /// </summary>
     public const int EquipLight = ItemSlot.Context.EquipLight;
 
