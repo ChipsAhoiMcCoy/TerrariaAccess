@@ -115,6 +115,85 @@ internal sealed partial class MenuUiSelectionTracker
 
     private static readonly Dictionary<Type, bool> LoggedMissingLabels = new();
 
+    /// <summary>
+    /// Resolves a label for the given UI element using the same traversal logic as
+    /// <see cref="ExtractLabel"/> but without requiring an instance (uses a local stack).
+    /// </summary>
+    public static string ResolveLabel(UIElement element)
+    {
+        var stack = new Stack<UIElement>();
+        stack.Push(element);
+
+        while (stack.Count > 0)
+        {
+            UIElement current = stack.Pop();
+            string label = ExtractDirectLabel(current);
+            if (!string.IsNullOrWhiteSpace(label))
+                return label;
+
+            if (current.Children is { } children)
+            {
+                foreach (UIElement child in children)
+                    stack.Push(child);
+            }
+        }
+
+        UIElement? ancestor = element.Parent;
+        while (ancestor is not null)
+        {
+            string label = ExtractDirectLabel(ancestor);
+            if (!string.IsNullOrWhiteSpace(label))
+                return label;
+            ancestor = ancestor.Parent;
+        }
+
+        return string.Empty;
+    }
+
+    /// <summary>
+    /// Resolves a full label for a controls menu element (keybinding list item, slider, toggle,
+    /// header, etc.) by walking up from the hit-tested element to find the parent keybinding item.
+    /// Returns the combined "Action Name: Binding" form without enqueueing a prefix side-effect.
+    /// </summary>
+    public static string ResolveControlsItemLabel(UIElement element)
+    {
+        UIElement? current = element;
+        while (current is not null)
+        {
+            string? fullName = current.GetType().FullName;
+            if (fullName is not null)
+            {
+                if (fullName == "Terraria.GameContent.UI.Elements.UIKeybindingListItem")
+                    return DescribeKeybindingListItem(current, enqueueLabelAsPrefix: false);
+                if (fullName == "Terraria.GameContent.UI.Elements.UIKeybindingSimpleListItem")
+                    return DescribeKeybindingSimpleItem(current);
+                if (fullName == "Terraria.GameContent.UI.Elements.UIKeybindingSliderItem")
+                    return DescribeKeybindingSliderItem(current, enqueueLabelAsPrefix: false);
+                if (fullName == "Terraria.GameContent.UI.Elements.UIKeybindingToggleListItem")
+                    return DescribeKeybindingToggleItem(current, enqueueLabelAsPrefix: false);
+                if (fullName == "Terraria.ModLoader.Config.UI.HeaderElement")
+                    return DescribeHeaderElement(current);
+            }
+            current = current.Parent;
+        }
+
+        return string.Empty;
+    }
+
+    private static readonly FieldInfo? HeaderTextField =
+        Type.GetType("Terraria.ModLoader.Config.UI.HeaderElement, tModLoader")
+            ?.GetField("header", BindingFlags.Instance | BindingFlags.NonPublic);
+
+    private static string DescribeHeaderElement(UIElement element)
+    {
+        if (HeaderTextField?.GetValue(element) is string text && !string.IsNullOrWhiteSpace(text))
+        {
+            return TextSanitizer.JoinWithComma(TextSanitizer.Clean(text), "heading");
+        }
+
+        return string.Empty;
+    }
+
     private string ExtractLabel(UIElement element)
     {
         _traversalStack.Clear();

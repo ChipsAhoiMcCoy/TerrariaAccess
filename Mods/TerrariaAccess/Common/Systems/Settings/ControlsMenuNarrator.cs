@@ -215,7 +215,20 @@ internal sealed class ControlsMenuNarrator : SettingsNarratorBase
             return true;
         }
 
-        string normalized = NormalizeLabel(hover.Text);
+        // Try controls-specific label first (gives "Action: Binding" instead of raw key text)
+        string normalized = string.Empty;
+        if (hover.Element is not null)
+        {
+            normalized = NormalizeLabel(MenuUiSelectionTracker.ResolveControlsItemLabel(hover.Element));
+        }
+
+        // Fall back to generic hover text
+        if (string.IsNullOrWhiteSpace(normalized))
+        {
+            normalized = NormalizeLabel(hover.Text);
+        }
+
+        // Fall back to controls button description (tab headers)
         if (string.IsNullOrWhiteSpace(normalized) && hover.Element is not null && TryDescribeControlsButton(state, hover.Element, out string controlsLabel))
         {
             normalized = controlsLabel;
@@ -385,7 +398,7 @@ internal sealed class ControlsMenuNarrator : SettingsNarratorBase
         PlayerInput.MouseY = clampedY;
     }
 
-    private static bool HandleDpadNavigation()
+    private bool HandleDpadNavigation()
     {
         if (!TryGetControlsState(out UIManageControls? _))
         {
@@ -427,17 +440,12 @@ internal sealed class ControlsMenuNarrator : SettingsNarratorBase
                     requested = 3001;
                 }
             }
-            else if (IsHeaderLink(current))
+            else if (orderedLinks.Count > 0 && !IsHeaderLink(current))
             {
-                if (orderedLinks.Count > 0)
-                {
-                    requested = orderedLinks[orderedLinks.Count - 1];
-                }
-            }
-            else if (orderedLinks.Count > 0)
-            {
+                // Not in list and not on a header, go to last item
                 requested = orderedLinks[orderedLinks.Count - 1];
             }
+            // On header going up: do nothing (no wrapping)
         }
         else if (justPressed.MenuDown)
         {
@@ -446,10 +454,6 @@ internal sealed class ControlsMenuNarrator : SettingsNarratorBase
             {
                 requested = orderedLinks[index + 1];
             }
-            else if (index == orderedLinks.Count - 1)
-            {
-                requested = 3001;
-            }
             else if (IsHeaderLink(current))
             {
                 if (orderedLinks.Count > 0)
@@ -457,10 +461,12 @@ internal sealed class ControlsMenuNarrator : SettingsNarratorBase
                     requested = orderedLinks[0];
                 }
             }
-            else if (orderedLinks.Count > 0)
+            else if (orderedLinks.Count > 0 && index < 0)
             {
+                // Not in list, go to first item
                 requested = orderedLinks[0];
             }
+            // At bottom of list going down: do nothing (no wrapping)
         }
 
         // If nothing is focused, seed focus on the first controls element
@@ -469,15 +475,59 @@ internal sealed class ControlsMenuNarrator : SettingsNarratorBase
             requested = orderedLinks[0];
         }
 
-        if (requested > 0 && UILinkPointNavigator.Points.TryGetValue(requested, out UILinkPoint? _))
+        if (requested > 0 && UILinkPointNavigator.Points.TryGetValue(requested, out UILinkPoint? targetLink))
         {
             UILinkPointNavigator.ChangePoint(requested);
             MoveCursorToLink(requested);
             SoundEngine.PlaySound(SoundID.MenuTick);
+            AnnounceNavigatedElement(targetLink.Position);
             return true;
         }
 
         return false;
+    }
+
+    private void AnnounceNavigatedElement(Vector2 position)
+    {
+        UIState? currentState = Main.InGameUI?.CurrentState;
+        UIElement? element = currentState?.GetElementAt(position);
+
+        if (element is null || element == currentState)
+        {
+            return;
+        }
+
+        // Try the controls-specific resolver first (walks up to find keybinding parent,
+        // returns combined "Action Name: Binding" without prefix side-effects)
+        string controlsLabel = MenuUiSelectionTracker.ResolveControlsItemLabel(element);
+        string normalized = NormalizeLabel(controlsLabel);
+
+        // Fall back to generic label resolution
+        if (string.IsNullOrWhiteSpace(normalized))
+        {
+            string genericLabel = MenuUiSelectionTracker.ResolveLabel(element);
+            normalized = NormalizeLabel(genericLabel);
+        }
+
+        // Fall back to controls button description (tab headers)
+        if (string.IsNullOrWhiteSpace(normalized) &&
+            TryGetControlsState(out UIManageControls? state))
+        {
+            TryDescribeControlsButton(state!, element, out normalized);
+        }
+
+        if (string.IsNullOrWhiteSpace(normalized))
+        {
+            return;
+        }
+
+        if (string.Equals(normalized, LastOptionAnnouncement, StringComparison.Ordinal))
+        {
+            return;
+        }
+        LastOptionAnnouncement = normalized;
+        _uiTracker.Reset();
+        ScreenReaderService.Announce(normalized, force: true);
     }
 
     private static bool IsHeaderLink(int linkId)
