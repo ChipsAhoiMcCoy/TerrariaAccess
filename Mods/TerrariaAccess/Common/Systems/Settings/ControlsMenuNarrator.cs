@@ -84,6 +84,11 @@ internal sealed class ControlsMenuNarrator : SettingsNarratorBase
 
         UIManageControls state = maybeState!;
 
+        // The controls menu builds all labels via ResolveControlsItemLabel
+        // (enqueueLabelAsPrefix: false), so enqueued prefixes are never needed.
+        // Clear any stale prefixes that may have leaked from a previous frame.
+        ScreenReaderService.ClearAllPrefixes();
+
         if (!ReferenceEquals(_lastState, state))
         {
             _lastState = state;
@@ -209,6 +214,11 @@ internal sealed class ControlsMenuNarrator : SettingsNarratorBase
         {
             return false;
         }
+
+        // TryGetHoverLabel calls ExtractLabel which may enqueue a prefix as a
+        // side-effect of DescribeKeybindingListItem (enqueueLabelAsPrefix: true).
+        // Discard it — ResolveControlsItemLabel produces the full combined label.
+        ScreenReaderService.ClearAllPrefixes();
 
         if (!hover.IsNew)
         {
