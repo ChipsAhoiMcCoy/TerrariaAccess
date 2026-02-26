@@ -47,7 +47,7 @@ public sealed partial class InGameNarrationSystem : ModSystem
     private readonly InventoryNarrator _inventoryNarrator;
     private readonly NpcDialogueNarrator _npcDialogueNarrator;
     private readonly IngameSettingsNarrator _ingameSettingsNarrator;
-    private readonly ControlsMenuNarrator _controlsMenuNarrator;
+    private readonly Settings.ControlsMenuNarrator _controlsMenuNarrator;
     private readonly ModConfigNarrationCoordinator _modConfigCoordinator;
     private readonly FootstepAudioEmitter _footstepAudioEmitter;
     private readonly ClimbAudioEmitter _climbAudioEmitter;
@@ -139,7 +139,7 @@ public sealed partial class InGameNarrationSystem : ModSystem
         _inventoryNarrator = new InventoryNarrator();
         _npcDialogueNarrator = new NpcDialogueNarrator();
         _ingameSettingsNarrator = new IngameSettingsNarrator();
-        _controlsMenuNarrator = new ControlsMenuNarrator();
+        _controlsMenuNarrator = new Settings.ControlsMenuNarrator();
         _modConfigCoordinator = new ModConfigNarrationCoordinator();
         _footstepAudioEmitter = new FootstepAudioEmitter();
         _climbAudioEmitter = new ClimbAudioEmitter();

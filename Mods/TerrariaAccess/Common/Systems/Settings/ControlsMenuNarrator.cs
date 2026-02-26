@@ -292,11 +292,34 @@ internal sealed class ControlsMenuNarrator : SettingsNarratorBase
         string label = LocalizationHelper.GetTextOrFallback(labelKey, fallback);
 
         int tabIndex = GetTabIndex(kind);
-        description = tabIndex > 0
-            ? TextSanitizer.JoinWithComma(label, $"{tabIndex} of {ControlsTabCount}")
-            : label;
+        if (tabIndex > 0)
+        {
+            bool isActive = IsTabActive(state, kind);
+            description = isActive
+                ? TextSanitizer.JoinWithComma(label, $"{tabIndex} of {ControlsTabCount}", "selected")
+                : TextSanitizer.JoinWithComma(label, $"{tabIndex} of {ControlsTabCount}");
+        }
+        else
+        {
+            description = label;
+        }
 
         return true;
+    }
+
+    private static bool IsTabActive(UIManageControls state, ControlsButtonKind kind)
+    {
+        bool onKeyboard = ReadBoolean(state, OnKeyboardField);
+        bool onGameplay = ReadBoolean(state, OnGameplayField);
+
+        return kind switch
+        {
+            ControlsButtonKind.Keyboard => onKeyboard,
+            ControlsButtonKind.Gamepad => !onKeyboard,
+            ControlsButtonKind.Gameplay => onGameplay,
+            ControlsButtonKind.Menu => !onGameplay,
+            _ => false,
+        };
     }
 
     private static string GetButtonLocalizationKey(ControlsButtonKind kind)
