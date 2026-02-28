@@ -18,34 +18,32 @@
   </p>
   <p>
     <strong>Terraria Access</strong> is a mod designed to make this experience accessible
-    for blind and visually impaired players. It adds screen reader support, audio cues,
-    and specialized navigation tools. This documentation explains how to use those features
-    effectively, from basic navigation to combat and building.
+    for blind and visually impaired players. Using the <strong>Tolk</strong> library, it provides
+    universal screen reader support—compatible with <strong>JAWS, NVDA, Window-Eyes, SuperNova,
+    System Access, ZoomText</strong>, and <strong>SAPI</strong> as a fallback. The mod adds
+    audio cues and specialized navigation tools. This documentation explains how to use those
+    features effectively, from basic navigation to combat and building.
   </p>
 
   <h2>Installation</h2>
   <p>
-    Follow these steps to install Terraria Access:
+    Terraria Access now ships with a full installer that handles all file placement automatically.
+    Follow these steps:
   </p>
   <ol>
     <li>
-      Install Terraria and TModLoader. Open TModLoader once to generate the necessary folders.
+      Install <strong>Terraria</strong> and <strong>TModLoader</strong> via Steam.
+      Open TModLoader once to generate the necessary folders.
     </li>
     <li>
-      Place <strong>NVDAController64.dll</strong> in your
-      <code>/steamapps/common/tModLoader</code> directory.
+      Run <strong>TerrariaAccessSetup.exe</strong>. The installer automatically detects your
+      Steam installation path and places all required files in the correct locations, including
+      the Tolk speech libraries, the mod file, and the recommended input profile.
     </li>
     <li>
-      Place <strong>TerrariaAccess.tmod</strong> in your
-      <code>/Documents/My Games/Terraria/tModLoader/Mods</code> directory.
-    </li>
-    <li>
-      Place the <strong>enabled.json</strong> file in your
-      <code>/Documents/My Games/Terraria/tModLoader/Mods</code> directory.
-    </li>
-    <li>
-      Place the <strong>inputs</strong> file in your
-      <code>/Documents/My Games/Terraria/tModLoader</code> directory.
+      Make sure a supported screen reader is running before launching TModLoader.
+      Terraria Access supports <strong>JAWS, NVDA, Window-Eyes, SuperNova, System Access,
+      ZoomText</strong>, and <strong>SAPI</strong> as a fallback.
     </li>
   </ol>
 
@@ -474,6 +472,11 @@
     <li>
       You can count these chimes to know exactly how many tiles you have moved.
     </li>
+    <li>
+      Footstep pitch <strong>changes slightly when walking up or down a tile</strong>,
+      indicating elevation changes. A rising pitch means you are going up; a falling pitch
+      means you are going down.
+    </li>
   </ul>
   <p>
     Combined with the unlocked cursor's distance readouts, this lets you position yourself precisely.
@@ -533,6 +536,74 @@
   <p>
     Together with tile counts and footstep chimes, rope sounds make it much easier
     to understand your vertical position in shafts, caves, and other large vertical spaces.
+  </p>
+
+  <h3>Wall Collision Sound</h3>
+  <p>
+    When you walk into a solid wall, a repeating tap sound plays to let you know you are
+    blocked. The tap pans toward the direction of the wall. This provides immediate feedback
+    that you cannot move further in that direction and need to jump, dig, or change course.
+  </p>
+
+  <h3>Passage Detection (Gap Sounds)</h3>
+  <p>
+    When falling down a vertical shaft or jumping, the mod detects <strong>horizontal passages</strong>
+    (side tunnels) that your player could fit into. An ascending chirp sound plays from the direction
+    of each detected opening. This helps you identify cave entrances and branching tunnels without
+    needing to stop and scan with the cursor. Passages must be at least 3 tiles tall (the height
+    of your player) to be announced.
+  </p>
+
+  <h3>Fall Damage Indicators</h3>
+  <p>
+    While falling, the mod provides audio feedback to help you gauge your descent:
+  </p>
+  <ul>
+    <li>
+      A tone plays for each tile crossed during the fall, with pitch indicating proximity to
+      the ground below.
+    </li>
+    <li>
+      After falling past the <strong>fall damage threshold</strong> (25 tiles), warning beeps
+      play and the screen reader announces "Taking fall damage" to alert you that landing
+      will hurt.
+    </li>
+  </ul>
+  <p>
+    The fall detection mode can be configured in the mod settings to use either tones or beeps.
+  </p>
+
+  <h3>Underwater & Breath Tracking</h3>
+  <p>
+    When you enter water and begin submerging:
+  </p>
+  <ul>
+    <li>
+      The screen reader announces <strong>"Breath depleting"</strong> when your breath begins
+      to drain.
+    </li>
+    <li>
+      Audio cues play at every <strong>10% breath threshold</strong> crossed while underwater,
+      so you can track how much air you have left.
+    </li>
+    <li>
+      When you surface and your breath is restored, the screen reader announces
+      <strong>"Breath restored."</strong>
+    </li>
+  </ul>
+
+  <h3>Cavity Sonar (Screen Sonification)</h3>
+  <p>
+    Press the <strong>tilde/grave key</strong> (<code>~</code>) to activate <strong>cavity sonar</strong>,
+    which sweeps the area around your character and plays tones for empty spaces. The sweep moves
+    from left to right, with each empty tile producing a short pip. The pitch indicates depth
+    (higher pitch for tiles closer to you, lower for tiles further below), and the panning
+    indicates horizontal direction.
+  </p>
+  <p>
+    This gives you a quick audio snapshot of the terrain around you—revealing caves, tunnels,
+    and open spaces without needing to move the cursor. The sweep completes in about 1.5 seconds.
+    Cavity sonar can be toggled on or off in the mod configuration.
   </p>
 
   <h2>Building & Housing</h2>
@@ -701,6 +772,26 @@
     follow the standard Terraria rules.
   </p>
 
+  <h3>ChunkMiner (Vein Mining)</h3>
+  <p>
+    ChunkMiner automatically mines entire veins of ore, gems, and other mineable deposits
+    when you break a single tile. Instead of breaking ore one tile at a time, breaking any
+    ore tile will break all connected tiles of the same type in the vein—similar to the popular
+    VeinMiner concept.
+  </p>
+  <p>
+    ChunkMiner works on:
+  </p>
+  <ul>
+    <li>All <strong>ores</strong> (iron, copper, gold, etc.)</li>
+    <li>All <strong>gemstones</strong> (sapphire, ruby, emerald, topaz, amethyst, diamond)</li>
+    <li><strong>Silt, Slush</strong>, and <strong>Desert Fossil</strong> deposits</li>
+  </ul>
+  <p>
+    ChunkMiner is enabled by default and can be toggled on or off in the mod configuration.
+    The maximum number of tiles mined per chunk can also be adjusted (default: 100, up to 500).
+  </p>
+
   <h2>Guidance System</h2>
 
   <h3>Overview</h3>
@@ -709,16 +800,22 @@
   </p>
   <ul>
     <li>NPCs</li>
-    <li>Crafting stations</li>
+    <li>Players (in multiplayer)</li>
+    <li>Crafting stations and interactables</li>
     <li>Ores and gemstones</li>
-    <li>Chests and life crystals</li>
+    <li>Chests and life crystals (chest <strong>types</strong> are spoken—Wooden Chest,
+        Gold Chest, Frozen Chest, etc.; <strong>locked chests</strong> are announced as locked)</li>
     <li>Dropped items</li>
     <li>Critters</li>
     <li>Plants</li>
+    <li><strong>Hostile mobs</strong></li>
   </ul>
   <p>
     The guidance system covers all ores and gems, many important interactables,
-    all NPCs and crafting stations, dropped items, critters, and harvestable plants.
+    all NPCs and crafting stations, dropped items, critters, harvestable plants, and hostile mobs.
+    Each sweep now completes in approximately one second regardless of the number of detected
+    objects, making it more responsive and predictable. Distant entries are filtered out to
+    reduce noise.
   </p>
 
   <h3>Exploration Mode</h3>
@@ -833,7 +930,15 @@
     <li>Whether a tone plays when smart cursor is enabled.</li>
     <li>The volume of footstep sounds.</li>
     <li>Various other mod-related sound settings.</li>
-    <li>Edge detection (on or off).</li>
+    <li>Edge detection mode: <strong>Off</strong>, <strong>Static</strong> (continuous white noise
+        that increases as you approach a cliff edge), or <strong>Beeps</strong> (high-pitched
+        tones near edges).</li>
+    <li>ChunkMiner (vein mining) toggle and max tiles per chunk.</li>
+    <li>Cavity sonar toggle.</li>
+    <li>Fall detection mode (Tone or Beeps).</li>
+    <li>Wall collision sound toggle.</li>
+    <li>Passage detection toggle.</li>
+    <li>Heartbeat health indicator toggle.</li>
   </ul>
   <p>
     This gives you fine-grained control over your accessibility experience without
@@ -851,18 +956,29 @@
   <ul>
     <li><strong>Download Mods</strong>: Browse and download new mods from the Workshop.</li>
     <li><strong>Manage Mods</strong>: Enable, disable, and organize your installed mods.</li>
-  </ul>
-  <p>
-    Features not yet accessible:
-  </p>
-  <ul>
-    <li><strong>Develop Mods</strong>: The mod development interface is not yet accessible.</li>
-    <li><strong>Create Modpacks</strong>: The modpack creation interface is not yet accessible.</li>
+    <li><strong>Mod Packs</strong>: Browse and manage mod packs.</li>
+    <li><strong>Develop Mods (Mod Sources)</strong>: Navigate the mod sources screen for building
+        and managing source projects.</li>
   </ul>
   <p>
     When navigating Workshop or Manage Mods screens, press <strong>Tab</strong> to enter
     search mode, type your search query, then press <strong>Enter</strong> to perform the search.
     This allows you to quickly find specific mods by name.
+  </p>
+
+  <h2>Bestiary</h2>
+  <p>
+    The <strong>Bestiary</strong> menu is now fully accessible. The Bestiary is Terraria's
+    encyclopedia of creatures you have encountered. From this screen you can:
+  </p>
+  <ul>
+    <li>Browse the grid of creatures, with each entry announced by name.</li>
+    <li>Sort and filter entries using accessible sort and filter controls.</li>
+    <li>Search for specific creatures by name.</li>
+    <li>Navigate between pages of entries.</li>
+  </ul>
+  <p>
+    Access the Bestiary from the main menu or the in-game pause menu.
   </p>
 
   <h2>UI & Menu Accessibility</h2>
@@ -896,8 +1012,21 @@
     These audio cues and prefixes make it much easier to understand where you are
     within the interface without needing visual feedback.
   </p>
+  <p>
+    Inventory navigation has been improved: previously unlabeled buttons and confusing
+    elements in the inventory screen now have proper labels and announcements, making
+    the entire inventory experience more reliable.
+  </p>
 
-  <h3>Controls Menu & Scrolling Quirks</h3>
+  <h3>First-Letter Navigation</h3>
+  <p>
+    While in your inventory or a chest, press <strong>Tab</strong> to toggle
+    <strong>first-letter navigation mode</strong>. When enabled, pressing any letter key
+    (A–Z) cycles through items whose names start with that letter. This makes it fast to
+    find specific items in a large inventory without scrolling through every slot.
+  </p>
+
+  <h3>Controls Menu Scrolling</h3>
   <p>
     The Controls menu behaves differently than typical menus:
   </p>
@@ -911,15 +1040,6 @@
       in Gamepad Emulation mode) to scroll down further and reveal more options.
     </li>
   </ul>
-  <p>
-    The same type of scrolling requirement appears when selecting hairstyles:
-  </p>
-  <ul>
-    <li>
-      After reaching the bottom of the initially visible hairstyles, scroll with the
-      right analog stick (or O, K, L, ; keys) to reveal more.
-    </li>
-  </ul>
 
   <h2>Character Creation & Customization</h2>
 
@@ -930,6 +1050,8 @@
   <ul>
     <li>
       All <strong>165 hairstyles</strong> have been given custom audio descriptions.
+      Simply use <strong>left and right</strong> to navigate through all hairstyles—no
+      scrolling required.
     </li>
     <li>
       All <strong>10 clothing variants</strong> (base outfits) are also described.
@@ -1396,7 +1518,7 @@
       <tr>
         <td>Change guidance category</td>
         <td>Left / Right Brackets</td>
-        <td>Cycles the guidance system's current category (ores, NPCs, crafting stations, dropped items, critters, plants, etc.).</td>
+        <td>Cycles the guidance system's current category (ores, NPCs, crafting stations, dropped items, critters, plants, hostile mobs, etc.).</td>
       </tr>
       <tr>
         <td>Cycle items in current guidance category</td>
@@ -1513,15 +1635,30 @@
         <td>Page Down</td>
         <td>Moves the screen reader focus to the next chat message so you can read newer messages in the chat log.</td>
       </tr>
+      <tr>
+        <td>Cavity sonar</td>
+        <td>Tilde / Grave (~)</td>
+        <td>Sweeps the area around your character and plays tones for empty spaces, revealing caves and tunnels.</td>
+      </tr>
+      <tr>
+        <td>Toggle first-letter navigation</td>
+        <td>Tab (in inventory)</td>
+        <td>Enables or disables first-letter navigation mode. When enabled, press A–Z to jump to items starting with that letter.</td>
+      </tr>
+      <tr>
+        <td>Create waypoint</td>
+        <td>Backslash (\)</td>
+        <td>Opens a prompt to name and create a waypoint at your current position.</td>
+      </tr>
     </tbody>
   </table>
 
   <h3>Menus Requiring Scrolling</h3>
   <p>
-    Remember that both the Controls menu and the hairstyle selection list require
-    scrolling once you reach the bottom of the initially visible options. On gamepad,
-    use the <strong>right analog stick</strong>. On keyboard in Gamepad Emulation mode,
-    use the <strong>O, K, L, ;</strong> keys. Without scrolling, additional options will not appear.
+    Remember that the Controls menu requires scrolling once you reach the bottom of the
+    initially visible options. On gamepad, use the <strong>right analog stick</strong>.
+    On keyboard in Gamepad Emulation mode, use the <strong>O, K, L, ;</strong> keys.
+    Without scrolling, additional options will not appear.
   </p>
 
 </body>
