@@ -87,7 +87,7 @@ public sealed class DpadVirtualizationSystem : ModSystem
         // D-pad virtualization uses different keys based on Smart Cursor state:
         // - Smart Cursor OFF: OKLS keys act as D-pad (arrow keys act as analog stick)
         // - Smart Cursor ON: Arrow keys act as D-pad (OKLS keys act as analog stick)
-        bool smartCursorActive = Main.SmartCursorIsUsed || Main.SmartCursorWanted;
+        bool smartCursorActive = GetEffectiveSmartCursorState();
 
         Vector2 nudges = Vector2.Zero;
         bool up, right, down, left;
@@ -159,7 +159,12 @@ public sealed class DpadVirtualizationSystem : ModSystem
 
     private static bool IsPressed(ModKeybind? keybind)
     {
-        return keybind?.Current ?? false;
+        if (keybind is null)
+        {
+            return false;
+        }
+
+        return keybind.Current || VirtualTriggerService.IsKeybindPressedRaw(keybind);
     }
 
     private static void ApplyDpadStyleSnap(Vector2 nudges)
@@ -169,6 +174,8 @@ public sealed class DpadVirtualizationSystem : ModSystem
             return;
         }
 
+        // Keep both cursor wanted flags disabled while D-pad tile nudging is active.
+        Main.SmartCursorWanted_Mouse = false;
         Main.SmartCursorWanted_GamePad = false;
         Matrix zoomMatrix = Main.GameViewMatrix.ZoomMatrix;
         Matrix inverseZoom = Matrix.Invert(zoomMatrix);
@@ -198,7 +205,7 @@ public sealed class DpadVirtualizationSystem : ModSystem
         PlayerInput.MouseY = clampedY;
         Main.mouseX = clampedX;
         Main.mouseY = clampedY;
-        PlayerInput.SettingsForUI.SetCursorMode(CursorMode.Gamepad);
+        PlayerInput.SettingsForUI.SetCursorMode(CursorMode.Mouse);
     }
 
     /// <summary>
@@ -219,7 +226,7 @@ public sealed class DpadVirtualizationSystem : ModSystem
         // D-pad keys vary based on Smart Cursor state:
         // - Smart Cursor OFF: OKLS keys act as D-pad
         // - Smart Cursor ON: Arrow keys act as D-pad
-        bool smartCursorActive = Main.SmartCursorIsUsed || Main.SmartCursorWanted;
+        bool smartCursorActive = GetEffectiveSmartCursorState();
 
         if (smartCursorActive)
         {
@@ -346,5 +353,20 @@ public sealed class DpadVirtualizationSystem : ModSystem
     {
         var buildModePlayer = Main.LocalPlayer?.GetModPlayer<BuildModePlayer>();
         return buildModePlayer?.IsBuildModeActive ?? false;
+    }
+
+    private static bool GetEffectiveSmartCursorState()
+    {
+        bool smartCursorActive;
+        if (GamepadEmulationSystem.TryGetForcedSmartCursorState(out bool forcedState))
+        {
+            smartCursorActive = forcedState;
+        }
+        else
+        {
+            smartCursorActive = Main.SmartCursorIsUsed || Main.SmartCursorWanted;
+        }
+
+        return smartCursorActive;
     }
 }

@@ -69,23 +69,23 @@ public sealed partial class InGameNarrationSystem
 
             bool hasInteract = Main.HasSmartInteractTarget;
             bool hasSmartCursor = Main.SmartCursorIsUsed || Main.SmartCursorWanted;
+            string? modeChangeAnnouncement = null;
 
             if (_lastSmartCursorEnabled != hasSmartCursor)
             {
-                // Use the speech service's prefix queue to bundle mode change with next announcement
+                // Announce mode changes immediately instead of relying on pending-prefix chaining.
+                // In heavily modded setups, the follow-up cursor narration can be skipped.
                 if (hasSmartCursor)
                 {
-                    string smartCursorPrefix = LocalizationHelper.GetTextOrFallback(
+                    modeChangeAnnouncement = LocalizationHelper.GetTextOrFallback(
                         "Mods.TerrariaAccess.SmartCursor.Enabled",
                         "Smart cursor");
-                    ScreenReaderService.SetPendingPrefix(smartCursorPrefix);
                 }
                 else
                 {
-                    string unlockPrefix = LocalizationHelper.GetTextOrFallback(
+                    modeChangeAnnouncement = LocalizationHelper.GetTextOrFallback(
                         "Mods.TerrariaAccess.SmartCursor.UnlockedCursor",
                         "Unlocked cursor");
-                    ScreenReaderService.SetPendingPrefix(unlockPrefix);
                 }
 
                 ResetStateTracking();
@@ -118,7 +118,16 @@ public sealed partial class InGameNarrationSystem
             string? message = hasInteract ? DescribeSmartInteract(out category) : DescribeSmartCursor(player, out category);
             if (string.IsNullOrWhiteSpace(message))
             {
+                if (!string.IsNullOrWhiteSpace(modeChangeAnnouncement))
+                {
+                    ScreenReaderService.Announce(modeChangeAnnouncement, category: AnnouncementCategory.Tile, force: true);
+                }
                 return;
+            }
+
+            if (!string.IsNullOrWhiteSpace(modeChangeAnnouncement))
+            {
+                message = $"{modeChangeAnnouncement}, {message}";
             }
 
             // Skip duplicate suppression when holding an axe so the player hears each tree announced

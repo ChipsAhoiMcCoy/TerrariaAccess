@@ -61,7 +61,7 @@ internal static class ConfigElementDescriber
             if (!string.IsNullOrWhiteSpace(buttonText))
             {
                 string cleanButtonText = TextSanitizer.Clean(buttonText);
-                return $"{cleanButtonText} button";
+                return cleanButtonText;
             }
         }
 
@@ -72,10 +72,12 @@ internal static class ConfigElementDescriber
 
         // Try to get value
         string value = TryExtractConfigValue(element, accessors);
+        string tooltip = TryExtractTooltip(element, accessors);
 
         // Clean up the label and value
         string cleanLabel = !string.IsNullOrWhiteSpace(label) ? TextSanitizer.Clean(label) : string.Empty;
         string cleanValue = !string.IsNullOrWhiteSpace(value) ? TextSanitizer.Clean(value) : string.Empty;
+        string cleanTooltip = !string.IsNullOrWhiteSpace(tooltip) ? TextSanitizer.Clean(tooltip) : string.Empty;
 
         // For slider elements, replace raw value with percentage from Proportion
         if (accessors.ProportionProperty is not null && accessors.ProportionProperty.CanRead)
@@ -85,17 +87,20 @@ internal static class ConfigElementDescriber
                 if (accessors.ProportionProperty.GetValue(element) is float proportion)
                 {
                     string percentStr = $"{MathF.Round(proportion * 100f):0} percent";
+                    string description;
 
                     if (cleanLabel.Contains(':'))
                     {
                         int colonIndex = cleanLabel.IndexOf(':');
                         string labelPart = cleanLabel[..colonIndex];
-                        return $"{labelPart}: {percentStr}";
+                        description = $"{labelPart}: {percentStr}";
+                        return AppendTooltip(description, cleanTooltip);
                     }
 
-                    return !string.IsNullOrWhiteSpace(cleanLabel)
+                    description = !string.IsNullOrWhiteSpace(cleanLabel)
                         ? $"{cleanLabel}: {percentStr}"
                         : percentStr;
+                    return AppendTooltip(description, cleanTooltip);
                 }
             }
             catch
@@ -119,11 +124,11 @@ internal static class ConfigElementDescriber
         {
             if (labelAlreadyHasValue || labelEndsWithValue || valueContainsLabel || string.IsNullOrWhiteSpace(cleanValue))
             {
-                return cleanLabel;
+                return AppendTooltip(cleanLabel, cleanTooltip);
             }
             else
             {
-                return $"{cleanLabel}: {cleanValue}";
+                return AppendTooltip($"{cleanLabel}: {cleanValue}", cleanTooltip);
             }
         }
 
@@ -131,10 +136,10 @@ internal static class ConfigElementDescriber
         string extracted = ExtractElementText(element);
         if (!string.IsNullOrWhiteSpace(extracted))
         {
-            return TextSanitizer.Clean(extracted);
+            return AppendTooltip(TextSanitizer.Clean(extracted), cleanTooltip);
         }
 
-        return type.Name;
+        return AppendTooltip(type.Name, cleanTooltip);
     }
 
     /// <summary>
@@ -291,6 +296,21 @@ internal static class ConfigElementDescriber
         }
 
         return string.Empty;
+    }
+
+    private static string AppendTooltip(string description, string tooltip)
+    {
+        if (string.IsNullOrWhiteSpace(description) || string.IsNullOrWhiteSpace(tooltip))
+        {
+            return description;
+        }
+
+        if (description.Contains(tooltip, StringComparison.OrdinalIgnoreCase))
+        {
+            return description;
+        }
+
+        return $"{description}（{tooltip}）";
     }
 
     private static string FormatConfigValue(object? value)
