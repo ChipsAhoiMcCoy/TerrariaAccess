@@ -18,6 +18,7 @@ public class ChunkMinerSystem : ModSystem
 
     // Track which tiles are already queued to avoid duplicates
     private static readonly HashSet<(int x, int y)> _queuedTiles = new();
+    private static bool _processingQueuedTiles;
 
     // Gems tiles (63-68) and ExposedGems (178)
     private static readonly HashSet<int> GemTileTypes = new()
@@ -69,6 +70,9 @@ public class ChunkMinerSystem : ModSystem
         if (!TerrariaAccessConfig.Instance.ChunkMinerEnabled)
             return;
 
+        if (_processingQueuedTiles)
+            return;
+
         // Only run chunk mining on server/singleplayer
         if (Main.netMode == NetmodeID.MultiplayerClient)
             return;
@@ -113,10 +117,6 @@ public class ChunkMinerSystem : ModSystem
 
             var tile = Main.tile[x, y];
             if (!tile.HasTile || tile.TileType != targetType)
-                continue;
-
-            // Check if tile can be killed (respects tile protection, etc.)
-            if (!WorldGen.CanKillTile(x, y))
                 continue;
 
             // Add to result
@@ -178,31 +178,35 @@ public class ChunkMinerSystem : ModSystem
 
         // Process all pending requests this frame
         // (they were found in the same frame, so process them together)
-        while (_pendingRequests.Count > 0)
+        _processingQueuedTiles = true;
+        try
         {
-            var request = _pendingRequests.Dequeue();
-            _queuedTiles.Remove((request.X, request.Y));
-
-            // Verify tile still exists and matches expected type
-            if (!WorldGen.InWorld(request.X, request.Y, 1))
-                continue;
-
-            var tile = Main.tile[request.X, request.Y];
-            if (!tile.HasTile || tile.TileType != request.TileType)
-                continue;
-
-            // Verify tile can still be killed
-            if (!WorldGen.CanKillTile(request.X, request.Y))
-                continue;
-
-            // Kill the tile - this happens outside of any hook, so drops should work normally
-            WorldGen.KillTile(request.X, request.Y, fail: false, effectOnly: false, noItem: false);
-
-            // Sync in multiplayer
-            if (Main.netMode == NetmodeID.Server)
+            while (_pendingRequests.Count > 0)
             {
-                NetMessage.SendTileSquare(-1, request.X, request.Y, 1);
+                var request = _pendingRequests.Dequeue();
+                _queuedTiles.Remove((request.X, request.Y));
+
+                // Verify tile still exists and matches expected type
+                if (!WorldGen.InWorld(request.X, request.Y, 1))
+                    continue;
+
+                var tile = Main.tile[request.X, request.Y];
+                if (!tile.HasTile || tile.TileType != request.TileType)
+                    continue;
+
+                // Let Terraria handle whether the tile can actually be removed.
+                WorldGen.KillTile(request.X, request.Y, fail: false, effectOnly: false, noItem: false);
+
+                bool removed = !Main.tile[request.X, request.Y].HasTile;
+                if (removed && Main.netMode == NetmodeID.Server)
+                {
+                    NetMessage.SendTileSquare(-1, request.X, request.Y, 1);
+                }
             }
+        }
+        finally
+        {
+            _processingQueuedTiles = false;
         }
     }
 
@@ -210,6 +214,7 @@ public class ChunkMinerSystem : ModSystem
     {
         _pendingRequests.Clear();
         _queuedTiles.Clear();
+        _processingQueuedTiles = false;
     }
 
     private readonly struct ChunkMineRequest

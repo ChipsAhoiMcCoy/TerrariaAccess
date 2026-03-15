@@ -213,6 +213,12 @@ internal sealed class CursorDescriptorService
             name = $"{name}, {toggleStateLabel}";
         }
 
+        string? doorStateLabel = GetDoorStateLabel(tile);
+        if (!string.IsNullOrEmpty(doorStateLabel))
+        {
+            name = $"{name}, {doorStateLabel}";
+        }
+
         // Add junction box mode
         string? junctionBoxLabel = GetJunctionBoxModeLabel(tile);
         if (!string.IsNullOrEmpty(junctionBoxLabel))
@@ -270,6 +276,22 @@ internal sealed class CursorDescriptorService
         }
 
         return null;
+    }
+
+    /// <summary>
+    /// Gets the open/closed state label for doors, trapdoors, and tall gates.
+    /// </summary>
+    private static string? GetDoorStateLabel(Tile tile)
+    {
+        if (!tile.HasTile || !IsDoorTile(tile.TileType))
+        {
+            return null;
+        }
+
+        bool isOpen = IsDoorOpen(tile.TileType);
+        return GetLocalizedWithFallback(
+            isOpen ? "Mods.TerrariaAccess.TileStates.DoorOpen" : "Mods.TerrariaAccess.TileStates.DoorClosed",
+            isOpen ? "open" : "closed");
     }
 
     /// <summary>
@@ -359,6 +381,12 @@ internal sealed class CursorDescriptorService
         {
             bool isOn = tile.TileFrameX >= 18;
             return isOn ? (baseKey | 0x10000) : baseKey;
+        }
+
+        if (IsDoorTile(tileType))
+        {
+            bool isOpen = IsDoorOpen(tileType);
+            return isOpen ? (baseKey | 0x10000) : baseKey;
         }
 
         // Junction Box: include mode in key so mode changes trigger re-announcement

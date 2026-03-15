@@ -215,6 +215,8 @@ Mods: {
 			TimerOff: off
 			SensorOn: active
 			SensorOff: inactive
+			DoorOpen: open
+			DoorClosed: closed
 			ToggledOn: on
 			ToggledOff: off
 			JunctionBoxStraight: straight mode, wires pass through in the same direction

@@ -514,6 +514,11 @@ public sealed class GamepadEmulationSystem : ModSystem
         {
             VirtualTriggerService.InjectFromKeybind(GamepadEmulationKeybinds.SmartSelect, TriggerNames.SmartSelect);
         }
+
+        if (!Main.playerInventory)
+        {
+            VirtualTriggerService.InjectFromKeybind(GamepadEmulationKeybinds.InventoryQuickUse, TriggerNames.QuickMount);
+        }
     }
 
     private static void ApplyInventoryVirtualTriggers(bool inventoryUiActive)
