@@ -19,7 +19,6 @@ public sealed class WireColorMenuSystem : ModSystem
 {
     private static FieldInfo? _radialField;
     private static FieldInfo? _radialActiveField;
-    private static MethodInfo? _radialFlowerUpdateMethod;
     private static bool _reflectionInitialized;
 
     // Track right-click state for detecting release during Draw cycle
@@ -50,7 +49,6 @@ public sealed class WireColorMenuSystem : ModSystem
         On_WiresUI.HandleWiresUI -= HandleWiresUIHook;
         _radialField = null;
         _radialActiveField = null;
-        _radialFlowerUpdateMethod = null;
         _reflectionInitialized = false;
     }
 
@@ -269,7 +267,6 @@ public sealed class WireColorMenuSystem : ModSystem
             {
                 Type? radialType = _radialField.FieldType;
                 _radialActiveField = radialType?.GetField("active", BindingFlags.Public | BindingFlags.Instance);
-                _radialFlowerUpdateMethod = radialType?.GetMethod("FlowerUpdate", BindingFlags.NonPublic | BindingFlags.Instance);
             }
         }
         catch

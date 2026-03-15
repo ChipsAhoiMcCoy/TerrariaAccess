@@ -29,7 +29,7 @@ internal static class VirtualTriggerService
 
         // Check ModKeybind first, then fall back to raw keyboard state detection
         // This ensures detection works even in gamepad UI mode
-        bool isPressed = keybind.Current || IsKeybindPressedRaw(keybind);
+        bool isPressed = IsKeybindCurrentlyPressed(keybind) || IsKeybindPressedRaw(keybind);
         if (!isPressed)
         {
             return;
@@ -124,6 +124,27 @@ internal static class VirtualTriggerService
     }
 
     /// <summary>
+    /// Reads ModKeybind.Current defensively because tModLoader can throw when a
+    /// registered keybind is missing from the current input dictionary.
+    /// </summary>
+    internal static bool IsKeybindCurrentlyPressed(ModKeybind? keybind)
+    {
+        if (keybind is null)
+        {
+            return false;
+        }
+
+        try
+        {
+            return keybind.Current;
+        }
+        catch (KeyNotFoundException)
+        {
+            return false;
+        }
+    }
+
+    /// <summary>
     /// Checks if a ModKeybind's assigned keys are pressed using raw keyboard state.
     /// This is a fallback for when ModKeybind.Current doesn't work correctly in gamepad modes.
     /// </summary>
@@ -171,7 +192,7 @@ internal static class VirtualTriggerService
         ModKeybind? interactKeybind = GamepadEmulationKeybinds.InventoryInteract;
         if (interactKeybind is not null)
         {
-            bool keybindPressed = interactKeybind.Current || IsKeybindPressedRaw(interactKeybind);
+            bool keybindPressed = IsKeybindCurrentlyPressed(interactKeybind) || IsKeybindPressedRaw(interactKeybind);
             triggerActive = triggerActive || keybindPressed;
         }
 
@@ -205,7 +226,7 @@ internal static class VirtualTriggerService
         ModKeybind? selectKeybind = GamepadEmulationKeybinds.InventorySelect;
         if (selectKeybind is not null)
         {
-            bool keybindPressed = selectKeybind.Current || IsKeybindPressedRaw(selectKeybind);
+            bool keybindPressed = IsKeybindCurrentlyPressed(selectKeybind) || IsKeybindPressedRaw(selectKeybind);
             triggerActive = triggerActive || keybindPressed;
         }
 
@@ -244,11 +265,11 @@ internal static class VirtualTriggerService
     {
         ModKeybind? selectKeybind = GamepadEmulationKeybinds.InventorySelect;
         _wasMouseLeftTriggerActive = selectKeybind is not null
-            && (selectKeybind.Current || IsKeybindPressedRaw(selectKeybind));
+            && (IsKeybindCurrentlyPressed(selectKeybind) || IsKeybindPressedRaw(selectKeybind));
 
         ModKeybind? interactKeybind = GamepadEmulationKeybinds.InventoryInteract;
         _wasMouseRightTriggerActive = interactKeybind is not null
-            && (interactKeybind.Current || IsKeybindPressedRaw(interactKeybind));
+            && (IsKeybindCurrentlyPressed(interactKeybind) || IsKeybindPressedRaw(interactKeybind));
     }
 
     private static void SetTriggerState(TriggersPack pack, string triggerName, InputMode sourceMode)

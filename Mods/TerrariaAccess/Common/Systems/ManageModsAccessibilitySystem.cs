@@ -931,13 +931,14 @@ public sealed class ManageModsAccessibilitySystem : ModMenuAccessibilityBase
                         if (localMod is not null && ReflectionCache.LocalMod.Enabled is not null)
                         {
                             ReflectionCache.LocalMod.Enabled.SetValue(localMod, expectedState);
-                            var updateMethod = ReflectionCache.UIModItem.Type?.GetMethod("UpdateUIForEnabledChange",
-                                BindingFlags.NonPublic | BindingFlags.Instance);
-                            updateMethod?.Invoke(modItem, null);
+                            ReflectionCache.UIModItem.UpdateUiForEnabledChange?.Invoke(modItem, null);
                             Mod.Logger.Info($"[ManageMods] Counteracted native toggle, restored to {expectedState}");
                         }
                     }
-                    catch { }
+                    catch (Exception ex)
+                    {
+                        Mod.Logger.Warn($"[ManageMods] Failed to counteract native toggle: {ex.Message}");
+                    }
                 }
             }
         }
@@ -1265,7 +1266,10 @@ public sealed class ManageModsAccessibilitySystem : ModMenuAccessibilityBase
                 }
             }
         }
-        catch { }
+        catch (Exception ex)
+        {
+            Mod.Logger.Warn($"[ManageMods] Failed to read confirmation dialog text: {ex.Message}");
+        }
 
         return Language.GetTextValue("tModLoader.DeleteModConfirm");
     }

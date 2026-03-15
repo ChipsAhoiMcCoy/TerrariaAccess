@@ -45,5 +45,6 @@ Release/Output/
 
 # Ignore local Claude Code settings
 .claude/
+Agents.md
 nul
 tmpclaude-*

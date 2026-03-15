@@ -25,7 +25,7 @@ internal sealed class WallCollisionEmitter : AudioEmitterBase
 
     public override void Update(Player player)
     {
-        if (!CanProcessMovementAudio(player))
+        if (!CanEmitAudio(player) || player.pulley)
         {
             Reset();
             return;

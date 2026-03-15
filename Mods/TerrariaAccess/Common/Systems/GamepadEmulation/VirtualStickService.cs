@@ -189,7 +189,7 @@ internal static class VirtualStickService
         }
 
         // First try the normal keybind check (works in gameplay)
-        if (keybind.Current)
+        if (VirtualTriggerService.IsKeybindCurrentlyPressed(keybind))
         {
             return true;
         }

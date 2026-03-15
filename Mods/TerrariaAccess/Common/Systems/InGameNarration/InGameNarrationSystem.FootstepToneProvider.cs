@@ -35,8 +35,10 @@ public sealed partial class InGameNarrationSystem
             instance.IsLooped = false;
             instance.Volume = MathHelper.Clamp(volume, 0f, 1f) * Main.soundVolume * AudioVolumeDefaults.WorldCueVolumeScale;
             instance.Pan = MathHelper.Clamp(pan, -1f, 1f);
-            instance.Play();
-            ActiveInstances.Add(instance);
+            if (!TryPlayInstance(instance))
+            {
+                return;
+            }
         }
 
         public static void DisposeStaticResources()
@@ -97,9 +99,7 @@ public sealed partial class InGameNarrationSystem
             instance.IsLooped = true;
             instance.Volume = MathHelper.Clamp(volume, 0f, 1f) * Main.soundVolume * AudioVolumeDefaults.WorldCueVolumeScale;
             instance.Pan = MathHelper.Clamp(pan, -1f, 1f);
-            instance.Play();
-            ActiveInstances.Add(instance);
-            return instance;
+            return TryPlayInstance(instance) ? instance : null;
         }
 
         public static void StopInstance(SoundEffectInstance instance)
@@ -136,9 +136,7 @@ public sealed partial class InGameNarrationSystem
             instance.IsLooped = true;
             instance.Volume = MathHelper.Clamp(volume, 0f, 1f) * Main.soundVolume * AudioVolumeDefaults.WorldCueVolumeScale;
             instance.Pan = MathHelper.Clamp(pan, -1f, 1f);
-            instance.Play();
-            ActiveInstances.Add(instance);
-            return instance;
+            return TryPlayInstance(instance) ? instance : null;
         }
 
         private static SoundEffect EnsureWhiteNoise()
@@ -230,6 +228,21 @@ public sealed partial class InGameNarrationSystem
                     instance.Dispose();
                     ActiveInstances.RemoveAt(i);
                 }
+            }
+        }
+
+        private static bool TryPlayInstance(SoundEffectInstance instance)
+        {
+            try
+            {
+                instance.Play();
+                ActiveInstances.Add(instance);
+                return true;
+            }
+            catch
+            {
+                instance.Dispose();
+                return false;
             }
         }
     }

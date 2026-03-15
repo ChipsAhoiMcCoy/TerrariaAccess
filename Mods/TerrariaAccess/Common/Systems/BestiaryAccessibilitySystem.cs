@@ -890,8 +890,7 @@ public sealed class BestiaryAccessibilitySystem : ModSystem
             }
 
             // Get grid dimensions
-            var getEntries = entryGrid.GetType().GetMethod("GetEntriesToShow",
-                BindingFlags.Public | BindingFlags.Instance);
+            MethodInfo? getEntries = BestiaryReflectionCache.GetEntryGridGetEntriesToShowMethod(entryGrid.GetType());
             if (getEntries is not null)
             {
                 object?[] args = new object?[3];
@@ -1013,7 +1012,9 @@ public sealed class BestiaryAccessibilitySystem : ModSystem
                 bool isActive = false;
                 try
                 {
-                    var isOnProp = sp.Element?.GetType().GetProperty("IsOn", BindingFlags.Public | BindingFlags.Instance);
+                    PropertyInfo? isOnProp = sp.Element is null
+                        ? null
+                        : BestiaryReflectionCache.GetIsOnProperty(sp.Element.GetType());
                     if (isOnProp?.GetValue(sp.Element) is bool on)
                     {
                         isActive = on;
@@ -1693,11 +1694,11 @@ public sealed class BestiaryAccessibilitySystem : ModSystem
         try
         {
             // Get the UIBestiaryEntryIcon from the button, then call GetHoverText
-            var iconField = entryButton.GetType().GetField("_icon", BindingFlags.Instance | BindingFlags.NonPublic);
+            FieldInfo? iconField = BestiaryReflectionCache.GetEntryButtonIconField(entryButton.GetType());
             object? icon = iconField?.GetValue(entryButton);
             if (icon is not null)
             {
-                var getHoverText = icon.GetType().GetMethod("GetHoverText", BindingFlags.Public | BindingFlags.Instance);
+                MethodInfo? getHoverText = BestiaryReflectionCache.GetIconHoverTextMethod(icon.GetType());
                 if (getHoverText is not null)
                 {
                     object? hoverText = getHoverText.Invoke(icon, null);
@@ -1709,7 +1710,7 @@ public sealed class BestiaryAccessibilitySystem : ModSystem
             }
 
             // Fallback: try Entry property
-            var entryProp = entryButton.GetType().GetProperty("Entry", BindingFlags.Public | BindingFlags.Instance);
+            PropertyInfo? entryProp = BestiaryReflectionCache.GetEntryButtonEntryProperty(entryButton.GetType());
             object? bestiaryEntry = entryProp?.GetValue(entryButton);
             if (bestiaryEntry is BestiaryEntry be)
             {
@@ -1766,7 +1767,7 @@ public sealed class BestiaryAccessibilitySystem : ModSystem
             }
 
             // Get BestiaryEntry from the button
-            var entryProp = entry.EntryButton.GetType().GetProperty("Entry", BindingFlags.Public | BindingFlags.Instance);
+            PropertyInfo? entryProp = BestiaryReflectionCache.GetEntryButtonEntryProperty(entry.EntryButton.GetType());
             object? bestiaryEntry = entryProp?.GetValue(entry.EntryButton);
             if (bestiaryEntry is not BestiaryEntry be)
             {
@@ -1858,10 +1859,10 @@ public sealed class BestiaryAccessibilitySystem : ModSystem
 
             // DropRateInfo is a struct with public fields: itemId, dropRate, stackMin, stackMax
             var drType = dropRateInfo.GetType();
-            var itemIdField = drType.GetField("itemId", BindingFlags.Public | BindingFlags.Instance);
-            var dropRateField = drType.GetField("dropRate", BindingFlags.Public | BindingFlags.Instance);
-            var stackMinField = drType.GetField("stackMin", BindingFlags.Public | BindingFlags.Instance);
-            var stackMaxField = drType.GetField("stackMax", BindingFlags.Public | BindingFlags.Instance);
+            FieldInfo? itemIdField = BestiaryReflectionCache.GetDropRateInfoItemIdField(drType);
+            FieldInfo? dropRateField = BestiaryReflectionCache.GetDropRateInfoDropRateField(drType);
+            FieldInfo? stackMinField = BestiaryReflectionCache.GetDropRateInfoStackMinField(drType);
+            FieldInfo? stackMaxField = BestiaryReflectionCache.GetDropRateInfoStackMaxField(drType);
 
             int? itemId = itemIdField?.GetValue(dropRateInfo) as int?;
             float? dropRate = dropRateField?.GetValue(dropRateInfo) as float?;
@@ -1959,8 +1960,7 @@ public sealed class BestiaryAccessibilitySystem : ModSystem
                 return string.Empty;
             }
 
-            var completionProp = progressReport.GetType().GetProperty("CompletionPercent",
-                BindingFlags.Public | BindingFlags.Instance);
+            PropertyInfo? completionProp = BestiaryReflectionCache.GetProgressReportCompletionProperty(progressReport.GetType());
             if (completionProp?.GetValue(progressReport) is float percent)
             {
                 return $"{percent:P0} complete";
@@ -2003,7 +2003,7 @@ public sealed class BestiaryAccessibilitySystem : ModSystem
             object? rangeText = ReflectionCache.UIBestiaryTest.IndexesRangeText?.GetValue(menuState);
             if (rangeText is not null)
             {
-                var textProp = rangeText.GetType().GetProperty("Text", BindingFlags.Public | BindingFlags.Instance);
+                PropertyInfo? textProp = BestiaryReflectionCache.GetTextProperty(rangeText.GetType());
                 if (textProp?.GetValue(rangeText) is string text && !string.IsNullOrWhiteSpace(text))
                 {
                     return text;
@@ -2025,7 +2025,7 @@ public sealed class BestiaryAccessibilitySystem : ModSystem
             object? sortText = ReflectionCache.UIBestiaryTest.SortingText?.GetValue(menuState);
             if (sortText is not null)
             {
-                var textProp = sortText.GetType().GetProperty("Text", BindingFlags.Public | BindingFlags.Instance);
+                PropertyInfo? textProp = BestiaryReflectionCache.GetTextProperty(sortText.GetType());
                 if (textProp?.GetValue(sortText) is string text)
                 {
                     return TextSanitizer.Clean(text);
@@ -2047,7 +2047,7 @@ public sealed class BestiaryAccessibilitySystem : ModSystem
             object? filterText = ReflectionCache.UIBestiaryTest.FilteringText?.GetValue(menuState);
             if (filterText is not null)
             {
-                var textProp = filterText.GetType().GetProperty("Text", BindingFlags.Public | BindingFlags.Instance);
+                PropertyInfo? textProp = BestiaryReflectionCache.GetTextProperty(filterText.GetType());
                 if (textProp?.GetValue(filterText) is string text)
                 {
                     return TextSanitizer.Clean(text);
@@ -2069,12 +2069,12 @@ public sealed class BestiaryAccessibilitySystem : ModSystem
         try
         {
             // GroupOptionButton has a _title field or GetInnerDimensions text
-            var hoverTextProp = button.GetType().GetProperty("HoverText", BindingFlags.Public | BindingFlags.Instance);
+            PropertyInfo? hoverTextProp = BestiaryReflectionCache.GetHoverTextProperty(button.GetType());
             if (hoverTextProp?.GetValue(button) is string hoverText && !string.IsNullOrWhiteSpace(hoverText))
             {
                 // Check if the filter is active
                 bool isOn = false;
-                var isOnProp = button.GetType().GetProperty("IsOn", BindingFlags.Public | BindingFlags.Instance);
+                PropertyInfo? isOnProp = BestiaryReflectionCache.GetIsOnProperty(button.GetType());
                 if (isOnProp?.GetValue(button) is bool on)
                 {
                     isOn = on;
@@ -2084,7 +2084,7 @@ public sealed class BestiaryAccessibilitySystem : ModSystem
             }
 
             // Fallback: try _title field
-            var titleField = button.GetType().GetField("_title", BindingFlags.Instance | BindingFlags.NonPublic);
+            FieldInfo? titleField = BestiaryReflectionCache.GetTitleField(button.GetType());
             if (titleField?.GetValue(button) is string title && !string.IsNullOrWhiteSpace(title))
             {
                 return title;
@@ -2104,13 +2104,13 @@ public sealed class BestiaryAccessibilitySystem : ModSystem
 
         try
         {
-            var hoverTextProp = button.GetType().GetProperty("HoverText", BindingFlags.Public | BindingFlags.Instance);
+            PropertyInfo? hoverTextProp = BestiaryReflectionCache.GetHoverTextProperty(button.GetType());
             if (hoverTextProp?.GetValue(button) is string hoverText && !string.IsNullOrWhiteSpace(hoverText))
             {
                 return hoverText;
             }
 
-            var titleField = button.GetType().GetField("_title", BindingFlags.Instance | BindingFlags.NonPublic);
+            FieldInfo? titleField = BestiaryReflectionCache.GetTitleField(button.GetType());
             if (titleField?.GetValue(button) is string title && !string.IsNullOrWhiteSpace(title))
             {
                 return title;
@@ -2134,8 +2134,7 @@ public sealed class BestiaryAccessibilitySystem : ModSystem
 
         try
         {
-            var getSnapPoints = element.GetType().GetMethod("GetSnapPoints",
-                BindingFlags.Public | BindingFlags.Instance);
+            MethodInfo? getSnapPoints = BestiaryReflectionCache.GetSnapPointsMethod(element.GetType());
 
             if (getSnapPoints is null)
             {
@@ -2175,7 +2174,7 @@ public sealed class BestiaryAccessibilitySystem : ModSystem
         try
         {
             // SnapPoint has a reference to its parent UIElement
-            var elementField = typeof(SnapPoint).GetField("_element", BindingFlags.Instance | BindingFlags.NonPublic);
+            FieldInfo? elementField = BestiaryReflectionCache.SnapPointElementField;
             return elementField?.GetValue(snapPoint) as UIElement;
         }
         catch
@@ -2235,6 +2234,98 @@ public sealed class BestiaryAccessibilitySystem : ModSystem
         public int Id;
         public Vector2 Position;
         public UIElement? Element;
+    }
+
+    private static class BestiaryReflectionCache
+    {
+        private static readonly Dictionary<Type, MethodInfo?> EntryGridGetEntriesToShowMethods = new();
+        private static readonly Dictionary<Type, PropertyInfo?> IsOnProperties = new();
+        private static readonly Dictionary<Type, FieldInfo?> EntryButtonIconFields = new();
+        private static readonly Dictionary<Type, MethodInfo?> IconHoverTextMethods = new();
+        private static readonly Dictionary<Type, PropertyInfo?> EntryButtonEntryProperties = new();
+        private static readonly Dictionary<Type, FieldInfo?> DropRateInfoItemIdFields = new();
+        private static readonly Dictionary<Type, FieldInfo?> DropRateInfoDropRateFields = new();
+        private static readonly Dictionary<Type, FieldInfo?> DropRateInfoStackMinFields = new();
+        private static readonly Dictionary<Type, FieldInfo?> DropRateInfoStackMaxFields = new();
+        private static readonly Dictionary<Type, PropertyInfo?> CompletionPercentProperties = new();
+        private static readonly Dictionary<Type, PropertyInfo?> TextProperties = new();
+        private static readonly Dictionary<Type, PropertyInfo?> HoverTextProperties = new();
+        private static readonly Dictionary<Type, FieldInfo?> TitleFields = new();
+        private static readonly Dictionary<Type, MethodInfo?> SnapPointsMethods = new();
+
+        internal static readonly FieldInfo? SnapPointElementField =
+            typeof(SnapPoint).GetField("_element", BindingFlags.Instance | BindingFlags.NonPublic);
+
+        internal static MethodInfo? GetEntryGridGetEntriesToShowMethod(Type type) =>
+            GetCachedMember(EntryGridGetEntriesToShowMethods, type,
+                static t => t.GetMethod("GetEntriesToShow", BindingFlags.Public | BindingFlags.Instance));
+
+        internal static PropertyInfo? GetIsOnProperty(Type type) =>
+            GetCachedMember(IsOnProperties, type,
+                static t => t.GetProperty("IsOn", BindingFlags.Public | BindingFlags.Instance));
+
+        internal static FieldInfo? GetEntryButtonIconField(Type type) =>
+            GetCachedMember(EntryButtonIconFields, type,
+                static t => t.GetField("_icon", BindingFlags.Instance | BindingFlags.NonPublic));
+
+        internal static MethodInfo? GetIconHoverTextMethod(Type type) =>
+            GetCachedMember(IconHoverTextMethods, type,
+                static t => t.GetMethod("GetHoverText", BindingFlags.Public | BindingFlags.Instance));
+
+        internal static PropertyInfo? GetEntryButtonEntryProperty(Type type) =>
+            GetCachedMember(EntryButtonEntryProperties, type,
+                static t => t.GetProperty("Entry", BindingFlags.Public | BindingFlags.Instance));
+
+        internal static FieldInfo? GetDropRateInfoItemIdField(Type type) =>
+            GetCachedMember(DropRateInfoItemIdFields, type,
+                static t => t.GetField("itemId", BindingFlags.Public | BindingFlags.Instance));
+
+        internal static FieldInfo? GetDropRateInfoDropRateField(Type type) =>
+            GetCachedMember(DropRateInfoDropRateFields, type,
+                static t => t.GetField("dropRate", BindingFlags.Public | BindingFlags.Instance));
+
+        internal static FieldInfo? GetDropRateInfoStackMinField(Type type) =>
+            GetCachedMember(DropRateInfoStackMinFields, type,
+                static t => t.GetField("stackMin", BindingFlags.Public | BindingFlags.Instance));
+
+        internal static FieldInfo? GetDropRateInfoStackMaxField(Type type) =>
+            GetCachedMember(DropRateInfoStackMaxFields, type,
+                static t => t.GetField("stackMax", BindingFlags.Public | BindingFlags.Instance));
+
+        internal static PropertyInfo? GetProgressReportCompletionProperty(Type type) =>
+            GetCachedMember(CompletionPercentProperties, type,
+                static t => t.GetProperty("CompletionPercent", BindingFlags.Public | BindingFlags.Instance));
+
+        internal static PropertyInfo? GetTextProperty(Type type) =>
+            GetCachedMember(TextProperties, type,
+                static t => t.GetProperty("Text", BindingFlags.Public | BindingFlags.Instance));
+
+        internal static PropertyInfo? GetHoverTextProperty(Type type) =>
+            GetCachedMember(HoverTextProperties, type,
+                static t => t.GetProperty("HoverText", BindingFlags.Public | BindingFlags.Instance));
+
+        internal static FieldInfo? GetTitleField(Type type) =>
+            GetCachedMember(TitleFields, type,
+                static t => t.GetField("_title", BindingFlags.Instance | BindingFlags.NonPublic));
+
+        internal static MethodInfo? GetSnapPointsMethod(Type type) =>
+            GetCachedMember(SnapPointsMethods, type,
+                static t => t.GetMethod("GetSnapPoints", BindingFlags.Public | BindingFlags.Instance));
+
+        private static TMember? GetCachedMember<TMember>(
+            Dictionary<Type, TMember?> cache,
+            Type type,
+            Func<Type, TMember?> factory)
+            where TMember : MemberInfo
+        {
+            if (!cache.TryGetValue(type, out TMember? member))
+            {
+                member = factory(type);
+                cache[type] = member;
+            }
+
+            return member;
+        }
     }
 
     private static UILinkPoint EnsureLinkPoint(int id)

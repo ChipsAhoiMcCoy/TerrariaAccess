@@ -573,7 +573,7 @@ public sealed class AchievementsAccessibilitySystem : ModSystem
                 bool isOn = false;
                 try
                 {
-                    var isOnProp = button.GetType().GetProperty("IsOn", BindingFlags.Public | BindingFlags.Instance);
+                    PropertyInfo? isOnProp = AchievementsReflectionCache.GetIsOnProperty(button.GetType());
                     if (isOnProp?.GetValue(button) is bool onVal)
                     {
                         isOn = onVal;
@@ -633,7 +633,7 @@ public sealed class AchievementsAccessibilitySystem : ModSystem
         try
         {
             // Call GetAchievement() on the UIAchievementListItem
-            var getAchievementMethod = item.GetType().GetMethod("GetAchievement", BindingFlags.Public | BindingFlags.Instance);
+            MethodInfo? getAchievementMethod = AchievementsReflectionCache.GetAchievementMethod(item.GetType());
             object? achievement = getAchievementMethod?.Invoke(item, null);
             if (achievement is null)
             {
@@ -641,12 +641,13 @@ public sealed class AchievementsAccessibilitySystem : ModSystem
             }
 
             // Extract achievement properties
-            var friendlyNameProp = achievement.GetType().GetProperty("FriendlyName", BindingFlags.Public | BindingFlags.Instance);
-            var descriptionProp = achievement.GetType().GetProperty("Description", BindingFlags.Public | BindingFlags.Instance);
-            var isCompletedProp = achievement.GetType().GetProperty("IsCompleted", BindingFlags.Public | BindingFlags.Instance);
-            var categoryProp = achievement.GetType().GetProperty("Category", BindingFlags.Public | BindingFlags.Instance);
-            var hiddenField = achievement.GetType().GetField("Hidden", BindingFlags.Public | BindingFlags.Instance);
-            var hasTrackerProp = achievement.GetType().GetProperty("HasTracker", BindingFlags.Public | BindingFlags.Instance);
+            Type achievementType = achievement.GetType();
+            PropertyInfo? friendlyNameProp = AchievementsReflectionCache.GetAchievementFriendlyNameProperty(achievementType);
+            PropertyInfo? descriptionProp = AchievementsReflectionCache.GetAchievementDescriptionProperty(achievementType);
+            PropertyInfo? isCompletedProp = AchievementsReflectionCache.GetAchievementIsCompletedProperty(achievementType);
+            PropertyInfo? categoryProp = AchievementsReflectionCache.GetAchievementCategoryProperty(achievementType);
+            FieldInfo? hiddenField = AchievementsReflectionCache.GetAchievementHiddenField(achievementType);
+            PropertyInfo? hasTrackerProp = AchievementsReflectionCache.GetAchievementHasTrackerProperty(achievementType);
 
             string name = string.Empty;
             string description = string.Empty;
@@ -659,7 +660,7 @@ public sealed class AchievementsAccessibilitySystem : ModSystem
             object? friendlyName = friendlyNameProp?.GetValue(achievement);
             if (friendlyName is null)
             {
-                var nameField = achievement.GetType().GetField("FriendlyName", BindingFlags.Public | BindingFlags.Instance);
+                FieldInfo? nameField = AchievementsReflectionCache.GetAchievementFriendlyNameField(achievementType);
                 friendlyName = nameField?.GetValue(achievement);
             }
 
@@ -669,7 +670,7 @@ public sealed class AchievementsAccessibilitySystem : ModSystem
             }
             else if (friendlyName is not null)
             {
-                var valueProp = friendlyName.GetType().GetProperty("Value", BindingFlags.Public | BindingFlags.Instance);
+                PropertyInfo? valueProp = AchievementsReflectionCache.GetValueProperty(friendlyName.GetType());
                 name = valueProp?.GetValue(friendlyName) as string ?? friendlyName.ToString() ?? string.Empty;
             }
 
@@ -679,7 +680,7 @@ public sealed class AchievementsAccessibilitySystem : ModSystem
             if (desc is null)
             {
                 // Description might be a field rather than a property
-                var descField = achievement.GetType().GetField("Description", BindingFlags.Public | BindingFlags.Instance);
+                FieldInfo? descField = AchievementsReflectionCache.GetAchievementDescriptionField(achievementType);
                 desc = descField?.GetValue(achievement);
             }
 
@@ -690,7 +691,7 @@ public sealed class AchievementsAccessibilitySystem : ModSystem
             else if (desc is not null)
             {
                 // Fallback: try getting Value property via reflection, or use ToString
-                var valueProp = desc.GetType().GetProperty("Value", BindingFlags.Public | BindingFlags.Instance);
+                PropertyInfo? valueProp = AchievementsReflectionCache.GetValueProperty(desc.GetType());
                 description = valueProp?.GetValue(desc) as string ?? desc.ToString() ?? string.Empty;
             }
 
@@ -719,12 +720,13 @@ public sealed class AchievementsAccessibilitySystem : ModSystem
             {
                 try
                 {
-                    var getTrackerMethod = achievement.GetType().GetMethod("GetTracker", BindingFlags.Public | BindingFlags.Instance);
+                    MethodInfo? getTrackerMethod = AchievementsReflectionCache.GetAchievementTrackerMethod(achievementType);
                     object? tracker = getTrackerMethod?.Invoke(achievement, null);
                     if (tracker is not null)
                     {
-                        var getValueMethod = tracker.GetType().GetMethod("GetValue", BindingFlags.Public | BindingFlags.Instance);
-                        var getMaxValueMethod = tracker.GetType().GetMethod("GetMaxValue", BindingFlags.Public | BindingFlags.Instance);
+                        Type trackerType = tracker.GetType();
+                        MethodInfo? getValueMethod = AchievementsReflectionCache.GetTrackerValueMethod(trackerType);
+                        MethodInfo? getMaxValueMethod = AchievementsReflectionCache.GetTrackerMaxValueMethod(trackerType);
 
                         object? currentVal = getValueMethod?.Invoke(tracker, null);
                         object? maxVal = getMaxValueMethod?.Invoke(tracker, null);
@@ -745,15 +747,15 @@ public sealed class AchievementsAccessibilitySystem : ModSystem
             string modName = string.Empty;
             try
             {
-                var modAchievementProp = achievement.GetType().GetProperty("ModAchievement", BindingFlags.Public | BindingFlags.Instance);
+                PropertyInfo? modAchievementProp = AchievementsReflectionCache.GetAchievementModAchievementProperty(achievementType);
                 object? modAchievement = modAchievementProp?.GetValue(achievement);
                 if (modAchievement is not null)
                 {
-                    var modProp = modAchievement.GetType().GetProperty("Mod", BindingFlags.Public | BindingFlags.Instance);
+                    PropertyInfo? modProp = AchievementsReflectionCache.GetModAchievementModProperty(modAchievement.GetType());
                     object? mod = modProp?.GetValue(modAchievement);
                     if (mod is not null)
                     {
-                        var displayNameProp = mod.GetType().GetProperty("DisplayName", BindingFlags.Public | BindingFlags.Instance);
+                        PropertyInfo? displayNameProp = AchievementsReflectionCache.GetModDisplayNameProperty(mod.GetType());
                         if (displayNameProp?.GetValue(mod) is string dn)
                         {
                             modName = dn;
@@ -1279,10 +1281,10 @@ public sealed class AchievementsAccessibilitySystem : ModSystem
                     foreach (object? item in allElements)
                     {
                         if (item is null) continue;
-                        var getAchievement = item.GetType().GetMethod("GetAchievement", BindingFlags.Public | BindingFlags.Instance);
+                        MethodInfo? getAchievement = AchievementsReflectionCache.GetAchievementMethod(item.GetType());
                         object? achievement = getAchievement?.Invoke(item, null);
                         if (achievement is null) continue;
-                        var isCompletedProp = achievement.GetType().GetProperty("IsCompleted", BindingFlags.Public | BindingFlags.Instance);
+                        PropertyInfo? isCompletedProp = AchievementsReflectionCache.GetAchievementIsCompletedProperty(achievement.GetType());
                         if (isCompletedProp?.GetValue(achievement) is true)
                         {
                             completed++;
@@ -1449,6 +1451,110 @@ public sealed class AchievementsAccessibilitySystem : ModSystem
         public bool ActionPressed;
         public bool BackPressed;
         public bool HasNavigation;
+    }
+
+    private static class AchievementsReflectionCache
+    {
+        private static readonly Dictionary<Type, PropertyInfo?> IsOnProperties = new();
+        private static readonly Dictionary<Type, MethodInfo?> GetAchievementMethods = new();
+        private static readonly Dictionary<Type, PropertyInfo?> FriendlyNameProperties = new();
+        private static readonly Dictionary<Type, PropertyInfo?> DescriptionProperties = new();
+        private static readonly Dictionary<Type, PropertyInfo?> IsCompletedProperties = new();
+        private static readonly Dictionary<Type, PropertyInfo?> CategoryProperties = new();
+        private static readonly Dictionary<Type, PropertyInfo?> HasTrackerProperties = new();
+        private static readonly Dictionary<Type, PropertyInfo?> ModAchievementProperties = new();
+        private static readonly Dictionary<Type, FieldInfo?> HiddenFields = new();
+        private static readonly Dictionary<Type, FieldInfo?> FriendlyNameFields = new();
+        private static readonly Dictionary<Type, FieldInfo?> DescriptionFields = new();
+        private static readonly Dictionary<Type, PropertyInfo?> ValueProperties = new();
+        private static readonly Dictionary<Type, MethodInfo?> GetTrackerMethods = new();
+        private static readonly Dictionary<Type, MethodInfo?> TrackerValueMethods = new();
+        private static readonly Dictionary<Type, MethodInfo?> TrackerMaxValueMethods = new();
+        private static readonly Dictionary<Type, PropertyInfo?> ModAchievementModProperties = new();
+        private static readonly Dictionary<Type, PropertyInfo?> ModDisplayNameProperties = new();
+
+        internal static PropertyInfo? GetIsOnProperty(Type type) =>
+            GetCachedMember(IsOnProperties, type,
+                static t => t.GetProperty("IsOn", BindingFlags.Public | BindingFlags.Instance));
+
+        internal static MethodInfo? GetAchievementMethod(Type type) =>
+            GetCachedMember(GetAchievementMethods, type,
+                static t => t.GetMethod("GetAchievement", BindingFlags.Public | BindingFlags.Instance));
+
+        internal static PropertyInfo? GetAchievementFriendlyNameProperty(Type type) =>
+            GetCachedMember(FriendlyNameProperties, type,
+                static t => t.GetProperty("FriendlyName", BindingFlags.Public | BindingFlags.Instance));
+
+        internal static PropertyInfo? GetAchievementDescriptionProperty(Type type) =>
+            GetCachedMember(DescriptionProperties, type,
+                static t => t.GetProperty("Description", BindingFlags.Public | BindingFlags.Instance));
+
+        internal static PropertyInfo? GetAchievementIsCompletedProperty(Type type) =>
+            GetCachedMember(IsCompletedProperties, type,
+                static t => t.GetProperty("IsCompleted", BindingFlags.Public | BindingFlags.Instance));
+
+        internal static PropertyInfo? GetAchievementCategoryProperty(Type type) =>
+            GetCachedMember(CategoryProperties, type,
+                static t => t.GetProperty("Category", BindingFlags.Public | BindingFlags.Instance));
+
+        internal static FieldInfo? GetAchievementHiddenField(Type type) =>
+            GetCachedMember(HiddenFields, type,
+                static t => t.GetField("Hidden", BindingFlags.Public | BindingFlags.Instance));
+
+        internal static PropertyInfo? GetAchievementHasTrackerProperty(Type type) =>
+            GetCachedMember(HasTrackerProperties, type,
+                static t => t.GetProperty("HasTracker", BindingFlags.Public | BindingFlags.Instance));
+
+        internal static FieldInfo? GetAchievementFriendlyNameField(Type type) =>
+            GetCachedMember(FriendlyNameFields, type,
+                static t => t.GetField("FriendlyName", BindingFlags.Public | BindingFlags.Instance));
+
+        internal static FieldInfo? GetAchievementDescriptionField(Type type) =>
+            GetCachedMember(DescriptionFields, type,
+                static t => t.GetField("Description", BindingFlags.Public | BindingFlags.Instance));
+
+        internal static PropertyInfo? GetValueProperty(Type type) =>
+            GetCachedMember(ValueProperties, type,
+                static t => t.GetProperty("Value", BindingFlags.Public | BindingFlags.Instance));
+
+        internal static MethodInfo? GetAchievementTrackerMethod(Type type) =>
+            GetCachedMember(GetTrackerMethods, type,
+                static t => t.GetMethod("GetTracker", BindingFlags.Public | BindingFlags.Instance));
+
+        internal static MethodInfo? GetTrackerValueMethod(Type type) =>
+            GetCachedMember(TrackerValueMethods, type,
+                static t => t.GetMethod("GetValue", BindingFlags.Public | BindingFlags.Instance));
+
+        internal static MethodInfo? GetTrackerMaxValueMethod(Type type) =>
+            GetCachedMember(TrackerMaxValueMethods, type,
+                static t => t.GetMethod("GetMaxValue", BindingFlags.Public | BindingFlags.Instance));
+
+        internal static PropertyInfo? GetAchievementModAchievementProperty(Type type) =>
+            GetCachedMember(ModAchievementProperties, type,
+                static t => t.GetProperty("ModAchievement", BindingFlags.Public | BindingFlags.Instance));
+
+        internal static PropertyInfo? GetModAchievementModProperty(Type type) =>
+            GetCachedMember(ModAchievementModProperties, type,
+                static t => t.GetProperty("Mod", BindingFlags.Public | BindingFlags.Instance));
+
+        internal static PropertyInfo? GetModDisplayNameProperty(Type type) =>
+            GetCachedMember(ModDisplayNameProperties, type,
+                static t => t.GetProperty("DisplayName", BindingFlags.Public | BindingFlags.Instance));
+
+        private static TMember? GetCachedMember<TMember>(
+            Dictionary<Type, TMember?> cache,
+            Type type,
+            Func<Type, TMember?> factory)
+            where TMember : MemberInfo
+        {
+            if (!cache.TryGetValue(type, out TMember? member))
+            {
+                member = factory(type);
+                cache[type] = member;
+            }
+
+            return member;
+        }
     }
 
     private static UILinkPoint EnsureLinkPoint(int id)
