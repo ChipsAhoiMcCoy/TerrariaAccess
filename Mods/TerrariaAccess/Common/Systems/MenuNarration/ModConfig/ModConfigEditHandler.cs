@@ -19,6 +19,8 @@ namespace TerrariaAccess.Common.Systems.MenuNarration.ModConfig;
 /// </summary>
 internal sealed class ModConfigEditHandler
 {
+    private static readonly FieldInfo? LastHoverField = typeof(UserInterface).GetField("_lastElementHover", BindingFlags.NonPublic | BindingFlags.Instance);
+
     private readonly AnnouncementGate _gate;
     private readonly SliderRepeatState _sliderState = new();
 
@@ -27,6 +29,7 @@ internal sealed class ModConfigEditHandler
     private List<UIElement>? _navigableElements;
     private int _configElementCount; // Excludes action buttons
     private int _skipInputFrames;
+    private UIElement? _lastHoveredElement;
 
     public ModConfigEditHandler(AnnouncementGate gate)
     {
@@ -48,6 +51,7 @@ internal sealed class ModConfigEditHandler
             _navigableElements = null;
             _configElementCount = 0;
             _skipInputFrames = 5; // Skip initial frames
+            _lastHoveredElement = null;
             _sliderState.Reset();
         }
 
@@ -98,6 +102,11 @@ internal sealed class ModConfigEditHandler
         {
             // Refresh action buttons (they may change)
             RefreshActionButtons(state);
+        }
+
+        if (!PlayerInput.UsingGamepadUI)
+        {
+            TryHandleMouseHover(isMenuContext, menuEventSink);
         }
 
         // Skip input during cooldown
@@ -181,6 +190,66 @@ internal sealed class ModConfigEditHandler
             AnnounceCurrentElement(isMenuContext, menuEventSink);
             SoundEngine.PlaySound(SoundID.MenuTick);
         }
+    }
+
+    private void TryHandleMouseHover(
+        bool isMenuContext,
+        Action<string, bool, MenuNarrationEventKind>? menuEventSink)
+    {
+        if (_navigableElements is null || _navigableElements.Count == 0)
+        {
+            _lastHoveredElement = null;
+            return;
+        }
+
+        UserInterface? activeUi = isMenuContext ? Main.MenuUI : Main.InGameUI;
+        UIElement? hovered = LastHoverField?.GetValue(activeUi) as UIElement;
+        UIElement? target = ResolveHoveredNarrationTarget(hovered);
+        if (target is null)
+        {
+            _lastHoveredElement = null;
+            return;
+        }
+
+        if (ReferenceEquals(target, _lastHoveredElement))
+        {
+            return;
+        }
+
+        int hoveredIndex = _navigableElements.FindIndex(element => ReferenceEquals(element, target));
+        if (hoveredIndex < 0)
+        {
+            _lastHoveredElement = null;
+            return;
+        }
+
+        _lastHoveredElement = target;
+        _currentElementIndex = hoveredIndex;
+        _sliderState.ClearElementTracking();
+        _gate.ClearFrameSuppression();
+        AnnounceCurrentElement(isMenuContext, menuEventSink);
+    }
+
+    private UIElement? ResolveHoveredNarrationTarget(UIElement? hovered)
+    {
+        if (hovered is null || _navigableElements is null)
+        {
+            return null;
+        }
+
+        UIElement? current = hovered;
+        while (current is not null)
+        {
+            UIElement? match = _navigableElements.FirstOrDefault(element => ReferenceEquals(element, current));
+            if (match is not null)
+            {
+                return match;
+            }
+
+            current = current.Parent;
+        }
+
+        return null;
     }
 
     private void HandleAction(
@@ -546,6 +615,7 @@ internal sealed class ModConfigEditHandler
         _navigableElements = null;
         _configElementCount = 0;
         _skipInputFrames = 0;
+        _lastHoveredElement = null;
         _sliderState.Reset();
     }
 }

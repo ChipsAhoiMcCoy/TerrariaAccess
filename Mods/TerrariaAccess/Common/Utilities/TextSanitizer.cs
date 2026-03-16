@@ -105,6 +105,9 @@ internal static class TextSanitizer
         }
 
         if (token.StartsWith("i:", StringComparison.OrdinalIgnoreCase) ||
+            token.StartsWith("centeritem:", StringComparison.OrdinalIgnoreCase) ||
+            token.StartsWith("centertext:", StringComparison.OrdinalIgnoreCase) ||
+            token.StartsWith("centerimage:", StringComparison.OrdinalIgnoreCase) ||
             token.StartsWith("rb", StringComparison.OrdinalIgnoreCase) ||
             token.StartsWith("g", StringComparison.OrdinalIgnoreCase) ||
             token.StartsWith("wave", StringComparison.OrdinalIgnoreCase))

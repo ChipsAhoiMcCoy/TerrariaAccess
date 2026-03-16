@@ -51,9 +51,11 @@ public sealed class GamepadEmulationSystem : ModSystem
     private static Hook? _usingGamepadUiHook;
     private static ILHook? _gamepadInputIlHook;
     private static Hook? _shiftInUseHook;
-    private static bool _lastSmartCursorWantedMouse;
 
     private static HousingQueryHandler? _housingQueryHandler;
+    private static bool _smartCursorBindingWasPressed;
+    private static bool _smartCursorDesiredEnabled;
+    private static bool _smartCursorDesiredInitialized;
 
 
     public override void Load()
@@ -107,7 +109,8 @@ public sealed class GamepadEmulationSystem : ModSystem
 
         _housingQueryHandler = null;
         _mainMenuSelectWasPressed = false;
-        _lastSmartCursorWantedMouse = false;
+        _smartCursorBindingWasPressed = false;
+        _smartCursorDesiredInitialized = false;
         VirtualTriggerService.ResetState();
     }
 
@@ -246,12 +249,39 @@ public sealed class GamepadEmulationSystem : ModSystem
 
     private static bool OverrideUsingGamepad(UsingGamepadGetter orig)
     {
-        return orig() || InputStateHelper.ShouldEmulateGamepad();
+        return orig() || ShouldExposeGamepadFlag(forceUi: false);
     }
 
     private static bool OverrideUsingGamepadUi(UsingGamepadGetter orig)
     {
-        return orig() || InputStateHelper.ShouldEmulateGamepad();
+        return orig() || ShouldExposeGamepadFlag(forceUi: true);
+    }
+
+    private static bool ShouldExposeGamepadFlag(bool forceUi)
+    {
+        if (!GamepadEmulationState.Enabled || InputStateHelper.IsTextInputActive())
+        {
+            return false;
+        }
+
+        // Only report "using gamepad" in UI contexts where we intentionally emulate
+        // controller navigation. Keeping this true in-world causes other systems/mods
+        // to continuously force XBoxGamepad mode.
+        if (forceUi)
+        {
+            return InputStateHelper.NeedsGamepadUiMode();
+        }
+
+        return InputStateHelper.NeedsGamepadUiMode() || IsLockOnContextActive();
+    }
+
+    private static bool IsLockOnContextActive()
+    {
+        bool lockOnEnabled = LockOnHelper.Enabled;
+        bool lockOnKeyPressed = GamepadEmulationKeybinds.LockOn is { } lockOnKeybind &&
+            (lockOnKeybind.Current || VirtualTriggerService.IsKeybindPressedRaw(lockOnKeybind));
+
+        return lockOnEnabled || lockOnKeyPressed;
     }
 
     private static void InjectVirtualSticksIntoGamepadInput(ILContext il)
@@ -453,32 +483,51 @@ public sealed class GamepadEmulationSystem : ModSystem
 
         if (!GamepadEmulationState.Enabled)
         {
-            _lastSmartCursorWantedMouse = Main.SmartCursorWanted_Mouse;
+            _smartCursorBindingWasPressed = false;
+            _smartCursorDesiredInitialized = false;
             return;
         }
 
+        HandleSmartCursorBinding();
+
         bool needsUiMode = InputStateHelper.NeedsGamepadUiMode();
         ForceGamepadUiModeIfNeeded(needsUiMode);
-        SyncKeyboardSmartCursorToggle();
         ApplyGlobalVirtualTriggers();
         ApplyInventoryVirtualTriggers(needsUiMode);
         ApplyMenuNavigationVirtualTriggers(needsUiMode);
         ApplyMainMenuVirtualTriggers();
     }
 
-    /// <summary>
-    /// Mirrors keyboard smart cursor toggles into the gamepad flag so virtual right-stick
-    /// aim uses smart cursor targeting instead of unlocked cursor movement.
-    /// </summary>
-    private static void SyncKeyboardSmartCursorToggle()
+    public override void PreUpdatePlayers()
     {
-        bool mouseWanted = Main.SmartCursorWanted_Mouse;
-        if (mouseWanted != _lastSmartCursorWantedMouse)
+        if (Main.dedServ)
         {
-            Main.SmartCursorWanted_GamePad = mouseWanted;
+            return;
         }
 
-        _lastSmartCursorWantedMouse = mouseWanted;
+        if (!ShouldDriveSmartCursorState())
+        {
+            return;
+        }
+
+        EnsureSmartCursorDesiredStateInitialized();
+        ApplySmartCursorWantedState(_smartCursorDesiredEnabled);
+    }
+
+    public override void PostUpdateEverything()
+    {
+        if (Main.dedServ)
+        {
+            return;
+        }
+
+        if (!ShouldDriveSmartCursorState())
+        {
+            return;
+        }
+
+        EnsureSmartCursorDesiredStateInitialized();
+        ApplySmartCursorWantedState(_smartCursorDesiredEnabled);
     }
 
     private static void ForceGamepadUiModeIfNeeded(bool needsUiMode)
@@ -498,7 +547,20 @@ public sealed class GamepadEmulationSystem : ModSystem
 
         if (GamepadEmulationState.Enabled)
         {
-            PlayerInput.CurrentInputMode = InputMode.XBoxGamepad;
+            if (IsLockOnContextActive())
+            {
+                // LockOn toggle path expects gamepad world mode in vanilla.
+                // Keep world gamepad mode only while lock-on context is active so TAB remains
+                // toggle-based instead of hold-to-aim.
+                PlayerInput.CurrentInputMode = InputMode.XBoxGamepad;
+                return;
+            }
+
+            // Keep gameplay input mode as keyboard. Forcing XBoxGamepad in-world can cause
+            // SmartCursor to follow the GamePad wanted flag path, which some mod stacks
+            // may continuously set and effectively lock SmartCursor on.
+            PlayerInput.CurrentInputMode = InputMode.Keyboard;
+            PlayerInput.SettingsForUI.SetCursorMode(CursorMode.Mouse);
         }
     }
 
@@ -538,6 +600,157 @@ public sealed class GamepadEmulationSystem : ModSystem
         {
             VirtualTriggerService.InjectFromKeybind(GamepadEmulationKeybinds.InventoryQuickUse, TriggerNames.QuickMount);
         }
+    }
+
+    private static void HandleSmartCursorBinding()
+    {
+        if (InputStateHelper.IsTextInputActive())
+        {
+            _smartCursorBindingWasPressed = false;
+            return;
+        }
+
+        bool smartCursorPressed = IsSmartCursorBindingPressedRaw();
+
+        if (smartCursorPressed)
+        {
+            VirtualTriggerService.InjectFromState("SmartCursor", isHeld: true);
+        }
+
+        ApplySmartCursorStateFromBinding(smartCursorPressed);
+    }
+
+    private static void ApplySmartCursorStateFromBinding(bool smartCursorPressed)
+    {
+        EnsureSmartCursorDesiredStateInitialized();
+
+        // Toggle mode: one key press flips between enabled/disabled.
+        if (Main.cSmartCursorModeIsToggleAndNotHold)
+        {
+            if (smartCursorPressed && !_smartCursorBindingWasPressed)
+            {
+                _smartCursorDesiredEnabled = !_smartCursorDesiredEnabled;
+            }
+        }
+        else
+        {
+            // Hold mode: key down enables smart cursor, key up disables it.
+            _smartCursorDesiredEnabled = smartCursorPressed;
+        }
+
+        ApplySmartCursorWantedState(_smartCursorDesiredEnabled);
+        _smartCursorBindingWasPressed = smartCursorPressed;
+    }
+
+    private static void EnsureSmartCursorDesiredStateInitialized()
+    {
+        if (_smartCursorDesiredInitialized)
+        {
+            return;
+        }
+
+        _smartCursorDesiredEnabled = Main.SmartCursorIsUsed || Main.SmartCursorWanted;
+        _smartCursorDesiredInitialized = true;
+    }
+
+    private static bool IsSmartCursorBindingPressedRaw()
+    {
+        return IsVanillaTriggerPressedRaw("SmartCursor");
+    }
+
+    private static void ApplySmartCursorWantedState(bool enabled)
+    {
+        Main.SmartCursorWanted_Mouse = enabled;
+        Main.SmartCursorWanted_GamePad = enabled;
+    }
+
+    private static bool ShouldDriveSmartCursorState()
+    {
+        if (!GamepadEmulationState.Enabled)
+        {
+            return false;
+        }
+
+        if (Main.gameMenu || InputStateHelper.IsTextInputActive())
+        {
+            return false;
+        }
+
+        Player? player = Main.LocalPlayer;
+        if (player is null || !player.active || player.dead || player.ghost)
+        {
+            return false;
+        }
+
+        return true;
+    }
+
+    internal static bool TryGetForcedSmartCursorState(out bool enabled)
+    {
+        if (!GamepadEmulationState.Enabled || !_smartCursorDesiredInitialized)
+        {
+            enabled = false;
+            return false;
+        }
+
+        enabled = _smartCursorDesiredEnabled;
+        return true;
+    }
+
+    private static bool IsVanillaTriggerPressedRaw(string triggerName)
+    {
+        PlayerInputProfile? profile = PlayerInput.CurrentProfile;
+        if (profile is null)
+        {
+            return false;
+        }
+
+        return IsVanillaTriggerPressedRaw(profile, InputMode.Keyboard, triggerName) ||
+               IsVanillaTriggerPressedRaw(profile, InputMode.KeyboardUI, triggerName);
+    }
+
+    private static bool IsVanillaTriggerPressedRaw(PlayerInputProfile profile, InputMode mode, string triggerName)
+    {
+        if (!profile.InputModes.TryGetValue(mode, out KeyConfiguration? config))
+        {
+            return false;
+        }
+
+        if (!config.KeyStatus.TryGetValue(triggerName, out List<string>? assignments) || assignments is null)
+        {
+            return false;
+        }
+
+        KeyboardState keyState = Main.keyState;
+        foreach (string assignment in assignments)
+        {
+            if (string.IsNullOrWhiteSpace(assignment))
+            {
+                continue;
+            }
+
+            if (TryIsMouseBindingPressed(assignment))
+            {
+                return true;
+            }
+
+            if (Enum.TryParse(assignment, ignoreCase: true, out Keys key) && keyState.IsKeyDown(key))
+            {
+                return true;
+            }
+        }
+
+        return false;
+    }
+
+    private static bool TryIsMouseBindingPressed(string assignment)
+    {
+        return assignment switch
+        {
+            "Mouse1" => Main.mouseLeft,
+            "Mouse2" => Main.mouseRight,
+            _ => false,
+        };
     }
 
     private static void ApplyInventoryVirtualTriggers(bool inventoryUiActive)
@@ -742,6 +955,8 @@ public sealed class GamepadEmulationSystem : ModSystem
         {
             PlayerInput.SettingsForUI.TryRevertingToMouseMode();
             VirtualStickService.ResetState();
+            _smartCursorBindingWasPressed = false;
+            _smartCursorDesiredInitialized = false;
         }
 
         // Save the state to config for persistence

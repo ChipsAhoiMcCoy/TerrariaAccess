@@ -120,6 +120,7 @@ public sealed partial class InGameNarrationSystem
 
             bool hasInteract = Main.HasSmartInteractTarget;
             bool hasSmartCursor = Main.SmartCursorIsUsed || Main.SmartCursorWanted;
+            string? modeChangeAnnouncement = null;
 
             if (_lastSmartCursorEnabled != hasSmartCursor)
             {
@@ -156,8 +157,20 @@ public sealed partial class InGameNarrationSystem
             string? message = hasInteract ? DescribeSmartInteract(out category) : DescribeSmartCursor(player, out category);
             if (string.IsNullOrWhiteSpace(message))
             {
-                MaybeFlushPendingCursorModeAnnouncement();
+                if (!string.IsNullOrWhiteSpace(modeChangeAnnouncement))
+                {
+                    ScreenReaderService.Announce(modeChangeAnnouncement, category: AnnouncementCategory.Tile, force: true);
+                }
+                else
+                {
+                    MaybeFlushPendingCursorModeAnnouncement();
+                }
                 return;
+            }
+
+            if (!string.IsNullOrWhiteSpace(modeChangeAnnouncement))
+            {
+                message = $"{modeChangeAnnouncement}, {message}";
             }
 
             // Skip duplicate suppression when holding an axe so the player hears each tree announced

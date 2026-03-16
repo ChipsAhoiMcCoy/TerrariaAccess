@@ -49,7 +49,7 @@ internal static class VirtualStickService
         // When Smart Cursor is off, right stick keys (OKLS) are used for cursor nudge instead.
         // Arrow keys behave inversely: analog stick when Smart Cursor is off, D-pad when on.
         // In menu contexts, OKLS should always act as right stick for scrolling.
-        bool smartCursorActive = Main.SmartCursorIsUsed || Main.SmartCursorWanted;
+        bool smartCursorActive = GetEffectiveSmartCursorState();
         bool inMenuContext = Main.gameMenu || InputStateHelper.IsFancyUiActive();
         // Suppress right stick letter keys (O, K, L) when first letter navigation is active,
         // so those keys are reserved for item searching instead of injecting stick input.
@@ -96,7 +96,8 @@ internal static class VirtualStickService
 
         if (movementOverride || aimOverride || state.IsKeyDown(Keys.Space) || Main.mouseLeft || Main.mouseRight)
         {
-            PlayerInput.SettingsForUI.SetCursorMode(CursorMode.Gamepad);
+            bool inUiContext = Main.playerInventory || Main.gameMenu || InputStateHelper.IsFancyUiActive();
+            PlayerInput.SettingsForUI.SetCursorMode(inUiContext ? CursorMode.Gamepad : CursorMode.Mouse);
         }
     }
 
@@ -221,5 +222,20 @@ internal static class VirtualStickService
     {
         PlayerInput.GamepadThumbstickLeft = Vector2.Zero;
         PlayerInput.GamepadThumbstickRight = Vector2.Zero;
+    }
+
+    private static bool GetEffectiveSmartCursorState()
+    {
+        bool smartCursorActive;
+        if (GamepadEmulationSystem.TryGetForcedSmartCursorState(out bool forcedState))
+        {
+            smartCursorActive = forcedState;
+        }
+        else
+        {
+            smartCursorActive = Main.SmartCursorIsUsed || Main.SmartCursorWanted;
+        }
+
+        return smartCursorActive;
     }
 }
