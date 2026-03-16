@@ -51,6 +51,7 @@ public sealed class GamepadEmulationSystem : ModSystem
     private static Hook? _usingGamepadUiHook;
     private static ILHook? _gamepadInputIlHook;
     private static Hook? _shiftInUseHook;
+    private static bool _lastSmartCursorWantedMouse;
 
     private static HousingQueryHandler? _housingQueryHandler;
 
@@ -106,6 +107,7 @@ public sealed class GamepadEmulationSystem : ModSystem
 
         _housingQueryHandler = null;
         _mainMenuSelectWasPressed = false;
+        _lastSmartCursorWantedMouse = false;
         VirtualTriggerService.ResetState();
     }
 
@@ -451,15 +453,32 @@ public sealed class GamepadEmulationSystem : ModSystem
 
         if (!GamepadEmulationState.Enabled)
         {
+            _lastSmartCursorWantedMouse = Main.SmartCursorWanted_Mouse;
             return;
         }
 
         bool needsUiMode = InputStateHelper.NeedsGamepadUiMode();
         ForceGamepadUiModeIfNeeded(needsUiMode);
+        SyncKeyboardSmartCursorToggle();
         ApplyGlobalVirtualTriggers();
         ApplyInventoryVirtualTriggers(needsUiMode);
         ApplyMenuNavigationVirtualTriggers(needsUiMode);
         ApplyMainMenuVirtualTriggers();
+    }
+
+    /// <summary>
+    /// Mirrors keyboard smart cursor toggles into the gamepad flag so virtual right-stick
+    /// aim uses smart cursor targeting instead of unlocked cursor movement.
+    /// </summary>
+    private static void SyncKeyboardSmartCursorToggle()
+    {
+        bool mouseWanted = Main.SmartCursorWanted_Mouse;
+        if (mouseWanted != _lastSmartCursorWantedMouse)
+        {
+            Main.SmartCursorWanted_GamePad = mouseWanted;
+        }
+
+        _lastSmartCursorWantedMouse = mouseWanted;
     }
 
     private static void ForceGamepadUiModeIfNeeded(bool needsUiMode)
