@@ -16,6 +16,8 @@ public sealed partial class InGameNarrationSystem
         private bool _lastPageDown;
         private bool _hasHistoryCursor;
         private int _historyCursor;
+        private int _openedHistoryCount;
+        private string? _openedLatestMessage;
 
         public void Reset()
         {
@@ -24,25 +26,30 @@ public sealed partial class InGameNarrationSystem
             _lastPageDown = false;
             _hasHistoryCursor = false;
             _historyCursor = -1;
+            _openedHistoryCount = 0;
+            _openedLatestMessage = null;
         }
 
         public void Update(NarrationServiceContext context)
         {
+            ScreenReaderService.AnnouncementCategory category = context.Category ?? ScreenReaderService.AnnouncementCategory.Default;
+
             if (!ShouldHandle(context.Runtime))
             {
                 if (_chatActive)
                 {
-                    ScreenReaderService.Announce("Chat closed", category: ScreenReaderService.AnnouncementCategory.Default, force: true);
+                    ScreenReaderService.Announce(BuildChatClosedAnnouncement(), category: category, force: true);
                 }
+
                 Reset();
                 return;
             }
 
-            ScreenReaderService.AnnouncementCategory category = context.Category ?? ScreenReaderService.AnnouncementCategory.Default;
-
             if (!_chatActive)
             {
-                ScreenReaderService.Announce("Chat opened", category: category, force: true);
+                _openedHistoryCount = ChatHistoryService.Count;
+                _openedLatestMessage = TryGetLatestHistoryMessage();
+                ScreenReaderService.Announce(BuildChatOpenedAnnouncement(), category: category, force: true);
                 _hasHistoryCursor = false;
                 _historyCursor = ChatHistoryService.Count - 1;
             }
@@ -50,6 +57,38 @@ public sealed partial class InGameNarrationSystem
             HandleHistoryNavigation(category);
 
             _chatActive = true;
+        }
+
+        private string BuildChatOpenedAnnouncement()
+        {
+            string? latestMessage = TryGetLatestHistoryMessage();
+            return string.IsNullOrWhiteSpace(latestMessage)
+                ? "Chat opened. No chat messages yet."
+                : $"Chat opened. {latestMessage}";
+        }
+
+        private string BuildChatClosedAnnouncement()
+        {
+            string? latestMessage = TryGetLatestHistoryMessage();
+            bool latestChanged = ChatHistoryService.Count != _openedHistoryCount ||
+                !string.Equals(latestMessage, _openedLatestMessage, StringComparison.Ordinal);
+
+            if (latestChanged && !string.IsNullOrWhiteSpace(latestMessage))
+            {
+                return $"{latestMessage}. Chat closed.";
+            }
+
+            return "Chat closed.";
+        }
+
+        private static string? TryGetLatestHistoryMessage()
+        {
+            if (ChatHistoryService.Count <= 0)
+            {
+                return null;
+            }
+
+            return ChatHistoryService.GetMessage(ChatHistoryService.LatestIndex);
         }
 
         private static bool ShouldHandle(RuntimeContextSnapshot runtime)
