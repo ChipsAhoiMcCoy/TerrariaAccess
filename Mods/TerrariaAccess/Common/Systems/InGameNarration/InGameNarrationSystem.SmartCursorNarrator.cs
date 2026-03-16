@@ -124,6 +124,7 @@ public sealed partial class InGameNarrationSystem
 
             if (_lastSmartCursorEnabled != hasSmartCursor)
             {
+                modeChangeAnnouncement = GetSmartCursorModeAnnouncement(hasSmartCursor);
                 QueueSmartCursorModeChange(hasSmartCursor);
 
                 ResetStateTracking();
@@ -181,27 +182,42 @@ public sealed partial class InGameNarrationSystem
             }
 
             _lastAnnouncement = message;
-            (string? modePrefix, _) = ConsumePendingCursorModeAnnouncement();
-            string announcement = string.IsNullOrWhiteSpace(modePrefix)
-                ? message
-                : $"{modePrefix}. {message}";
+            string announcement;
+            if (!string.IsNullOrWhiteSpace(modeChangeAnnouncement))
+            {
+                ConsumePendingCursorModeAnnouncement();
+                announcement = message;
+            }
+            else
+            {
+                (string? modePrefix, _) = ConsumePendingCursorModeAnnouncement();
+                announcement = string.IsNullOrWhiteSpace(modePrefix)
+                    ? message
+                    : $"{modePrefix}. {message}";
+            }
+
             NarrationInstrumentationContext.SetPendingKey(BuildSmartCursorKey(announcement));
             ScreenReaderService.Announce(announcement, category: category, force: isHoldingAxe);
         }
 
         private static void QueueSmartCursorModeChange(bool hasSmartCursor)
         {
-            string announcement = hasSmartCursor
+            string announcement = GetSmartCursorModeAnnouncement(hasSmartCursor);
+
+            QueuePendingCursorModeAnnouncement(
+                announcement,
+                hasSmartCursor ? "smart:mode:on" : "smart:mode:off");
+        }
+
+        private static string GetSmartCursorModeAnnouncement(bool hasSmartCursor)
+        {
+            return hasSmartCursor
                 ? LocalizationHelper.GetTextOrFallback(
                     "Mods.TerrariaAccess.SmartCursor.Enabled",
                     "Smart cursor")
                 : LocalizationHelper.GetTextOrFallback(
                     "Mods.TerrariaAccess.SmartCursor.UnlockedCursor",
                     "Unlocked cursor");
-
-            QueuePendingCursorModeAnnouncement(
-                announcement,
-                hasSmartCursor ? "smart:mode:on" : "smart:mode:off");
         }
 
         private void ResetStateTracking()
