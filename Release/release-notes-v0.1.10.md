@@ -1,6 +1,6 @@
-## Terraria Access v0.1.10
+## Terraria Access v0.1.9 Fixes
 
-This is a patch release focused on fixes and cleanup after `v0.1.9`.
+This is a patch follow-up release for `v0.1.9`, focused on fixes and cleanup.
 
 ### Highlights
 
