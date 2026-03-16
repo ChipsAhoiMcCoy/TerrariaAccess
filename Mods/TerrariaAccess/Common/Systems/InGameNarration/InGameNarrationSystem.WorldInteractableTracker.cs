@@ -57,14 +57,8 @@ public sealed partial class InGameNarrationSystem
         private readonly Dictionary<TrackedInteractableKey, int> _nextCueFrame = new();
         private readonly List<SoundEffectInstance> _liveInstances = new();
 
-        private const int TargetSweepDurationFrames = 60;  // ~1 second at 60 FPS
-        private const int MinSweepStepFrames = 3;          // ~50ms floor so tones stay distinct
-        private const int SweepCycleGapFrames = 15;        // ~250ms pause between cycles
-
         private int _ticksUntilNextScan;
-        private int _nextSweepFrame;
-        private int _sweepCursor;
-        private bool _sweepCycleActive;
+        private readonly AudioSweepScheduler _sweepScheduler = new();
         private bool _isEnabled;
 
         public WorldInteractableTracker()
@@ -308,7 +302,7 @@ public sealed partial class InGameNarrationSystem
             // Snapshot the sweep order only when starting a new cycle.
             // During an active cycle, play through the existing snapshot so
             // player movement doesn't cause jitter or restart mid-sweep.
-            if (!_sweepCycleActive)
+            if (!_sweepScheduler.IsCycleActive)
             {
                 if (_distanceScratch.Count == 0)
                 {
@@ -343,8 +337,14 @@ public sealed partial class InGameNarrationSystem
                     _currentSweepKeys.Add(entry.Candidate.Key);
                 }
 
-                _sweepCursor = 0;
-                _sweepCycleActive = true;
+                if (!_sweepScheduler.EnsureCycleStarted(_sweepOrder.Count))
+                {
+                    ResetSweepSchedule();
+                    TrimInactiveKeys();
+                    CleanupFinishedInstances();
+                    return;
+                }
+
                 _emittedThisSweep.Clear();
             }
 
@@ -420,49 +420,34 @@ public sealed partial class InGameNarrationSystem
         {
             if (_sweepOrder.Count == 0)
             {
-                _sweepCycleActive = false;
+                _sweepScheduler.Reset();
                 _emittedThisSweep.Clear();
                 return;
             }
 
-            if (Main.GameUpdateCount < (uint)Math.Max(0, _nextSweepFrame))
+            if (_sweepScheduler.IsWaiting(Main.GameUpdateCount))
             {
                 return;
             }
 
-            // Cycle complete — pause briefly then start a fresh snapshot
-            if (_sweepCursor >= _sweepOrder.Count)
+            if (_sweepScheduler.HasCompletedCycle(_sweepOrder.Count))
             {
-                _sweepCycleActive = false;
+                _sweepScheduler.PauseUntilNextCycle(Main.GameUpdateCount);
                 _emittedThisSweep.Clear();
-                _nextSweepFrame = ScheduleNextFrame(SweepCycleGapFrames);
                 return;
             }
 
-            CandidateDistance entry = _sweepOrder[_sweepCursor];
+            CandidateDistance entry = _sweepOrder[_sweepScheduler.Cursor];
             if (_emittedThisSweep.Contains(entry.Candidate.Key))
             {
-                _sweepCursor++;
+                _sweepScheduler.SkipCurrentStep();
                 return;
             }
 
             PlayCue(playerCenter, entry, isPrimaryCue: true);
 
             _emittedThisSweep.Add(entry.Candidate.Key);
-            _sweepCursor++;
-
-            // Dynamic interval: target ~1 second total sweep, with a minimum floor
-            int delay = ComputeSweepStepDelay(entry, _sweepOrder.Count);
-            _nextSweepFrame = delay <= 0 ? 0 : ScheduleNextFrame(delay);
-        }
-
-
-
-
-        private static int ComputeSweepStepDelay(CandidateDistance entry, int sweepCount)
-        {
-            int interval = TargetSweepDurationFrames / Math.Max(1, sweepCount);
-            return Math.Max(MinSweepStepFrames, interval);
+            _sweepScheduler.Advance(Main.GameUpdateCount, _sweepOrder.Count);
         }
 
         private void TrimInactiveKeys()
@@ -664,31 +649,13 @@ public sealed partial class InGameNarrationSystem
             _sweepOrder.Clear();
             _currentSweepKeys.Clear();
             _emittedThisSweep.Clear();
-            _nextSweepFrame = 0;
-            _sweepCursor = 0;
-            _sweepCycleActive = false;
+            _sweepScheduler.Reset();
         }
 
         private void ClearAllCueSchedules()
         {
             ResetSweepSchedule();
             _nextCueFrame.Clear();
-        }
-
-
-
-
-        private static int ScheduleNextFrame(int delayFrames)
-        {
-            int safeDelay = Math.Max(1, delayFrames);
-            ulong current = Main.GameUpdateCount;
-            ulong target = current + (ulong)safeDelay;
-            if (target > int.MaxValue)
-            {
-                target = int.MaxValue;
-            }
-
-            return (int)target;
         }
 
         private static SoundEffect EnsureTone(InteractableCueProfile profile)

@@ -2,6 +2,7 @@
 using System.Collections.Generic;
 using Microsoft.Xna.Framework;
 using Microsoft.Xna.Framework.Audio;
+using TerrariaAccess.Common.Systems.Guidance;
 
 namespace TerrariaAccess.Common.Systems;
 
@@ -12,7 +13,7 @@ public sealed partial class GuidanceSystem
     private static readonly List<Waypoint> Waypoints = new();
 
     internal static bool HasWaypointState => Waypoints.Count > 0 || _selectionMode != SelectionMode.None;
-    internal static bool IsNamingActive => _namingActive;
+    internal static bool IsNamingActive => NamingDialog.IsActive;
 
     private enum SelectionMode
     {
@@ -40,14 +41,8 @@ public sealed partial class GuidanceSystem
     private static int _selectedHostileMobIndex = -1;
     private static ExplorationTargetRegistry.ExplorationTarget? _lastExplorationSelection;
 
-    // Sweep state for "All" mode pinging
     private static readonly List<SweepTarget> SweepOrder = new();
-    private static int _sweepCursor;
-    private static int _nextSweepFrame;
-    private static bool _sweepCycleActive;
-    private const int TargetSweepDurationFrames = 60;  // ~1 second at 60 FPS
-    private const int MinSweepIntervalFrames = 3;      // ~50ms floor so tones stay distinct
-    private const int SweepCycleGapFrames = 15;        // ~250ms pause between cycles
+    private static readonly AudioSweepScheduler SweepScheduler = new();
 
     private readonly struct SweepTarget
     {
@@ -69,36 +64,14 @@ public sealed partial class GuidanceSystem
     private static ProximityTargetKey _activeProximityTarget = new(SelectionMode.None, -1);
     private static int _lastProximityStepIndex = int.MaxValue;
 
-    private static bool _namingActive;
-
     private static int _nextPingUpdateFrame = -1;
     private static bool _arrivalAnnounced;
     private static SoundEffect? _waypointTone;
     private static readonly List<SoundEffectInstance> ActiveWaypointInstances = new();
-    private static InputSnapshot? _inputSnapshot;
-
-    // Direct text-input naming state
-    private static string _namingText = string.Empty;
-    private static string _namingPreviousText = string.Empty;
-    private static Vector2 _namingWorldPosition;
-    private static string _namingFallbackName = string.Empty;
-    private static int _namingPlayerIndex = -1;
+    private static readonly GuidanceNamingDialogController NamingDialog = new();
     private static readonly bool LogGuidancePings = false;
     private static uint _lastTargetRefreshFrame;
     private static int _lastTargetRefreshPlayerIndex = -1;
-
-    private sealed class InputSnapshot
-    {
-        public bool BlockInput;
-        public bool WritingText;
-        public bool PlayerInventory;
-        public bool EditSign;
-        public bool EditChest;
-        public bool DrawingPlayerChat;
-        public bool InFancyUI;
-        public bool GameMenu;
-        public string ChatText = string.Empty;
-    }
 
     private struct Waypoint
     {
@@ -137,9 +110,7 @@ public sealed partial class GuidanceSystem
         _lastExplorationSelection = null;
         _selectionMode = SelectionMode.None;
         SweepOrder.Clear();
-        _sweepCursor = 0;
-        _nextSweepFrame = 0;
-        _sweepCycleActive = false;
+        SweepScheduler.Reset();
         ResetProximityProgress();
         ClearCategoryAnnouncement();
         _lastAnnouncedCategory = SelectionMode.None;

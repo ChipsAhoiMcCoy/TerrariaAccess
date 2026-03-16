@@ -42,19 +42,14 @@ public sealed partial class GuidanceSystem : ModSystem
     public override void Unload()
     {
         ResetTrackingState();
-        _namingActive = false;
-        _namingText = string.Empty;
-        _namingPreviousText = string.Empty;
-        _namingFallbackName = string.Empty;
-        _namingPlayerIndex = -1;
+        NamingDialog.Close(LogWaypoint);
         DisposeToneResources();
-        _inputSnapshot = null;
     }
 
     public override void OnWorldUnload()
     {
         LogWaypoint($"OnWorldUnload: NetMode={Main.netMode}, WaypointCount={Waypoints.Count}, " +
-                    $"SelectionMode={_selectionMode}, SelectedIndex={_selectedIndex}, NamingActive={_namingActive}");
+                    $"SelectionMode={_selectionMode}, SelectedIndex={_selectedIndex}, NamingActive={NamingDialog.IsActive}");
 
         if (Main.netMode == NetmodeID.MultiplayerClient && Main.LocalPlayer is not null)
         {
@@ -64,16 +59,12 @@ public sealed partial class GuidanceSystem : ModSystem
         ResetTrackingState();
         CloseNaming();
         DisposeToneResources();
-        _inputSnapshot = null;
         LogWaypoint("OnWorldUnload: Cleanup complete.");
     }
 
     public override void UpdateUI(GameTime gameTime)
     {
-        if (_namingActive)
-        {
-            UpdateNaming();
-        }
+        UpdateNaming();
     }
 
     public override void LoadWorldData(TagCompound tag)
@@ -105,7 +96,7 @@ public sealed partial class GuidanceSystem : ModSystem
         // This causes HandleIME() in the draw phase to disable the IME service, which stops
         // OS text input events from being delivered. Re-assert WritingText here so the IME
         // stays enabled and GetInputText() receives keystrokes (including Enter/Escape).
-        if (_namingActive)
+        if (NamingDialog.IsActive)
         {
             PlayerInput.WritingText = true;
         }
@@ -113,7 +104,7 @@ public sealed partial class GuidanceSystem : ModSystem
 
     public override void PostUpdatePlayers()
     {
-        if (Main.dedServ || Main.gameMenu || Main.inFancyUI || _namingActive)
+        if (Main.dedServ || Main.gameMenu || Main.inFancyUI || NamingDialog.IsActive)
         {
             _nextPingUpdateFrame = -1;
             _arrivalAnnounced = false;
@@ -148,7 +139,7 @@ public sealed partial class GuidanceSystem : ModSystem
             }
 
             // Not in sweep mode - reset cycle so next sweep starts fresh
-            _sweepCycleActive = false;
+            SweepScheduler.Reset();
 
             if (!TryGetCurrentTrackingTarget(player, out Vector2 targetPosition, out string arrivalLabel))
             {
@@ -230,7 +221,6 @@ public sealed partial class GuidanceSystem : ModSystem
     {
         return _selectionMode switch
         {
-            SelectionMode.Waypoint when _selectedIndex < 0 => Waypoints.Count > 0,
             SelectionMode.DroppedItem when _selectedDroppedItemIndex < 0 => NearbyDroppedItems.Count > 0,
             SelectionMode.Critter when _selectedCritterIndex < 0 => NearbyCritters.Count > 0,
             SelectionMode.Plantlife when _selectedPlantlifeIndex < 0 => NearbyPlantlife.Count > 0,
@@ -242,38 +232,34 @@ public sealed partial class GuidanceSystem : ModSystem
     {
         // Snapshot the sweep order once per cycle so player movement doesn't
         // cause jitter or restart the sweep mid-cycle.
-        if (!_sweepCycleActive)
+        if (!SweepScheduler.IsCycleActive)
         {
             RefreshSweepOrder(player);
-            if (SweepOrder.Count == 0)
+            if (!SweepScheduler.EnsureCycleStarted(SweepOrder.Count))
             {
                 return;
             }
-
-            _sweepCursor = 0;
-            _sweepCycleActive = true;
         }
 
         if (SweepOrder.Count == 0)
         {
-            _sweepCycleActive = false;
+            SweepScheduler.Reset();
             return;
         }
 
-        if (Main.GameUpdateCount < (uint)_nextSweepFrame)
+        if (SweepScheduler.IsWaiting(Main.GameUpdateCount))
         {
             return;
         }
 
         // Cycle complete - pause briefly then start a fresh snapshot
-        if (_sweepCursor >= SweepOrder.Count)
+        if (SweepScheduler.HasCompletedCycle(SweepOrder.Count))
         {
-            _sweepCycleActive = false;
-            _nextSweepFrame = (int)Main.GameUpdateCount + SweepCycleGapFrames;
+            SweepScheduler.PauseUntilNextCycle(Main.GameUpdateCount);
             return;
         }
 
-        SweepTarget target = SweepOrder[_sweepCursor];
+        SweepTarget target = SweepOrder[SweepScheduler.Cursor];
 
         // Use hostile ping for hostile mob sweep, waypoint ping for everything else
         if (_selectionMode == SelectionMode.HostileMob)
@@ -285,11 +271,7 @@ public sealed partial class GuidanceSystem : ModSystem
             EmitPing(player, target.WorldPosition);
         }
 
-        _sweepCursor++;
-
-        // Dynamic interval: target ~1 second total sweep, with a minimum floor
-        int interval = Math.Max(MinSweepIntervalFrames, TargetSweepDurationFrames / SweepOrder.Count);
-        _nextSweepFrame = (int)Main.GameUpdateCount + interval;
+        SweepScheduler.Advance(Main.GameUpdateCount, SweepOrder.Count);
     }
 
     private static void RefreshSweepOrder(Player player)
@@ -299,13 +281,6 @@ public sealed partial class GuidanceSystem : ModSystem
 
         switch (_selectionMode)
         {
-            case SelectionMode.Waypoint when _selectedIndex < 0:
-                foreach (Waypoint wp in Waypoints)
-                {
-                    float dist = Vector2.Distance(origin, wp.WorldPosition) / 16f;
-                    SweepOrder.Add(new SweepTarget(wp.WorldPosition, dist));
-                }
-                break;
             case SelectionMode.DroppedItem when _selectedDroppedItemIndex < 0:
                 foreach (GuidanceEntry entry in NearbyDroppedItems)
                 {
@@ -347,143 +322,27 @@ public sealed partial class GuidanceSystem : ModSystem
 
     private static void BeginNaming(Player player)
     {
-        if (_namingActive)
-        {
-            LogWaypoint("BeginNaming skipped: naming already active.");
-            return;
-        }
-
-        _namingWorldPosition = player.Center;
-        _namingFallbackName = BuildDefaultName();
-        _namingPlayerIndex = player.whoAmI;
-        _namingText = string.Empty;
-        _namingPreviousText = string.Empty;
         _nextPingUpdateFrame = -1;
-        _namingActive = true;
-
-        LogWaypoint($"BeginNaming: WorldPos=({_namingWorldPosition.X:F1}, {_namingWorldPosition.Y:F1}), " +
-                    $"FallbackName=\"{_namingFallbackName}\", PlayerIndex={_namingPlayerIndex}, " +
-                    $"ExistingWaypoints={Waypoints.Count}");
-
-        _inputSnapshot = new InputSnapshot
-        {
-            BlockInput = Main.blockInput,
-            WritingText = PlayerInput.WritingText,
-            PlayerInventory = Main.playerInventory,
-            EditSign = Main.editSign,
-            EditChest = Main.editChest,
-            DrawingPlayerChat = Main.drawingPlayerChat,
-            InFancyUI = Main.inFancyUI,
-            GameMenu = Main.gameMenu,
-            ChatText = Main.chatText ?? string.Empty
-        };
-
-        LogWaypoint($"BeginNaming: InputSnapshot saved [BlockInput={_inputSnapshot.BlockInput}, " +
-                    $"WritingText={_inputSnapshot.WritingText}, PlayerInventory={_inputSnapshot.PlayerInventory}, " +
-                    $"EditSign={_inputSnapshot.EditSign}, EditChest={_inputSnapshot.EditChest}, " +
-                    $"DrawingPlayerChat={_inputSnapshot.DrawingPlayerChat}, InFancyUI={_inputSnapshot.InFancyUI}, " +
-                    $"GameMenu={_inputSnapshot.GameMenu}, ChatText=\"{_inputSnapshot.ChatText}\"]");
-
-        Main.blockInput = true;
-        Main.drawingPlayerChat = false;
-        PlayerInput.WritingText = true;
-        Main.clrInput();
-        Main.chatRelease = false;
-
-        LogWaypoint("BeginNaming: Input state configured [blockInput=true, drawingPlayerChat=false, " +
-                    "WritingText=true, clrInput called, chatRelease=false]");
-
-        SoundEngine.PlaySound(SoundID.MenuOpen);
-        Main.NewText("Waypoint naming: type a name, press Enter to save, or Escape to cancel.", Color.LightSkyBlue);
-        ScreenReaderService.Announce("Type the waypoint name, then press Enter to save or Escape to cancel.");
-        LogWaypoint("BeginNaming: Naming dialog opened, awaiting user input.");
+        NamingDialog.Begin(player, BuildDefaultName(), Waypoints.Count, LogWaypoint);
     }
 
     private static void CloseNaming()
     {
-        if (!_namingActive)
-        {
-            LogWaypoint("CloseNaming skipped: naming not active.");
-            return;
-        }
-
-        LogWaypoint($"CloseNaming: Closing naming dialog. FinalText=\"{_namingText}\", " +
-                    $"HasSnapshot={_inputSnapshot is not null}");
-
-        _namingActive = false;
-        _namingText = string.Empty;
-        _namingPreviousText = string.Empty;
-        _namingFallbackName = string.Empty;
-        _namingPlayerIndex = -1;
-
-        Main.clrInput();
-
-        if (_inputSnapshot is InputSnapshot snapshot)
-        {
-            PlayerInput.WritingText = snapshot.WritingText;
-            Main.blockInput = snapshot.BlockInput;
-            Main.playerInventory = snapshot.PlayerInventory;
-            Main.editSign = snapshot.EditSign;
-            Main.editChest = snapshot.EditChest;
-            Main.drawingPlayerChat = snapshot.DrawingPlayerChat;
-            Main.inFancyUI = snapshot.InFancyUI;
-            Main.gameMenu = snapshot.GameMenu;
-            Main.chatText = snapshot.ChatText;
-            LogWaypoint($"CloseNaming: Input state restored from snapshot [BlockInput={snapshot.BlockInput}, " +
-                        $"WritingText={snapshot.WritingText}, PlayerInventory={snapshot.PlayerInventory}, " +
-                        $"DrawingPlayerChat={snapshot.DrawingPlayerChat}]");
-        }
-        else
-        {
-            PlayerInput.WritingText = false;
-            Main.blockInput = false;
-            Main.playerInventory = false;
-            Main.editSign = false;
-            Main.editChest = false;
-            Main.drawingPlayerChat = false;
-            Main.inFancyUI = false;
-            Main.gameMenu = false;
-            Main.chatText = string.Empty;
-            LogWaypoint("CloseNaming: No snapshot found, reset all input state to defaults.");
-        }
-
-        _inputSnapshot = null;
-        LogWaypoint("CloseNaming: Naming dialog closed.");
+        NamingDialog.Close(LogWaypoint);
     }
 
     private static void UpdateNaming()
     {
-        if (!_namingActive)
+        GuidanceNamingUpdateResult result = NamingDialog.Update(LogWaypoint);
+        if (result.Kind == GuidanceNamingUpdateKind.None)
         {
             return;
         }
 
-        PlayerInput.WritingText = true;
-
-        // Suppress the chat toggle every frame while naming is active.
-        // DoUpdate_Enter_ToggleChat() runs BEFORE ProcessTriggers in the frame,
-        // so we must clear chatRelease here so it's false when checked next frame.
-        Main.chatRelease = false;
-
-        string newText = Main.GetInputText(_namingText);
-
-        // Enforce max length (40 chars, generous for waypoint names)
-        if (newText.Length > 40)
+        if (result.Kind == GuidanceNamingUpdateKind.Confirmed)
         {
-            LogWaypoint($"UpdateNaming: Text truncated from {newText.Length} to 40 chars.");
-            newText = newText.Substring(0, 40);
-        }
-
-        if (Main.inputTextEnter)
-        {
-            string rawInput = string.IsNullOrWhiteSpace(newText) ? _namingFallbackName : newText.Trim();
-            string resolvedName = TextSanitizer.Clean(rawInput);
-
-            LogWaypoint($"UpdateNaming: Enter pressed. RawInput=\"{rawInput}\", ResolvedName=\"{resolvedName}\", " +
-                        $"WorldPos=({_namingWorldPosition.X:F1}, {_namingWorldPosition.Y:F1}), " +
-                        $"WaypointCountBefore={Waypoints.Count}");
-
-            Waypoint waypoint = new(resolvedName, _namingWorldPosition);
+            LogWaypoint($"UpdateNaming: WaypointCountBefore={Waypoints.Count}");
+            Waypoint waypoint = new(result.ResolvedName, result.WorldPosition);
             Waypoints.Add(waypoint);
             SendWaypointAddedToServer(waypoint);
             _selectedIndex = Waypoints.Count - 1;
@@ -493,65 +352,45 @@ public sealed partial class GuidanceSystem : ModSystem
                         $"SelectionMode={_selectionMode}, TotalWaypoints={Waypoints.Count}, " +
                         $"NetMode={Main.netMode}");
 
-            Player? owner = ResolveNamingPlayer();
+            Player? owner = ResolveNamingPlayer(result.PlayerIndex);
             if (owner is not null)
             {
                 RescheduleGuidancePing(owner);
-                string announcement = ComposeCreationAnnouncement(resolvedName, owner, _namingWorldPosition);
+                string announcement = ComposeCreationAnnouncement(result.ResolvedName, owner, result.WorldPosition);
                 ScreenReaderService.Announce(announcement);
-                EmitPing(owner, _namingWorldPosition);
+                EmitPing(owner, result.WorldPosition);
                 LogWaypoint($"UpdateNaming: Announced creation: \"{announcement}\", Ping emitted for player {owner.whoAmI}.");
             }
             else
             {
-                ScreenReaderService.Announce($"Created waypoint {resolvedName}");
-                LogWaypoint($"UpdateNaming: Owner player could not be resolved (index={_namingPlayerIndex}). " +
+                ScreenReaderService.Announce($"Created waypoint {result.ResolvedName}");
+                LogWaypoint($"UpdateNaming: Owner player could not be resolved (index={result.PlayerIndex}). " +
                             "Announced without ping.");
             }
 
-            // Suppress redundant "Arrived at X" since we just announced creation at player's position
             ScreenReaderService.SuppressNext(SuppressionKeyArrival);
-
-            SoundEngine.PlaySound(SoundID.MenuOpen);
-            CloseNaming();
             return;
         }
 
-        if (Main.inputTextEscape)
+        if (result.Kind == GuidanceNamingUpdateKind.Canceled)
         {
-            LogWaypoint("UpdateNaming: Escape pressed. Cancelling waypoint creation.");
-            ScreenReaderService.Announce("Waypoint creation cancelled");
-            SoundEngine.PlaySound(SoundID.MenuClose);
-
-            Player? owner = ResolveNamingPlayer();
+            Player? owner = ResolveNamingPlayer(result.PlayerIndex);
             if (owner is not null && _selectionMode == SelectionMode.Waypoint
                 && _selectedIndex >= 0 && _selectedIndex < Waypoints.Count)
             {
                 RescheduleGuidancePing(owner);
             }
-
-            CloseNaming();
-            return;
         }
-
-        // Keystroke sound feedback (like chat/search mode)
-        if (!string.Equals(newText, _namingText, StringComparison.Ordinal))
-        {
-            SoundEngine.PlaySound(SoundID.MenuTick);
-            _namingPreviousText = _namingText;
-        }
-
-        _namingText = newText;
     }
 
-    private static Player? ResolveNamingPlayer()
+    private static Player? ResolveNamingPlayer(int playerIndex)
     {
-        if (_namingPlayerIndex < 0 || _namingPlayerIndex >= Main.maxPlayers)
+        if (playerIndex < 0 || playerIndex >= Main.maxPlayers)
         {
             return null;
         }
 
-        Player candidate = Main.player[_namingPlayerIndex];
+        Player candidate = Main.player[playerIndex];
         return candidate?.active == true ? candidate : null;
     }
 
@@ -597,7 +436,7 @@ public sealed partial class GuidanceSystem : ModSystem
 
     internal static void HandleKeybinds(Player player)
     {
-        if (_namingActive)
+        if (NamingDialog.IsActive)
         {
             return;
         }
@@ -617,7 +456,7 @@ public sealed partial class GuidanceSystem : ModSystem
         if (GuidanceKeybinds.Create?.JustPressed ?? false)
         {
             LogWaypoint($"Create keybind pressed. Player={player.whoAmI}, Position=({player.Center.X:F1}, {player.Center.Y:F1}), " +
-                        $"NamingActive={_namingActive}, GameMenu={Main.gameMenu}, InFancyUI={Main.inFancyUI}, " +
+                        $"NamingActive={NamingDialog.IsActive}, GameMenu={Main.gameMenu}, InFancyUI={Main.inFancyUI}, " +
                         $"BlockInput={Main.blockInput}, WritingText={PlayerInput.WritingText}, " +
                         $"DrawingPlayerChat={Main.drawingPlayerChat}, EditSign={Main.editSign}, EditChest={Main.editChest}");
             BeginNaming(player);
@@ -901,7 +740,9 @@ public sealed partial class GuidanceSystem : ModSystem
         if (tag.ContainsKey(SelectedIndexKey))
         {
             int rawIndex = tag.GetInt(SelectedIndexKey);
-            _selectedIndex = Math.Clamp(rawIndex, -1, Waypoints.Count - 1);
+            _selectedIndex = Waypoints.Count > 0
+                ? Math.Clamp(rawIndex, 0, Waypoints.Count - 1)
+                : -1;
             LogWaypoint($"LoadWaypointData: SelectedIndex raw={rawIndex}, clamped={_selectedIndex}");
         }
 
