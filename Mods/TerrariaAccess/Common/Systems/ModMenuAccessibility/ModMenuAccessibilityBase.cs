@@ -86,6 +86,13 @@ public abstract class ModMenuAccessibilityBase : ModSystem
     /// </summary>
     protected virtual bool ShouldProcessInput(object menuState) => true;
 
+    /// <summary>
+    /// Whether this system should use the standard Main.DrawMenu hook.
+    /// Systems that process alternate UI roots can disable this and call
+    /// <see cref="ProcessMenuAccessibility"/> from their own hooks instead.
+    /// </summary>
+    protected virtual bool UseDrawMenuHook => true;
+
     #endregion
 
     #region Common State
@@ -166,7 +173,10 @@ public abstract class ModMenuAccessibilityBase : ModSystem
         }
 
         Mod.Logger.Info($"[{SystemLogName}] Loading accessibility system");
-        On_Main.DrawMenu += HandleDrawMenu;
+        if (UseDrawMenuHook)
+        {
+            On_Main.DrawMenu += HandleDrawMenu;
+        }
     }
 
     public override void Unload()
@@ -176,7 +186,10 @@ public abstract class ModMenuAccessibilityBase : ModSystem
             return;
         }
 
-        On_Main.DrawMenu -= HandleDrawMenu;
+        if (UseDrawMenuHook)
+        {
+            On_Main.DrawMenu -= HandleDrawMenu;
+        }
 
         // Clear common state
         BindingById.Clear();
@@ -203,15 +216,46 @@ public abstract class ModMenuAccessibilityBase : ModSystem
 
     #region Menu Processing
 
-    private void TryProcessMenu()
+    /// <summary>
+    /// Allows derived systems with custom hooks to run the standard accessibility processing pass.
+    /// </summary>
+    protected void ProcessMenuAccessibility()
+    {
+        TryProcessMenu();
+    }
+
+    /// <summary>
+    /// Returns the active menu state this accessibility system should process.
+    /// Derived classes can override this to source UI state from places other than Main.MenuUI.
+    /// </summary>
+    protected virtual object? GetActiveMenuState()
     {
         object? currentState = Main.MenuUI?.CurrentState;
+        if (currentState is null || currentState.GetType().FullName != MenuTypeName)
+        {
+            return null;
+        }
 
-        // Check if we're in our target menu
-        bool isTargetMenu = currentState is not null &&
-                            currentState.GetType().FullName == MenuTypeName;
+        return currentState;
+    }
 
-        if (!isTargetMenu)
+    /// <summary>
+    /// Forces the next processing pass to treat the menu as newly entered.
+    /// Useful when the underlying UI state is reactivated without changing the state reference.
+    /// </summary>
+    protected void ResetMenuTracking()
+    {
+        LastMenuState = null;
+        LastAnnouncedPointId = -1;
+        LastSeenPointId = -1;
+        InitialFocusFramesRemaining = GetInitialFocusFrameCount();
+        CurrentFocusIndex = 0;
+    }
+
+    private void TryProcessMenu()
+    {
+        object? currentState = GetActiveMenuState();
+        if (currentState is null)
         {
             // Clear state if we've left our menu
             if (LastMenuState is not null)
@@ -394,7 +438,7 @@ public abstract class ModMenuAccessibilityBase : ModSystem
         CurrentInput = input;
     }
 
-    private void ResetInputState()
+    protected void ResetInputState()
     {
         _leftWasPressed = false;
         _rightWasPressed = false;
@@ -546,8 +590,14 @@ public abstract class ModMenuAccessibilityBase : ModSystem
     /// </summary>
     protected enum PointType
     {
+        /// <summary>Bestiary page navigation button.</summary>
+        NavButton,
+
         /// <summary>Filter/sort buttons at the top of the menu.</summary>
         FilterButton,
+
+        /// <summary>Bestiary entry button in a grid/list.</summary>
+        EntryButton,
 
         /// <summary>Main mod item in the list.</summary>
         ModItem,
@@ -560,6 +610,9 @@ public abstract class ModMenuAccessibilityBase : ModSystem
 
         /// <summary>Back/exit button.</summary>
         BackButton,
+
+        /// <summary>Bestiary sort option button.</summary>
+        SortButton,
 
         /// <summary>Disabled button that cannot be clicked.</summary>
         DisabledButton

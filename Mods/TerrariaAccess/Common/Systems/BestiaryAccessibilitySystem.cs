@@ -29,14 +29,17 @@ namespace TerrariaAccess.Common.Systems;
 /// Provides full keyboard/gamepad navigation and screen reader announcements for the Bestiary menu.
 /// Works from both the title menu and in-game pause menu by hooking UIBestiaryTest.Draw directly.
 /// </summary>
-public sealed class BestiaryAccessibilitySystem : ModSystem
+public sealed class BestiaryAccessibilitySystem : ModMenuAccessibilityBase
 {
     #region Constants
 
-    private const int BaseLinkId = LinkIdRegistry.Bestiary;
-    private const string SystemLogName = "Bestiary";
     private const string BestiaryMenuTypeName = "Terraria.GameContent.UI.States.UIBestiaryTest";
     private const string ContextKeyScreen = "bestiary:screen";
+
+    protected override int BaseLinkId => LinkIdRegistry.Bestiary;
+    protected override string MenuTypeName => BestiaryMenuTypeName;
+    protected override string SystemLogName => "Bestiary";
+    protected override bool UseDrawMenuHook => false;
 
     #endregion
 
@@ -82,13 +85,6 @@ public sealed class BestiaryAccessibilitySystem : ModSystem
     private readonly List<PointBinding> _filterBindings = new();
     private readonly List<PointBinding> _sortBindings = new();
     private PointBinding? _exitBinding;
-    private readonly Dictionary<int, PointBinding> _bindingById = new();
-
-    // Stability tracking
-    private int _lastAnnouncedPointId = -1;
-    private int _lastSeenPointId = -1;
-    private object? _lastMenuState;
-    private int _initialFocusFramesRemaining;
 
     // Overlay state tracking
     private bool _wasSortOverlayOpen;
@@ -99,33 +95,6 @@ public sealed class BestiaryAccessibilitySystem : ModSystem
 
     // Search text tracking for audio feedback
     private string? _lastSearchText;
-
-    #endregion
-
-    #region Input State
-
-    private bool _leftWasPressed;
-    private bool _rightWasPressed;
-    private bool _upWasPressed;
-    private bool _downWasPressed;
-
-    private bool _stickLeftWasPressed;
-    private bool _stickRightWasPressed;
-    private bool _stickUpWasPressed;
-    private bool _stickDownWasPressed;
-
-    private bool _aButtonWasPressed;
-    private bool _bButtonWasPressed;
-
-    private bool _keyLeftWasPressed;
-    private bool _keyRightWasPressed;
-    private bool _keyUpWasPressed;
-    private bool _keyDownWasPressed;
-    private bool _keyEnterWasPressed;
-    private bool _keySpaceWasPressed;
-    private bool _keyInventorySelectWasPressed;
-
-    private NavigationInput _currentInput;
 
     #endregion
 
@@ -161,7 +130,7 @@ public sealed class BestiaryAccessibilitySystem : ModSystem
         return false;
     }
 
-    private static object? GetActiveMenuState()
+    protected override object? GetActiveMenuState()
     {
         object? state = Main.MenuUI?.CurrentState;
         if (state is not null && state.GetType().FullName == BestiaryMenuTypeName)
@@ -198,7 +167,7 @@ public sealed class BestiaryAccessibilitySystem : ModSystem
             return;
         }
 
-        Mod.Logger.Info($"[{SystemLogName}] Loading accessibility system");
+        base.Load();
 
         MethodInfo? drawMethod = bestiaryMenuType.GetMethod(
             "Draw",
@@ -227,6 +196,8 @@ public sealed class BestiaryAccessibilitySystem : ModSystem
             return;
         }
 
+        base.Unload();
+
         _drawHook?.Dispose();
         _drawHook = null;
         _onActivateHook?.Dispose();
@@ -238,17 +209,11 @@ public sealed class BestiaryAccessibilitySystem : ModSystem
         _filterBindings.Clear();
         _sortBindings.Clear();
         _exitBinding = null;
-        _bindingById.Clear();
-        _lastMenuState = null;
-        _lastAnnouncedPointId = -1;
-        _lastSeenPointId = -1;
+        BindingById.Clear();
         _lastPageOffset = -1;
         _lastSearchText = null;
-        _initialFocusFramesRemaining = 0;
 
         ScreenReaderService.ClearContexts("bestiary:");
-
-        ResetInputState();
         _instance = null;
     }
 
@@ -265,27 +230,9 @@ public sealed class BestiaryAccessibilitySystem : ModSystem
             return;
         }
 
-        _instance._lastMenuState = null;
-        _instance._lastAnnouncedPointId = -1;
-        _instance._lastSeenPointId = -1;
-        _instance._initialFocusFramesRemaining = 15;
-        _instance._currentRegion = NavigationRegion.EntryGrid;
-        _instance._currentEntryIndex = 0;
-        _instance._currentNavIndex = 0;
-        _instance._currentActionIndex = 0;
-        _instance._currentFilterIndex = 0;
-        _instance._currentSortIndex = 0;
-        _instance._wasSortOverlayOpen = false;
-        _instance._wasFilterOverlayOpen = false;
-        _instance._lastPageOffset = -1;
-        _instance._lastSearchText = null;
-
-        _instance._aButtonWasPressed = true;
-        _instance._bButtonWasPressed = true;
-
-        ScreenReaderService.ClearContexts("bestiary:");
-
-        _instance.Mod.Logger.Info($"[{SystemLogName}] Menu activated");
+        _instance.ResetMenuTracking();
+        _instance.ResetBestiaryState();
+        _instance.Mod.Logger.Info($"[{_instance.SystemLogName}] Menu activated");
     }
 
     private static void OnDraw(DrawDelegate orig, UIState self, SpriteBatch spriteBatch)
@@ -297,70 +244,57 @@ public sealed class BestiaryAccessibilitySystem : ModSystem
             return;
         }
 
-        _instance.ProcessMenu(self);
+        _instance.ProcessMenuAccessibility();
     }
 
     #endregion
 
     #region Menu Processing
 
-    private void ProcessMenu(object menuState)
+    protected override void OnMenuEntered(object menuState)
     {
-        bool menuChanged = !ReferenceEquals(menuState, _lastMenuState);
-        if (menuChanged)
-        {
-            _lastMenuState = menuState;
-            _lastAnnouncedPointId = -1;
-            _lastSeenPointId = -1;
-            _initialFocusFramesRemaining = 15;
-            _currentEntryIndex = 0;
-            _currentNavIndex = 0;
-            _currentActionIndex = 0;
-            _currentFilterIndex = 0;
-            _currentSortIndex = 0;
-            _currentRegion = NavigationRegion.EntryGrid;
-            _wasSortOverlayOpen = false;
-            _wasFilterOverlayOpen = false;
-            _lastPageOffset = -1;
-            _lastSearchText = null;
+        ResetBestiaryState();
+        ScreenReaderService.ClearContexts("bestiary:");
+    }
 
-            _aButtonWasPressed = true;
-            _bButtonWasPressed = true;
+    protected override void OnMenuExited()
+    {
+        _navBindings.Clear();
+        _actionBindings.Clear();
+        _entryBindings.Clear();
+        _filterBindings.Clear();
+        _sortBindings.Clear();
+        _exitBinding = null;
+        BindingById.Clear();
+        ScreenReaderService.ClearContexts("bestiary:");
+    }
 
-            ScreenReaderService.ClearContexts("bestiary:");
-            Mod.Logger.Info($"[{SystemLogName}] Entered menu");
-        }
+    protected override int GetInitialFocusFrameCount() => 15;
 
+    protected override bool ShouldProcessInput(object menuState)
+    {
         bool hasGamepadInput = PlayerInput.UsingGamepadUI ||
                                GamePad.GetState(PlayerIndex.One).IsConnected;
 
-        // Always process search mode toggling so Tab/Enter work during search
         bool wasSearchActive = SearchModeManager.IsSearchModeActive;
         SearchModeManager.Update();
         bool isSearchActive = SearchModeManager.IsSearchModeActive;
 
-        // Sync the bestiary's UISearchBar with our search mode state
         HandleSearchBarSync(menuState, wasSearchActive, isSearchActive);
 
         if (isSearchActive && !wasSearchActive)
         {
-            _lastAnnouncedPointId = -1;
-            _lastSeenPointId = -1;
+            LastAnnouncedPointId = -1;
+            LastSeenPointId = -1;
         }
 
-        // When exiting search mode, reset keyboard tracking to prevent stale
-        // key states from firing rapid navigation on the transition frame.
-        // Keys held during search were never tracked, so they'd appear as
-        // "new presses" and cause spam sounds and broken announcements.
         if (!isSearchActive && wasSearchActive)
         {
             ResetInputState();
-            _lastAnnouncedPointId = -1;
-            _lastSeenPointId = -1;
+            LastAnnouncedPointId = -1;
+            LastSeenPointId = -1;
             Mod.Logger.Info($"[{SystemLogName}] Exited search mode, reset input state");
 
-            // Skip input processing this frame to let key states settle.
-            // ConfigureGamepadPoints still needs to run so focus can be set.
             try
             {
                 ConfigureGamepadPoints(menuState);
@@ -369,89 +303,86 @@ public sealed class BestiaryAccessibilitySystem : ModSystem
             {
                 Mod.Logger.Warn($"[{SystemLogName}] Error configuring points on search exit: {ex}");
             }
-            return;
+
+            return false;
         }
 
-        // In search mode without gamepad, skip navigation processing
-        if (!hasGamepadInput && !ShouldProcessKeyboardInput())
+        return hasGamepadInput || ShouldProcessKeyboardInput();
+    }
+
+    private void ResetBestiaryState()
+    {
+        _currentRegion = NavigationRegion.EntryGrid;
+        _currentEntryIndex = 0;
+        _currentNavIndex = 0;
+        _currentActionIndex = 0;
+        _currentFilterIndex = 0;
+        _currentSortIndex = 0;
+        _wasSortOverlayOpen = false;
+        _wasFilterOverlayOpen = false;
+        _lastPageOffset = -1;
+        _lastSearchText = null;
+    }
+
+    private void DetectPageAndOverlayTransitions(object menuState)
+    {
+        int currentPageOffset = GetCurrentPageOffset(menuState);
+        if (_lastPageOffset >= 0 && currentPageOffset >= 0 && currentPageOffset != _lastPageOffset)
         {
-            return;
-        }
+            string currentRangeText = GetRangeText();
+            if (!string.IsNullOrEmpty(currentRangeText))
+            {
+                ScreenReaderService.EnqueuePrefix($"Page {currentRangeText}.");
+            }
 
-        try
+            _currentRegion = NavigationRegion.EntryGrid;
+            _currentEntryIndex = 0;
+            LastAnnouncedPointId = -1;
+            LastSeenPointId = -1;
+
+            Mod.Logger.Info($"[{SystemLogName}] Page changed to offset {currentPageOffset}");
+        }
+        _lastPageOffset = currentPageOffset;
+
+        bool isSortOpen = IsSortOverlayOpen(menuState);
+        bool isFilterOpen = IsFilterOverlayOpen(menuState);
+
+        if (isSortOpen && !_wasSortOverlayOpen)
         {
-            UpdateInputState();
-            ConfigureGamepadPoints(menuState);
-
-            // Detect page changes
-            int currentPageOffset = GetCurrentPageOffset(menuState);
-            if (_lastPageOffset >= 0 && currentPageOffset >= 0 && currentPageOffset != _lastPageOffset)
-            {
-                string currentRangeText = GetRangeText();
-                if (!string.IsNullOrEmpty(currentRangeText))
-                {
-                    ScreenReaderService.EnqueuePrefix($"Page {currentRangeText}.");
-                }
-
-                // Reset entry focus to first item on new page
-                _currentRegion = NavigationRegion.EntryGrid;
-                _currentEntryIndex = 0;
-                _lastAnnouncedPointId = -1;
-                _lastSeenPointId = -1;
-
-                Mod.Logger.Info($"[{SystemLogName}] Page changed to offset {currentPageOffset}");
-            }
-            _lastPageOffset = currentPageOffset;
-
-            // Detect overlay state transitions
-            bool isSortOpen = IsSortOverlayOpen(menuState);
-            bool isFilterOpen = IsFilterOverlayOpen(menuState);
-
-            if (isSortOpen && !_wasSortOverlayOpen)
-            {
-                _currentRegion = NavigationRegion.SortGrid;
-                _currentSortIndex = 0;
-                _lastAnnouncedPointId = -1;
-                _lastSeenPointId = -1;
-                ScreenReaderService.EnqueuePrefix("Sort options.");
-                Mod.Logger.Info($"[{SystemLogName}] Sort overlay opened");
-            }
-            else if (!isSortOpen && _wasSortOverlayOpen)
-            {
-                _currentRegion = NavigationRegion.ActionButtons;
-                _lastAnnouncedPointId = -1;
-                _lastSeenPointId = -1;
-                Mod.Logger.Info($"[{SystemLogName}] Sort overlay closed");
-            }
-
-            if (isFilterOpen && !_wasFilterOverlayOpen)
-            {
-                _currentRegion = NavigationRegion.FilterGrid;
-                _currentFilterIndex = 0;
-                _lastAnnouncedPointId = -1;
-                _lastSeenPointId = -1;
-                ScreenReaderService.EnqueuePrefix("Filter options.");
-                Mod.Logger.Info($"[{SystemLogName}] Filter overlay opened");
-            }
-            else if (!isFilterOpen && _wasFilterOverlayOpen)
-            {
-                _currentRegion = NavigationRegion.ActionButtons;
-                _lastAnnouncedPointId = -1;
-                _lastSeenPointId = -1;
-                Mod.Logger.Info($"[{SystemLogName}] Filter overlay closed");
-            }
-
-            _wasSortOverlayOpen = isSortOpen;
-            _wasFilterOverlayOpen = isFilterOpen;
-
-            HandleNavigation(menuState);
-            HandleAction(menuState);
-            AnnounceCurrentFocus(menuState);
+            _currentRegion = NavigationRegion.SortGrid;
+            _currentSortIndex = 0;
+            LastAnnouncedPointId = -1;
+            LastSeenPointId = -1;
+            ScreenReaderService.EnqueuePrefix("Sort options.");
+            Mod.Logger.Info($"[{SystemLogName}] Sort overlay opened");
         }
-        catch (Exception ex)
+        else if (!isSortOpen && _wasSortOverlayOpen)
         {
-            Mod.Logger.Warn($"[{SystemLogName}] Error processing menu: {ex}");
+            _currentRegion = NavigationRegion.ActionButtons;
+            LastAnnouncedPointId = -1;
+            LastSeenPointId = -1;
+            Mod.Logger.Info($"[{SystemLogName}] Sort overlay closed");
         }
+
+        if (isFilterOpen && !_wasFilterOverlayOpen)
+        {
+            _currentRegion = NavigationRegion.FilterGrid;
+            _currentFilterIndex = 0;
+            LastAnnouncedPointId = -1;
+            LastSeenPointId = -1;
+            ScreenReaderService.EnqueuePrefix("Filter options.");
+            Mod.Logger.Info($"[{SystemLogName}] Filter overlay opened");
+        }
+        else if (!isFilterOpen && _wasFilterOverlayOpen)
+        {
+            _currentRegion = NavigationRegion.ActionButtons;
+            LastAnnouncedPointId = -1;
+            LastSeenPointId = -1;
+            Mod.Logger.Info($"[{SystemLogName}] Filter overlay closed");
+        }
+
+        _wasSortOverlayOpen = isSortOpen;
+        _wasFilterOverlayOpen = isFilterOpen;
     }
 
     private void HandleSearchBarSync(object menuState, bool wasSearchActive, bool isSearchActive)
@@ -543,7 +474,7 @@ public sealed class BestiaryAccessibilitySystem : ModSystem
         }
     }
 
-    private bool ShouldProcessKeyboardInput()
+    protected override bool ShouldProcessKeyboardInput()
     {
         return !SearchModeManager.IsSearchModeActive;
     }
@@ -588,127 +519,11 @@ public sealed class BestiaryAccessibilitySystem : ModSystem
 
     #endregion
 
-    #region Input Handling
-
-    private void UpdateInputState()
-    {
-        GamePadState gpState = GamePad.GetState(PlayerIndex.One);
-        KeyboardState kbState = Main.keyState;
-
-        var input = new NavigationInput();
-
-        if (gpState.IsConnected)
-        {
-            input.Left = gpState.DPad.Left == ButtonState.Pressed && !_leftWasPressed;
-            input.Right = gpState.DPad.Right == ButtonState.Pressed && !_rightWasPressed;
-            input.Up = gpState.DPad.Up == ButtonState.Pressed && !_upWasPressed;
-            input.Down = gpState.DPad.Down == ButtonState.Pressed && !_downWasPressed;
-
-            _leftWasPressed = gpState.DPad.Left == ButtonState.Pressed;
-            _rightWasPressed = gpState.DPad.Right == ButtonState.Pressed;
-            _upWasPressed = gpState.DPad.Up == ButtonState.Pressed;
-            _downWasPressed = gpState.DPad.Down == ButtonState.Pressed;
-
-            Vector2 stick = gpState.ThumbSticks.Left;
-            const float threshold = 0.5f;
-
-            bool stickLeftNow = stick.X < -threshold;
-            bool stickRightNow = stick.X > threshold;
-            bool stickUpNow = stick.Y > threshold;
-            bool stickDownNow = stick.Y < -threshold;
-
-            if (!input.Left && stickLeftNow && !_stickLeftWasPressed) input.Left = true;
-            if (!input.Right && stickRightNow && !_stickRightWasPressed) input.Right = true;
-            if (!input.Up && stickUpNow && !_stickUpWasPressed) input.Up = true;
-            if (!input.Down && stickDownNow && !_stickDownWasPressed) input.Down = true;
-
-            _stickLeftWasPressed = stickLeftNow;
-            _stickRightWasPressed = stickRightNow;
-            _stickUpWasPressed = stickUpNow;
-            _stickDownWasPressed = stickDownNow;
-
-            bool aPressed = gpState.Buttons.A == ButtonState.Pressed;
-            input.ActionPressed = aPressed && !_aButtonWasPressed;
-            _aButtonWasPressed = aPressed;
-
-            bool bPressed = gpState.Buttons.B == ButtonState.Pressed;
-            input.BackPressed = bPressed && !_bButtonWasPressed;
-            _bButtonWasPressed = bPressed;
-        }
-
-        if (ShouldProcessKeyboardInput())
-        {
-            bool keyLeftNow = kbState.IsKeyDown(Keys.Left) || kbState.IsKeyDown(Keys.A);
-            bool keyRightNow = kbState.IsKeyDown(Keys.Right) || kbState.IsKeyDown(Keys.D);
-            bool keyUpNow = kbState.IsKeyDown(Keys.Up) || kbState.IsKeyDown(Keys.W);
-            bool keyDownNow = kbState.IsKeyDown(Keys.Down) || kbState.IsKeyDown(Keys.S);
-
-            if (!input.Left && keyLeftNow && !_keyLeftWasPressed) input.Left = true;
-            if (!input.Right && keyRightNow && !_keyRightWasPressed) input.Right = true;
-            if (!input.Up && keyUpNow && !_keyUpWasPressed) input.Up = true;
-            if (!input.Down && keyDownNow && !_keyDownWasPressed) input.Down = true;
-
-            _keyLeftWasPressed = keyLeftNow;
-            _keyRightWasPressed = keyRightNow;
-            _keyUpWasPressed = keyUpNow;
-            _keyDownWasPressed = keyDownNow;
-
-            bool enterNow = kbState.IsKeyDown(Keys.Enter);
-            bool spaceNow = kbState.IsKeyDown(Keys.Space);
-
-            // Check gamepad emulation InventorySelect keybind (I key by default)
-            bool inventorySelectNow = false;
-            if (GamepadEmulationKeybinds.InventorySelect is { } selectKeybind)
-            {
-                inventorySelectNow = selectKeybind.Current || VirtualTriggerService.IsKeybindPressedRaw(selectKeybind);
-            }
-
-            if (!input.ActionPressed)
-            {
-                if ((enterNow && !_keyEnterWasPressed) || (spaceNow && !_keySpaceWasPressed) ||
-                    (inventorySelectNow && !_keyInventorySelectWasPressed))
-                {
-                    input.ActionPressed = true;
-                }
-            }
-
-            _keyEnterWasPressed = enterNow;
-            _keySpaceWasPressed = spaceNow;
-            _keyInventorySelectWasPressed = inventorySelectNow;
-        }
-
-        input.HasNavigation = input.Left || input.Right || input.Up || input.Down;
-        _currentInput = input;
-    }
-
-    private void ResetInputState()
-    {
-        _leftWasPressed = false;
-        _rightWasPressed = false;
-        _upWasPressed = false;
-        _downWasPressed = false;
-        _stickLeftWasPressed = false;
-        _stickRightWasPressed = false;
-        _stickUpWasPressed = false;
-        _stickDownWasPressed = false;
-        _aButtonWasPressed = false;
-        _bButtonWasPressed = false;
-        _keyLeftWasPressed = false;
-        _keyRightWasPressed = false;
-        _keyUpWasPressed = false;
-        _keyDownWasPressed = false;
-        _keyEnterWasPressed = false;
-        _keySpaceWasPressed = false;
-        _keyInventorySelectWasPressed = false;
-    }
-
-    #endregion
-
     #region Gamepad Point Configuration
 
-    private void ConfigureGamepadPoints(object menuState)
+    protected override void ConfigureGamepadPoints(object menuState)
     {
-        _bindingById.Clear();
+        BindingById.Clear();
         _navBindings.Clear();
         _actionBindings.Clear();
         _entryBindings.Clear();
@@ -739,7 +554,7 @@ public sealed class BestiaryAccessibilitySystem : ModSystem
         ConfigureExitButton(menuState, ref nextId);
 
         // Set up link points
-        foreach (var binding in _bindingById.Values)
+        foreach (var binding in BindingById.Values)
         {
             UILinkPoint linkPoint = EnsureLinkPoint(binding.Id);
             UILinkPointNavigator.SetPosition(binding.Id, binding.Position);
@@ -750,14 +565,14 @@ public sealed class BestiaryAccessibilitySystem : ModSystem
         UILinkPointNavigator.Shortcuts.FANCYUI_HIGHEST_INDEX = nextId - 1;
 
         // Handle initial focus
-        if (_initialFocusFramesRemaining > 0)
+        if (InitialFocusFramesRemaining > 0)
         {
             int defaultPointId = _entryBindings.Count > 0
                 ? _entryBindings[0].Binding.Id
                 : (_exitBinding?.Id ?? BaseLinkId);
 
             UILinkPointNavigator.ChangePoint(defaultPointId);
-            _initialFocusFramesRemaining--;
+            InitialFocusFramesRemaining--;
         }
 
         // Handle search mode -> navigation mode transition
@@ -765,8 +580,8 @@ public sealed class BestiaryAccessibilitySystem : ModSystem
         {
             _currentRegion = NavigationRegion.EntryGrid;
             _currentEntryIndex = 0;
-            _lastAnnouncedPointId = -1;
-            _lastSeenPointId = -1;
+            LastAnnouncedPointId = -1;
+            LastSeenPointId = -1;
 
             int pointId = _entryBindings[0].Binding.Id;
             UILinkPointNavigator.ChangePoint(pointId);
@@ -778,7 +593,7 @@ public sealed class BestiaryAccessibilitySystem : ModSystem
         // focus to a Terraria-managed point based on mouse position. We must
         // override this every frame to prevent Terraria's gamepad navigation
         // from processing D-pad input on the wrong entry.
-        if (_initialFocusFramesRemaining <= 0)
+        if (InitialFocusFramesRemaining <= 0)
         {
             int? syncPointId = GetCurrentPointId();
             if (syncPointId.HasValue)
@@ -813,7 +628,7 @@ public sealed class BestiaryAccessibilitySystem : ModSystem
                 Vector2 position = sp.Position;
                 var binding = new PointBinding(nextId++, position, label, string.Empty, null, PointType.NavButton);
                 _navBindings.Add(binding);
-                _bindingById[binding.Id] = binding;
+                BindingById[binding.Id] = binding;
             }
         }
         catch (Exception ex)
@@ -868,7 +683,7 @@ public sealed class BestiaryAccessibilitySystem : ModSystem
                     Vector2 position = sp.Position;
                     var binding = new PointBinding(nextId++, position, label, string.Empty, null, PointType.ActionButton);
                     _actionBindings.Add(binding);
-                    _bindingById[binding.Id] = binding;
+                    BindingById[binding.Id] = binding;
                     break;
                 }
             }
@@ -931,7 +746,7 @@ public sealed class BestiaryAccessibilitySystem : ModSystem
                 CalculatedStyle dims = child.GetDimensions();
                 Vector2 center = new(dims.X + dims.Width / 2f, dims.Y + dims.Height / 2f);
                 var binding = new PointBinding(nextId++, center, entryName, string.Empty, child, PointType.EntryButton);
-                _bindingById[binding.Id] = binding;
+                BindingById[binding.Id] = binding;
 
                 _entryBindings.Add(new EntryBinding
                 {
@@ -978,7 +793,7 @@ public sealed class BestiaryAccessibilitySystem : ModSystem
                 Vector2 position = sp.Position;
                 var binding = new PointBinding(nextId++, position, label, string.Empty, sp.Element, PointType.FilterButton);
                 _filterBindings.Add(binding);
-                _bindingById[binding.Id] = binding;
+                BindingById[binding.Id] = binding;
             }
         }
         catch (Exception ex)
@@ -1033,7 +848,7 @@ public sealed class BestiaryAccessibilitySystem : ModSystem
                 Vector2 position = sp.Position;
                 var binding = new PointBinding(nextId++, position, label, string.Empty, sp.Element, PointType.SortButton);
                 _sortBindings.Add(binding);
-                _bindingById[binding.Id] = binding;
+                BindingById[binding.Id] = binding;
             }
         }
         catch (Exception ex)
@@ -1066,7 +881,7 @@ public sealed class BestiaryAccessibilitySystem : ModSystem
                 Vector2 position = sp.Position;
                 var binding = new PointBinding(nextId++, position, backLabel, string.Empty, sp.Element, PointType.BackButton);
                 _exitBinding = binding;
-                _bindingById[binding.Id] = binding;
+                BindingById[binding.Id] = binding;
                 break;
             }
         }
@@ -1080,9 +895,11 @@ public sealed class BestiaryAccessibilitySystem : ModSystem
 
     #region Navigation
 
-    private void HandleNavigation(object menuState)
+    protected override void HandleNavigation(object menuState)
     {
-        if (!_currentInput.HasNavigation)
+        DetectPageAndOverlayTransitions(menuState);
+
+        if (!CurrentInput.HasNavigation)
         {
             return;
         }
@@ -1128,23 +945,23 @@ public sealed class BestiaryAccessibilitySystem : ModSystem
             return false;
         }
 
-        if (_currentInput.Left && _currentNavIndex > 0)
+        if (CurrentInput.Left && _currentNavIndex > 0)
         {
             _currentNavIndex--;
             return true;
         }
-        if (_currentInput.Right && _currentNavIndex < _navBindings.Count - 1)
+        if (CurrentInput.Right && _currentNavIndex < _navBindings.Count - 1)
         {
             _currentNavIndex++;
             return true;
         }
-        if (_currentInput.Right && _currentNavIndex >= _navBindings.Count - 1 && _actionBindings.Count > 0)
+        if (CurrentInput.Right && _currentNavIndex >= _navBindings.Count - 1 && _actionBindings.Count > 0)
         {
             _currentRegion = NavigationRegion.ActionButtons;
             _currentActionIndex = 0;
             return true;
         }
-        if (_currentInput.Down)
+        if (CurrentInput.Down)
         {
             if (_entryBindings.Count > 0)
             {
@@ -1169,7 +986,7 @@ public sealed class BestiaryAccessibilitySystem : ModSystem
             return false;
         }
 
-        if (_currentInput.Left)
+        if (CurrentInput.Left)
         {
             if (_currentActionIndex > 0)
             {
@@ -1183,12 +1000,12 @@ public sealed class BestiaryAccessibilitySystem : ModSystem
                 return true;
             }
         }
-        if (_currentInput.Right && _currentActionIndex < _actionBindings.Count - 1)
+        if (CurrentInput.Right && _currentActionIndex < _actionBindings.Count - 1)
         {
             _currentActionIndex++;
             return true;
         }
-        if (_currentInput.Down)
+        if (CurrentInput.Down)
         {
             if (_entryBindings.Count > 0)
             {
@@ -1202,7 +1019,7 @@ public sealed class BestiaryAccessibilitySystem : ModSystem
                 return true;
             }
         }
-        if (_currentInput.Up)
+        if (CurrentInput.Up)
         {
             // No region above action buttons
         }
@@ -1219,7 +1036,7 @@ public sealed class BestiaryAccessibilitySystem : ModSystem
 
         int cols = _gridColumns > 0 ? _gridColumns : 1;
 
-        if (_currentInput.Left)
+        if (CurrentInput.Left)
         {
             if (_currentEntryIndex > 0)
             {
@@ -1227,7 +1044,7 @@ public sealed class BestiaryAccessibilitySystem : ModSystem
                 return true;
             }
         }
-        if (_currentInput.Right)
+        if (CurrentInput.Right)
         {
             if (_currentEntryIndex < _entryBindings.Count - 1)
             {
@@ -1235,7 +1052,7 @@ public sealed class BestiaryAccessibilitySystem : ModSystem
                 return true;
             }
         }
-        if (_currentInput.Up)
+        if (CurrentInput.Up)
         {
             int newIndex = _currentEntryIndex - cols;
             if (newIndex >= 0)
@@ -1257,7 +1074,7 @@ public sealed class BestiaryAccessibilitySystem : ModSystem
                 return true;
             }
         }
-        if (_currentInput.Down)
+        if (CurrentInput.Down)
         {
             int newIndex = _currentEntryIndex + cols;
             if (newIndex < _entryBindings.Count)
@@ -1285,17 +1102,17 @@ public sealed class BestiaryAccessibilitySystem : ModSystem
         // Filter grid is typically 12 per row
         const int filterCols = 12;
 
-        if (_currentInput.Left && _currentFilterIndex > 0)
+        if (CurrentInput.Left && _currentFilterIndex > 0)
         {
             _currentFilterIndex--;
             return true;
         }
-        if (_currentInput.Right && _currentFilterIndex < _filterBindings.Count - 1)
+        if (CurrentInput.Right && _currentFilterIndex < _filterBindings.Count - 1)
         {
             _currentFilterIndex++;
             return true;
         }
-        if (_currentInput.Up)
+        if (CurrentInput.Up)
         {
             int newIndex = _currentFilterIndex - filterCols;
             if (newIndex >= 0)
@@ -1304,7 +1121,7 @@ public sealed class BestiaryAccessibilitySystem : ModSystem
                 return true;
             }
         }
-        if (_currentInput.Down)
+        if (CurrentInput.Down)
         {
             int newIndex = _currentFilterIndex + filterCols;
             if (newIndex < _filterBindings.Count)
@@ -1324,12 +1141,12 @@ public sealed class BestiaryAccessibilitySystem : ModSystem
             return false;
         }
 
-        if (_currentInput.Up && _currentSortIndex > 0)
+        if (CurrentInput.Up && _currentSortIndex > 0)
         {
             _currentSortIndex--;
             return true;
         }
-        if (_currentInput.Down && _currentSortIndex < _sortBindings.Count - 1)
+        if (CurrentInput.Down && _currentSortIndex < _sortBindings.Count - 1)
         {
             _currentSortIndex++;
             return true;
@@ -1340,7 +1157,7 @@ public sealed class BestiaryAccessibilitySystem : ModSystem
 
     private bool HandleExitButtonNavigation()
     {
-        if (_currentInput.Up)
+        if (CurrentInput.Up)
         {
             if (_entryBindings.Count > 0)
             {
@@ -1363,12 +1180,12 @@ public sealed class BestiaryAccessibilitySystem : ModSystem
 
     #region Action Handling
 
-    private void HandleAction(object menuState)
+    protected override void HandleAction(object menuState)
     {
-        if (_currentInput.ActionPressed)
+        if (CurrentInput.ActionPressed)
         {
             int? currentPointId = GetCurrentPointId();
-            if (currentPointId.HasValue && _bindingById.TryGetValue(currentPointId.Value, out var binding))
+            if (currentPointId.HasValue && BindingById.TryGetValue(currentPointId.Value, out var binding))
             {
                 // For entry buttons, simulate a click to select the entry
                 if (binding.Element is UIElement buttonElement)
@@ -1401,15 +1218,15 @@ public sealed class BestiaryAccessibilitySystem : ModSystem
                     // For entry buttons, announce selected creature info
                     if (binding.Type == PointType.EntryButton)
                     {
-                        _lastAnnouncedPointId = -1;
-                        _lastSeenPointId = -1;
+                        LastAnnouncedPointId = -1;
+                        LastSeenPointId = -1;
                     }
 
                     // For sort/filter buttons, force re-announcement
                     if (binding.Type == PointType.SortButton || binding.Type == PointType.FilterButton)
                     {
-                        _lastAnnouncedPointId = -1;
-                        _lastSeenPointId = -1;
+                        LastAnnouncedPointId = -1;
+                        LastSeenPointId = -1;
                     }
                 }
                 else
@@ -1429,7 +1246,7 @@ public sealed class BestiaryAccessibilitySystem : ModSystem
             }
         }
 
-        if (_currentInput.BackPressed)
+        if (CurrentInput.BackPressed)
         {
             // If in sort/filter overlay, close it by clicking the sort/filter button again
             if (_currentRegion == NavigationRegion.SortGrid || _currentRegion == NavigationRegion.FilterGrid)
@@ -1437,8 +1254,8 @@ public sealed class BestiaryAccessibilitySystem : ModSystem
                 Mod.Logger.Info($"[{SystemLogName}] B button pressed in overlay, returning to grid");
                 _currentRegion = NavigationRegion.EntryGrid;
                 _currentEntryIndex = Math.Min(_currentEntryIndex, Math.Max(0, _entryBindings.Count - 1));
-                _lastAnnouncedPointId = -1;
-                _lastSeenPointId = -1;
+                LastAnnouncedPointId = -1;
+                LastSeenPointId = -1;
                 return;
             }
 
@@ -1465,7 +1282,7 @@ public sealed class BestiaryAccessibilitySystem : ModSystem
 
     #region Announcement
 
-    private int? GetCurrentPointId()
+    protected override int? GetCurrentPointId()
     {
         switch (_currentRegion)
         {
@@ -1502,45 +1319,7 @@ public sealed class BestiaryAccessibilitySystem : ModSystem
         }
     }
 
-    private void AnnounceCurrentFocus(object menuState)
-    {
-        int? expectedPoint = GetCurrentPointId();
-        if (!expectedPoint.HasValue)
-        {
-            return;
-        }
-
-        int currentPoint = expectedPoint.Value;
-
-        if (currentPoint < BaseLinkId)
-        {
-            return;
-        }
-
-        bool isStable = currentPoint == _lastSeenPointId;
-        bool alreadyAnnounced = currentPoint == _lastAnnouncedPointId;
-
-        _lastSeenPointId = currentPoint;
-
-        if (!isStable || alreadyAnnounced)
-        {
-            return;
-        }
-
-        string announcement = BuildAnnouncement(menuState);
-        if (string.IsNullOrWhiteSpace(announcement))
-        {
-            return;
-        }
-
-        _lastAnnouncedPointId = currentPoint;
-
-        SoundEngine.PlaySound(SoundID.MenuTick);
-        Mod.Logger.Info($"[{SystemLogName}] Announcing: {announcement}");
-        ScreenReaderService.Announce(announcement, force: true);
-    }
-
-    private string BuildAnnouncement(object menuState)
+    protected override string BuildAnnouncement(PointBinding binding, object menuState)
     {
         bool isFirstAnnouncement = !ScreenReaderService.WasContextAnnounced(ContextKeyScreen);
         string header = string.Empty;
@@ -2187,25 +1966,6 @@ public sealed class BestiaryAccessibilitySystem : ModSystem
 
     #region Helper Types
 
-    private enum PointType
-    {
-        NavButton,
-        ActionButton,
-        EntryButton,
-        FilterButton,
-        SortButton,
-        BackButton
-    }
-
-    private readonly record struct PointBinding(
-        int Id,
-        Vector2 Position,
-        string Label,
-        string Description,
-        UIElement? Element,
-        PointType Type
-    );
-
     private sealed class EntryBinding
     {
         public PointBinding Binding { get; init; }
@@ -2215,17 +1975,6 @@ public sealed class BestiaryAccessibilitySystem : ModSystem
         public int TotalEntries { get; init; }
         public int GridIndex { get; init; }
         public UIElement EntryButton { get; init; } = null!;
-    }
-
-    private struct NavigationInput
-    {
-        public bool Left;
-        public bool Right;
-        public bool Up;
-        public bool Down;
-        public bool ActionPressed;
-        public bool BackPressed;
-        public bool HasNavigation;
     }
 
     private struct SnapPointInfo
@@ -2326,16 +2075,6 @@ public sealed class BestiaryAccessibilitySystem : ModSystem
 
             return member;
         }
-    }
-
-    private static UILinkPoint EnsureLinkPoint(int id)
-    {
-        if (!UILinkPointNavigator.Points.TryGetValue(id, out UILinkPoint? linkPoint))
-        {
-            linkPoint = new UILinkPoint(id, true, -1, -1, -1, -1);
-            UILinkPointNavigator.Points[id] = linkPoint;
-        }
-        return linkPoint;
     }
 
     #endregion
