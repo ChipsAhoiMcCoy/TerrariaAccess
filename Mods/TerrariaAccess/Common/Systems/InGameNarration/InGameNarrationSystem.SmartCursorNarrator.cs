@@ -33,6 +33,55 @@ namespace TerrariaAccess.Common.Systems;
 
 public sealed partial class InGameNarrationSystem
 {
+    private static string? _pendingCursorModeAnnouncement;
+    private static string? _pendingCursorModeInstrumentationKey;
+    private static uint _pendingCursorModeFallbackFrame;
+    private const uint CursorModeAnnouncementFallbackFrames = 4;
+
+    private static void QueuePendingCursorModeAnnouncement(string announcement, string instrumentationKey)
+    {
+        if (string.IsNullOrWhiteSpace(announcement))
+        {
+            return;
+        }
+
+        _pendingCursorModeAnnouncement = announcement.Trim();
+        _pendingCursorModeInstrumentationKey = instrumentationKey;
+        _pendingCursorModeFallbackFrame = Main.GameUpdateCount + CursorModeAnnouncementFallbackFrames;
+    }
+
+    private static (string? Announcement, string? InstrumentationKey) ConsumePendingCursorModeAnnouncement()
+    {
+        string? pending = _pendingCursorModeAnnouncement;
+        string? instrumentationKey = _pendingCursorModeInstrumentationKey;
+        _pendingCursorModeAnnouncement = null;
+        _pendingCursorModeInstrumentationKey = null;
+        _pendingCursorModeFallbackFrame = 0;
+        return (pending, instrumentationKey);
+    }
+
+    private static void MaybeFlushPendingCursorModeAnnouncement()
+    {
+        if (string.IsNullOrWhiteSpace(_pendingCursorModeAnnouncement))
+        {
+            return;
+        }
+
+        if (Main.GameUpdateCount < _pendingCursorModeFallbackFrame)
+        {
+            return;
+        }
+
+        (string? announcement, string? instrumentationKey) = ConsumePendingCursorModeAnnouncement();
+        if (string.IsNullOrWhiteSpace(announcement))
+        {
+            return;
+        }
+
+        NarrationInstrumentationContext.SetPendingKey(instrumentationKey ?? "smart:mode");
+        ScreenReaderService.Announce(announcement, category: AnnouncementCategory.Default, force: true, requestInterrupt: false);
+    }
+
     private sealed class SmartCursorNarrator
     {
         private readonly CursorDescriptorService _descriptorService;
@@ -57,12 +106,14 @@ public sealed partial class InGameNarrationSystem
             Player player = Main.LocalPlayer;
             if (player is null || !player.active)
             {
+                ConsumePendingCursorModeAnnouncement();
                 Reset();
                 return;
             }
 
             if (ShouldSuppressForMenus(player))
             {
+                MaybeFlushPendingCursorModeAnnouncement();
                 Reset();
                 return;
             }
@@ -72,21 +123,7 @@ public sealed partial class InGameNarrationSystem
 
             if (_lastSmartCursorEnabled != hasSmartCursor)
             {
-                // Use the speech service's prefix queue to bundle mode change with next announcement
-                if (hasSmartCursor)
-                {
-                    string smartCursorPrefix = LocalizationHelper.GetTextOrFallback(
-                        "Mods.TerrariaAccess.SmartCursor.Enabled",
-                        "Smart cursor");
-                    ScreenReaderService.SetPendingPrefix(smartCursorPrefix);
-                }
-                else
-                {
-                    string unlockPrefix = LocalizationHelper.GetTextOrFallback(
-                        "Mods.TerrariaAccess.SmartCursor.UnlockedCursor",
-                        "Unlocked cursor");
-                    ScreenReaderService.SetPendingPrefix(unlockPrefix);
-                }
+                QueueSmartCursorModeChange(hasSmartCursor);
 
                 ResetStateTracking();
                 _lastSmartCursorEnabled = hasSmartCursor;
@@ -110,6 +147,7 @@ public sealed partial class InGameNarrationSystem
 
             if (!hasInteract && !hasSmartCursor)
             {
+                MaybeFlushPendingCursorModeAnnouncement();
                 Reset();
                 return;
             }
@@ -118,6 +156,7 @@ public sealed partial class InGameNarrationSystem
             string? message = hasInteract ? DescribeSmartInteract(out category) : DescribeSmartCursor(player, out category);
             if (string.IsNullOrWhiteSpace(message))
             {
+                MaybeFlushPendingCursorModeAnnouncement();
                 return;
             }
 
@@ -129,8 +168,27 @@ public sealed partial class InGameNarrationSystem
             }
 
             _lastAnnouncement = message;
-            NarrationInstrumentationContext.SetPendingKey(BuildSmartCursorKey(message));
-            ScreenReaderService.Announce(message, category: category, force: isHoldingAxe);
+            (string? modePrefix, _) = ConsumePendingCursorModeAnnouncement();
+            string announcement = string.IsNullOrWhiteSpace(modePrefix)
+                ? message
+                : $"{modePrefix}. {message}";
+            NarrationInstrumentationContext.SetPendingKey(BuildSmartCursorKey(announcement));
+            ScreenReaderService.Announce(announcement, category: category, force: isHoldingAxe);
+        }
+
+        private static void QueueSmartCursorModeChange(bool hasSmartCursor)
+        {
+            string announcement = hasSmartCursor
+                ? LocalizationHelper.GetTextOrFallback(
+                    "Mods.TerrariaAccess.SmartCursor.Enabled",
+                    "Smart cursor")
+                : LocalizationHelper.GetTextOrFallback(
+                    "Mods.TerrariaAccess.SmartCursor.UnlockedCursor",
+                    "Unlocked cursor");
+
+            QueuePendingCursorModeAnnouncement(
+                announcement,
+                hasSmartCursor ? "smart:mode:on" : "smart:mode:off");
         }
 
         private void ResetStateTracking()

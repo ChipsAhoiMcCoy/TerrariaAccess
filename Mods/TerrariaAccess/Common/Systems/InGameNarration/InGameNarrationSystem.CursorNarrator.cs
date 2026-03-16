@@ -697,9 +697,7 @@ public sealed partial class InGameNarrationSystem
             }
 
             string announcement = string.Join(", ", parts);
-
-            // Pending prefix (e.g., "Unlocked cursor") is automatically prepended by the speech service
-            ScreenReaderService.Announce(announcement, force: true);
+            AnnounceCursorContextMessage(announcement);
         }
 
         /// <summary>
@@ -751,9 +749,7 @@ public sealed partial class InGameNarrationSystem
             }
 
             string announcement = string.Join(", ", parts);
-
-            // Pending prefix (e.g., "Unlocked cursor") is automatically prepended by the speech service
-            ScreenReaderService.Announce(announcement, force: true);
+            AnnounceCursorContextMessage(announcement);
         }
 
         /// <summary>
@@ -807,9 +803,7 @@ public sealed partial class InGameNarrationSystem
             }
 
             string announcement = $"{player.name}'s {partName}{offsetText}";
-
-            // Pending prefix (e.g., "Unlocked cursor") is automatically prepended by the speech service
-            ScreenReaderService.Announce(announcement, force: true);
+            AnnounceCursorContextMessage(announcement);
         }
 
         private static void CenterCursorOnPlayer(Player player)
@@ -840,15 +834,17 @@ public sealed partial class InGameNarrationSystem
 
         private static void AnnounceCursorMessage(string message, bool force, AnnouncementCategory category = AnnouncementCategory.Default)
         {
-            string messageKey = NormalizeKey(message);
-
-            // Pending prefix (e.g., "Unlocked cursor") is automatically prepended by the speech service
+            (string? modePrefix, _) = ConsumePendingCursorModeAnnouncement();
+            string effectiveMessage = string.IsNullOrWhiteSpace(modePrefix)
+                ? message
+                : $"{modePrefix}. {message}";
+            string messageKey = NormalizeKey(effectiveMessage);
 
             if (HotbarNarrator.TryDequeuePendingAnnouncement(out string hotbarAnnouncement, out string? hotbarKey))
             {
                 string combined = string.IsNullOrWhiteSpace(hotbarAnnouncement)
-                    ? message
-                    : $"{hotbarAnnouncement}. {message}";
+                    ? effectiveMessage
+                    : $"{hotbarAnnouncement}. {effectiveMessage}";
 
                 NarrationInstrumentationContext.SetPendingKey(hotbarKey ?? $"cursor:{messageKey}");
                 ScreenReaderService.Announce(combined, force: force, category: category);
@@ -856,7 +852,18 @@ public sealed partial class InGameNarrationSystem
             }
 
             NarrationInstrumentationContext.SetPendingKey($"cursor:{messageKey}");
-            ScreenReaderService.Announce(message, force: force, category: category);
+            ScreenReaderService.Announce(effectiveMessage, force: force, category: category);
+        }
+
+        private static void AnnounceCursorContextMessage(string message)
+        {
+            (string? modePrefix, _) = ConsumePendingCursorModeAnnouncement();
+            string effectiveMessage = string.IsNullOrWhiteSpace(modePrefix)
+                ? message
+                : $"{modePrefix}. {message}";
+
+            NarrationInstrumentationContext.SetPendingKey($"cursor:{NormalizeKey(effectiveMessage)}");
+            ScreenReaderService.Announce(effectiveMessage, force: true);
         }
 
         private static string NormalizeKey(string text)
