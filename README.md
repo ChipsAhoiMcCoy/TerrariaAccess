@@ -1,52 +1,59 @@
 # Terraria Access
 
-A screen-reader-first tModLoader mod that makes Terraria playable for blind and low-vision players. The mod narrates menus, in-game UI, navigation cues, and world events while layering positional audio to keep you oriented without visuals.
+A tModLoader mod that makes Terraria playable for blind and low-vision players. The mod provides speech narration for menus and in-game UI via multiple screen readers, plus positional audio cues for spatial awareness.
 
-## Latest release
-- Grab the [latest ScreenReaderMod.tmod](https://drive.google.com/file/d/1Hm7q4lqIMEQE4_J8KxPZWmIBDCWc_zgr/view) before following the install steps below.
+## Latest Release
+
+Download the latest `TerrariaAccessSetup.exe` from the [Releases page](https://github.com/ChipsAhoiMcCoy/TerrariaAccess/releases) and run the installer.
+
+## Supported Screen Readers
+
+The mod uses the Tolk library for universal screen reader support:
+- NVDA
+- JAWS
+- Window-Eyes
+- SuperNova
+- System Access
+- ZoomText
+- SAPI (fallback)
 
 ## Requirements
-- tModLoader (Steam install or manual distribution)
-- NVDA with `nvdaControllerClient64.dll` placed next to `tModLoader.exe` (or in `Mods/ScreenReaderMod/Libraries/`)
 
-## Install & Play
-1. Install Terraria and tModLoader.
-2. Place `nvdaControllerClient64.dll` in `/steamapps/common/tmodloader`.
-3. Place `ScreenReaderMod.tmod` in `/documents/my games/terraria/tmodloader/mods`.
-4. Place the `enabled.json` in `/documents/my games/terraria/tmodloader/mods`.
-5. Place the inputs file in `/documents/my games/terraria/tmodloader`.
+- Terraria and tModLoader (Steam install)
+- A supported screen reader running
 
-## Feature highlights
-- **Menu narration:** Title, player/world creation & deletion, settings (audio/video/interface/gameplay/cursor/effects/resolution), multiplayer/host & play, join by IP, tModLoader settings, mod browser/workshop, and mod configuration screens.
-- **In-game narration:** Inventory/storage/shop slots (including prices and sell values), crafting/guide/reforge tooltips, hotbar selection, smart cursor targets, NPC dialogue, in-game settings, controls, and lock-on targets.
-- **Navigation & awareness:** Named waypoints with positional tones, exploration/gathering tracker for nearby interactables, biome announcements, hostile NPC “static” cues, treasure bag beacons, and footstep tones.
-- **Build Mode:** Mark a rectangle, then clear or place tiles/walls across the selection using the held tool, with range extension to the current viewport and completion summaries.
-- **Speech pipeline:** NVDA-driven speech with repeat suppression and a speech-interrupt toggle; world announcements use a SAPI fallback while respecting mute/interrupt state.
+## Installation
 
-See `Docs/features.md` for deeper coverage of each system.
+1. Install Terraria and tModLoader from Steam.
+2. Download and run `TerrariaAccessSetup.exe` from the [Releases page](https://github.com/ChipsAhoiMcCoy/TerrariaAccess/releases).
+3. The installer will auto-detect your tModLoader installation and place all files in the correct locations.
+4. Make sure your screen reader is running before launching tModLoader.
 
-## Keybinds (defaults)
-| Action | Default | Notes |
-| --- | --- | --- |
-| Speech Interrupt | `F2` | Cancel current speech and toggle interrupt on/off. |
-| Guidance Category Next/Previous | Right bracket / Left bracket | Cycle between None, Exploration, Interactable, NPC, Player, and Waypoint tracking modes. |
-| Guidance Entry Next/Previous | Page Down / Page Up | Cycle entries within the active guidance category. |
-| Create / Delete Waypoint | Backslash / Delete | Create a waypoint at your position; delete the selected waypoint. |
-| Guidance Teleport | P | Teleport to the active guidance target when a safe landing spot exists. |
-| Build Mode Toggle | Start (gamepad) | Toggles build mode by default on controllers; rebind under Settings > Controls if you want a keyboard shortcut. |
-| Build Mode Place Corner | A (gamepad) | Marks selection corners; also works with Quick Mount or mouse left while build mode is active. |
+### Manual Installation
 
-To change any defaults, open the in-world menu, go to Settings > Controls, and select the input tab at the top (Gamepad, Keyboard, etc.) before binding. The **Screen Reader** section lists these actions for rebinding.
+If you prefer to install manually instead of using the installer:
 
-## Building from source
-Run the repo-root command (from WSL or PowerShell):
+1. Install Terraria and tModLoader from Steam.
+2. Launch tModLoader at least once, then close it. This creates the necessary folders.
+3. Clone this repository or download the source code using your preferred method.
+4. Place the following files in your tModLoader Steam directory (e.g., `C:\Program Files (x86)\Steam\steamapps\common\tModLoader`):
+   - `Tolk.dll`
+   - `nvdaControllerClient64.dll`
+   - `SAAPI64.dll`
+5. Place the following files in your tModLoader Mods folder (e.g., `Documents\My Games\Terraria\tModLoader\Mods`):
+   - `TerrariaAccess.tmod`
+   - `enabled.json`
+6. Place `input profiles.json` in your tModLoader user folder (e.g., `Documents\My Games\Terraria\tModLoader`).
+7. Make sure your screen reader is running before launching tModLoader.
+
+## Building from Source
 
 ```bash
 pwsh -NoProfile -ExecutionPolicy Bypass -File Tools/build.ps1
 ```
 
-The script builds the mod and copies `ScreenReaderMod.tmod` into your local tModLoader Mods folder. Pass `-SkipDeploy` if you only want the `.tmod` artifact. Build logs include `[Narration]` and `[NVDA]` lines for debugging.
+The script builds the mod and copies `TerrariaAccess.tmod` into your local tModLoader Mods folder. Pass `-SkipDeploy` to only produce the `.tmod` artifact.
 
-## Troubleshooting & docs
-- Check `tModLoader-Logs/client.log` for `[Narration]`, `[WorldNarration]`, `[MenuNarration]`, and `[NVDA]` entries when validating speech output.
-- Additional docs live in `Docs/`, including `Docs/accessibility-notes.md`, `Docs/features.md`, `Docs/world-interactable-tracking.md`, and `Docs/tmodloader-setup.md`.
+## Issues & Feedback
+
+Report issues at https://github.com/ChipsAhoiMcCoy/TerrariaAccess/issues

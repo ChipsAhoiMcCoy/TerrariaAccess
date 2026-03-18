@@ -1,0 +1,20 @@
+# Auto-detect text files and normalize line endings
+* text=auto
+
+# Force CRLF for Windows-specific files
+*.cs text eol=crlf
+*.iss text eol=crlf
+*.json text eol=crlf
+*.txt text eol=crlf
+*.md text eol=crlf
+*.html text eol=crlf
+*.hjson text eol=crlf
+
+# Binary files - no line ending conversion
+*.dll binary
+*.tmod binary
+*.exe binary
+*.wav binary
+*.ogg binary
+*.png binary
+*.xnb binary

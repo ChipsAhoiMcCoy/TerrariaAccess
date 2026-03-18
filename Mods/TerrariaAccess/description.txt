@@ -1,0 +1,43 @@
+Terraria Access makes Terraria playable for blind and low-vision players. It provides full screen reader narration and spatial audio cues so you can explore, fight, build, and craft without needing to see the screen.
+
+[b]Screen Reader Narration[/b]
+Every menu, inventory screen, crafting interface, NPC dialogue, and chat message is narrated through your screen reader. Supports JAWS, NVDA, SuperNova, System Access, ZoomText, and Windows SAPI via the Tolk library.
+
+[b]Spatial Audio & Navigation[/b]
+- Footstep sounds that change with terrain
+- Edge detection warns you about drop-offs with directional static or beeps
+- Fall detection plays proximity tones as you approach the ground
+- Wall collision taps tell you which side is blocked
+- Enemy proximity audio cues with stereo panning
+- Passage detection chirps alert you to side tunnels while falling
+- Cavity sonar scans the area around you, sweeping left to right to reveal cave shapes
+
+[b]Guidance System[/b]
+Track and navigate to NPCs, other players, dropped items, critters, interactable objects, and custom waypoints. Audio pings guide you toward your target with directional panning and pitch.
+
+[b]Inventory & UI[/b]
+- Full keyboard navigation of inventory, equipment, crafting, shops, and chests
+- Gamepad emulation lets keyboard users access controller-only UI features
+- First-letter navigation to quickly find items
+- Spatial inventory audio positions slot sounds by row and column
+- Mod browser, mod config, achievements, and bestiary screens are all narrated
+
+[b]Combat & World[/b]
+- Damage number announcements
+- Health heartbeat that speeds up as HP drops
+- Lock-on target narration
+- World event announcements: blood moons, invasions, eclipses, weather, biome changes, and more
+
+[b]Building[/b]
+- Build mode for keyboard-driven tile placement without a mouse
+- Chunk miner automatically mines entire ore veins in one hit
+- Smart cursor tile narration and wire color menu access
+
+[b]Multiplayer[/b]
+- Spatialized footstep sounds for other players
+- Player join/leave/death announcements
+- Multiplayer guidance sync
+
+All features are configurable in the mod settings. Volumes, toggle switches, and detection modes can be adjusted to your preference.
+
+Requires Tolk.dll in your tModLoader directory. See the GitHub page for installation instructions.

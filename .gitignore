@@ -36,3 +36,15 @@ tModLoader.zip
 
 # Ignore tooling dumps of decompiled Terraria code
 Tools/Decompiled/
+TModLoader Decompiled/
+Terraria Decompiled/
+
+# Ignore installer build output (but keep bundled release files)
+Release/Output/
+!Release/files/**/*.tmod
+
+# Ignore local Claude Code settings
+.claude/
+Agents.md
+nul
+tmpclaude-*

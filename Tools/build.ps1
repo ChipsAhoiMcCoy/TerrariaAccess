@@ -252,8 +252,8 @@ function Invoke-NarrationLint([string]$LogPath) {
 
 $scriptRoot = Split-Path -Parent $MyInvocation.MyCommand.Path
 $repoRoot = (Resolve-Path (Join-Path $scriptRoot "..")).Path
-$modSourcePath = (Resolve-Path (Join-Path $repoRoot "Mods\ScreenReaderMod")).Path
-$modName = "ScreenReaderMod.tmod"
+$modSourcePath = (Resolve-Path (Join-Path $repoRoot "Mods\TerrariaAccess")).Path
+$modName = "TerrariaAccess.tmod"
 
 Write-Info "Repository root detected at $repoRoot"
 
@@ -272,7 +272,7 @@ if (-not $SkipDeploy) {
     Write-Info "Copying packaged mod from $artifact to $repoArtifactPath"
     Copy-Item -Path $artifact -Destination $repoArtifactPath -Force
 
-    $modSourcesDestination = Join-Path ([Environment]::GetFolderPath("MyDocuments")) "My Games\Terraria\tModLoader\ModSources\ScreenReaderMod"
+    $modSourcesDestination = Join-Path ([Environment]::GetFolderPath("MyDocuments")) "My Games\Terraria\tModLoader\ModSources\TerrariaAccess"
     Sync-ModSources -SourcePath $modSourcePath -DestinationPath $modSourcesDestination
 
     Write-Success "Build artifact copied to repo Mods directory and ModSources mirrored."

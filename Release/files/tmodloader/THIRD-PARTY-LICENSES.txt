@@ -1,0 +1,111 @@
+================================================================================
+THIRD-PARTY LICENSES - Terraria Access
+================================================================================
+
+This file documents the third-party libraries distributed with Terraria
+Access, an accessibility mod for Terraria. These libraries provide screen
+reader support and are not part of Terraria itself.
+
+Each library is the property of its respective author(s) and is distributed
+under its own license terms as described below.
+
+================================================================================
+1. Tolk - Screen Reader Abstraction Library
+================================================================================
+
+  File:       Tolk.dll
+  Author:     Davy Kager
+  License:    GNU Lesser General Public License, version 3 (LGPLv3)
+  Source:     https://github.com/dkager/tolk
+  Copyright:  (c) 2014-2019 Davy Kager
+
+  Tolk is a library that allows applications to output text through screen
+  reader software. It is an abstraction layer on top of vendor-specific APIs
+  that auto-detects the active screen reader.
+
+  This library is free software; you can redistribute it and/or modify it
+  under the terms of the GNU Lesser General Public License as published by
+  the Free Software Foundation; either version 3 of the License, or (at your
+  option) any later version.
+
+  This library is distributed in the hope that it will be useful, but WITHOUT
+  ANY WARRANTY; without even the implied warranty of MERCHANTABILITY or
+  FITNESS FOR A PARTICULAR PURPOSE. See the GNU Lesser General Public License
+  for more details.
+
+  The full text of the LGPLv3 can be found at:
+  https://www.gnu.org/licenses/lgpl-3.0.en.html
+
+  The LGPLv3 is additional permissions on top of the GPLv3. The full text of
+  the GPLv3 can be found at:
+  https://www.gnu.org/licenses/gpl-3.0.en.html
+
+================================================================================
+2. NVDA Controller Client
+================================================================================
+
+  File:       nvdaControllerClient64.dll
+  Author:     NV Access Limited
+  License:    GNU Lesser General Public License, version 2.1 (LGPLv2.1)
+  Source:     https://github.com/nvaccess/nvda
+  Copyright:  (c) NV Access Limited
+
+  The NVDA Controller Client API allows applications to communicate with
+  the NVDA screen reader, enabling speech and braille output.
+
+  This library is free software; you can redistribute it and/or modify it
+  under the terms of the GNU Lesser General Public License as published by
+  the Free Software Foundation; either version 2.1 of the License, or (at
+  your option) any later version.
+
+  This library is distributed in the hope that it will be useful, but WITHOUT
+  ANY WARRANTY; without even the implied warranty of MERCHANTABILITY or
+  FITNESS FOR A PARTICULAR PURPOSE. See the GNU Lesser General Public License
+  for more details.
+
+  The full text of the LGPLv2.1 can be found at:
+  https://www.gnu.org/licenses/old-licenses/lgpl-2.1.en.html
+
+  You may obtain the source code for NVDA, including the controller client,
+  at: https://github.com/nvaccess/nvda
+
+================================================================================
+3. System Access API (SAAPI)
+================================================================================
+
+  File:       SAAPI64.dll
+  Author:     Serotek Corporation (now Pneuma Solutions)
+  Website:    https://pneumasolutions.com
+  Copyright:  (c) Serotek Corporation / Pneuma Solutions
+
+  The System Access API client library enables applications to communicate
+  with the System Access screen reader. This DLL is distributed as part of
+  the Tolk library's supporting client libraries. It is provided by Serotek
+  Corporation (now operating as Pneuma Solutions) and is redistributed here
+  for screen reader compatibility purposes.
+
+  No explicit open-source license has been published for this client library
+  by its author. It is distributed in accordance with the Tolk project's
+  statement that "client libraries and headers are distributed under their
+  own license." This file has been widely redistributed by accessibility
+  projects in good faith for interoperability purposes.
+
+  For questions regarding the licensing of this file, please contact:
+  Pneuma Solutions - https://pneumasolutions.com
+
+================================================================================
+NOTICE
+================================================================================
+
+Terraria Access uses the above libraries to provide screen reader
+accessibility for Terraria. These files are not affiliated with or
+endorsed by Re-Logic (the developers of Terraria).
+
+The Terraria Access source code is available at:
+https://github.com/ChipsAhoiMcCoy/TerrariaAccess
+
+If you have received this software without source code for the LGPL-licensed
+libraries listed above, you may obtain it at the URLs provided in each
+library's section.
+
+================================================================================
