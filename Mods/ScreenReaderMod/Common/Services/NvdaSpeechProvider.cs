@@ -1,5 +1,4 @@
 #nullable enable
-#if !OSX && !MACOS
 using System;
 using System.Collections.Generic;
 using System.IO;
@@ -247,4 +246,3 @@ internal sealed class NvdaSpeechProvider : ISpeechProvider
         }
     }
 }
-#endif
