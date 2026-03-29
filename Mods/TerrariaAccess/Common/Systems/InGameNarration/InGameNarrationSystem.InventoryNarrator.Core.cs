@@ -42,6 +42,7 @@ public sealed partial class InGameNarrationSystem
         private static readonly FocusTracker _focusTracker = new();
         private SlotFocus? _currentFocus;
         private string? _lastFocusKey;
+        private string? _pendingGamepadFallbackFocusKey;
         private ItemIdentity _lastAnnouncedItemIdentity;
         private bool _wasInventoryOpen;
         private int _lastChestIndex = -1;
@@ -56,6 +57,9 @@ public sealed partial class InGameNarrationSystem
 
         private static readonly bool NarrationDebugEnabled = !string.IsNullOrEmpty(Environment.GetEnvironmentVariable("SRM_DEBUG_NARRATION"));
         private static readonly bool InputDebugEnabled = !string.IsNullOrEmpty(Environment.GetEnvironmentVariable("SRM_DEBUG_INPUT"));
+        private static readonly bool UiTickDebugEnabled =
+            !string.IsNullOrEmpty(Environment.GetEnvironmentVariable("SRM_DEBUG_UI_TICKS")) ||
+            !string.IsNullOrEmpty(Environment.GetEnvironmentVariable("SRM_DEBUG_INPUT"));
         private static int _lastLoggedFocusLinkPoint = -999;
         private static string? _lastLoggedFocusItemName;
 
@@ -296,7 +300,10 @@ public sealed partial class InGameNarrationSystem
 
             HoverTarget target = new(hover, identity, location, rawTooltip, normalizedTooltip, focus, AllowMouseText: !usingGamepadFocus);
             string focusKey = BuildFocusKey(target, focus, inGamepadCraftingGrid ? craftingAvailableIndex : (int?)null);
-            PlayTickIfNew(focusKey, focus);
+            PlayTickIfNew(
+                focusKey,
+                focus,
+                BuildTickDebugContext("inventory", focusKey, focus, inGamepadCraftingGrid ? craftingAvailableIndex : (int?)null));
 
             if (target.HasItem)
             {
@@ -606,6 +613,7 @@ public sealed partial class InGameNarrationSystem
             _inGameUiTracker.Reset();
             UiAreaNarrationContext.Clear();
             _lastFocusKey = null;
+            _pendingGamepadFallbackFocusKey = null;
             _lastAnnouncedItemIdentity = default;
             _inventoryOpenGraceFrames = 0;
             _lastChestIndex = -1;
@@ -669,15 +677,33 @@ public sealed partial class InGameNarrationSystem
             return string.Empty;
         }
 
-        private void PlayTickIfNew(string key, SlotFocus? focus = null)
+        private void PlayTickIfNew(string key, SlotFocus? focus = null, string? debugContext = null, bool forceImmediate = false)
         {
-            if (string.IsNullOrWhiteSpace(key) || string.Equals(key, _lastFocusKey, StringComparison.Ordinal))
+            if (string.IsNullOrWhiteSpace(key))
             {
+                _pendingGamepadFallbackFocusKey = null;
                 return;
             }
 
+            if (string.Equals(key, _lastFocusKey, StringComparison.Ordinal))
+            {
+                _pendingGamepadFallbackFocusKey = null;
+                return;
+            }
+
+            if (!forceImmediate && PlayerInput.UsingGamepadUI && !focus.HasValue)
+            {
+                if (!string.Equals(key, _pendingGamepadFallbackFocusKey, StringComparison.Ordinal))
+                {
+                    _pendingGamepadFallbackFocusKey = key;
+                    LogUiTickDecision("defer-gamepad-fallback", key, focus, null, debugContext);
+                    return;
+                }
+            }
+
+            _pendingGamepadFallbackFocusKey = null;
             _lastFocusKey = key;
-            PlaySpatialInventoryTick(focus);
+            PlaySpatialInventoryTick(focus, debugContext);
         }
 
         private void PlayCraftingTickIfNew(string key, int craftingAvailableIndex)
@@ -687,17 +713,20 @@ public sealed partial class InGameNarrationSystem
                 return;
             }
 
+            _pendingGamepadFallbackFocusKey = null;
             _lastFocusKey = key;
-            PlaySpatialCraftingTick(craftingAvailableIndex);
+            PlaySpatialCraftingTick(
+                craftingAvailableIndex,
+                BuildTickDebugContext("crafting-grid", key, null, craftingAvailableIndex));
         }
 
-        private static void PlaySpatialCraftingTick(int craftingAvailableIndex)
+        private static void PlaySpatialCraftingTick(int craftingAvailableIndex, string? debugContext = null)
         {
             // First try: Get position directly from game's UILinkPointNavigator (most accurate)
             if (UiSlotSpatialAudio.TryGetCurrentLinkPointPosition(out var linkPointPos))
             {
                 var spatial = UiSlotSpatialAudio.ComputeSpatialParamsFromScreen(linkPointPos);
-                UiTickSoundPlayer.PlaySpatialTick(spatial.Pan, spatial.Pitch);
+                UiTickSoundPlayer.PlaySpatialTick(spatial.Pan, spatial.Pitch, debugContext: debugContext);
                 return;
             }
 
@@ -705,7 +734,7 @@ public sealed partial class InGameNarrationSystem
             if (UiSlotSpatialAudio.TryGetCursorPosition(out var cursorPos))
             {
                 var spatial = UiSlotSpatialAudio.ComputeSpatialParamsFromScreen(cursorPos);
-                UiTickSoundPlayer.PlaySpatialTick(spatial.Pan, spatial.Pitch);
+                UiTickSoundPlayer.PlaySpatialTick(spatial.Pan, spatial.Pitch, debugContext: debugContext);
                 return;
             }
 
@@ -713,15 +742,15 @@ public sealed partial class InGameNarrationSystem
             if (UiSlotSpatialAudio.TryGetCraftingGridScreenPosition(craftingAvailableIndex, out var screenPos))
             {
                 var spatial = UiSlotSpatialAudio.ComputeSpatialParamsFromScreen(screenPos);
-                UiTickSoundPlayer.PlaySpatialTick(spatial.Pan, spatial.Pitch);
+                UiTickSoundPlayer.PlaySpatialTick(spatial.Pan, spatial.Pitch, debugContext: debugContext);
                 return;
             }
 
             // No position available, play centered tick
-            UiTickSoundPlayer.PlaySpatialTick(0f, 0f);
+            UiTickSoundPlayer.PlaySpatialTick(0f, 0f, debugContext: debugContext);
         }
 
-        private static void PlaySpatialInventoryTick(SlotFocus? focus)
+        private static void PlaySpatialInventoryTick(SlotFocus? focus, string? debugContext = null)
         {
             // Try to get the best available screen position:
             // 1) UILinkPointNavigator position (most accurate, directly from game)
@@ -733,7 +762,7 @@ public sealed partial class InGameNarrationSystem
             if (UiSlotSpatialAudio.TryGetBestScreenPosition(context, slot, out var screenPos))
             {
                 var spatial = UiSlotSpatialAudio.ComputeSpatialParamsFromScreen(screenPos);
-                UiTickSoundPlayer.PlaySpatialTick(spatial.Pan, spatial.Pitch);
+                UiTickSoundPlayer.PlaySpatialTick(spatial.Pan, spatial.Pitch, debugContext: debugContext);
                 return;
             }
 
@@ -744,13 +773,34 @@ public sealed partial class InGameNarrationSystem
                 if (UiSlotSpatialAudio.TryGetSlotPosition(value.Context, value.Slot, out var position))
                 {
                     var fallbackSpatial = UiSlotSpatialAudio.ComputeSpatialParams(position);
-                    UiTickSoundPlayer.PlaySpatialTick(fallbackSpatial.Pan, fallbackSpatial.Pitch);
+                    UiTickSoundPlayer.PlaySpatialTick(fallbackSpatial.Pan, fallbackSpatial.Pitch, debugContext: debugContext);
                     return;
                 }
             }
 
             // No position available, play centered tick
-            UiTickSoundPlayer.PlaySpatialTick(0f, 0f);
+            UiTickSoundPlayer.PlaySpatialTick(0f, 0f, debugContext: debugContext);
+        }
+
+        private static string BuildTickDebugContext(string source, string key, SlotFocus? focus, int? craftingAvailableIndex)
+        {
+            int currentPoint = UILinkPointNavigator.CurrentPoint;
+            int context = focus?.Context ?? -1;
+            int slot = focus?.Slot ?? -1;
+            string craft = craftingAvailableIndex.HasValue ? craftingAvailableIndex.Value.ToString(CultureInfo.InvariantCulture) : "none";
+            return $"source={source} key={key} linkPoint={currentPoint} context={context} slot={slot} craftingIndex={craft}";
+        }
+
+        private static void LogUiTickDecision(string action, string key, SlotFocus? focus, int? craftingAvailableIndex, string? debugContext)
+        {
+            if (!UiTickDebugEnabled)
+            {
+                return;
+            }
+
+            global::TerrariaAccess.TerrariaAccess.Instance?.Logger.Info(
+                $"[UiTickDebug] action={action} {BuildTickDebugContext("decision", key, focus, craftingAvailableIndex)} " +
+                $"inputMode={PlayerInput.CurrentInputMode} usingGamepad={PlayerInput.UsingGamepadUI} extra={debugContext ?? "<none>"}");
         }
 
         public void ForceReset()

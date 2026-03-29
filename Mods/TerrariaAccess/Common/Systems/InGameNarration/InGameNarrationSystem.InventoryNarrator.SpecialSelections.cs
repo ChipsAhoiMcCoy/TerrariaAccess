@@ -2,6 +2,7 @@
 using System;
 using System.Collections.Generic;
 using System.Reflection;
+using TerrariaAccess.Common.Systems.InGameNarration;
 using TerrariaAccess.Common.Services;
 using TerrariaAccess.Common.Utilities;
 using Terraria;
@@ -41,7 +42,10 @@ public sealed partial class InGameNarrationSystem
                 _lastAnnouncedRegion = currentRegion;
             }
 
-            PlayTickIfNew($"special-{currentPoint}");
+            PlayTickIfNew(
+                $"special-{currentPoint}",
+                debugContext: $"source=special key=special-{currentPoint} linkPoint={currentPoint}",
+                forceImmediate: true);
             _currentFocus = null;
             _focusTracker.ClearSpecialLinkPoint(currentPoint);
 
@@ -133,7 +137,7 @@ public sealed partial class InGameNarrationSystem
                 return result;
             }
 
-            if (!Main.ingameOptionsWindow && ShouldLogUnknownInventoryPoint(hoverIsAir, location))
+            if (!Main.ingameOptionsWindow && ShouldLogUnknownInventoryPoint(point, hoverIsAir, location))
             {
                 LogUnknownInventoryPoint(point, hoverIsAir, location);
             }
@@ -302,14 +306,27 @@ public sealed partial class InGameNarrationSystem
             return -1;
         }
 
-        private static bool ShouldLogUnknownInventoryPoint(bool hoverIsAir, string? location)
+        private static bool ShouldLogUnknownInventoryPoint(int point, bool hoverIsAir, string? location)
         {
+            if (!PlayerInput.UsingGamepadUI)
+            {
+                return false;
+            }
+
             if (!hoverIsAir)
             {
                 return false;
             }
 
             if (!string.IsNullOrWhiteSpace(location))
+            {
+                return false;
+            }
+
+            if (SlotNavigationHelper.IsInventoryLinkPoint(point) ||
+                SlotNavigationHelper.IsChestLinkPoint(point) ||
+                SlotNavigationHelper.IsCraftingGridLinkPoint(point) ||
+                SlotNavigationHelper.IsCraftingListLinkPoint(point))
             {
                 return false;
             }

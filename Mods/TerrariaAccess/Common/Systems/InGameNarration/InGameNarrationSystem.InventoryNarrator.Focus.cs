@@ -5,6 +5,7 @@ using Terraria.GameInput;
 using Terraria.UI;
 using Terraria.UI.Gamepad;
 using TerrariaAccess.Common.Services;
+using TerrariaAccess.Common.Systems.InGameNarration;
 
 namespace TerrariaAccess.Common.Systems;
 
@@ -19,11 +20,18 @@ public sealed partial class InGameNarrationSystem
             private readonly Dictionary<int, FocusCapture> _linkPointFocus = new();
             private SlotFocus? _pendingFocus;
             private uint _pendingFrame;
+            private int _pendingLinkPoint = -1;
 
             public void Capture(in SlotFocus focus)
             {
+                if (!ShouldAcceptCapturedFocus(focus))
+                {
+                    return;
+                }
+
                 _pendingFocus = focus;
                 _pendingFrame = Main.GameUpdateCount;
+                _pendingLinkPoint = PlayerInput.UsingGamepadUI ? UILinkPointNavigator.CurrentPoint : -1;
 
                 CacheLinkPointFocus(focus);
                 UiAreaNarrationContext.RecordSlotContext(focus.Context);
@@ -31,7 +39,7 @@ public sealed partial class InGameNarrationSystem
 
             public SlotFocus? Consume(bool usingGamepad)
             {
-                SlotFocus? focus = ConsumePending();
+                SlotFocus? focus = ConsumePending(usingGamepad);
                 if (!focus.HasValue && usingGamepad)
                 {
                     // Try cached link point data first
@@ -57,12 +65,14 @@ public sealed partial class InGameNarrationSystem
 
                 _pendingFocus = null;
                 _pendingFrame = 0;
+                _pendingLinkPoint = -1;
             }
 
             public void ClearAll()
             {
                 _pendingFocus = null;
                 _pendingFrame = 0;
+                _pendingLinkPoint = -1;
                 _linkPointFocus.Clear();
             }
 
@@ -151,7 +161,53 @@ public sealed partial class InGameNarrationSystem
                 _linkPointFocus[point] = new FocusCapture(focus, Main.GameUpdateCount);
             }
 
-            private SlotFocus? ConsumePending()
+            private static bool ShouldAcceptCapturedFocus(in SlotFocus focus)
+            {
+                if (!PlayerInput.UsingGamepadUI)
+                {
+                    return true;
+                }
+
+                int point = UILinkPointNavigator.CurrentPoint;
+                if (point < 0)
+                {
+                    return true;
+                }
+
+                int context = focus.Context < 0 ? -focus.Context : focus.Context;
+                bool accepted = context switch
+                {
+                    ItemSlot.Context.InventoryItem or
+                    ItemSlot.Context.HotbarItem or
+                    ItemSlot.Context.InventoryCoin or
+                    ItemSlot.Context.InventoryAmmo => MatchesInventoryPoint(point, focus.Slot, context),
+                    ItemSlot.Context.ChestItem or
+                    ItemSlot.Context.BankItem or
+                    ItemSlot.Context.VoidItem => SlotNavigationHelper.TryResolveChestSlot(point, out int slot) && slot == focus.Slot,
+                    ItemSlot.Context.CraftingMaterial => SlotNavigationHelper.IsCraftingGridLinkPoint(point) || SlotNavigationHelper.IsCraftingListLinkPoint(point),
+                    _ => true,
+                };
+
+                if (!accepted && InputDebugEnabled)
+                {
+                    global::TerrariaAccess.TerrariaAccess.Instance?.Logger.Info(
+                        $"[FocusDebug] Rejected capture: linkPoint={point} context={focus.Context} slot={focus.Slot} inputMode={PlayerInput.CurrentInputMode}");
+                }
+
+                return accepted;
+            }
+
+            private static bool MatchesInventoryPoint(int point, int slot, int context)
+            {
+                if (!SlotNavigationHelper.TryResolveInventorySlot(point, out int resolvedSlot, out int resolvedContext))
+                {
+                    return false;
+                }
+
+                return resolvedSlot == slot && resolvedContext == context;
+            }
+
+            private SlotFocus? ConsumePending(bool usingGamepad)
             {
                 if (!_pendingFocus.HasValue)
                 {
@@ -162,12 +218,25 @@ public sealed partial class InGameNarrationSystem
                 {
                     _pendingFocus = null;
                     _pendingFrame = 0;
+                    _pendingLinkPoint = -1;
                     return null;
+                }
+
+                if (_pendingLinkPoint >= 0)
+                {
+                    if (!usingGamepad || UILinkPointNavigator.CurrentPoint != _pendingLinkPoint)
+                    {
+                        _pendingFocus = null;
+                        _pendingFrame = 0;
+                        _pendingLinkPoint = -1;
+                        return null;
+                    }
                 }
 
                 SlotFocus focus = _pendingFocus.Value;
                 _pendingFocus = null;
                 _pendingFrame = 0;
+                _pendingLinkPoint = -1;
                 return focus;
             }
 
