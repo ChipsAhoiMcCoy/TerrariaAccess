@@ -498,38 +498,6 @@ public sealed class GamepadEmulationSystem : ModSystem
         ApplyMainMenuVirtualTriggers();
     }
 
-    public override void PreUpdatePlayers()
-    {
-        if (Main.dedServ)
-        {
-            return;
-        }
-
-        if (!ShouldDriveSmartCursorState())
-        {
-            return;
-        }
-
-        EnsureSmartCursorDesiredStateInitialized();
-        ApplySmartCursorWantedState(_smartCursorDesiredEnabled);
-    }
-
-    public override void PostUpdateEverything()
-    {
-        if (Main.dedServ)
-        {
-            return;
-        }
-
-        if (!ShouldDriveSmartCursorState())
-        {
-            return;
-        }
-
-        EnsureSmartCursorDesiredStateInitialized();
-        ApplySmartCursorWantedState(_smartCursorDesiredEnabled);
-    }
-
     private static void ForceGamepadUiModeIfNeeded(bool needsUiMode)
     {
         if (InputStateHelper.IsTextInputActive())
@@ -610,7 +578,12 @@ public sealed class GamepadEmulationSystem : ModSystem
             return;
         }
 
+        EnsureSmartCursorDesiredStateInitialized();
         bool smartCursorPressed = IsSmartCursorBindingPressedRaw();
+        if (!smartCursorPressed && !DpadVirtualizationSystem.IsTemporarilySuppressingSmartCursor())
+        {
+            _smartCursorDesiredEnabled = GetActualSmartCursorState();
+        }
 
         if (smartCursorPressed)
         {
@@ -622,8 +595,6 @@ public sealed class GamepadEmulationSystem : ModSystem
 
     private static void ApplySmartCursorStateFromBinding(bool smartCursorPressed)
     {
-        EnsureSmartCursorDesiredStateInitialized();
-
         // Toggle mode: one key press flips between enabled/disabled.
         if (Main.cSmartCursorModeIsToggleAndNotHold)
         {
@@ -638,7 +609,6 @@ public sealed class GamepadEmulationSystem : ModSystem
             _smartCursorDesiredEnabled = smartCursorPressed;
         }
 
-        ApplySmartCursorWantedState(_smartCursorDesiredEnabled);
         _smartCursorBindingWasPressed = smartCursorPressed;
     }
 
@@ -649,7 +619,7 @@ public sealed class GamepadEmulationSystem : ModSystem
             return;
         }
 
-        _smartCursorDesiredEnabled = Main.SmartCursorIsUsed || Main.SmartCursorWanted;
+        _smartCursorDesiredEnabled = GetActualSmartCursorState();
         _smartCursorDesiredInitialized = true;
     }
 
@@ -658,31 +628,10 @@ public sealed class GamepadEmulationSystem : ModSystem
         return IsVanillaTriggerPressedRaw("SmartCursor");
     }
 
-    private static void ApplySmartCursorWantedState(bool enabled)
+    internal static void ApplySmartCursorWantedState(bool enabled)
     {
         Main.SmartCursorWanted_Mouse = enabled;
         Main.SmartCursorWanted_GamePad = enabled;
-    }
-
-    private static bool ShouldDriveSmartCursorState()
-    {
-        if (!GamepadEmulationState.Enabled)
-        {
-            return false;
-        }
-
-        if (Main.gameMenu || InputStateHelper.IsTextInputActive())
-        {
-            return false;
-        }
-
-        Player? player = Main.LocalPlayer;
-        if (player is null || !player.active || player.dead || player.ghost)
-        {
-            return false;
-        }
-
-        return true;
     }
 
     internal static bool TryGetForcedSmartCursorState(out bool enabled)
@@ -695,6 +644,11 @@ public sealed class GamepadEmulationSystem : ModSystem
 
         enabled = _smartCursorDesiredEnabled;
         return true;
+    }
+
+    private static bool GetActualSmartCursorState()
+    {
+        return Main.SmartCursorIsUsed || Main.SmartCursorWanted;
     }
 
     private static bool IsVanillaTriggerPressedRaw(string triggerName)

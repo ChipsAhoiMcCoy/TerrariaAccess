@@ -1,6 +1,7 @@
 #nullable enable
 using System;
 using Microsoft.Xna.Framework;
+using Microsoft.Xna.Framework.Input;
 using TerrariaAccess.Common.Players;
 using Terraria;
 using Terraria.DataStructures;
@@ -20,6 +21,7 @@ public sealed class DpadVirtualizationSystem : ModSystem
     private const float TileSizePixels = 16f;
 
     private static uint _lastDpadHeldFrame = uint.MaxValue;
+    private static bool _temporarilySuppressedSmartCursor;
 
     private readonly int[] _directionCooldowns = new int[4];
 
@@ -27,6 +29,7 @@ public sealed class DpadVirtualizationSystem : ModSystem
     {
         if (!ShouldProcess())
         {
+            RestoreSmartCursorWantedStateIfNeeded();
             ResetCooldowns();
             _lastDpadHeldFrame = uint.MaxValue;
             return;
@@ -35,6 +38,7 @@ public sealed class DpadVirtualizationSystem : ModSystem
         Vector2 nudges = CollectDpadNudges();
         if (nudges == Vector2.Zero)
         {
+            RestoreSmartCursorWantedStateIfNeeded();
             ClampAnalogStickCursorIfNeeded();
             return;
         }
@@ -109,6 +113,8 @@ public sealed class DpadVirtualizationSystem : ModSystem
             left = IsPressed(GamepadEmulationKeybinds.RightStickLeft);
         }
 
+        AppendPhysicalGamepadDpad(ref up, ref right, ref down, ref left);
+
         nudges += EvaluateDirection(up, -Vector2.UnitY, 0);
         nudges += EvaluateDirection(right, Vector2.UnitX, 1);
         nudges += EvaluateDirection(down, Vector2.UnitY, 2);
@@ -175,6 +181,11 @@ public sealed class DpadVirtualizationSystem : ModSystem
         }
 
         // Keep both cursor wanted flags disabled while D-pad tile nudging is active.
+        if (GetEffectiveSmartCursorState())
+        {
+            _temporarilySuppressedSmartCursor = true;
+        }
+
         Main.SmartCursorWanted_Mouse = false;
         Main.SmartCursorWanted_GamePad = false;
         Matrix zoomMatrix = Main.GameViewMatrix.ZoomMatrix;
@@ -228,20 +239,29 @@ public sealed class DpadVirtualizationSystem : ModSystem
         // - Smart Cursor ON: Arrow keys act as D-pad
         bool smartCursorActive = GetEffectiveSmartCursorState();
 
+        bool physicalDpadHeld = IsPhysicalGamepadDpadHeld();
+
         if (smartCursorActive)
         {
             // Arrow keys act as D-pad when Smart Cursor is ON
             return IsPressed(GamepadEmulationKeybinds.ArrowUp)
                 || IsPressed(GamepadEmulationKeybinds.ArrowDown)
                 || IsPressed(GamepadEmulationKeybinds.ArrowLeft)
-                || IsPressed(GamepadEmulationKeybinds.ArrowRight);
+                || IsPressed(GamepadEmulationKeybinds.ArrowRight)
+                || physicalDpadHeld;
         }
 
         // OKLS keys act as D-pad when Smart Cursor is OFF
         return IsPressed(GamepadEmulationKeybinds.RightStickUp)
             || IsPressed(GamepadEmulationKeybinds.RightStickDown)
             || IsPressed(GamepadEmulationKeybinds.RightStickLeft)
-            || IsPressed(GamepadEmulationKeybinds.RightStickRight);
+            || IsPressed(GamepadEmulationKeybinds.RightStickRight)
+            || physicalDpadHeld;
+    }
+
+    internal static bool IsTemporarilySuppressingSmartCursor()
+    {
+        return _temporarilySuppressedSmartCursor;
     }
 
     private static void RegisterDpadHeldFrame()
@@ -353,6 +373,59 @@ public sealed class DpadVirtualizationSystem : ModSystem
     {
         var buildModePlayer = Main.LocalPlayer?.GetModPlayer<BuildModePlayer>();
         return buildModePlayer?.IsBuildModeActive ?? false;
+    }
+
+    private static void RestoreSmartCursorWantedStateIfNeeded()
+    {
+        if (!_temporarilySuppressedSmartCursor)
+        {
+            return;
+        }
+
+        GamepadEmulationSystem.ApplySmartCursorWantedState(GetEffectiveSmartCursorState());
+        _temporarilySuppressedSmartCursor = false;
+    }
+
+    private static void AppendPhysicalGamepadDpad(ref bool up, ref bool right, ref bool down, ref bool left)
+    {
+        try
+        {
+            GamePadState state = GamePad.GetState(PlayerIndex.One);
+            if (!state.IsConnected)
+            {
+                return;
+            }
+
+            up |= state.DPad.Up == ButtonState.Pressed;
+            right |= state.DPad.Right == ButtonState.Pressed;
+            down |= state.DPad.Down == ButtonState.Pressed;
+            left |= state.DPad.Left == ButtonState.Pressed;
+        }
+        catch
+        {
+            // Ignore transient controller read failures
+        }
+    }
+
+    private static bool IsPhysicalGamepadDpadHeld()
+    {
+        try
+        {
+            GamePadState state = GamePad.GetState(PlayerIndex.One);
+            if (!state.IsConnected)
+            {
+                return false;
+            }
+
+            return state.DPad.Up == ButtonState.Pressed ||
+                state.DPad.Right == ButtonState.Pressed ||
+                state.DPad.Down == ButtonState.Pressed ||
+                state.DPad.Left == ButtonState.Pressed;
+        }
+        catch
+        {
+            return false;
+        }
     }
 
     private static bool GetEffectiveSmartCursorState()

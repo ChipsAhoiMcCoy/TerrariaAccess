@@ -94,16 +94,9 @@ public sealed partial class InGameNarrationSystem
             if (!string.IsNullOrWhiteSpace(description))
             {
                 _lastAnnouncedDescription = description;
-                bool smartCursorActive = Main.SmartCursorIsUsed || Main.SmartCursorWanted;
-                if (smartCursorActive)
-                {
-                    QueuePendingAnnouncement(description, key);
-                }
-                else
-                {
-                    NarrationInstrumentationContext.SetPendingKey(key);
-                    ScreenReaderService.Announce(description);
-                }
+                ClearPendingAnnouncement();
+                NarrationInstrumentationContext.SetPendingKey(key);
+                ScreenReaderService.Announce(description);
             }
         }
 
