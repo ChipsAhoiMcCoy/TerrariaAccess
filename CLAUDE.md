@@ -25,6 +25,15 @@ The build script invokes tModLoader's build system (`dotnet tModLoader.dll -buil
 
 When done with a task, build and deploy (without `-SkipDeploy`) so the mod is ready to test in tModLoader immediately.
 
+After building and deploying, launch tModLoader with dialogue input debug logging enabled so the change can be tested in a live client session:
+
+```powershell
+$env:SRM_DEBUG_DIALOGUE_INPUT='1'
+& 'C:\Program Files (x86)\Steam\steamapps\common\tModLoader\start-tModLoader.bat'
+```
+
+The default post-change workflow in this repository is: edit code, build and deploy, launch tModLoader with `SRM_DEBUG_DIALOGUE_INPUT=1`, then test the change.
+
 ## Architecture
 
 ### Core Systems (Mods/TerrariaAccess/Common/)
@@ -204,6 +213,8 @@ No automated test suite. Manual testing requires:
 3. `Tolk.dll` in tModLoader directory
 
 Use `-NarrationLint` flag to scan client.log for Tolk communication failures after gameplay sessions.
+
+Unless a task explicitly says otherwise, also launch tModLoader with `SRM_DEBUG_DIALOGUE_INPUT=1` after the build/deploy step so manual testing happens against a debug-enabled client.
 
 ## Code Intelligence
 
