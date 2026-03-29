@@ -51,7 +51,7 @@ public sealed class NpcDialogueGamepadFocusSystem : ModSystem
 
         EnsureDialogueStaysInGamepadUiMode();
         MirrorSignMenuDirectionsToUiDirections();
-        SuppressDialogueGameplayControls();
+        DialogueInputGuard.ClaimUiInput(Main.LocalPlayer, "NpcDialogueGamepadFocusSystem.PostUpdateInput");
 
         TriggersSet triggers = PlayerInput.Triggers.Current;
         if (HasNavigationInput(triggers))
@@ -80,8 +80,9 @@ public sealed class NpcDialogueGamepadFocusSystem : ModSystem
 
     private static bool ShouldSyncFocus()
     {
-        if (PlayerInput.CurrentInputMode != InputMode.XBoxGamepadUI &&
-            !HasActiveGamepadUiInput())
+        bool emulatedGamepadUiActive = GamepadEmulation.GamepadEmulationState.Enabled &&
+                                       PlayerInput.CurrentInputMode == InputMode.XBoxGamepadUI;
+        if (!emulatedGamepadUiActive && !HasActiveGamepadUiInput())
         {
             return false;
         }
@@ -106,24 +107,6 @@ public sealed class NpcDialogueGamepadFocusSystem : ModSystem
         {
             PlayerInput.CurrentInputMode = InputMode.XBoxGamepadUI;
         }
-    }
-
-    private static void SuppressDialogueGameplayControls()
-    {
-        TriggersPack pack = PlayerInput.Triggers;
-        pack.Current.Grapple = false;
-        pack.JustPressed.Grapple = false;
-        pack.Current.QuickMount = false;
-        pack.JustPressed.QuickMount = false;
-
-        Player player = Main.LocalPlayer;
-        if (player is null)
-        {
-            return;
-        }
-
-        player.controlHook = false;
-        player.controlMount = false;
     }
 
     private static void MirrorSignMenuDirectionsToUiDirections()
@@ -241,8 +224,7 @@ public sealed class NpcDialogueGamepadFocusSystem : ModSystem
             return;
         }
 
-        player.mouseInterface = true;
-        player.releaseUseItem = false;
+        DialogueInputGuard.ClaimUiInput(player, "NpcDialogueGamepadFocusSystem.ApplyFocusState");
     }
 
     private static List<int> GetActivePoints(string focusText, string focusText3)

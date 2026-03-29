@@ -83,6 +83,14 @@ internal static class NpcDialogueInputTracker
         }
     }
 
+    public static void PrimeTypedInput(string? text)
+    {
+        string sanitized = TextSanitizer.Clean(text ?? string.Empty);
+        _typedBuffer = string.IsNullOrWhiteSpace(sanitized) ? null : sanitized;
+        _lastAnnouncedTyped = _typedBuffer;
+        _lastTypedChangeFrame = Main.GameUpdateCount;
+    }
+
     public static bool TryDequeueTypedInput(out string typedText)
     {
         typedText = string.Empty;

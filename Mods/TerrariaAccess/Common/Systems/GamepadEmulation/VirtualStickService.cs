@@ -184,19 +184,9 @@ internal static class VirtualStickService
     /// </summary>
     private static bool IsKeybindPressed(ModKeybind? keybind)
     {
-        if (keybind is null)
-        {
-            return false;
-        }
-
-        // First try the normal keybind check (works in gameplay)
-        if (VirtualTriggerService.IsKeybindCurrentlyPressed(keybind))
-        {
-            return true;
-        }
-
-        // Fall back to raw keyboard state reading (works in menus)
-        return VirtualTriggerService.IsKeybindPressedRaw(keybind);
+        return keybind is not null &&
+               (VirtualTriggerService.IsKeybindCurrentlyPressed(keybind) ||
+                VirtualTriggerService.IsKeybindPressedRaw(keybind));
     }
 
     /// <summary>

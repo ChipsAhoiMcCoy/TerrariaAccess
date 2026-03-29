@@ -10,6 +10,12 @@ namespace TerrariaAccess.Common.Systems.GamepadEmulation;
 /// </summary>
 internal static class InputStateHelper
 {
+    internal static bool IsSignEditingActive()
+    {
+        Player? player = Main.myPlayer >= 0 ? Main.player[Main.myPlayer] : null;
+        return Main.editSign && player is not null && player.sign != -1;
+    }
+
     /// <summary>
     /// Returns true if text input is currently active (chat, sign editing, etc.).
     /// When true, gamepad emulation should be disabled to allow normal typing.
@@ -33,6 +39,16 @@ internal static class InputStateHelper
         }
 
         return false;
+    }
+
+    /// <summary>
+    /// Returns true when text entry is active but the UI should remain in gamepad mode.
+    /// This lets sign editing keep vanilla gamepad button navigation while the keyboard
+    /// continues to feed text into the sign editor.
+    /// </summary>
+    internal static bool ShouldPreserveGamepadUiDuringTextInput()
+    {
+        return IsSignEditingActive();
     }
 
     /// <summary>

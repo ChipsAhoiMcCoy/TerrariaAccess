@@ -259,7 +259,14 @@ public sealed class GamepadEmulationSystem : ModSystem
 
     private static bool ShouldExposeGamepadFlag(bool forceUi)
     {
-        if (!GamepadEmulationState.Enabled || InputStateHelper.IsTextInputActive())
+        if (!GamepadEmulationState.Enabled)
+        {
+            return false;
+        }
+
+        bool textInputActive = InputStateHelper.IsTextInputActive();
+        bool preserveUiDuringTextInput = InputStateHelper.ShouldPreserveGamepadUiDuringTextInput();
+        if (textInputActive && !preserveUiDuringTextInput)
         {
             return false;
         }
@@ -469,14 +476,22 @@ public sealed class GamepadEmulationSystem : ModSystem
         HandleFeatureToggleHotkey();
         SuppressAllShiftTriggers();
 
+        Player? localPlayer = Main.LocalPlayer;
+        bool dialogueUiActive = DialogueInputGuard.IsDialogueUiActive(localPlayer);
+
         // Inject housing-relevant triggers early so CheckHousingQueryOnMouseClick can see them.
         // Skip entirely when first letter navigation is active — keys are reserved for searching.
         // Skip when fancy UI is active (mod config, bestiary, etc.) — injecting MouseLeft here
         // causes clicks at the mouse cursor position instead of the focused element.
         if (GamepadEmulationState.Enabled && Main.playerInventory && !Main.inFancyUI
-            && !InputStateHelper.IsTextInputActive() && !FirstLetterNavigationManager.IsEnabled)
+            && !InputStateHelper.IsTextInputActive() && !FirstLetterNavigationManager.IsEnabled
+            && !dialogueUiActive)
         {
             VirtualTriggerService.InjectFromKeybind(GamepadEmulationKeybinds.InventorySelect, TriggerNames.MouseLeft);
+        }
+        else if (dialogueUiActive && localPlayer is not null && IsPressed(GamepadEmulationKeybinds.InventorySelect))
+        {
+            DialogueInputGuard.LogStateIfChanged("GamepadEmulationSystem.PostUpdateInput", localPlayer, "skipped early mouse-left injection");
         }
 
         _housingQueryHandler?.Update();
@@ -494,16 +509,25 @@ public sealed class GamepadEmulationSystem : ModSystem
         ForceGamepadUiModeIfNeeded(needsUiMode);
         ApplyGlobalVirtualTriggers();
         ApplyInventoryVirtualTriggers(needsUiMode);
+        ApplyDialogueVirtualTriggers(needsUiMode);
         ApplyMenuNavigationVirtualTriggers(needsUiMode);
         ApplyMainMenuVirtualTriggers();
     }
 
     private static void ForceGamepadUiModeIfNeeded(bool needsUiMode)
     {
-        if (InputStateHelper.IsTextInputActive())
+        bool textInputActive = InputStateHelper.IsTextInputActive();
+        bool preserveUiDuringTextInput = InputStateHelper.ShouldPreserveGamepadUiDuringTextInput();
+        if (textInputActive && !preserveUiDuringTextInput)
         {
             // Drop back to keyboard input while typing so chat/sign text boxes stay usable.
             PlayerInput.CurrentInputMode = InputMode.Keyboard;
+            return;
+        }
+
+        if (textInputActive && preserveUiDuringTextInput && needsUiMode)
+        {
+            PlayerInput.CurrentInputMode = InputMode.XBoxGamepadUI;
             return;
         }
 
@@ -714,8 +738,19 @@ public sealed class GamepadEmulationSystem : ModSystem
             return;
         }
 
-        if (!Main.playerInventory)
+        Player player = Main.LocalPlayer;
+        if (player is null || !player.active || !Main.playerInventory)
         {
+            return;
+        }
+
+        if (DialogueInputGuard.IsDialogueUiActive(player))
+        {
+            if (IsPressed(GamepadEmulationKeybinds.InventorySelect) || IsPressed(GamepadEmulationKeybinds.InventoryQuickUse))
+            {
+                DialogueInputGuard.LogStateIfChanged("GamepadEmulationSystem.ApplyInventoryVirtualTriggers", player, "suppressed inventory trigger injection during dialogue");
+            }
+
             return;
         }
 
@@ -743,7 +778,6 @@ public sealed class GamepadEmulationSystem : ModSystem
 
         // Only inject MouseRight if no chest/container is open.
         // When a container is open, continued MouseRight injection can cause it to toggle closed.
-        Player player = Main.LocalPlayer;
         bool chestOpen = player is not null && (player.chest != -1 || player.tileEntityAnchor.InUse);
         if (!chestOpen)
         {
@@ -769,9 +803,66 @@ public sealed class GamepadEmulationSystem : ModSystem
         }
     }
 
+    private static void ApplyDialogueVirtualTriggers(bool uiModeActive)
+    {
+        if (!GamepadEmulationState.Enabled || !uiModeActive)
+        {
+            return;
+        }
+
+        if (PlayerInput.CurrentInputMode != InputMode.XBoxGamepadUI)
+        {
+            return;
+        }
+
+        Player player = Main.LocalPlayer;
+        if (player is null || !player.active)
+        {
+            return;
+        }
+
+        bool dialogueActive = player.talkNPC != -1 || player.sign != -1;
+        if (!dialogueActive)
+        {
+            return;
+        }
+
+        bool textInputActive = InputStateHelper.IsTextInputActive();
+        bool preserveUiDuringTextInput = InputStateHelper.ShouldPreserveGamepadUiDuringTextInput();
+        if (textInputActive && !preserveUiDuringTextInput)
+        {
+            return;
+        }
+
+        DialogueInputGuard.ClaimUiInput(player, "GamepadEmulationSystem.ApplyDialogueVirtualTriggers");
+
+        GetVirtualMenuNavigationState(out bool up, out bool down, out bool left, out bool right);
+        VirtualTriggerService.InjectFromState(TriggerNames.MenuUp, up);
+        VirtualTriggerService.InjectFromState(TriggerNames.MenuDown, down);
+        VirtualTriggerService.InjectFromState(TriggerNames.MenuLeft, left);
+        VirtualTriggerService.InjectFromState(TriggerNames.MenuRight, right);
+
+        // Preserve keyboard text entry while a sign is being edited. The default confirm
+        // binding is a letter key, so injecting MouseLeft here would turn typed text into
+        // unintended button presses.
+        if (textInputActive)
+        {
+            return;
+        }
+
+        VirtualTriggerService.InjectFromKeybind(GamepadEmulationKeybinds.InventorySelect, TriggerNames.MouseLeft);
+        VirtualTriggerService.ApplyMouseLeftFromTrigger();
+        if (IsPressed(GamepadEmulationKeybinds.InventorySelect))
+        {
+            DialogueInputGuard.LogStateIfChanged("GamepadEmulationSystem.ApplyDialogueVirtualTriggers", player, "synthetic confirm injected");
+        }
+    }
+
     private static void ApplyMenuNavigationVirtualTriggers(bool uiModeActive)
     {
-        if (!GamepadEmulationState.Enabled || !uiModeActive || InputStateHelper.IsTextInputActive())
+        bool textInputActive = InputStateHelper.IsTextInputActive();
+        bool preserveUiDuringTextInput = InputStateHelper.ShouldPreserveGamepadUiDuringTextInput();
+        if (!GamepadEmulationState.Enabled || !uiModeActive || (textInputActive && !preserveUiDuringTextInput))
         {
             return;
         }
@@ -786,21 +877,38 @@ public sealed class GamepadEmulationSystem : ModSystem
             return;
         }
 
+        GetVirtualMenuNavigationState(out bool up, out bool down, out bool left, out bool right);
+        VirtualTriggerService.InjectFromState(TriggerNames.MenuUp, up);
+        VirtualTriggerService.InjectFromState(TriggerNames.MenuDown, down);
+        VirtualTriggerService.InjectFromState(TriggerNames.MenuLeft, left);
+        VirtualTriggerService.InjectFromState(TriggerNames.MenuRight, right);
+    }
+
+    private static void GetVirtualMenuNavigationState(out bool up, out bool down, out bool left, out bool right)
+    {
         KeyboardState state = Main.keyState;
-        bool up = state.IsKeyDown(Keys.W);
-        bool down = state.IsKeyDown(Keys.S);
-        bool left = state.IsKeyDown(Keys.A);
-        bool right = state.IsKeyDown(Keys.D);
+        up = state.IsKeyDown(Keys.W) || IsPressed(GamepadEmulationKeybinds.ArrowUp);
+        down = state.IsKeyDown(Keys.S) || IsPressed(GamepadEmulationKeybinds.ArrowDown);
+        left = state.IsKeyDown(Keys.A) || IsPressed(GamepadEmulationKeybinds.ArrowLeft);
+        right = state.IsKeyDown(Keys.D) || IsPressed(GamepadEmulationKeybinds.ArrowRight);
 
         Vector2 leftStick = PlayerInput.GamepadThumbstickLeft;
         const float stickThreshold = 0.55f;
-        bool stickUp = leftStick.Y < -stickThreshold;
-        bool stickDown = leftStick.Y > stickThreshold;
+        up |= leftStick.Y < -stickThreshold;
+        down |= leftStick.Y > stickThreshold;
+        left |= leftStick.X < -stickThreshold;
+        right |= leftStick.X > stickThreshold;
+    }
 
-        VirtualTriggerService.InjectFromState(TriggerNames.MenuUp, up || stickUp);
-        VirtualTriggerService.InjectFromState(TriggerNames.MenuDown, down || stickDown);
-        VirtualTriggerService.InjectFromState(TriggerNames.MenuLeft, left);
-        VirtualTriggerService.InjectFromState(TriggerNames.MenuRight, right);
+    private static bool IsPressed(ModKeybind? keybind)
+    {
+        if (keybind is null)
+        {
+            return false;
+        }
+
+        return VirtualTriggerService.IsKeybindCurrentlyPressed(keybind) ||
+               VirtualTriggerService.IsKeybindPressedRaw(keybind);
     }
 
     /// <summary>
@@ -830,7 +938,7 @@ public sealed class GamepadEmulationSystem : ModSystem
             return;
         }
 
-        bool pressed = selectKeybind.Current || VirtualTriggerService.IsKeybindPressedRaw(selectKeybind);
+        bool pressed = IsPressed(selectKeybind);
         bool justPressed = pressed && !_mainMenuSelectWasPressed;
         _mainMenuSelectWasPressed = pressed;
 
