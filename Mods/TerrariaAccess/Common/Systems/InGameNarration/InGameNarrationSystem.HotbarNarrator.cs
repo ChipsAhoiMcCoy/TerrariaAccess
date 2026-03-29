@@ -41,6 +41,7 @@ public sealed partial class InGameNarrationSystem
         private static string? _lastAnnouncedDescription;
         private static string? _pendingAnnouncement;
         private static string? _pendingAnnouncementKey;
+        private static uint _lastAnnouncementFrame;
         private static bool _externalSuppressed;
         private static int _suppressedSelectedSlot = -1;
         private static int _suppressedItemType = -1;
@@ -95,6 +96,7 @@ public sealed partial class InGameNarrationSystem
             {
                 _lastAnnouncedDescription = description;
                 ClearPendingAnnouncement();
+                _lastAnnouncementFrame = Main.GameUpdateCount;
                 NarrationInstrumentationContext.SetPendingKey(key);
                 ScreenReaderService.Announce(description);
             }
@@ -189,6 +191,16 @@ public sealed partial class InGameNarrationSystem
             key = _pendingAnnouncementKey;
             ClearPendingAnnouncement();
             return true;
+        }
+
+        internal static bool WasAnnouncementIssuedRecently(uint maxAgeFrames = 1)
+        {
+            if (_lastAnnouncementFrame == 0 || Main.GameUpdateCount < _lastAnnouncementFrame)
+            {
+                return false;
+            }
+
+            return Main.GameUpdateCount - _lastAnnouncementFrame <= maxAgeFrames;
         }
 
         internal static void SetExternalSuppression(bool suppressed)

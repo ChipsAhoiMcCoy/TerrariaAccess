@@ -160,18 +160,15 @@ public sealed partial class InGameNarrationSystem
             {
                 if (!string.IsNullOrWhiteSpace(modeChangeAnnouncement))
                 {
-                    ScreenReaderService.Announce(modeChangeAnnouncement, category: AnnouncementCategory.Tile, force: true);
+                    ConsumePendingCursorModeAnnouncement();
+                    NarrationInstrumentationContext.SetPendingKey(hasSmartCursor ? "smart:mode:on" : "smart:mode:off");
+                    ScreenReaderService.Announce(modeChangeAnnouncement, category: AnnouncementCategory.Default, force: true);
                 }
                 else
                 {
                     MaybeFlushPendingCursorModeAnnouncement();
                 }
                 return;
-            }
-
-            if (!string.IsNullOrWhiteSpace(modeChangeAnnouncement))
-            {
-                message = $"{modeChangeAnnouncement}, {message}";
             }
 
             // Skip duplicate suppression when holding an axe so the player hears each tree announced
@@ -182,22 +179,23 @@ public sealed partial class InGameNarrationSystem
             }
 
             _lastAnnouncement = message;
-            string announcement;
-            if (!string.IsNullOrWhiteSpace(modeChangeAnnouncement))
+            bool shouldQueueBehindHotbar = HotbarNarrator.WasAnnouncementIssuedRecently();
+            (string? modePrefix, string? modeInstrumentationKey) = ConsumePendingCursorModeAnnouncement();
+            if (!string.IsNullOrWhiteSpace(modePrefix))
             {
-                ConsumePendingCursorModeAnnouncement();
-                announcement = message;
-            }
-            else
-            {
-                (string? modePrefix, _) = ConsumePendingCursorModeAnnouncement();
-                announcement = string.IsNullOrWhiteSpace(modePrefix)
-                    ? message
-                    : $"{modePrefix}. {message}";
+                NarrationInstrumentationContext.SetPendingKey(modeInstrumentationKey ?? "smart:mode");
+                ScreenReaderService.Announce(modePrefix, category: AnnouncementCategory.Default, force: true);
+                NarrationInstrumentationContext.SetPendingKey(BuildSmartCursorKey(message));
+                ScreenReaderService.Announce(message, category: category, force: isHoldingAxe, requestInterrupt: false);
+                return;
             }
 
-            NarrationInstrumentationContext.SetPendingKey(BuildSmartCursorKey(announcement));
-            ScreenReaderService.Announce(announcement, category: category, force: isHoldingAxe);
+            NarrationInstrumentationContext.SetPendingKey(BuildSmartCursorKey(message));
+            ScreenReaderService.Announce(
+                message,
+                category: category,
+                force: isHoldingAxe,
+                requestInterrupt: !shouldQueueBehindHotbar);
         }
 
         private static void QueueSmartCursorModeChange(bool hasSmartCursor)

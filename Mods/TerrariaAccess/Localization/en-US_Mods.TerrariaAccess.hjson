@@ -284,7 +284,8 @@ Mods: {
 		}
 
 		SmartCursor: {
-			Enabled: Smart cursor enabled
+			Enabled: Smart cursor
+			UnlockedCursor: Unlocked cursor
 			TileByTile: Tile by Tile
 		}
 
