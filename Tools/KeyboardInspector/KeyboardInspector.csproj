@@ -4,13 +4,14 @@
     <TargetFramework>net8.0</TargetFramework>
     <ImplicitUsings>enable</ImplicitUsings>
     <Nullable>enable</Nullable>
+    <TmlRoot>C:\Program Files (x86)\Steam\steamapps\common\tModLoader</TmlRoot>
   </PropertyGroup>
   <ItemGroup>
     <Reference Include="tModLoader">
-      <HintPath>C:\Program Files (x86)\Steam\steamapps\common\tModLoader\tModLoader.dll</HintPath>
+      <HintPath>$(TmlRoot)\tModLoader.dll</HintPath>
     </Reference>
     <Reference Include="FNA">
-      <HintPath>C:\Program Files (x86)\Steam\steamapps\common\tModLoader\FNA.dll</HintPath>
+      <HintPath>$(TmlRoot)\Libraries\FNA\1.0.0\FNA.dll</HintPath>
     </Reference>
   </ItemGroup>
 </Project>

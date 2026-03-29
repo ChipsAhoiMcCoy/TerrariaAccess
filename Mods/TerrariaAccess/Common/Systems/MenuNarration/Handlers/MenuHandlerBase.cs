@@ -115,8 +115,116 @@ internal abstract class MenuHandlerBase : IMenuHandler
         events.Add(new MenuNarrationEvent(cleaned, false, MenuNarrationEventKind.Hover));
         State.LastHoverAnnouncement = cleaned;
         State.LastHoverAnnouncedAt = context.Timestamp;
+        State.PendingHoverFocusSuppression = cleaned;
+        State.PendingInitialFocus = null;
+        State.PendingInitialFocusAnnouncement = null;
         State.SawHoverThisMode = true;
         return true;
+    }
+
+    /// <summary>
+    /// Tries to announce the first concrete list entry for UIState-based menus that
+    /// already have their item list populated on entry.
+    /// </summary>
+    protected bool TryAnnounceFirstListEntry(
+        MenuNarrationContext context,
+        FieldInfo? listField,
+        Func<UIElement, bool> isListEntry,
+        List<MenuNarrationEvent> events)
+    {
+        if (context.UiState is null || listField is null)
+        {
+            return false;
+        }
+
+        UIElement? listRoot;
+        try
+        {
+            listRoot = listField.GetValue(context.UiState) as UIElement;
+        }
+        catch
+        {
+            return false;
+        }
+
+        UIElement? entry = FindFirstMatchingElement(listRoot, isListEntry);
+        if (entry is null)
+        {
+            return false;
+        }
+
+        string label = TextSanitizer.Clean(MenuUiSelectionTracker.ResolveLabel(entry));
+        if (string.IsNullOrWhiteSpace(label) || !IsAllowedHover(context.MenuMode, label))
+        {
+            return false;
+        }
+
+        TerrariaAccess.Instance?.Logger.Info($"[MenuHandler] Immediate list entry -> {label}");
+        events.Add(new MenuNarrationEvent(label, true, MenuNarrationEventKind.Focus));
+        State.LastFocusAnnouncement = label;
+        State.LastFocusAnnouncedAt = context.Timestamp;
+        State.LastFocus = new MenuFocus(0, "UiListEntry");
+        State.AnnouncedFallback = false;
+        State.ForceNextFocus = false;
+        State.PendingInitialFocus = null;
+        State.PendingInitialFocusAnnouncement = null;
+        return true;
+    }
+
+    protected static bool TryGetFirstListEntry(
+        MenuNarrationContext context,
+        FieldInfo? listField,
+        Func<UIElement, bool> isListEntry,
+        out UIElement? entry)
+    {
+        entry = null;
+
+        if (context.UiState is null || listField is null)
+        {
+            return false;
+        }
+
+        UIElement? listRoot;
+        try
+        {
+            listRoot = listField.GetValue(context.UiState) as UIElement;
+        }
+        catch
+        {
+            return false;
+        }
+
+        entry = FindFirstMatchingElement(listRoot, isListEntry);
+        return entry is not null;
+    }
+
+    protected static bool TryGetAssignableField<T>(object source, out T? value)
+        where T : class
+    {
+        const BindingFlags flags = BindingFlags.Instance | BindingFlags.Public | BindingFlags.NonPublic;
+        foreach (FieldInfo field in source.GetType().GetFields(flags))
+        {
+            if (!typeof(T).IsAssignableFrom(field.FieldType))
+            {
+                continue;
+            }
+
+            try
+            {
+                if (field.GetValue(source) is T typed)
+                {
+                    value = typed;
+                    return true;
+                }
+            }
+            catch
+            {
+                // ignore reflection failures
+            }
+        }
+
+        value = null;
+        return false;
     }
 
     /// <summary>
@@ -160,17 +268,14 @@ internal abstract class MenuHandlerBase : IMenuHandler
 
         State.FocusFailureCount = 0;
 
-        // Wait for UI to stabilize after mode entry before announcing focus.
-        // Focus data (Main.focusMenu, menuItemScale) may be stale from the previous
-        // menu during the first few frames of a transition.
-        if (!State.SawHoverThisMode && timestamp - State.ModeEnteredAt < TimeSpan.FromMilliseconds(250))
-        {
-            return false;
-        }
-
         string optionLabel = MenuNarrationCatalog.DescribeMenuItem(currentMode, focus.Index);
         bool hasDeletionAnnouncement = MenuNarrationCatalog.TryBuildDeletionAnnouncement(currentMode, focus.Index, out string combinedLabel);
         string announcement = hasDeletionAnnouncement ? combinedLabel : optionLabel;
+
+        if (ShouldDelayUnconfirmedInitialFocus(focus, announcement))
+        {
+            return false;
+        }
 
         bool focusChanged = !State.LastFocus.HasValue || State.LastFocus.Value.Index != focus.Index;
         bool announcementChanged = !focusChanged &&
@@ -183,15 +288,14 @@ internal abstract class MenuHandlerBase : IMenuHandler
 
         if (shouldAnnounce)
         {
-            bool matchesRecentHover = !string.IsNullOrWhiteSpace(State.LastHoverAnnouncement) &&
-                string.Equals(optionLabel, State.LastHoverAnnouncement, StringComparison.OrdinalIgnoreCase) &&
-                timestamp - State.LastHoverAnnouncedAt < TimeSpan.FromMilliseconds(900);
+            bool matchesRecentHover = !string.IsNullOrWhiteSpace(State.PendingHoverFocusSuppression) &&
+                string.Equals(optionLabel, State.PendingHoverFocusSuppression, StringComparison.OrdinalIgnoreCase);
             bool matchesLastFocus = !string.IsNullOrWhiteSpace(State.LastFocusAnnouncement) &&
                 string.Equals(announcement, State.LastFocusAnnouncement, StringComparison.OrdinalIgnoreCase);
-            bool repeatedRecently = matchesLastFocus && timestamp - State.LastFocusAnnouncedAt < TimeSpan.FromMilliseconds(900);
 
-            if (!force && !announcementChanged && (matchesRecentHover || repeatedRecently))
+            if (!force && !announcementChanged && (matchesRecentHover || matchesLastFocus))
             {
+                State.PendingHoverFocusSuppression = null;
                 State.ForceNextFocus = false;
                 State.LastFocus = focus;
                 return true;
@@ -204,6 +308,9 @@ internal abstract class MenuHandlerBase : IMenuHandler
                 events.Add(new MenuNarrationEvent(announcement, forceSpeech, MenuNarrationEventKind.Focus));
                 State.LastFocusAnnouncement = announcement;
                 State.LastFocusAnnouncedAt = timestamp;
+                State.PendingHoverFocusSuppression = null;
+                State.PendingInitialFocus = null;
+                State.PendingInitialFocusAnnouncement = null;
                 State.ForceNextFocus = false;
             }
             else
@@ -247,8 +354,7 @@ internal abstract class MenuHandlerBase : IMenuHandler
         }
 
         bool sameAsLastFocus = !string.IsNullOrWhiteSpace(State.LastFocusAnnouncement) &&
-            string.Equals(fallback, State.LastFocusAnnouncement, StringComparison.OrdinalIgnoreCase) &&
-            timestamp - State.LastFocusAnnouncedAt < TimeSpan.FromSeconds(1);
+            string.Equals(fallback, State.LastFocusAnnouncement, StringComparison.OrdinalIgnoreCase);
         if (sameAsLastFocus)
         {
             State.AnnouncedFallback = true;
@@ -260,8 +366,41 @@ internal abstract class MenuHandlerBase : IMenuHandler
         events.Add(new MenuNarrationEvent(fallback, true, MenuNarrationEventKind.Focus));
         State.LastFocusAnnouncement = fallback;
         State.LastFocusAnnouncedAt = timestamp;
+        State.PendingInitialFocus = null;
+        State.PendingInitialFocusAnnouncement = null;
         State.AnnouncedFallback = true;
         State.ForceNextFocus = true;
+    }
+
+    private bool ShouldDelayUnconfirmedInitialFocus(MenuFocus focus, string announcement)
+    {
+        if (State.SawHoverThisMode || State.LastFocus.HasValue || IsReliableInitialFocusSource(focus.Source))
+        {
+            State.PendingInitialFocus = null;
+            State.PendingInitialFocusAnnouncement = null;
+            return false;
+        }
+
+        bool sameAsPending = State.PendingInitialFocus.HasValue &&
+            State.PendingInitialFocus.Value.Equals(focus) &&
+            string.Equals(State.PendingInitialFocusAnnouncement, announcement, StringComparison.OrdinalIgnoreCase);
+        if (sameAsPending)
+        {
+            State.PendingInitialFocus = null;
+            State.PendingInitialFocusAnnouncement = null;
+            return false;
+        }
+
+        State.PendingInitialFocus = focus;
+        State.PendingInitialFocusAnnouncement = announcement;
+        return true;
+    }
+
+    private static bool IsReliableInitialFocusSource(string source)
+    {
+        return source.Equals("Main.focusMenu", StringComparison.Ordinal) ||
+            source.Equals("Main.selectedMenu", StringComparison.Ordinal) ||
+            source.Equals("PlayerMenuFallback", StringComparison.Ordinal);
     }
 
     /// <summary>
@@ -306,5 +445,29 @@ internal abstract class MenuHandlerBase : IMenuHandler
 
         return cleaned.Contains("back", StringComparison.OrdinalIgnoreCase) ||
             cleaned.Contains("close", StringComparison.OrdinalIgnoreCase);
+    }
+
+    protected static UIElement? FindFirstMatchingElement(UIElement? root, Func<UIElement, bool> predicate)
+    {
+        if (root is null)
+        {
+            return null;
+        }
+
+        if (predicate(root))
+        {
+            return root;
+        }
+
+        foreach (UIElement child in root.Children)
+        {
+            UIElement? match = FindFirstMatchingElement(child, predicate);
+            if (match is not null)
+            {
+                return match;
+            }
+        }
+
+        return null;
     }
 }

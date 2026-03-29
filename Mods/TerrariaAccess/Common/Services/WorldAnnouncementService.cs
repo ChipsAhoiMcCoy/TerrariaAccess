@@ -6,9 +6,7 @@ namespace TerrariaAccess.Common.Services;
 
 internal static class WorldAnnouncementService
 {
-    private static readonly TimeSpan RecentWindow = TimeSpan.FromSeconds(2);
     private static string? _lastAnnouncement;
-    private static DateTime _lastAnnouncedAt = DateTime.MinValue;
 
     public static void Initialize()
     {
@@ -32,7 +30,6 @@ internal static class WorldAnnouncementService
         }
 
         _lastAnnouncement = sanitized;
-        _lastAnnouncedAt = DateTime.UtcNow;
 
         ScreenReaderService.Announce(
             sanitized,
@@ -61,8 +58,6 @@ internal static class WorldAnnouncementService
             return false;
         }
 
-        TimeSpan threshold = window ?? RecentWindow;
-        return string.Equals(_lastAnnouncement, sanitized, StringComparison.OrdinalIgnoreCase) &&
-               DateTime.UtcNow - _lastAnnouncedAt < threshold;
+        return string.Equals(_lastAnnouncement, sanitized, StringComparison.OrdinalIgnoreCase);
     }
 }

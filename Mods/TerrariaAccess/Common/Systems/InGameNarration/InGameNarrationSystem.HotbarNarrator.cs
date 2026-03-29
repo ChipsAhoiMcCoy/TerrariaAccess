@@ -41,16 +41,14 @@ public sealed partial class InGameNarrationSystem
         private static string? _lastAnnouncedDescription;
         private static string? _pendingAnnouncement;
         private static string? _pendingAnnouncementKey;
-        private static int _pendingAnnouncementTicks;
-        private const int PendingAnnouncementTimeoutTicks = 1;
         private static bool _externalSuppressed;
-        private static int _inventoryClosedGraceFrames;
-        private const int InventoryCloseGracePeriod = 2;
+        private static int _suppressedSelectedSlot = -1;
+        private static int _suppressedItemType = -1;
+        private static int _suppressedPrefix = -1;
+        private static int _suppressedStack = -1;
 
         public void Update(Player player)
         {
-            TickPendingAnnouncement();
-
             if (ShouldSuppressHotbarNarration(player))
             {
                 Reset();
@@ -59,6 +57,17 @@ public sealed partial class InGameNarrationSystem
 
             int selectedSlot = player.selectedItem;
             Item held = player.HeldItem ?? new Item();
+
+            if (MatchesSuppressedSnapshot(selectedSlot, held))
+            {
+                _lastSelectedSlot = selectedSlot;
+                _lastItemType = held.type;
+                _lastPrefix = held.prefix;
+                _lastStack = held.stack;
+                _lastAnnouncedDescription = DescribeHeldItem(selectedSlot, held);
+                ClearSuppressedSnapshot();
+                return;
+            }
 
             if (selectedSlot == _lastSelectedSlot &&
                 held.type == _lastItemType &&
@@ -122,14 +131,6 @@ public sealed partial class InGameNarrationSystem
                 return true;
             }
 
-            // Suppress during grace period after inventory closes to prevent
-            // double-announcements during the transition
-            if (_inventoryClosedGraceFrames > 0)
-            {
-                _inventoryClosedGraceFrames--;
-                return true;
-            }
-
             // Suppress when inventory is open for ALL input types (not just gamepad)
             // This prevents HotbarNarrator from announcing simultaneously with InventoryNarrator
             return InventoryNarrator.IsInventoryUiOpen(player);
@@ -146,35 +147,40 @@ public sealed partial class InGameNarrationSystem
             return $"{label}, slot {slot + 1}";
         }
 
-        private static void TickPendingAnnouncement()
-        {
-            if (_pendingAnnouncementTicks <= 0)
-            {
-                return;
-            }
-
-            _pendingAnnouncementTicks--;
-
-            if (_pendingAnnouncementTicks == 0 && _pendingAnnouncement is not null)
-            {
-                NarrationInstrumentationContext.SetPendingKey(_pendingAnnouncementKey);
-                ScreenReaderService.Announce(_pendingAnnouncement, force: true);
-                ClearPendingAnnouncement();
-            }
-        }
-
         private static void QueuePendingAnnouncement(string description, string key)
         {
             _pendingAnnouncement = description;
             _pendingAnnouncementKey = key;
-            _pendingAnnouncementTicks = PendingAnnouncementTimeoutTicks;
+        }
+
+        private static bool MatchesSuppressedSnapshot(int selectedSlot, Item held)
+        {
+            return selectedSlot == _suppressedSelectedSlot &&
+                held.type == _suppressedItemType &&
+                held.prefix == _suppressedPrefix &&
+                held.stack == _suppressedStack;
+        }
+
+        private static void CaptureSuppressedSnapshot(int selectedSlot, Item held)
+        {
+            _suppressedSelectedSlot = selectedSlot;
+            _suppressedItemType = held.type;
+            _suppressedPrefix = held.prefix;
+            _suppressedStack = held.stack;
+        }
+
+        private static void ClearSuppressedSnapshot()
+        {
+            _suppressedSelectedSlot = -1;
+            _suppressedItemType = -1;
+            _suppressedPrefix = -1;
+            _suppressedStack = -1;
         }
 
         private static void ClearPendingAnnouncement()
         {
             _pendingAnnouncement = null;
             _pendingAnnouncementKey = null;
-            _pendingAnnouncementTicks = 0;
         }
 
         internal static bool TryDequeuePendingAnnouncement(out string announcement, out string? key)
@@ -215,15 +221,23 @@ public sealed partial class InGameNarrationSystem
 
         private static void OnInventoryOpened()
         {
-            // Clear last announced description so that when inventory closes,
-            // we announce the hotbar item fresh (prevents over-suppression)
-            _lastAnnouncedDescription = null;
+            ClearSuppressedSnapshot();
+            ClearPendingAnnouncement();
         }
 
         private static void OnInventoryClosed()
         {
-            // Apply grace period to prevent double-announcements when inventory closes
-            _inventoryClosedGraceFrames = InventoryCloseGracePeriod;
+            Player player = Main.LocalPlayer;
+            if (player is null)
+            {
+                return;
+            }
+
+            int selectedSlot = player.selectedItem;
+            Item held = player.HeldItem ?? new Item();
+            CaptureSuppressedSnapshot(selectedSlot, held);
+            _lastAnnouncedDescription = DescribeHeldItem(selectedSlot, held);
+            ClearPendingAnnouncement();
         }
 
         private static string BuildHotbarKey(int slot, Item item)

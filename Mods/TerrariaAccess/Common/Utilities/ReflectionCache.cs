@@ -413,12 +413,46 @@ internal static class ReflectionCache
 
     #endregion
 
+    #region Character and World Select Menus
+
+    /// <summary>
+    /// Reflection handles for Terraria.GameContent.UI.States.UICharacterSelect.
+    /// </summary>
+    internal static class UICharacterSelect
+    {
+        private static readonly Lazy<Type?> _type = new(() =>
+            Type.GetType("Terraria.GameContent.UI.States.UICharacterSelect, tModLoader"));
+
+        private static readonly Lazy<FieldInfo?> _playerList = new(() =>
+            Type?.GetField("_playerList", InstanceNonPublic));
+
+        internal static Type? Type => _type.Value;
+        internal static FieldInfo? PlayerList => _playerList.Value;
+    }
+
+    /// <summary>
+    /// Reflection handles for Terraria.GameContent.UI.States.UIWorldSelect.
+    /// </summary>
+    internal static class UIWorldSelect
+    {
+        private static readonly Lazy<Type?> _type = new(() =>
+            Type.GetType("Terraria.GameContent.UI.States.UIWorldSelect, tModLoader"));
+
+        private static readonly Lazy<FieldInfo?> _worldList = new(() =>
+            Type?.GetField("_worldList", InstanceNonPublic));
+
+        internal static Type? Type => _type.Value;
+        internal static FieldInfo? WorldList => _worldList.Value;
+    }
+
+    #endregion
+
     #region Mod and ModConfig (tModLoader Core Types)
 
     /// <summary>
     /// Reflection handles for Terraria.ModLoader.Mod (mod instance).
     /// </summary>
-    internal static class Mod
+    internal static class ModRef
     {
         private static readonly Lazy<Type?> _type = new(() =>
             Type.GetType("Terraria.ModLoader.Mod, tModLoader"));

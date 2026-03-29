@@ -27,7 +27,6 @@ internal sealed class ModConfigListHandler
     private bool _pendingConfigListNavigation;
     private bool _isConfigListFocused;
     private bool _justEntered;
-    private int _skipInputFrames;
 
     public ModConfigListHandler(AnnouncementGate gate)
     {
@@ -62,7 +61,6 @@ internal sealed class ModConfigListHandler
             _modListElements = null;
             _configListElements = null;
             _pendingConfigListNavigation = false;
-            _skipInputFrames = 5; // Skip initial frames to prevent button bleed-through
         }
 
         // Get list elements
@@ -139,13 +137,6 @@ internal sealed class ModConfigListHandler
                     _gate.TryAnnounce(noConfigs, false, isMenuContext, menuEventSink);
                 }
             }
-        }
-
-        // Skip input processing during cooldown
-        if (_skipInputFrames > 0)
-        {
-            _skipInputFrames--;
-            return;
         }
 
         // Handle navigation input
@@ -332,7 +323,6 @@ internal sealed class ModConfigListHandler
         if (ConfigSliderHandler.TryInvokeClick(element))
         {
             SoundEngine.PlaySound(SoundID.MenuOpen);
-            _skipInputFrames = 5; // Prevent button bleed-through to next screen
         }
     }
 
@@ -432,6 +422,5 @@ internal sealed class ModConfigListHandler
         _pendingConfigListNavigation = false;
         _isConfigListFocused = false;
         _justEntered = false;
-        _skipInputFrames = 0;
     }
 }

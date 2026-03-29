@@ -1,6 +1,7 @@
 #nullable enable
 using System;
 using System.Collections.Generic;
+using Terraria.IO;
 using TerrariaAccess.Common.Utilities;
 using Terraria;
 using Terraria.UI;
@@ -12,6 +13,9 @@ namespace TerrariaAccess.Common.Systems.MenuNarration.Handlers;
 /// </summary>
 internal sealed class WorldSelectionHandler : MenuHandlerBase
 {
+    private const string WorldSelectStateName = "UIWorldSelect";
+    private const string WorldListStateName = "UIWorldList";
+
     public override int Priority => 70; // Same as WorldCreationHandler and CharacterCreationHandler
 
     public override bool CanHandle(int menuMode, UIState? uiState)
@@ -71,6 +75,29 @@ internal sealed class WorldSelectionHandler : MenuHandlerBase
 
         TerrariaAccess.Instance?.Logger.Info($"[WorldSelectionHandler] Entered: {modeLabel}");
 
+        if (TryBuildEntryAnnouncements(context, out string? entryAction, out string? entryHover))
+        {
+            if (!string.IsNullOrWhiteSpace(modeLabel))
+            {
+                events.Add(new MenuNarrationEvent(modeLabel, true, MenuNarrationEventKind.ModeChanged));
+            }
+
+            if (!string.IsNullOrWhiteSpace(entryAction))
+            {
+                events.Add(new MenuNarrationEvent(entryAction, true, MenuNarrationEventKind.EntryFollowUp));
+                State.LastFocusAnnouncement = entryAction;
+                State.LastFocusAnnouncedAt = timestamp;
+                State.LastFocus = new MenuFocus(0, "ModeEntryPrimaryAction");
+            }
+
+            if (!string.IsNullOrWhiteSpace(entryHover))
+            {
+                State.SuppressedEntryHoverAnnouncement = entryHover;
+            }
+
+            return;
+        }
+
         // Handle hover first
         if (TryHandleWorldSelectionHover(context, events))
         {
@@ -102,6 +129,15 @@ internal sealed class WorldSelectionHandler : MenuHandlerBase
             return false;
         }
 
+        if (!string.IsNullOrWhiteSpace(State.SuppressedEntryHoverAnnouncement) &&
+            string.Equals(cleaned, State.SuppressedEntryHoverAnnouncement, StringComparison.OrdinalIgnoreCase))
+        {
+            State.SuppressedEntryHoverAnnouncement = null;
+            return true;
+        }
+
+        State.SuppressedEntryHoverAnnouncement = null;
+
         if (!IsAllowedHover(context.MenuMode, cleaned))
         {
             return false;
@@ -111,7 +147,49 @@ internal sealed class WorldSelectionHandler : MenuHandlerBase
         events.Add(new MenuNarrationEvent(cleaned, false, MenuNarrationEventKind.Hover));
         State.LastHoverAnnouncement = cleaned;
         State.LastHoverAnnouncedAt = context.Timestamp;
+        State.PendingHoverFocusSuppression = cleaned;
         State.SawHoverThisMode = true;
         return true;
+    }
+
+    private static bool IsWorldSelectionScreen(UIState? uiState)
+    {
+        string? typeName = uiState?.GetType().FullName;
+        return typeName?.Contains(WorldSelectStateName, StringComparison.Ordinal) == true ||
+            typeName?.Contains(WorldListStateName, StringComparison.Ordinal) == true;
+    }
+
+    private static bool TryBuildEntryAnnouncements(MenuNarrationContext context, out string? entryAction, out string? entryHover)
+    {
+        entryAction = null;
+        entryHover = null;
+
+        if (!IsWorldSelectionScreen(context.UiState) ||
+            !TryGetFirstListEntry(
+                context,
+                ReflectionCache.UIWorldSelect.WorldList,
+                static element => string.Equals(
+                    element.GetType().FullName,
+                    "Terraria.GameContent.UI.Elements.UIWorldListItem",
+                    StringComparison.Ordinal),
+                out UIElement? entry) ||
+            entry is null)
+        {
+            return false;
+        }
+
+        entryHover = TextSanitizer.Clean(MenuUiSelectionTracker.ResolveLabel(entry));
+
+        if (!TryGetAssignableField<WorldFileData>(entry, out WorldFileData? data) || data is null)
+        {
+            return false;
+        }
+
+        string worldName = string.IsNullOrWhiteSpace(data.Name)
+            ? LocalizationHelper.GetTextOrFallback("UI.WorldNameDefault", "World")
+            : TextSanitizer.Clean(data.Name);
+        string playLabel = LocalizationHelper.GetTextOrFallback("UI.Play", "Play");
+        entryAction = TextSanitizer.JoinWithComma(playLabel, worldName);
+        return !string.IsNullOrWhiteSpace(entryAction);
     }
 }

@@ -329,7 +329,7 @@ internal sealed class PassageDetectorEmitter : AudioEmitterBase
         for (int y = gapStart; y < gapStart + gapHeight; y++)
         {
             Tile tile = Framing.GetTileSafely(columnX, y);
-            if (tile.WallType == 0)
+            if (tile.WallType == WallID.None)
             {
                 return false;
             }

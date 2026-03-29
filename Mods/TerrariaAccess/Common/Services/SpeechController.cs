@@ -356,20 +356,12 @@ internal sealed class AnnouncementTracker
     private readonly object _syncRoot = new();
     private readonly Queue<string> _recentMessages = new();
     private readonly Dictionary<AnnouncementCategory, string?> _lastCategoryAnnouncements = new();
-    private readonly Dictionary<AnnouncementCategory, DateTime> _lastCategoryAnnouncedAt = new();
-    private readonly Dictionary<AnnouncementCategory, TimeSpan> _categoryWindows = new();
 
     private string? _lastMessage;
-    private DateTime _lastAnnouncedAt = DateTime.MinValue;
+    private AnnouncementCategory _lastCategory = AnnouncementCategory.Default;
 
     public AnnouncementTracker()
     {
-        // Set default windows for each category
-        _categoryWindows[AnnouncementCategory.Default] = TimeSpan.FromMilliseconds(250);
-        _categoryWindows[AnnouncementCategory.Tile] = TimeSpan.FromMilliseconds(150);
-        _categoryWindows[AnnouncementCategory.Wall] = TimeSpan.FromMilliseconds(150);
-        _categoryWindows[AnnouncementCategory.Pickup] = TimeSpan.FromMilliseconds(150);
-        _categoryWindows[AnnouncementCategory.World] = TimeSpan.FromSeconds(2);
     }
 
     /// <summary>
@@ -399,10 +391,6 @@ internal sealed class AnnouncementTracker
     /// </summary>
     public void SetCategoryWindow(AnnouncementCategory category, TimeSpan window)
     {
-        lock (_syncRoot)
-        {
-            _categoryWindows[category] = window;
-        }
     }
 
     /// <summary>
@@ -414,9 +402,8 @@ internal sealed class AnnouncementTracker
         {
             _recentMessages.Clear();
             _lastCategoryAnnouncements.Clear();
-            _lastCategoryAnnouncedAt.Clear();
             _lastMessage = null;
-            _lastAnnouncedAt = DateTime.MinValue;
+            _lastCategory = AnnouncementCategory.Default;
         }
     }
 
@@ -427,28 +414,8 @@ internal sealed class AnnouncementTracker
     {
         lock (_syncRoot)
         {
-            // Check category-specific suppression
-            if (_lastCategoryAnnouncements.TryGetValue(category, out string? lastForCategory) &&
-                string.Equals(lastForCategory, text, StringComparison.OrdinalIgnoreCase))
-            {
-                DateTime lastAt = _lastCategoryAnnouncedAt.TryGetValue(category, out DateTime last)
-                    ? last
-                    : DateTime.MinValue;
-                if (now - lastAt < GetRepeatWindow(category))
-                {
-                    return true;
-                }
-            }
-
-            // Check global suppression for default category
-            if (category == AnnouncementCategory.Default &&
-                string.Equals(text, _lastMessage, StringComparison.OrdinalIgnoreCase) &&
-                now - _lastAnnouncedAt < GetRepeatWindow(AnnouncementCategory.Default))
-            {
-                return true;
-            }
-
-            return false;
+            return string.Equals(text, _lastMessage, StringComparison.OrdinalIgnoreCase) &&
+                category == _lastCategory;
         }
     }
 
@@ -460,10 +427,8 @@ internal sealed class AnnouncementTracker
         lock (_syncRoot)
         {
             _lastCategoryAnnouncements[category] = text;
-            _lastCategoryAnnouncedAt[category] = now;
-
             _lastMessage = text;
-            _lastAnnouncedAt = now;
+            _lastCategory = category;
 
             _recentMessages.Enqueue(text);
             while (_recentMessages.Count > MaxRecentMessages)
@@ -473,15 +438,6 @@ internal sealed class AnnouncementTracker
         }
     }
 
-    private TimeSpan GetRepeatWindow(AnnouncementCategory category)
-    {
-        if (_categoryWindows.TryGetValue(category, out TimeSpan window))
-        {
-            return window;
-        }
-
-        return _categoryWindows[AnnouncementCategory.Default];
-    }
 }
 
 /// <summary>

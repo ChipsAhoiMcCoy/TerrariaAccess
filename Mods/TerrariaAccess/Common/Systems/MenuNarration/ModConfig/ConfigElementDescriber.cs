@@ -526,14 +526,14 @@ internal static class ConfigElementDescriber
 
         try
         {
-            object? localized = ReflectionCache.Mod.DisplayName?.GetValue(mod);
+            object? localized = ReflectionCache.ModRef.DisplayName?.GetValue(mod);
             string display = ExtractLocalized(localized);
             if (!string.IsNullOrWhiteSpace(display))
             {
                 return display;
             }
 
-            if (ReflectionCache.Mod.Name?.GetValue(mod) is string name && !string.IsNullOrWhiteSpace(name))
+            if (ReflectionCache.ModRef.Name?.GetValue(mod) is string name && !string.IsNullOrWhiteSpace(name))
             {
                 return TextSanitizer.Clean(name);
             }

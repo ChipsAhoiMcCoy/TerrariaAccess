@@ -142,13 +142,6 @@ internal sealed class TitleMenuHandler : MenuHandlerBase
 
     private bool TryHandleTitleMenuFocus(MenuNarrationContext context, DateTime timestamp, List<MenuNarrationEvent> events)
     {
-        // Wait for menu item scales to stabilize before announcing.
-        // This prevents announcing incorrect items (e.g., Settings) before the menu settles on Singleplayer.
-        if (timestamp - State.ModeEnteredAt < TimeSpan.FromMilliseconds(150))
-        {
-            return false;
-        }
-
         return TryHandleFocus(context, ModeJustEntered, events);
     }
 

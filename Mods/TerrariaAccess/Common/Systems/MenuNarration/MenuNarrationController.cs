@@ -15,11 +15,6 @@ internal sealed class MenuNarrationController
 {
     private readonly MenuNarrationHandlerRegistry _registry;
 
-    // After a ModeChanged announcement (e.g. "Player selection"), subsequent events
-    // must not interrupt for this window so the screen reader finishes speaking.
-    private DateTime _lastModeChangeTime = DateTime.MinValue;
-    private static readonly TimeSpan ModeChangeProtectionWindow = TimeSpan.FromMilliseconds(800);
-
     internal MenuNarrationController()
     {
         _registry = new MenuNarrationHandlerRegistry();
@@ -49,12 +44,12 @@ internal sealed class MenuNarrationController
         if (!Main.gameMenu)
         {
             _registry.Reset();
-            _lastModeChangeTime = DateTime.MinValue;
             return;
         }
 
         MenuNarrationContext context = new(main, Main.MenuUI?.CurrentState, Main.menuMode, DateTime.UtcNow);
         IReadOnlyList<MenuNarrationEvent> events = _registry.Process(context);
+        bool queueNextAfterModeChange = false;
 
         foreach (MenuNarrationEvent narrationEvent in events)
         {
@@ -65,19 +60,22 @@ internal sealed class MenuNarrationController
 
             if (narrationEvent.Kind == MenuNarrationEventKind.ModeChanged)
             {
-                _lastModeChangeTime = context.Timestamp;
+                queueNextAfterModeChange = true;
                 ScreenReaderService.Announce(narrationEvent.Text, narrationEvent.Force);
             }
             else
             {
-                // Within the protection window after a mode change, don't interrupt
-                // so the screen reader finishes speaking the mode label (e.g. "Player
-                // selection") before any follow-up hover/focus announcements.
-                bool inProtection = context.Timestamp - _lastModeChangeTime < ModeChangeProtectionWindow;
+                bool requestInterrupt = true;
+                if (queueNextAfterModeChange)
+                {
+                    requestInterrupt = narrationEvent.Kind != MenuNarrationEventKind.EntryFollowUp;
+                    queueNextAfterModeChange = false;
+                }
+
                 ScreenReaderService.Announce(
                     narrationEvent.Text,
                     narrationEvent.Force,
-                    requestInterrupt: !inProtection);
+                    requestInterrupt: requestInterrupt);
             }
         }
     }

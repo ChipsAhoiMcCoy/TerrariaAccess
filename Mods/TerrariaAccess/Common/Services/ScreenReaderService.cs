@@ -330,10 +330,6 @@ public static class ScreenReaderService
     {
         var provider = new TolkSpeechProvider();
         var controller = new SpeechController(provider);
-        controller.SetCategoryWindow(AnnouncementCategory.World, TimeSpan.FromSeconds(2));
-        controller.SetCategoryWindow(AnnouncementCategory.Tile, TimeSpan.FromMilliseconds(150));
-        controller.SetCategoryWindow(AnnouncementCategory.Wall, TimeSpan.FromMilliseconds(150));
-        controller.SetCategoryWindow(AnnouncementCategory.Pickup, TimeSpan.FromMilliseconds(150));
         return new SpeechService(controller);
     }
 }

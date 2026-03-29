@@ -4,7 +4,6 @@ using System.Collections.Generic;
 using System.Diagnostics;
 using System.IO;
 using System.Runtime.InteropServices;
-using System.Threading;
 using Terraria;
 
 namespace TerrariaAccess.Common.Services;
@@ -256,6 +255,7 @@ internal sealed class TolkSpeechProvider : ISpeechProvider
 
                 bool hasNvdaDll = File.Exists(nvdaDll);
                 bool hasSapiDll = File.Exists(sapiDll);
+                Process[] nvdaProcesses = Array.Empty<Process>();
 
                 TerrariaAccess.Instance?.Logger.Info($"[Tolk] Companion DLLs in {tolkDir}:");
                 TerrariaAccess.Instance?.Logger.Info($"[Tolk]   nvdaControllerClient64.dll: {(hasNvdaDll ? "FOUND" : "MISSING")}");
@@ -265,13 +265,12 @@ internal sealed class TolkSpeechProvider : ISpeechProvider
                 int nvdaProcessCount = 0;
                 try
                 {
-                    Process[] nvdaProcesses = Process.GetProcessesByName("nvda");
+                    nvdaProcesses = Process.GetProcessesByName("nvda");
                     nvdaProcessCount = nvdaProcesses.Length;
                     TerrariaAccess.Instance?.Logger.Info($"[Tolk] NVDA process check: {nvdaProcessCount} instance(s) found");
                     foreach (var proc in nvdaProcesses)
                     {
                         TerrariaAccess.Instance?.Logger.Info($"[Tolk]   - PID {proc.Id}, Started: {proc.StartTime:HH:mm:ss}, SessionId: {proc.SessionId}");
-                        proc.Dispose();
                     }
 
                     // Log current process info for comparison
@@ -340,8 +339,9 @@ internal sealed class TolkSpeechProvider : ISpeechProvider
                 {
                     for (int retry = 1; retry <= 3; retry++)
                     {
-                        TerrariaAccess.Instance?.Logger.Info($"[Tolk] NVDA detected but not responding. Retry {retry}/3 after 500ms...");
-                        Thread.Sleep(500);
+                        bool readySignal = WaitForNvdaInputIdle(nvdaProcesses, 500);
+                        TerrariaAccess.Instance?.Logger.Info(
+                            $"[Tolk] NVDA detected but not responding. Retry {retry}/3 after readiness check (signaled={readySignal})...");
 
                         _unload();
                         _trySAPI(false);
@@ -402,6 +402,11 @@ internal sealed class TolkSpeechProvider : ISpeechProvider
                 }
                 finally
                 {
+                    foreach (Process proc in nvdaProcesses)
+                    {
+                        proc.Dispose();
+                    }
+
                     // Reset DLL directory to default to avoid affecting other code
                     if (dllDirWasSet)
                     {
@@ -445,6 +450,38 @@ internal sealed class TolkSpeechProvider : ISpeechProvider
         _silence = null;
         _trySAPI = null;
         _available = false;
+    }
+
+    private static bool WaitForNvdaInputIdle(Process[] nvdaProcesses, int timeoutMilliseconds)
+    {
+        foreach (Process process in nvdaProcesses)
+        {
+            try
+            {
+                if (process.HasExited)
+                {
+                    continue;
+                }
+
+                if (process.WaitForInputIdle(timeoutMilliseconds))
+                {
+                    return true;
+                }
+            }
+            catch (InvalidOperationException)
+            {
+                if (!process.HasExited)
+                {
+                    return true;
+                }
+            }
+            catch
+            {
+                // ignore readiness probe failures
+            }
+        }
+
+        return false;
     }
 
     private static IEnumerable<string> EnumerateCandidatePaths()
