@@ -55,6 +55,12 @@ internal sealed class WorldSelectionHandler : MenuHandlerBase
             return events;
         }
 
+        if (MenuNarrationCatalog.IsDeletionMenuMode(context.MenuMode))
+        {
+            TryHandleFocus(context, false, events);
+            return events;
+        }
+
         // Handle hover events for world list items.
         // This is a UIState-based screen — all navigation is via hover on UIElements,
         // not via Main.focusMenu / Main.menuItems. Do NOT call TryHandleFocus or
@@ -74,6 +80,12 @@ internal sealed class WorldSelectionHandler : MenuHandlerBase
         MenuNarrationCatalog.LogMenuSnapshot(context.MenuMode);
 
         TerrariaAccess.Instance?.Logger.Info($"[WorldSelectionHandler] Entered: {modeLabel}");
+
+        if (MenuNarrationCatalog.IsDeletionMenuMode(context.MenuMode))
+        {
+            TryAnnounceDeletionDialogEntry(context, events);
+            return;
+        }
 
         if (TryBuildEntryAnnouncements(context, out string? entryAction, out string? entryHover))
         {

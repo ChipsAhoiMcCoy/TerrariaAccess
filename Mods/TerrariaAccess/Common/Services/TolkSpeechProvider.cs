@@ -51,6 +51,7 @@ internal sealed class TolkSpeechProvider : ISpeechProvider
     private TolkHasSpeechDelegate? _hasSpeech;
     private TolkDetectScreenReaderDelegate? _detectScreenReader;
     private TolkSpeakDelegate? _speak;
+    private TolkIsSpeakingDelegate? _isSpeaking;
     private TolkSilenceDelegate? _silence;
     private TolkTrySAPIDelegate? _trySAPI;
 
@@ -59,6 +60,31 @@ internal sealed class TolkSpeechProvider : ISpeechProvider
     public bool IsAvailable => _available;
 
     public bool IsInitialized => _initialized;
+
+    public bool IsSpeaking
+    {
+        get
+        {
+            lock (_syncRoot)
+            {
+                if (!_available || _isSpeaking is null)
+                {
+                    return false;
+                }
+
+                try
+                {
+                    return _isSpeaking();
+                }
+                catch (Exception ex)
+                {
+                    _lastError = ex.Message;
+                    TerrariaAccess.Instance?.Logger.Debug($"[Tolk] IsSpeaking threw {ex.Message}. Treating provider as idle.");
+                    return false;
+                }
+            }
+        }
+    }
 
     public void Initialize()
     {
@@ -126,6 +152,7 @@ internal sealed class TolkSpeechProvider : ISpeechProvider
             _hasSpeech = null;
             _detectScreenReader = null;
             _speak = null;
+            _isSpeaking = null;
             _silence = null;
             _trySAPI = null;
             _lastMessage = null;
@@ -243,6 +270,10 @@ internal sealed class TolkSpeechProvider : ISpeechProvider
                     NativeLibrary.GetExport(handle, "Tolk_DetectScreenReader"));
                 _speak = Marshal.GetDelegateForFunctionPointer<TolkSpeakDelegate>(
                     NativeLibrary.GetExport(handle, "Tolk_Speak"));
+                if (NativeLibrary.TryGetExport(handle, "Tolk_IsSpeaking", out IntPtr isSpeakingPtr))
+                {
+                    _isSpeaking = Marshal.GetDelegateForFunctionPointer<TolkIsSpeakingDelegate>(isSpeakingPtr);
+                }
                 _silence = Marshal.GetDelegateForFunctionPointer<TolkSilenceDelegate>(
                     NativeLibrary.GetExport(handle, "Tolk_Silence"));
                 _trySAPI = Marshal.GetDelegateForFunctionPointer<TolkTrySAPIDelegate>(
@@ -447,6 +478,7 @@ internal sealed class TolkSpeechProvider : ISpeechProvider
         _hasSpeech = null;
         _detectScreenReader = null;
         _speak = null;
+        _isSpeaking = null;
         _silence = null;
         _trySAPI = null;
         _available = false;

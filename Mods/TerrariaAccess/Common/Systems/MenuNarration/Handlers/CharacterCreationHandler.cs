@@ -62,6 +62,12 @@ internal sealed class CharacterCreationHandler : MenuHandlerBase
             return events;
         }
 
+        if (MenuNarrationCatalog.IsDeletionMenuMode(context.MenuMode))
+        {
+            TryHandleFocus(context, false, events);
+            return events;
+        }
+
         // Handle hover events for character creation elements.
         // This is a UIState-based screen — all navigation is via hover on UIElements,
         // not via Main.focusMenu / Main.menuItems. Do NOT call TryHandleFocus or
@@ -80,6 +86,12 @@ internal sealed class CharacterCreationHandler : MenuHandlerBase
         MenuNarrationCatalog.LogMenuSnapshot(context.MenuMode);
 
         TerrariaAccess.Instance?.Logger.Info($"[CharacterCreationHandler] Entered: {modeLabel}");
+
+        if (MenuNarrationCatalog.IsDeletionMenuMode(context.MenuMode))
+        {
+            TryAnnounceDeletionDialogEntry(context, events);
+            return;
+        }
 
         if (TryBuildEntryAnnouncements(context, out string? entryAction, out string? entryHover))
         {

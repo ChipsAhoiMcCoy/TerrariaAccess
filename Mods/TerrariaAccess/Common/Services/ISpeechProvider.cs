@@ -10,6 +10,8 @@ internal interface ISpeechProvider
 
     bool IsInitialized { get; }
 
+    bool IsSpeaking { get; }
+
     void Initialize();
 
     void Shutdown();

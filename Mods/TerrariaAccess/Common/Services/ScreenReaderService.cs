@@ -43,6 +43,7 @@ internal sealed class SpeechService : ISpeechService
     }
 
     public void Interrupt(SpeechChannel channel = SpeechChannel.Primary) => _controller.Interrupt(channel);
+    public void Pump() => _controller.Pump();
 
     public bool ToggleSpeechEnabled() => _controller.ToggleMute();
     public bool ToggleSpeechInterrupt() => _controller.ToggleInterrupts();
@@ -176,6 +177,14 @@ public static class ScreenReaderService
     public static void Interrupt(SpeechChannel channel = SpeechChannel.Primary)
     {
         ActiveService.Interrupt(channel);
+    }
+
+    internal static void Pump()
+    {
+        if (ActiveService is SpeechService service)
+        {
+            service.Pump();
+        }
     }
 
     /// <summary>

@@ -257,7 +257,7 @@ internal abstract class MenuHandlerBase : IMenuHandler
         int currentMode = context.MenuMode;
         DateTime timestamp = context.Timestamp;
 
-        if (!FocusResolver.TryGetFocus(context.Main, out MenuFocus focus))
+        if (!TryResolveFocusAnnouncement(context, out MenuFocus focus, out string optionLabel, out string announcement))
         {
             if (State.FocusFailureCount++ < 5)
             {
@@ -267,10 +267,6 @@ internal abstract class MenuHandlerBase : IMenuHandler
         }
 
         State.FocusFailureCount = 0;
-
-        string optionLabel = MenuNarrationCatalog.DescribeMenuItem(currentMode, focus.Index);
-        bool hasDeletionAnnouncement = MenuNarrationCatalog.TryBuildDeletionAnnouncement(currentMode, focus.Index, out string combinedLabel);
-        string announcement = hasDeletionAnnouncement ? combinedLabel : optionLabel;
 
         if (ShouldDelayUnconfirmedInitialFocus(focus, announcement))
         {
@@ -305,13 +301,17 @@ internal abstract class MenuHandlerBase : IMenuHandler
             {
                 TerrariaAccess.Instance?.Logger.Info($"[MenuHandler] Focus {focus.Index} via {focus.Source} -> {optionLabel}");
                 bool forceSpeech = force || State.ForceNextFocus || announcementChanged;
-                events.Add(new MenuNarrationEvent(announcement, forceSpeech, MenuNarrationEventKind.Focus));
+                MenuNarrationEventKind eventKind = State.QueueNextFocusAsEntryFollowUp
+                    ? MenuNarrationEventKind.EntryFollowUp
+                    : MenuNarrationEventKind.Focus;
+                events.Add(new MenuNarrationEvent(announcement, forceSpeech, eventKind));
                 State.LastFocusAnnouncement = announcement;
                 State.LastFocusAnnouncedAt = timestamp;
                 State.PendingHoverFocusSuppression = null;
                 State.PendingInitialFocus = null;
                 State.PendingInitialFocusAnnouncement = null;
                 State.ForceNextFocus = false;
+                State.QueueNextFocusAsEntryFollowUp = false;
             }
             else
             {
@@ -327,6 +327,63 @@ internal abstract class MenuHandlerBase : IMenuHandler
         State.LastFocus = focus;
         State.AnnouncedFallback = false;
         return true;
+    }
+
+    protected bool TryAnnounceDeletionDialogEntry(MenuNarrationContext context, List<MenuNarrationEvent> events)
+    {
+        if (!MenuNarrationCatalog.IsDeletionMenuMode(context.MenuMode))
+        {
+            return false;
+        }
+
+        bool hasPrompt = MenuNarrationCatalog.TryGetDeletionPrompt(context.MenuMode, out string prompt) &&
+            !string.IsNullOrWhiteSpace(prompt);
+        bool hasFocus = TryResolveFocusAnnouncement(context, out MenuFocus focus, out _, out string announcement) &&
+            !string.IsNullOrWhiteSpace(announcement);
+
+        if (hasPrompt)
+        {
+            events.Add(new MenuNarrationEvent(prompt, true, MenuNarrationEventKind.ModeChanged));
+            State.LastModeAnnouncement = prompt;
+            State.LastModeAnnouncedAt = context.Timestamp;
+
+            if (hasFocus)
+            {
+                events.Add(new MenuNarrationEvent(announcement, true, MenuNarrationEventKind.EntryFollowUp));
+                State.LastFocusAnnouncement = announcement;
+                State.LastFocusAnnouncedAt = context.Timestamp;
+                State.LastFocus = focus;
+                State.QueueNextFocusAsEntryFollowUp = false;
+            }
+            else
+            {
+                State.QueueNextFocusAsEntryFollowUp = true;
+            }
+
+            State.PendingHoverFocusSuppression = null;
+            State.PendingInitialFocus = null;
+            State.PendingInitialFocusAnnouncement = null;
+            State.AnnouncedFallback = false;
+            State.ForceNextFocus = false;
+            return true;
+        }
+
+        if (hasFocus)
+        {
+            events.Add(new MenuNarrationEvent(announcement, true, MenuNarrationEventKind.EntryFollowUp));
+            State.LastFocusAnnouncement = announcement;
+            State.LastFocusAnnouncedAt = context.Timestamp;
+            State.LastFocus = focus;
+            State.PendingHoverFocusSuppression = null;
+            State.PendingInitialFocus = null;
+            State.PendingInitialFocusAnnouncement = null;
+            State.AnnouncedFallback = false;
+            State.ForceNextFocus = false;
+            State.QueueNextFocusAsEntryFollowUp = false;
+            return true;
+        }
+
+        return false;
     }
 
     /// <summary>
@@ -469,5 +526,43 @@ internal abstract class MenuHandlerBase : IMenuHandler
         }
 
         return null;
+    }
+
+    private bool TryResolveFocusAnnouncement(
+        MenuNarrationContext context,
+        out MenuFocus focus,
+        out string optionLabel,
+        out string announcement)
+    {
+        focus = default;
+        optionLabel = string.Empty;
+        announcement = string.Empty;
+
+        if (!FocusResolver.TryGetFocus(context.Main, out focus))
+        {
+            return false;
+        }
+
+        bool isDeletionMenu = MenuNarrationCatalog.IsDeletionMenuMode(context.MenuMode);
+        bool hasDeletionResponse = false;
+        string deletionResponse = string.Empty;
+
+        if (isDeletionMenu)
+        {
+            hasDeletionResponse = MenuNarrationCatalog.TryGetDeletionResponseLabel(context.MenuMode, focus.Index, out deletionResponse);
+            if (!hasDeletionResponse)
+            {
+                return false;
+            }
+        }
+
+        optionLabel = MenuNarrationCatalog.DescribeMenuItem(context.MenuMode, focus.Index);
+        if (hasDeletionResponse)
+        {
+            optionLabel = deletionResponse;
+        }
+
+        announcement = optionLabel;
+        return !string.IsNullOrWhiteSpace(announcement);
     }
 }

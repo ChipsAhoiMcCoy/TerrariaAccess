@@ -22,6 +22,7 @@ internal sealed class MenuNarrationController
         // Register handlers in any order - they're sorted by priority automatically
         // Higher priority handlers are checked first
         _registry.RegisterHandler(new ModConfigHandler());        // Priority 100 - highest, catches mod config screens
+        _registry.RegisterHandler(new DeletionConfirmationHandler()); // Priority 90 - deletion dialogs override retained UI states
         _registry.RegisterHandler(new WorldCreationHandler());    // Priority 70
         _registry.RegisterHandler(new WorldSelectionHandler());   // Priority 70 - world selection (UIWorldSelect, UIWorldList)
         _registry.RegisterHandler(new CharacterCreationHandler()); // Priority 70
@@ -65,10 +66,10 @@ internal sealed class MenuNarrationController
             }
             else
             {
-                bool requestInterrupt = true;
+                bool requestInterrupt = narrationEvent.Kind != MenuNarrationEventKind.EntryFollowUp;
                 if (queueNextAfterModeChange)
                 {
-                    requestInterrupt = narrationEvent.Kind != MenuNarrationEventKind.EntryFollowUp;
+                    requestInterrupt = false;
                     queueNextAfterModeChange = false;
                 }
 

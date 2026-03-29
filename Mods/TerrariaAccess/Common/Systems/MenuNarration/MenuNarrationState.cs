@@ -32,6 +32,7 @@ internal sealed class MenuNarrationState
     internal MenuFocus? PendingInitialFocus;
     internal string? PendingInitialFocusAnnouncement;
     internal string? SuppressedEntryHoverAnnouncement;
+    internal bool QueueNextFocusAsEntryFollowUp;
 
     internal void ResetForMode(int mode)
     {
@@ -48,6 +49,7 @@ internal sealed class MenuNarrationState
         PendingInitialFocus = null;
         PendingInitialFocusAnnouncement = null;
         SuppressedEntryHoverAnnouncement = null;
+        QueueNextFocusAsEntryFollowUp = false;
         ResetSliderTracking();
     }
 
@@ -64,6 +66,7 @@ internal sealed class MenuNarrationState
         PendingInitialFocus = null;
         PendingInitialFocusAnnouncement = null;
         SuppressedEntryHoverAnnouncement = null;
+        QueueNextFocusAsEntryFollowUp = false;
     }
 
     internal void ResetSliderTracking()

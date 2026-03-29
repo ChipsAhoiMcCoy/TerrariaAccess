@@ -81,6 +81,12 @@ internal sealed class FallbackMenuHandler : MenuHandlerBase
             return;
         }
 
+        if (MenuNarrationCatalog.IsDeletionMenuMode(context.MenuMode))
+        {
+            TryAnnounceDeletionDialogEntry(context, events);
+            return;
+        }
+
         // Handle hover first - this is most reliable
         if (TryHandleUiHover(context, events))
         {

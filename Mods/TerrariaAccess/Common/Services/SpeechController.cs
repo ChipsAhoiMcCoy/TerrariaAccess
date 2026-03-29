@@ -447,6 +447,7 @@ internal sealed class SpeechController
 {
     private readonly object _syncRoot = new();
     private readonly Queue<SpeechRequest> _pending = new();
+    private readonly Queue<SpeechRequest> _deferred = new();
     private readonly Dictionary<SpeechChannel, ISpeechProvider> _providersByChannel = new();
     private readonly List<ISpeechProvider> _providers = new();
     private readonly SpeechCoordinator _coordinator = new();
@@ -496,6 +497,7 @@ internal sealed class SpeechController
             _muted = false;
             _interruptEnabled = true;
             _pending.Clear();
+            _deferred.Clear();
         }
 
         _coordinator.Reset();
@@ -517,6 +519,7 @@ internal sealed class SpeechController
         lock (_syncRoot)
         {
             _pending.Clear();
+            _deferred.Clear();
             _initialized = false;
             _muted = false;
             _interruptEnabled = false;
@@ -700,10 +703,19 @@ internal sealed class SpeechController
 
         lock (_syncRoot)
         {
+            // Non-interrupting announcements should be handed to the provider immediately
+            // so Tolk can queue them natively. Relying on IsSpeaking here can strand short
+            // follow-up messages like menu defaults ("Yes", "Play, <name>") behind an
+            // unreliable provider speaking state.
             _pending.Enqueue(normalized);
         }
 
         FlushQueue();
+    }
+
+    internal void Pump()
+    {
+        FlushDeferredQueue();
     }
 
     private void FlushQueue()
@@ -759,6 +771,41 @@ internal sealed class SpeechController
 
         LogNarration(request, provider, logOnly: false);
         ScreenReaderDiagnostics.LogSpeechEvent(request, provider.Name, logOnly: false);
+    }
+
+    private void FlushDeferredQueue()
+    {
+        while (true)
+        {
+            SpeechRequest request;
+            lock (_syncRoot)
+            {
+                if (_deferred.Count == 0)
+                {
+                    return;
+                }
+
+                request = _deferred.Peek();
+            }
+
+            ISpeechProvider provider = ResolveProvider(request.Channel);
+            if (provider.IsSpeaking)
+            {
+                return;
+            }
+
+            lock (_syncRoot)
+            {
+                if (_deferred.Count == 0)
+                {
+                    return;
+                }
+
+                _pending.Enqueue(_deferred.Dequeue());
+            }
+
+            FlushQueue();
+        }
     }
 
     private void LogNarration(SpeechRequest request, ISpeechProvider provider, bool logOnly)

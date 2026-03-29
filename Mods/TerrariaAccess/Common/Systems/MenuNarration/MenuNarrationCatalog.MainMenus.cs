@@ -180,9 +180,26 @@ internal static partial class MenuNarrationCatalog
         }
     }
 
-    public static bool TryBuildDeletionAnnouncement(int menuMode, int focusIndex, out string combinedLabel)
+    public static bool TryGetDeletionPrompt(int menuMode, out string prompt)
     {
-        combinedLabel = string.Empty;
+        prompt = string.Empty;
+        if (!IsDeletionMenuMode(menuMode))
+        {
+            return false;
+        }
+
+        prompt = DescribeMenuItem(menuMode, 0);
+        if (string.IsNullOrWhiteSpace(prompt))
+        {
+            return false;
+        }
+
+        return true;
+    }
+
+    public static bool TryGetDeletionResponseLabel(int menuMode, int focusIndex, out string responseLabel)
+    {
+        responseLabel = string.Empty;
 
         if (focusIndex is not (1 or 2))
         {
@@ -194,23 +211,11 @@ internal static partial class MenuNarrationCatalog
             return false;
         }
 
-        string prompt = DescribeMenuItem(menuMode, 0);
-        if (string.IsNullOrWhiteSpace(prompt))
-        {
-            return false;
-        }
-
-        string response = focusIndex == 1 ? GetDeletionConfirmLabel() : GetDeletionCancelLabel();
-        if (string.IsNullOrWhiteSpace(response))
-        {
-            return false;
-        }
-
-        combinedLabel = TextSanitizer.Clean($"{prompt} {response}".Trim());
-        return !string.IsNullOrWhiteSpace(combinedLabel);
+        responseLabel = focusIndex == 1 ? GetDeletionConfirmLabel() : GetDeletionCancelLabel();
+        return !string.IsNullOrWhiteSpace(responseLabel);
     }
 
-    private static bool IsDeletionMenuMode(int menuMode)
+    public static bool IsDeletionMenuMode(int menuMode)
     {
         return menuMode == MenuID.CharacterDeletion
             || menuMode == MenuID.CharacterDeletionConfirmation
