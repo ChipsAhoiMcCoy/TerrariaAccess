@@ -415,8 +415,7 @@ public abstract class ModMenuAccessibilityBase : ModSystem
             bool inventorySelectNow = false;
             if (GamepadEmulation.GamepadEmulationKeybinds.InventorySelect is { } selectKeybind)
             {
-                inventorySelectNow = selectKeybind.Current
-                    || GamepadEmulation.VirtualTriggerService.IsKeybindPressedRaw(selectKeybind);
+                inventorySelectNow = GamepadEmulation.VirtualTriggerService.IsKeybindPressed(selectKeybind);
             }
 
             if (!input.ActionPressed)

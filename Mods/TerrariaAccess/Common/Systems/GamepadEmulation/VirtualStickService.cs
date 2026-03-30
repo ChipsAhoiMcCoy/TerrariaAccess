@@ -184,9 +184,7 @@ internal static class VirtualStickService
     /// </summary>
     private static bool IsKeybindPressed(ModKeybind? keybind)
     {
-        return keybind is not null &&
-               (VirtualTriggerService.IsKeybindCurrentlyPressed(keybind) ||
-                VirtualTriggerService.IsKeybindPressedRaw(keybind));
+        return VirtualTriggerService.IsKeybindPressed(keybind);
     }
 
     /// <summary>

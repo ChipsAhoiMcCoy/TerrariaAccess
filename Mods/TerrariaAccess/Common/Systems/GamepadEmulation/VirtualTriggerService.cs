@@ -1,6 +1,7 @@
 #nullable enable
 using System;
 using System.Collections.Generic;
+using System.Reflection;
 using Microsoft.Xna.Framework.Input;
 using Terraria;
 using Terraria.GameInput;
@@ -15,10 +16,17 @@ internal static class VirtualTriggerService
 {
     private static bool _wasMouseLeftTriggerActive;
     private static bool _wasMouseRightTriggerActive;
+    private static readonly PropertyInfo? ModKeybindFullNameProperty =
+        typeof(ModKeybind).GetProperty("FullName", BindingFlags.Instance | BindingFlags.NonPublic);
+    private static readonly InputMode[] RawKeybindModes =
+    {
+        InputMode.Keyboard,
+        InputMode.KeyboardUI
+    };
 
     /// <summary>
     /// Injects a virtual trigger from a ModKeybind into the game's trigger pack.
-    /// Uses both ModKeybind.Current and raw keyboard state detection for reliability.
+    /// Uses guarded trigger-state lookup and raw keyboard state detection for reliability.
     /// </summary>
     internal static void InjectFromKeybind(ModKeybind? keybind, string triggerName)
     {
@@ -29,7 +37,7 @@ internal static class VirtualTriggerService
 
         // Check ModKeybind first, then fall back to raw keyboard state detection
         // This ensures detection works even in gamepad UI mode
-        bool isPressed = IsKeybindCurrentlyPressed(keybind) || IsKeybindPressedRaw(keybind);
+        bool isPressed = IsKeybindPressed(keybind);
         if (!isPressed)
         {
             return;
@@ -98,13 +106,7 @@ internal static class VirtualTriggerService
 
         try
         {
-            List<string> assignedKeys = keybind.GetAssignedKeys();
-            if (assignedKeys is null || assignedKeys.Count == 0)
-            {
-                return false;
-            }
-
-            foreach (string keyName in assignedKeys)
+            foreach (string keyName in GetAssignedKeysSafe(keybind))
             {
                 if (Enum.TryParse<Keys>(keyName, ignoreCase: true, out Keys key))
                 {
@@ -129,37 +131,19 @@ internal static class VirtualTriggerService
     /// </summary>
     internal static bool IsKeybindCurrentlyPressed(ModKeybind? keybind)
     {
-        if (keybind is null)
-        {
-            return false;
-        }
-
-        try
-        {
-            return keybind.Current;
-        }
-        catch (KeyNotFoundException)
-        {
-            return false;
-        }
+        return TryGetTriggerState(PlayerInput.Triggers.Current, keybind, out bool isPressed) && isPressed;
     }
 
     /// <summary>
     /// Checks if a ModKeybind's assigned keys are pressed using raw keyboard state.
     /// This is a fallback for when ModKeybind.Current doesn't work correctly in gamepad modes.
     /// </summary>
-    internal static bool IsKeybindPressedRaw(ModKeybind keybind)
+    internal static bool IsKeybindPressedRaw(ModKeybind? keybind)
     {
         try
         {
-            List<string> assignedKeys = keybind.GetAssignedKeys();
-            if (assignedKeys is null || assignedKeys.Count == 0)
-            {
-                return false;
-            }
-
             KeyboardState kbState = Main.keyState;
-            foreach (string keyName in assignedKeys)
+            foreach (string keyName in GetAssignedKeysSafe(keybind))
             {
                 if (Enum.TryParse<Keys>(keyName, ignoreCase: true, out Keys key))
                 {
@@ -178,6 +162,11 @@ internal static class VirtualTriggerService
         return false;
     }
 
+    internal static bool IsKeybindPressed(ModKeybind? keybind)
+    {
+        return IsKeybindCurrentlyPressed(keybind) || IsKeybindPressedRaw(keybind);
+    }
+
     /// <summary>
     /// When the MouseRight trigger is active (from keyboard Interact key), ensure Main.mouseRight
     /// and Main.mouseRightRelease are set so ItemSlot.RightClick can process the action.
@@ -192,7 +181,7 @@ internal static class VirtualTriggerService
         ModKeybind? interactKeybind = GamepadEmulationKeybinds.InventoryInteract;
         if (interactKeybind is not null)
         {
-            bool keybindPressed = IsKeybindCurrentlyPressed(interactKeybind) || IsKeybindPressedRaw(interactKeybind);
+            bool keybindPressed = IsKeybindPressed(interactKeybind);
             triggerActive = triggerActive || keybindPressed;
         }
 
@@ -226,7 +215,7 @@ internal static class VirtualTriggerService
         ModKeybind? selectKeybind = GamepadEmulationKeybinds.InventorySelect;
         if (selectKeybind is not null)
         {
-            bool keybindPressed = IsKeybindCurrentlyPressed(selectKeybind) || IsKeybindPressedRaw(selectKeybind);
+            bool keybindPressed = IsKeybindPressed(selectKeybind);
             triggerActive = triggerActive || keybindPressed;
         }
 
@@ -265,11 +254,11 @@ internal static class VirtualTriggerService
     {
         ModKeybind? selectKeybind = GamepadEmulationKeybinds.InventorySelect;
         _wasMouseLeftTriggerActive = selectKeybind is not null
-            && (IsKeybindCurrentlyPressed(selectKeybind) || IsKeybindPressedRaw(selectKeybind));
+            && IsKeybindPressed(selectKeybind);
 
         ModKeybind? interactKeybind = GamepadEmulationKeybinds.InventoryInteract;
         _wasMouseRightTriggerActive = interactKeybind is not null
-            && (IsKeybindCurrentlyPressed(interactKeybind) || IsKeybindPressedRaw(interactKeybind));
+            && IsKeybindPressed(interactKeybind);
     }
 
     private static void SetTriggerState(TriggersPack pack, string triggerName, InputMode sourceMode)
@@ -277,5 +266,75 @@ internal static class VirtualTriggerService
         pack.Current.KeyStatus[triggerName] = true;
         pack.Current.LatestInputMode[triggerName] = sourceMode;
         pack.JustReleased.KeyStatus[triggerName] = false;
+    }
+
+    private static List<string> GetAssignedKeysSafe(ModKeybind? keybind)
+    {
+        var assignedKeys = new List<string>();
+        if (keybind is null ||
+            PlayerInput.CurrentProfile is null ||
+            !TryGetKeybindFullName(keybind, out string fullName))
+        {
+            return assignedKeys;
+        }
+
+        var seen = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        foreach (InputMode mode in RawKeybindModes)
+        {
+            if (!PlayerInput.CurrentProfile.InputModes.TryGetValue(mode, out KeyConfiguration? configuration) ||
+                !configuration.KeyStatus.TryGetValue(fullName, out List<string>? keys) ||
+                keys is null)
+            {
+                continue;
+            }
+
+            foreach (string keyName in keys)
+            {
+                if (!string.IsNullOrWhiteSpace(keyName) && seen.Add(keyName))
+                {
+                    assignedKeys.Add(keyName);
+                }
+            }
+        }
+
+        return assignedKeys;
+    }
+
+    private static bool TryGetTriggerState(TriggersSet triggers, ModKeybind? keybind, out bool isPressed)
+    {
+        isPressed = false;
+        if (keybind is null || !TryGetKeybindFullName(keybind, out string fullName))
+        {
+            return false;
+        }
+
+        try
+        {
+            return triggers.KeyStatus.TryGetValue(fullName, out isPressed);
+        }
+        catch
+        {
+            return false;
+        }
+    }
+
+    private static bool TryGetKeybindFullName(ModKeybind keybind, out string fullName)
+    {
+        fullName = string.Empty;
+        try
+        {
+            if (ModKeybindFullNameProperty?.GetValue(keybind) is string value &&
+                !string.IsNullOrWhiteSpace(value))
+            {
+                fullName = value;
+                return true;
+            }
+        }
+        catch
+        {
+            // Ignore reflection failures
+        }
+
+        return false;
     }
 }

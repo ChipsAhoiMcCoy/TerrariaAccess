@@ -165,12 +165,7 @@ public sealed class DpadVirtualizationSystem : ModSystem
 
     private static bool IsPressed(ModKeybind? keybind)
     {
-        if (keybind is null)
-        {
-            return false;
-        }
-
-        return keybind.Current || VirtualTriggerService.IsKeybindPressedRaw(keybind);
+        return VirtualTriggerService.IsKeybindPressed(keybind);
     }
 
     private static void ApplyDpadStyleSnap(Vector2 nudges)

@@ -286,7 +286,7 @@ public sealed class GamepadEmulationSystem : ModSystem
     {
         bool lockOnEnabled = LockOnHelper.Enabled;
         bool lockOnKeyPressed = GamepadEmulationKeybinds.LockOn is { } lockOnKeybind &&
-            (lockOnKeybind.Current || VirtualTriggerService.IsKeybindPressedRaw(lockOnKeybind));
+            VirtualTriggerService.IsKeybindPressed(lockOnKeybind);
 
         return lockOnEnabled || lockOnKeyPressed;
     }
@@ -391,7 +391,7 @@ public sealed class GamepadEmulationSystem : ModSystem
 
         // If our SmartSelect keybind (F key) is being pressed, allow the trigger
         if (GamepadEmulationKeybinds.SmartSelect is { } keybind &&
-            (keybind.Current || VirtualTriggerService.IsKeybindPressedRaw(keybind)))
+            VirtualTriggerService.IsKeybindPressed(keybind))
         {
             return;
         }
@@ -429,7 +429,7 @@ public sealed class GamepadEmulationSystem : ModSystem
 
         // Suppress SmartSelect (unless our F keybind is pressed)
         bool allowSmartSelect = GamepadEmulationKeybinds.SmartSelect is { } keybind &&
-            (keybind.Current || VirtualTriggerService.IsKeybindPressedRaw(keybind));
+            VirtualTriggerService.IsKeybindPressed(keybind);
         if (!allowSmartSelect)
         {
             triggerPack.Current.KeyStatus[TriggerNames.SmartSelect] = false;
@@ -902,13 +902,7 @@ public sealed class GamepadEmulationSystem : ModSystem
 
     private static bool IsPressed(ModKeybind? keybind)
     {
-        if (keybind is null)
-        {
-            return false;
-        }
-
-        return VirtualTriggerService.IsKeybindCurrentlyPressed(keybind) ||
-               VirtualTriggerService.IsKeybindPressedRaw(keybind);
+        return VirtualTriggerService.IsKeybindPressed(keybind);
     }
 
     /// <summary>

@@ -127,7 +127,7 @@ internal sealed class HousingQueryHandler
         }
 
         // Check mod keybind (default: I key)
-        if (VirtualTriggerService.IsKeybindCurrentlyPressed(GamepadEmulationKeybinds.InventorySelect))
+        if (VirtualTriggerService.IsKeybindPressed(GamepadEmulationKeybinds.InventorySelect))
         {
             return true;
         }

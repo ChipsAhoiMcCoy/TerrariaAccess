@@ -356,7 +356,17 @@ internal static partial class MenuNarrationCatalog
         string[] items = GetMenuItemArray();
         if (items.Length == 0)
         {
-            TerrariaAccess.Instance?.Logger.Warn($"[MenuNarration] menuItems reflection returned empty for menu mode {menuMode}.");
+            if (ShouldWarnOnEmptyMenuItems(menuMode))
+            {
+                TerrariaAccess.Instance?.Logger.Warn($"[MenuNarration] menuItems reflection returned empty for menu mode {menuMode}.");
+            }
+            else
+            {
+                TerrariaAccess.Instance?.Logger.Debug($"[MenuNarration] menuItems reflection returned empty for menu mode {menuMode}; using mode-specific narration fallback.");
+            }
+
+            _lastSnapshotMode = menuMode;
+            _lastSnapshotAt = DateTime.UtcNow;
             return;
         }
 
@@ -372,6 +382,18 @@ internal static partial class MenuNarrationCatalog
 
         _lastSnapshotMode = menuMode;
         _lastSnapshotAt = DateTime.UtcNow;
+    }
+
+    private static bool ShouldWarnOnEmptyMenuItems(int menuMode)
+    {
+        return menuMode is not MenuID.Title
+            and not MenuID.CharacterSelect
+            and not MenuID.WorldSelect
+            and not 10
+            and not 14
+            and not 888
+            and not 889
+            && !ShouldDeferLangMenuFallback(menuMode);
     }
 
     private static string[] ConvertMenuItems(object raw)
