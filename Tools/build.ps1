@@ -111,6 +111,25 @@ function Sync-ModSources([string]$SourcePath, [string]$DestinationPath) {
     }
 }
 
+function Try-GetWslPath([string]$CommandText) {
+    $wsl = Get-Command wsl.exe -ErrorAction SilentlyContinue
+    if ($null -eq $wsl) {
+        return $null
+    }
+
+    try {
+        $result = & $wsl.Path -e sh -c $CommandText 2>$null
+        if ($LASTEXITCODE -eq 0 -and -not [string]::IsNullOrWhiteSpace($result)) {
+            return $result.Trim()
+        }
+    }
+    catch {
+        return $null
+    }
+
+    return $null
+}
+
 function Locate-BuiltMod([string]$ModFileName) {
     $candidates = @()
 
@@ -119,9 +138,9 @@ function Locate-BuiltMod([string]$ModFileName) {
         $candidates += Join-Path $documentsPath "My Games\Terraria\tModLoader\Mods\$ModFileName"
     }
 
-    $wslProbe = & wsl.exe -e sh -c "if [ -f ~/.local/share/Terraria/tModLoader/Mods/$ModFileName ]; then wslpath -w ~/.local/share/Terraria/tModLoader/Mods/$ModFileName; fi" 2>$null
-    if ($LASTEXITCODE -eq 0 -and -not [string]::IsNullOrWhiteSpace($wslProbe)) {
-        $candidates += $wslProbe.Trim()
+    $wslProbe = Try-GetWslPath "if [ -f ~/.local/share/Terraria/tModLoader/Mods/$ModFileName ]; then wslpath -w ~/.local/share/Terraria/tModLoader/Mods/$ModFileName; fi"
+    if (-not [string]::IsNullOrWhiteSpace($wslProbe)) {
+        $candidates += $wslProbe
     }
 
     foreach ($candidate in $candidates) {
@@ -163,10 +182,9 @@ function Resolve-ClientLogPath([string]$TmlPath, [string]$OverridePath) {
         $candidates.Add((Join-Path $documentsPath "My Games\Terraria\tModLoader\Logs\client.log"))
     }
 
-    $wslProbe = & wsl.exe -e sh -c 'for p in ~/.local/share/Terraria/tModLoader-Logs/client.log ~/.local/share/Terraria/ModLoader/Logs/client.log; do if [ -f "$p" ]; then wslpath -w "$p"; fi; done | head -n1' 2>$null
-    $wslExit = $LASTEXITCODE
-    if ($wslExit -eq 0 -and -not [string]::IsNullOrWhiteSpace($wslProbe)) {
-        $candidates.Add($wslProbe.Trim())
+    $wslProbe = Try-GetWslPath 'for p in ~/.local/share/Terraria/tModLoader-Logs/client.log ~/.local/share/Terraria/ModLoader/Logs/client.log; do if [ -f "$p" ]; then wslpath -w "$p"; fi; done | head -n1'
+    if (-not [string]::IsNullOrWhiteSpace($wslProbe)) {
+        $candidates.Add($wslProbe)
     }
 
     $existing = @(

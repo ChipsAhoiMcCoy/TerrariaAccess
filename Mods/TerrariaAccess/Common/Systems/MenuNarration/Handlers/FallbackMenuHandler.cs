@@ -31,6 +31,15 @@ internal sealed class FallbackMenuHandler : MenuHandlerBase
             return events;
         }
 
+        // The title menu has a dedicated handler. During startup there can be a brief
+        // window where fallback is still active before TitleMenuHandler takes over.
+        // Suppress fallback narration entirely for that mode so we do not double-speak
+        // the initial "Single Player" announcement.
+        if (context.MenuMode == MenuID.Title)
+        {
+            return events;
+        }
+
         int currentMode = context.MenuMode;
         DateTime now = context.Timestamp;
 
@@ -99,6 +108,11 @@ internal sealed class FallbackMenuHandler : MenuHandlerBase
         // description and let hover events handle the rest.
         if (context.UiState is not null)
         {
+            if (context.MenuMode == 888)
+            {
+                return;
+            }
+
             // Announce the mode description if we have one
             if (!string.IsNullOrWhiteSpace(modeLabel))
             {
@@ -159,6 +173,30 @@ internal sealed class FallbackMenuHandler : MenuHandlerBase
             return false;
         }
 
+        return true;
+    }
+
+    protected override bool ShouldSuppressResolvedFocus(
+        MenuNarrationContext context,
+        MenuFocus focus,
+        string optionLabel,
+        string announcement)
+    {
+        if (context.MenuMode != 888)
+        {
+            return false;
+        }
+
+        bool scaleDerivedFocus =
+            focus.Source.Equals("menuItemScale", StringComparison.Ordinal) ||
+            focus.Source.Equals("menuItemScaleDelta", StringComparison.Ordinal);
+        if (!scaleDerivedFocus)
+        {
+            return false;
+        }
+
+        TerrariaAccess.Instance?.Logger.Debug(
+            $"[FallbackHandler] Suppressing transient mode 888 focus from {focus.Source}: {focus.Index} -> {optionLabel}");
         return true;
     }
 }

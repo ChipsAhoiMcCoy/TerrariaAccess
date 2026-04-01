@@ -268,8 +268,15 @@ internal abstract class MenuHandlerBase : IMenuHandler
 
         State.FocusFailureCount = 0;
 
+        if (ShouldSuppressResolvedFocus(context, focus, optionLabel, announcement))
+        {
+            TraceFocus(context, $"suppressed source={focus.Source} index={focus.Index} label=\"{optionLabel}\" announcement=\"{announcement}\"");
+            return true;
+        }
+
         if (ShouldDelayUnconfirmedInitialFocus(focus, announcement))
         {
+            TraceFocus(context, $"delayed source={focus.Source} index={focus.Index} announcement=\"{announcement}\" pending-repeat");
             return false;
         }
 
@@ -291,6 +298,10 @@ internal abstract class MenuHandlerBase : IMenuHandler
 
             if (!force && !announcementChanged && (matchesRecentHover || matchesLastFocus))
             {
+                TraceFocus(
+                    context,
+                    $"suppressed-resolved source={focus.Source} index={focus.Index} label=\"{optionLabel}\" " +
+                    $"matchesRecentHover={matchesRecentHover} matchesLastFocus={matchesLastFocus}");
                 State.PendingHoverFocusSuppression = null;
                 State.ForceNextFocus = false;
                 State.LastFocus = focus;
@@ -322,11 +333,31 @@ internal abstract class MenuHandlerBase : IMenuHandler
         else if (State.LastFocus.HasValue && !State.LastFocus.Value.Source.Equals(focus.Source, StringComparison.Ordinal))
         {
             TerrariaAccess.Instance?.Logger.Debug($"[MenuHandler] Focus source switched to {focus.Source} for index {focus.Index}.");
+            TraceFocus(
+                context,
+                $"source-switch index={focus.Index} oldSource={State.LastFocus.Value.Source} newSource={focus.Source} " +
+                $"announcement=\"{announcement}\"");
+        }
+        else
+        {
+            TraceFocus(
+                context,
+                $"stable source={focus.Source} index={focus.Index} shouldAnnounce={shouldAnnounce} " +
+                $"focusChanged={focusChanged} announcementChanged={announcementChanged} announcement=\"{announcement}\"");
         }
 
         State.LastFocus = focus;
         State.AnnouncedFallback = false;
         return true;
+    }
+
+    protected virtual bool ShouldSuppressResolvedFocus(
+        MenuNarrationContext context,
+        MenuFocus focus,
+        string optionLabel,
+        string announcement)
+    {
+        return false;
     }
 
     protected bool TryAnnounceDeletionDialogEntry(MenuNarrationContext context, List<MenuNarrationEvent> events)
@@ -433,6 +464,16 @@ internal abstract class MenuHandlerBase : IMenuHandler
     {
         if (State.SawHoverThisMode || State.LastFocus.HasValue || IsReliableInitialFocusSource(focus.Source))
         {
+            if (ScreenReaderDiagnostics.IsTraceEnabled())
+            {
+                string reason = State.SawHoverThisMode
+                    ? "hover-seen"
+                    : State.LastFocus.HasValue
+                        ? "focus-already-known"
+                        : "reliable-source";
+                TerrariaAccess.Instance?.Logger.Info(
+                    $"[MenuTrace][FocusDelay] allow source={focus.Source} index={focus.Index} reason={reason} announcement=\"{announcement}\"");
+            }
             State.PendingInitialFocus = null;
             State.PendingInitialFocusAnnouncement = null;
             return false;
@@ -443,11 +484,21 @@ internal abstract class MenuHandlerBase : IMenuHandler
             string.Equals(State.PendingInitialFocusAnnouncement, announcement, StringComparison.OrdinalIgnoreCase);
         if (sameAsPending)
         {
+            if (ScreenReaderDiagnostics.IsTraceEnabled())
+            {
+                TerrariaAccess.Instance?.Logger.Info(
+                    $"[MenuTrace][FocusDelay] confirm source={focus.Source} index={focus.Index} announcement=\"{announcement}\"");
+            }
             State.PendingInitialFocus = null;
             State.PendingInitialFocusAnnouncement = null;
             return false;
         }
 
+        if (ScreenReaderDiagnostics.IsTraceEnabled())
+        {
+            TerrariaAccess.Instance?.Logger.Info(
+                $"[MenuTrace][FocusDelay] hold source={focus.Source} index={focus.Index} announcement=\"{announcement}\"");
+        }
         State.PendingInitialFocus = focus;
         State.PendingInitialFocusAnnouncement = announcement;
         return true;
@@ -563,6 +614,22 @@ internal abstract class MenuHandlerBase : IMenuHandler
         }
 
         announcement = optionLabel;
+        TraceFocus(
+            context,
+            $"resolved source={focus.Source} index={focus.Index} option=\"{optionLabel}\" announcement=\"{announcement}\" " +
+            $"lastFocus={(State.LastFocus.HasValue ? $"{State.LastFocus.Value.Source}:{State.LastFocus.Value.Index}" : "<none>")} " +
+            $"lastAnnouncement=\"{State.LastFocusAnnouncement ?? "<none>"}\"");
         return !string.IsNullOrWhiteSpace(announcement);
+    }
+
+    protected void TraceFocus(MenuNarrationContext context, string detail)
+    {
+        if (!ScreenReaderDiagnostics.IsTraceEnabled())
+        {
+            return;
+        }
+
+        TerrariaAccess.Instance?.Logger.Info(
+            $"[MenuTrace][{GetType().Name}] mode={context.MenuMode} detail={detail}");
     }
 }

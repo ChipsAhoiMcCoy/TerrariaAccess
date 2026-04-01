@@ -50,6 +50,11 @@ internal sealed class MenuNarrationController
 
         MenuNarrationContext context = new(main, Main.MenuUI?.CurrentState, Main.menuMode, DateTime.UtcNow);
         IReadOnlyList<MenuNarrationEvent> events = _registry.Process(context);
+        if (ScreenReaderDiagnostics.IsTraceEnabled() && events.Count > 0)
+        {
+            TerrariaAccess.Instance?.Logger.Info(
+                $"[MenuTrace][Controller] mode={context.MenuMode} handler={_registry.ActiveHandler?.GetType().Name ?? "null"} eventCount={events.Count}");
+        }
         bool queueNextAfterModeChange = false;
 
         foreach (MenuNarrationEvent narrationEvent in events)
@@ -62,6 +67,7 @@ internal sealed class MenuNarrationController
             if (narrationEvent.Kind == MenuNarrationEventKind.ModeChanged)
             {
                 queueNextAfterModeChange = true;
+                TraceDispatch(context, narrationEvent, requestInterrupt: true, queueNextAfterModeChange);
                 ScreenReaderService.Announce(narrationEvent.Text, narrationEvent.Force);
             }
             else
@@ -73,11 +79,28 @@ internal sealed class MenuNarrationController
                     queueNextAfterModeChange = false;
                 }
 
+                TraceDispatch(context, narrationEvent, requestInterrupt, queueNextAfterModeChange);
                 ScreenReaderService.Announce(
                     narrationEvent.Text,
                     narrationEvent.Force,
                     requestInterrupt: requestInterrupt);
             }
         }
+    }
+
+    private static void TraceDispatch(
+        MenuNarrationContext context,
+        MenuNarrationEvent narrationEvent,
+        bool requestInterrupt,
+        bool queueNextAfterModeChange)
+    {
+        if (!ScreenReaderDiagnostics.IsTraceEnabled())
+        {
+            return;
+        }
+
+        TerrariaAccess.Instance?.Logger.Info(
+            $"[MenuTrace][Dispatch] mode={context.MenuMode} kind={narrationEvent.Kind} force={narrationEvent.Force} " +
+            $"interrupt={requestInterrupt} queueNextAfterModeChange={queueNextAfterModeChange} text=\"{narrationEvent.Text}\"");
     }
 }
