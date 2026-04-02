@@ -159,10 +159,6 @@ public sealed partial class InGameNarrationSystem
                 InteractableCueProfile.RescueNpc,
                 RescuableNpcTypes));
 
-            RegisterSource(new ItemInteractableSource(
-                scanRadiusTiles: 75f,
-                InteractableCueProfile.FallenStar,
-                ItemID.FallenStar));
         }
 
         public void Update(Player player, bool isEnabled)
@@ -1405,18 +1401,6 @@ public sealed partial class InGameNarrationSystem
             minIntervalFrames: SweepIntervalFrames,
             maxIntervalFrames: 48,
             arrivalLabel: "a rescue NPC");
-
-        public static InteractableCueProfile FallenStar { get; } = new(
-            id: "fallen-star",
-            fundamentalFrequency: 1180f,
-            partialMultipliers: new[] { 1.4f, 2f, 2.8f },
-            envelope: SynthesizedSoundFactory.ToneEnvelopes.WorldCue,
-            durationSeconds: 0.2f,
-            baseGain: 0.38f,
-            maxAudibleDistanceTiles: 95f,
-            minIntervalFrames: SweepIntervalFrames,
-            maxIntervalFrames: 46,
-            arrivalLabel: "a fallen star");
 
         public static InteractableCueProfile Ore { get; } = new(
             id: "ore",
