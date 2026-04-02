@@ -52,11 +52,17 @@ public sealed partial class InGameNarrationSystem
         private int _lastAnnouncedButtonIndex = -1;
         private ButtonType _lastAnnouncedButtonType;
         private bool _wasSignEditing;
+        private bool _lastSignTextEntryActive;
+        private bool _lastSignButtonNavigationActive;
 
         private static string? _currentPrimaryButton;
         private static string? _currentCloseButton;
         private static string? _currentSecondaryButton;
         private static string? _currentHappinessButton;
+        private static bool _drawPrimaryFocus;
+        private static bool _drawCloseFocus;
+        private static bool _drawSecondaryFocus;
+        private static bool _drawHappinessFocus;
 
         public void Update(NarrationServiceContext context)
         {
@@ -95,6 +101,7 @@ public sealed partial class InGameNarrationSystem
             }
             else
             {
+                HandleSignModeTransition();
                 HandleSignChat(signIndex, category, interruptsAllowed);
                 HandleSignTypedInput(player, category, interruptsAllowed);
             }
@@ -105,10 +112,10 @@ public sealed partial class InGameNarrationSystem
             var availableButtons = BuildAvailableButtonsList();
             int totalButtons = availableButtons.Count;
 
-            HandleButtonFocus(Main.npcChatFocus2, ref _lastPrimaryFocus, ref _lastPrimaryLabel, _currentPrimaryButton, allowInterrupt, category, ButtonType.Primary, availableButtons, totalButtons);
-            HandleButtonFocus(Main.npcChatFocus1, ref _lastCloseFocus, ref _lastCloseLabel, _currentCloseButton, allowInterrupt, category, ButtonType.Close, availableButtons, totalButtons);
-            HandleButtonFocus(Main.npcChatFocus3, ref _lastSecondaryFocus, ref _lastSecondaryLabel, _currentSecondaryButton, allowInterrupt, category, ButtonType.Secondary, availableButtons, totalButtons);
-            HandleButtonFocus(Main.npcChatFocus4, ref _lastHappinessFocus, ref _lastHappinessLabel, _currentHappinessButton, allowInterrupt, category, ButtonType.Happiness, availableButtons, totalButtons);
+            HandleButtonFocus(IsButtonFocused(ButtonType.Primary), ref _lastPrimaryFocus, ref _lastPrimaryLabel, _currentPrimaryButton, allowInterrupt, category, ButtonType.Primary, availableButtons, totalButtons);
+            HandleButtonFocus(IsButtonFocused(ButtonType.Close), ref _lastCloseFocus, ref _lastCloseLabel, _currentCloseButton, allowInterrupt, category, ButtonType.Close, availableButtons, totalButtons);
+            HandleButtonFocus(IsButtonFocused(ButtonType.Secondary), ref _lastSecondaryFocus, ref _lastSecondaryLabel, _currentSecondaryButton, allowInterrupt, category, ButtonType.Secondary, availableButtons, totalButtons);
+            HandleButtonFocus(IsButtonFocused(ButtonType.Happiness), ref _lastHappinessFocus, ref _lastHappinessLabel, _currentHappinessButton, allowInterrupt, category, ButtonType.Happiness, availableButtons, totalButtons);
         }
 
         private enum ButtonType
@@ -181,8 +188,11 @@ public sealed partial class InGameNarrationSystem
             // Clear any pending prefixes and cooldowns from previous NPC
             ScreenReaderService.ClearAllPrefixes();
             ScreenReaderService.ClearCooldown(CooldownKeyButton);
+            ScreenReaderService.CheckAndClearSuppression(SuppressionKeyButton);
             ClearButtonLabels();
             NpcDialogueInputTracker.Reset();
+            _lastSignTextEntryActive = false;
+            _lastSignButtonNavigationActive = false;
         }
 
         private void OnSignChanged(int signIndex)
@@ -194,8 +204,11 @@ public sealed partial class InGameNarrationSystem
             _lastAnnouncedButtonIndex = -1;
             ScreenReaderService.ClearAllPrefixes();
             ScreenReaderService.ClearCooldown(CooldownKeyButton);
+            ScreenReaderService.CheckAndClearSuppression(SuppressionKeyButton);
             ClearButtonLabels();
             NpcDialogueInputTracker.Reset();
+            _lastSignTextEntryActive = false;
+            _lastSignButtonNavigationActive = false;
         }
 
         private void HandleNpcChat(NPC npc, ScreenReaderService.AnnouncementCategory category, bool interruptsAllowed)
@@ -242,7 +255,7 @@ public sealed partial class InGameNarrationSystem
         private void HandleSignChat(int signIndex, ScreenReaderService.AnnouncementCategory category, bool interruptsAllowed)
         {
             string normalizedText = NormalizeChat(Main.npcChatText ?? string.Empty);
-            if (Main.editSign)
+            if (SignInputModeSystem.IsTextEntryActive)
             {
                 _lastChat = normalizedText;
                 return;
@@ -262,7 +275,19 @@ public sealed partial class InGameNarrationSystem
             string signMessage = BuildSignAnnouncement(signIndex, normalizedText);
             if (_lastAnnouncedButtonIndex < 0)
             {
-                ScreenReaderService.EnqueuePrefix(signMessage);
+                string? currentButtonInfo = GetCurrentFocusedButtonInfo(updateCooldown: true);
+                if (string.IsNullOrWhiteSpace(currentButtonInfo))
+                {
+                    ScreenReaderService.EnqueuePrefix(signMessage);
+                }
+                else
+                {
+                    NarrationInstrumentationContext.SetPendingKey("sign:text");
+                    ScreenReaderService.Announce(
+                        $"{signMessage}. {currentButtonInfo}",
+                        category: category,
+                        requestInterrupt: interruptsAllowed);
+                }
             }
             else
             {
@@ -276,6 +301,25 @@ public sealed partial class InGameNarrationSystem
             }
 
             _lastChat = normalizedText;
+        }
+
+        private void HandleSignModeTransition()
+        {
+            bool textEntryActive = SignInputModeSystem.IsTextEntryActive;
+            bool buttonNavigationActive = SignInputModeSystem.IsButtonNavigationActive;
+
+            if (textEntryActive == _lastSignTextEntryActive &&
+                buttonNavigationActive == _lastSignButtonNavigationActive)
+            {
+                return;
+            }
+
+            ResetFocus();
+            _lastAnnouncedButtonIndex = -1;
+            ScreenReaderService.ClearCooldown(CooldownKeyButton);
+
+            _lastSignTextEntryActive = textEntryActive;
+            _lastSignButtonNavigationActive = buttonNavigationActive;
         }
 
         private void HandleSignTypedInput(Player player, ScreenReaderService.AnnouncementCategory category, bool interruptsAllowed)
@@ -357,7 +401,7 @@ public sealed partial class InGameNarrationSystem
                 return false;
             }
 
-            return Main.editSign && player.sign >= 0;
+            return SignInputModeSystem.IsTextEntryActive && player.sign >= 0;
         }
 
         private static string NormalizeChat(string rawText)
@@ -407,12 +451,24 @@ public sealed partial class InGameNarrationSystem
             return normalized.ToString().Trim();
         }
 
-        public static void UpdateButtonLabels(string? primary, string? close, string? secondary, string? happiness)
+        public static void UpdateButtonState(
+            string? primary,
+            string? close,
+            string? secondary,
+            string? happiness,
+            bool primaryFocused,
+            bool closeFocused,
+            bool secondaryFocused,
+            bool happinessFocused)
         {
             _currentPrimaryButton = NormalizeLabel(primary);
             _currentCloseButton = NormalizeLabel(close);
             _currentSecondaryButton = NormalizeLabel(secondary);
             _currentHappinessButton = NormalizeLabel(happiness);
+            _drawPrimaryFocus = primaryFocused;
+            _drawCloseFocus = closeFocused;
+            _drawSecondaryFocus = secondaryFocused;
+            _drawHappinessFocus = happinessFocused;
         }
 
         private static string? NormalizeLabel(string? rawText)
@@ -465,6 +521,34 @@ public sealed partial class InGameNarrationSystem
             _currentCloseButton = null;
             _currentSecondaryButton = null;
             _currentHappinessButton = null;
+            _drawPrimaryFocus = false;
+            _drawCloseFocus = false;
+            _drawSecondaryFocus = false;
+            _drawHappinessFocus = false;
+        }
+
+        private static bool IsButtonFocused(ButtonType buttonType)
+        {
+            if (SignInputModeSystem.IsButtonNavigationActive)
+            {
+                return buttonType switch
+                {
+                    ButtonType.Primary => Main.npcChatFocus2,
+                    ButtonType.Close => Main.npcChatFocus1,
+                    ButtonType.Secondary => Main.npcChatFocus3,
+                    ButtonType.Happiness => Main.npcChatFocus4,
+                    _ => false,
+                };
+            }
+
+            return buttonType switch
+            {
+                ButtonType.Primary => _drawPrimaryFocus,
+                ButtonType.Close => _drawCloseFocus,
+                ButtonType.Secondary => _drawSecondaryFocus,
+                ButtonType.Happiness => _drawHappinessFocus,
+                _ => false,
+            };
         }
 
         private void HandleButtonFocus(
@@ -555,22 +639,22 @@ public sealed partial class InGameNarrationSystem
             ButtonType? focusedType = null;
             string? label = null;
 
-            if (Main.npcChatFocus2 && !string.IsNullOrWhiteSpace(_currentPrimaryButton))
+            if (IsButtonFocused(ButtonType.Primary) && !string.IsNullOrWhiteSpace(_currentPrimaryButton))
             {
                 focusedType = ButtonType.Primary;
                 label = _currentPrimaryButton;
             }
-            else if (Main.npcChatFocus1 && !string.IsNullOrWhiteSpace(_currentCloseButton))
+            else if (IsButtonFocused(ButtonType.Close) && !string.IsNullOrWhiteSpace(_currentCloseButton))
             {
                 focusedType = ButtonType.Close;
                 label = _currentCloseButton;
             }
-            else if (Main.npcChatFocus3 && !string.IsNullOrWhiteSpace(_currentSecondaryButton))
+            else if (IsButtonFocused(ButtonType.Secondary) && !string.IsNullOrWhiteSpace(_currentSecondaryButton))
             {
                 focusedType = ButtonType.Secondary;
                 label = _currentSecondaryButton;
             }
-            else if (Main.npcChatFocus4 && !string.IsNullOrWhiteSpace(_currentHappinessButton))
+            else if (IsButtonFocused(ButtonType.Happiness) && !string.IsNullOrWhiteSpace(_currentHappinessButton))
             {
                 focusedType = ButtonType.Happiness;
                 label = _currentHappinessButton;
@@ -585,6 +669,7 @@ public sealed partial class InGameNarrationSystem
             // when HandleButtonFocus runs immediately after
             if (updateCooldown)
             {
+                _lastAnnouncedButtonIndex = availableButtons.IndexOf(focusedType.Value);
                 _lastAnnouncedButtonType = focusedType.Value;
                 ScreenReaderService.SetCooldown(CooldownKeyButton, ButtonAnnouncementCooldownFrames);
             }
@@ -617,9 +702,12 @@ public sealed partial class InGameNarrationSystem
             _lastAnnouncedButtonIndex = -1;
             ResetFocus();
             _wasSignEditing = false;
+            _lastSignTextEntryActive = false;
+            _lastSignButtonNavigationActive = false;
             // Clear speech queue state related to NPC dialogue
             ScreenReaderService.ClearAllPrefixes();
             ScreenReaderService.ClearCooldown(CooldownKeyButton);
+            ScreenReaderService.CheckAndClearSuppression(SuppressionKeyButton);
             ClearButtonLabels();
             NpcDialogueInputTracker.Reset();
         }

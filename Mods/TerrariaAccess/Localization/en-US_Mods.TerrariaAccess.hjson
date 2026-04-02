@@ -354,6 +354,11 @@ Mods: {
 			NoMatches: No items starting with {0}
 		}
 
+		SignInput: {
+			ButtonNavigationEnabled: Sign button navigation. Save selected. Use arrow keys to move between buttons. Press Tab to return to editing.
+			TextEditingEnabled: Sign text editing. Type the sign text. Press Tab to switch to the buttons.
+		}
+
 		WorldAnnouncements: {
 			BloodMoonStart: The Blood Moon is rising.
 			BloodMoonEnd: The Blood Moon has ended.

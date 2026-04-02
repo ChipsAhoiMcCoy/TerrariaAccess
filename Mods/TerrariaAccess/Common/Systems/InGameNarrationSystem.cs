@@ -617,8 +617,16 @@ public sealed partial class InGameNarrationSystem : ModSystem
             }
         }
 
-        NpcDialogueNarrator.UpdateButtonLabels(primary, closeLabel, secondary, happiness);
         orig(superColor, chatColor, numLines, focusText, focusText3);
+        NpcDialogueNarrator.UpdateButtonState(
+            primary,
+            closeLabel,
+            secondary,
+            happiness,
+            Main.npcChatFocus2,
+            Main.npcChatFocus1,
+            Main.npcChatFocus3,
+            Main.npcChatFocus4);
     }
 
     private static void HandleChestRename(On_ChestUI.orig_RenameChest orig)

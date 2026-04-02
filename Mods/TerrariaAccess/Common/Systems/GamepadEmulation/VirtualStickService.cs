@@ -38,19 +38,21 @@ internal static class VirtualStickService
         }
 
         KeyboardState state = Main.keyState;
+        bool smartCursorActive = GetEffectiveSmartCursorState();
+        bool inMenuContext = Main.gameMenu || InputStateHelper.IsFancyUiActive();
 
         // Suppress WASD movement input when first letter navigation is active in inventory.
         // This prevents letter keys from being interpreted as both navigation AND item search.
         bool suppressWasdMovement = Main.playerInventory && FirstLetterNavigationManager.IsEnabled;
         Vector2 movement = Vector2.Zero;
-        bool movementOverride = !suppressWasdMovement &&
+        bool allowMovementStickOverride = inMenuContext || smartCursorActive;
+        bool movementOverride = allowMovementStickOverride &&
+            !suppressWasdMovement &&
             TryReadStick(state, Keys.W, Keys.S, Keys.A, Keys.D, out movement);
 
         // When Smart Cursor is off, right stick keys (OKLS) are used for cursor nudge instead.
         // Arrow keys behave inversely: analog stick when Smart Cursor is off, D-pad when on.
         // In menu contexts, OKLS should always act as right stick for scrolling.
-        bool smartCursorActive = GetEffectiveSmartCursorState();
-        bool inMenuContext = Main.gameMenu || InputStateHelper.IsFancyUiActive();
         // Suppress right stick letter keys (O, K, L) when first letter navigation is active,
         // so those keys are reserved for item searching instead of injecting stick input.
         bool suppressRightStickLetterKeys = Main.playerInventory && FirstLetterNavigationManager.IsEnabled;
@@ -208,6 +210,7 @@ internal static class VirtualStickService
     /// </summary>
     internal static void ResetState()
     {
+        _lastAnalogStickFrame = uint.MaxValue;
         PlayerInput.GamepadThumbstickLeft = Vector2.Zero;
         PlayerInput.GamepadThumbstickRight = Vector2.Zero;
     }

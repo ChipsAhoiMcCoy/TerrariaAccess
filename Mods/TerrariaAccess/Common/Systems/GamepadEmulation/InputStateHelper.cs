@@ -2,6 +2,7 @@
 using System;
 using Microsoft.Xna.Framework;
 using Microsoft.Xna.Framework.Input;
+using TerrariaAccess.Common.Systems;
 using TerrariaAccess.Common.Systems.ModBrowser;
 using Terraria;
 using Terraria.GameInput;
@@ -15,11 +16,12 @@ internal static class InputStateHelper
 {
     private const float GamepadStickDeadzone = 0.35f;
     private const float GamepadTriggerThreshold = 0.25f;
+    private const uint NativeWorldGamepadLingerFrames = 20;
+    private static uint _lastMeaningfulPhysicalGamepadInputFrame = uint.MaxValue;
 
     internal static bool IsSignEditingActive()
     {
-        Player? player = Main.myPlayer >= 0 ? Main.player[Main.myPlayer] : null;
-        return Main.editSign && player is not null && player.sign != -1;
+        return SignInputModeSystem.IsTextEntryActive;
     }
 
     /// <summary>
@@ -28,9 +30,14 @@ internal static class InputStateHelper
     /// </summary>
     internal static bool IsTextInputActive()
     {
-        if (Main.drawingPlayerChat || Main.editSign || Main.editChest)
+        if (Main.drawingPlayerChat || Main.editChest)
         {
             return true;
+        }
+
+        if (Main.editSign)
+        {
+            return SignInputModeSystem.IsTextEntryActive;
         }
 
         if (Main.CurrentInputTextTakerOverride is not null)
@@ -49,12 +56,12 @@ internal static class InputStateHelper
 
     /// <summary>
     /// Returns true when text entry is active but the UI should remain in gamepad mode.
-    /// This lets sign editing keep vanilla gamepad button navigation while the keyboard
-    /// continues to feed text into the sign editor.
+    /// Sign text editing now deliberately drops back to keyboard mode; button navigation
+    /// is handled by SignInputModeSystem and is not considered text input.
     /// </summary>
     internal static bool ShouldPreserveGamepadUiDuringTextInput()
     {
-        return IsSignEditingActive();
+        return false;
     }
 
     /// <summary>
@@ -88,6 +95,11 @@ internal static class InputStateHelper
             || Main.clothesWindow)
         {
             return true;
+        }
+
+        if (SignInputModeSystem.IsButtonNavigationActive)
+        {
+            return false;
         }
 
         if (player.talkNPC != -1 || player.sign != -1)
@@ -166,13 +178,20 @@ internal static class InputStateHelper
             return false;
         }
 
-        InputMode inputMode = PlayerInput.CurrentInputMode;
-        if (inputMode == InputMode.XBoxGamepad || inputMode == InputMode.XBoxGamepadUI)
+        if (HasMeaningfulPhysicalGamepadInput(state))
         {
+            _lastMeaningfulPhysicalGamepadInputFrame = Main.GameUpdateCount;
             return true;
         }
 
-        return HasMeaningfulPhysicalGamepadInput(state);
+        InputMode inputMode = PlayerInput.CurrentInputMode;
+        bool gamepadInputModeActive = inputMode == InputMode.XBoxGamepad || inputMode == InputMode.XBoxGamepadUI;
+        if (!gamepadInputModeActive || _lastMeaningfulPhysicalGamepadInputFrame == uint.MaxValue)
+        {
+            return false;
+        }
+
+        return Main.GameUpdateCount - _lastMeaningfulPhysicalGamepadInputFrame <= NativeWorldGamepadLingerFrames;
     }
 
     internal static bool IsPhysicalGamepadConnected()

@@ -80,6 +80,11 @@ public sealed class NpcDialogueGamepadFocusSystem : ModSystem
 
     private static bool ShouldSyncFocus()
     {
+        if (Main.editSign)
+        {
+            return false;
+        }
+
         bool emulatedGamepadUiActive = GamepadEmulation.GamepadEmulationState.Enabled &&
                                        PlayerInput.CurrentInputMode == InputMode.XBoxGamepadUI;
         if (!emulatedGamepadUiActive && !HasActiveGamepadUiInput())
@@ -112,7 +117,7 @@ public sealed class NpcDialogueGamepadFocusSystem : ModSystem
     private static void MirrorSignMenuDirectionsToUiDirections()
     {
         Player player = Main.LocalPlayer;
-        if (player is null || !player.active || player.sign == -1 || Main.editSign)
+        if (player is null || !player.active || player.sign == -1 || (Main.editSign && !SignInputModeSystem.IsButtonNavigationActive))
         {
             return;
         }

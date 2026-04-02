@@ -56,6 +56,9 @@ public sealed class GamepadEmulationSystem : ModSystem
     private static bool _smartCursorBindingWasPressed;
     private static bool _smartCursorDesiredEnabled;
     private static bool _smartCursorDesiredInitialized;
+    private static bool _smartCursorDesiredSyncPending;
+    private static uint _smartCursorDesiredSyncDeadline;
+    private const uint SmartCursorSyncSettleFrames = 12;
 
 
     public override void Load()
@@ -111,6 +114,8 @@ public sealed class GamepadEmulationSystem : ModSystem
         _mainMenuSelectWasPressed = false;
         _smartCursorBindingWasPressed = false;
         _smartCursorDesiredInitialized = false;
+        _smartCursorDesiredSyncPending = false;
+        _smartCursorDesiredSyncDeadline = 0;
         VirtualTriggerService.ResetState();
     }
 
@@ -500,6 +505,8 @@ public sealed class GamepadEmulationSystem : ModSystem
         {
             _smartCursorBindingWasPressed = false;
             _smartCursorDesiredInitialized = false;
+            _smartCursorDesiredSyncPending = false;
+            _smartCursorDesiredSyncDeadline = 0;
             return;
         }
 
@@ -516,6 +523,13 @@ public sealed class GamepadEmulationSystem : ModSystem
 
     private static void ForceGamepadUiModeIfNeeded(bool needsUiMode)
     {
+        if (SignInputModeSystem.IsButtonNavigationActive)
+        {
+            PlayerInput.CurrentInputMode = InputMode.Keyboard;
+            PlayerInput.SettingsForUI.SetCursorMode(CursorMode.Mouse);
+            return;
+        }
+
         bool textInputActive = InputStateHelper.IsTextInputActive();
         bool preserveUiDuringTextInput = InputStateHelper.ShouldPreserveGamepadUiDuringTextInput();
         if (textInputActive && !preserveUiDuringTextInput)
@@ -563,7 +577,7 @@ public sealed class GamepadEmulationSystem : ModSystem
 
     private static void ApplyGlobalVirtualTriggers()
     {
-        if (!GamepadEmulationState.Enabled || Main.gameMenu || Main.inFancyUI || InputStateHelper.IsTextInputActive())
+        if (!GamepadEmulationState.Enabled || Main.gameMenu || Main.inFancyUI || InputStateHelper.IsTextInputActive() || DialogueInputGuard.IsDialogueUiActive())
         {
             return;
         }
@@ -578,9 +592,11 @@ public sealed class GamepadEmulationSystem : ModSystem
         // 1. In inventory and first-letter navigation is active or Tab is pressed
         //    (Tab toggles first-letter nav, not targeting)
         // 2. In a searchable menu (bestiary, mod browser, etc.) where Tab toggles search mode
+        // 3. In sign dialogue, where Tab toggles between text entry and button navigation
         bool tabPressed = Main.keyState.IsKeyDown(Keys.Tab);
         bool skipLockOn = (Main.playerInventory && (FirstLetterNavigationManager.IsEnabled || tabPressed))
-            || SearchModeManager.IsRelevantMenu;
+            || SearchModeManager.IsRelevantMenu
+            || SignInputModeSystem.IsSignOpenForLocalPlayer;
         if (!skipLockOn)
         {
             VirtualTriggerService.InjectFromKeybind(GamepadEmulationKeybinds.LockOn, TriggerNames.LockOn);
@@ -601,7 +617,7 @@ public sealed class GamepadEmulationSystem : ModSystem
 
     private static void HandleSmartCursorBinding()
     {
-        if (InputStateHelper.IsTextInputActive())
+        if (InputStateHelper.IsTextInputActive() || DialogueInputGuard.IsDialogueUiActive())
         {
             _smartCursorBindingWasPressed = false;
             return;
@@ -609,14 +625,31 @@ public sealed class GamepadEmulationSystem : ModSystem
 
         EnsureSmartCursorDesiredStateInitialized();
         bool smartCursorPressed = IsSmartCursorBindingPressedRaw();
-        if (!smartCursorPressed && !DpadVirtualizationSystem.IsTemporarilySuppressingSmartCursor())
+        bool actualSmartCursorState = GetActualSmartCursorState();
+        if (_smartCursorDesiredSyncPending)
         {
-            _smartCursorDesiredEnabled = GetActualSmartCursorState();
+            if (actualSmartCursorState == _smartCursorDesiredEnabled)
+            {
+                _smartCursorDesiredSyncPending = false;
+                _smartCursorDesiredSyncDeadline = 0;
+            }
+            else if (Main.GameUpdateCount >= _smartCursorDesiredSyncDeadline)
+            {
+                _smartCursorDesiredEnabled = actualSmartCursorState;
+                _smartCursorDesiredSyncPending = false;
+                _smartCursorDesiredSyncDeadline = 0;
+            }
+        }
+        else if (!smartCursorPressed && !DpadVirtualizationSystem.IsTemporarilySuppressingSmartCursor())
+        {
+            _smartCursorDesiredEnabled = actualSmartCursorState;
         }
 
-        if (smartCursorPressed)
+        if (_smartCursorDesiredSyncPending && !DpadVirtualizationSystem.IsTemporarilySuppressingSmartCursor())
         {
-            VirtualTriggerService.InjectFromState("SmartCursor", isHeld: true);
+            // Keep Terraria's transient wanted flags aligned with the requested mode
+            // until the committed SmartCursorIsUsed state catches up.
+            ApplySmartCursorWantedState(_smartCursorDesiredEnabled);
         }
 
         ApplySmartCursorStateFromBinding(smartCursorPressed);
@@ -624,6 +657,8 @@ public sealed class GamepadEmulationSystem : ModSystem
 
     private static void ApplySmartCursorStateFromBinding(bool smartCursorPressed)
     {
+        bool previousDesiredState = _smartCursorDesiredEnabled;
+
         // Toggle mode: one key press flips between enabled/disabled.
         if (Main.cSmartCursorModeIsToggleAndNotHold)
         {
@@ -638,6 +673,12 @@ public sealed class GamepadEmulationSystem : ModSystem
             _smartCursorDesiredEnabled = smartCursorPressed;
         }
 
+        if (previousDesiredState != _smartCursorDesiredEnabled)
+        {
+            _smartCursorDesiredSyncPending = true;
+            _smartCursorDesiredSyncDeadline = Main.GameUpdateCount + SmartCursorSyncSettleFrames;
+        }
+
         _smartCursorBindingWasPressed = smartCursorPressed;
     }
 
@@ -650,6 +691,8 @@ public sealed class GamepadEmulationSystem : ModSystem
 
         _smartCursorDesiredEnabled = GetActualSmartCursorState();
         _smartCursorDesiredInitialized = true;
+        _smartCursorDesiredSyncPending = false;
+        _smartCursorDesiredSyncDeadline = 0;
     }
 
     private static bool IsSmartCursorBindingPressedRaw()
@@ -692,7 +735,10 @@ public sealed class GamepadEmulationSystem : ModSystem
 
     private static bool GetActualSmartCursorState()
     {
-        return Main.SmartCursorIsUsed || Main.SmartCursorWanted;
+        // SmartCursorWanted is a transient request bit that vanilla and other systems can
+        // flip during input processing. Use the committed mode here so unlocked cursor
+        // doesn't get pulled back to smart cursor by a stale wanted flag.
+        return Main.SmartCursorIsUsed;
     }
 
     private static bool IsVanillaTriggerPressedRaw(string triggerName)
@@ -825,6 +871,11 @@ public sealed class GamepadEmulationSystem : ModSystem
 
     private static void ApplyDialogueVirtualTriggers(bool uiModeActive)
     {
+        if (SignInputModeSystem.IsButtonNavigationActive)
+        {
+            return;
+        }
+
         if (!GamepadEmulationState.Enabled || !uiModeActive)
         {
             return;
@@ -1033,6 +1084,8 @@ public sealed class GamepadEmulationSystem : ModSystem
             VirtualStickService.ResetState();
             _smartCursorBindingWasPressed = false;
             _smartCursorDesiredInitialized = false;
+            _smartCursorDesiredSyncPending = false;
+            _smartCursorDesiredSyncDeadline = 0;
         }
 
         // Save the state to config for persistence
