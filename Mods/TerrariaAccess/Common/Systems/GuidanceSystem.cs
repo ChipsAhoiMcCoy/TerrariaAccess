@@ -13,13 +13,17 @@ using Terraria.GameInput;
 using Terraria.ID;
 using Terraria.ModLoader;
 using Terraria.ModLoader.IO;
+using Terraria.ObjectData;
 
 namespace TerrariaAccess.Common.Systems;
 
 public sealed partial class GuidanceSystem : ModSystem
 {
     private const string WaypointListKey = "screenReaderWaypoints";
+    private const string CustomTargetListKey = "screenReaderCustomTargets";
     private const string SelectedIndexKey = "screenReaderSelectedWaypoint";
+    private const string SelectedCustomIndexKey = "screenReaderSelectedCustomTarget";
+    private const string PersistentSelectionModeKey = "screenReaderPersistentGuidanceSelectionMode";
     private const string ExplorationModeKey = "screenReaderWaypointExplorationMode";
 
     internal const float ArrivalTileThreshold = 4f;
@@ -221,6 +225,7 @@ public sealed partial class GuidanceSystem : ModSystem
     {
         return _selectionMode switch
         {
+            SelectionMode.Custom => ShouldUseCustomSweepMode(),
             SelectionMode.DroppedItem when _selectedDroppedItemIndex < 0 => NearbyDroppedItems.Count > 0,
             SelectionMode.Critter when _selectedCritterIndex < 0 => NearbyCritters.Count > 0,
             SelectionMode.Plantlife when _selectedPlantlifeIndex < 0 => NearbyPlantlife.Count > 0,
@@ -281,6 +286,17 @@ public sealed partial class GuidanceSystem : ModSystem
 
         switch (_selectionMode)
         {
+            case SelectionMode.Custom:
+                foreach (CustomGuidanceMatch match in NearbyCustomMatches)
+                {
+                    if (_selectedCustomIndex >= 0 && match.FilterIndex != _selectedCustomIndex)
+                    {
+                        continue;
+                    }
+
+                    SweepOrder.Add(new SweepTarget(match.Entry.WorldPosition, match.Entry.DistanceTiles));
+                }
+                break;
             case SelectionMode.DroppedItem when _selectedDroppedItemIndex < 0:
                 foreach (GuidanceEntry entry in NearbyDroppedItems)
                 {
@@ -318,6 +334,16 @@ public sealed partial class GuidanceSystem : ModSystem
 
             return left.DistanceTiles.CompareTo(right.DistanceTiles);
         });
+    }
+
+    private static bool ShouldUseCustomSweepMode()
+    {
+        if (_selectionMode != SelectionMode.Custom || CustomTargets.Count == 0)
+        {
+            return false;
+        }
+
+        return CountCustomMatchesForSelection(_selectedCustomIndex) > (_selectedCustomIndex < 0 ? 0 : 1);
     }
 
     private static void BeginNaming(Player player)
@@ -394,6 +420,432 @@ public sealed partial class GuidanceSystem : ModSystem
         return candidate?.active == true ? candidate : null;
     }
 
+    private static void AddFocusedCustomTarget(Player player)
+    {
+        if (!TryResolveFocusedCustomTarget(player, out CustomGuidanceFilter filter, out Vector2 previewPosition))
+        {
+            ScreenReaderService.Announce("Nothing under the cursor can be saved to Custom.");
+            return;
+        }
+
+        int existingIndex = FindExistingCustomTargetIndex(filter);
+        if (existingIndex >= 0)
+        {
+            _selectionMode = SelectionMode.Custom;
+            _selectedCustomIndex = existingIndex;
+            RefreshCustomEntries(player);
+            RescheduleGuidancePing(player);
+            ScreenReaderService.Announce($"Custom tracker {SanitizeLabel(CustomTargets[existingIndex].Label)} is already saved.");
+            AnnounceCustomTargetSelection(player);
+            EmitCurrentGuidancePing(player);
+            return;
+        }
+
+        CustomTargets.Add(filter);
+        SendCustomTargetAddedToServer(filter);
+        _selectionMode = SelectionMode.Custom;
+        _selectedCustomIndex = CustomTargets.Count - 1;
+        RefreshCustomEntries(player);
+        RescheduleGuidancePing(player);
+
+        string announcement = ComposeCustomCreationAnnouncement(filter.Label, player, previewPosition);
+        ScreenReaderService.Announce(announcement);
+        EmitPing(player, previewPosition);
+        ScreenReaderService.SuppressNext(SuppressionKeyArrival);
+    }
+
+    private static int FindExistingCustomTargetIndex(CustomGuidanceFilter target)
+    {
+        for (int i = 0; i < CustomTargets.Count; i++)
+        {
+            CustomGuidanceFilter existing = CustomTargets[i];
+            if (existing.Kind == target.Kind &&
+                existing.TypeId == target.TypeId &&
+                string.Equals(SanitizeLabel(existing.Label), SanitizeLabel(target.Label), StringComparison.OrdinalIgnoreCase))
+            {
+                return i;
+            }
+        }
+
+        return -1;
+    }
+
+    private static bool TryResolveFocusedCustomTarget(Player player, out CustomGuidanceFilter filter, out Vector2 previewPosition)
+    {
+        filter = default;
+        previewPosition = default;
+        if (player is null || !player.active)
+        {
+            return false;
+        }
+
+        if (TryResolveSmartInteractCustomTarget(player, out filter, out previewPosition))
+        {
+            return true;
+        }
+
+        if (GamepadEmulationSystem.GetEffectiveSmartCursorState())
+        {
+            return TryCreateCustomTargetFromTile(Main.SmartCursorX, Main.SmartCursorY, out filter, out previewPosition);
+        }
+
+        Vector2 cursorWorld = Main.MouseWorld;
+        if (TryResolveHoveredCustomEntityTarget(player, cursorWorld, out filter, out previewPosition))
+        {
+            return true;
+        }
+
+        int tileX = (int)(cursorWorld.X / 16f);
+        int tileY = (int)(cursorWorld.Y / 16f);
+        return TryCreateCustomTargetFromTile(tileX, tileY, out filter, out previewPosition);
+    }
+
+    private static bool TryResolveSmartInteractCustomTarget(Player player, out CustomGuidanceFilter filter, out Vector2 previewPosition)
+    {
+        filter = default;
+        previewPosition = default;
+        if (!Main.HasSmartInteractTarget)
+        {
+            return false;
+        }
+
+        int npcIndex = Main.SmartInteractNPC;
+        if (npcIndex >= 0 && npcIndex < Main.maxNPCs)
+        {
+            NPC npc = Main.npc[npcIndex];
+            if (npc.active)
+            {
+                return TryCreateCustomTargetFromNpc(npc, player, out filter, out previewPosition);
+            }
+        }
+
+        int projectileIndex = Main.SmartInteractProj;
+        if (projectileIndex >= 0 && projectileIndex < Main.maxProjectiles)
+        {
+            Projectile projectile = Main.projectile[projectileIndex];
+            if (projectile.active)
+            {
+                filter = new CustomGuidanceFilter(CustomFilterKind.Projectile, projectile.type, ResolveProjectileDisplayName(projectile));
+                previewPosition = projectile.Center;
+                return true;
+            }
+        }
+
+        return TryCreateCustomTargetFromTile(Main.SmartInteractX, Main.SmartInteractY, out filter, out previewPosition);
+    }
+
+    private static bool TryResolveHoveredCustomEntityTarget(Player player, Vector2 cursorWorld, out CustomGuidanceFilter filter, out Vector2 previewPosition)
+    {
+        filter = default;
+        previewPosition = default;
+
+        int hoveredOtherPlayerIndex = GetHoveredOtherPlayerIndex(player, cursorWorld);
+        if (hoveredOtherPlayerIndex >= 0)
+        {
+            Player otherPlayer = Main.player[hoveredOtherPlayerIndex];
+            filter = new CustomGuidanceFilter(CustomFilterKind.Player, 0, ResolvePlayerDisplayName(otherPlayer));
+            previewPosition = otherPlayer.Center;
+            return true;
+        }
+
+        int hoveredItemIndex = GetHoveredDroppedItemIndex(cursorWorld);
+        if (hoveredItemIndex >= 0)
+        {
+            Item item = Main.item[hoveredItemIndex];
+            filter = new CustomGuidanceFilter(CustomFilterKind.DroppedItem, item.type, ResolveDroppedItemBaseName(item));
+            previewPosition = item.Center;
+            return true;
+        }
+
+        int hoveredNpcIndex = GetHoveredNpcIndex(cursorWorld);
+        if (hoveredNpcIndex >= 0)
+        {
+            NPC npc = Main.npc[hoveredNpcIndex];
+            return TryCreateCustomTargetFromNpc(npc, player, out filter, out previewPosition);
+        }
+
+        return false;
+    }
+
+    private static bool TryCreateCustomTargetFromTile(int tileX, int tileY, out CustomGuidanceFilter filter, out Vector2 previewPosition)
+    {
+        filter = default;
+        previewPosition = default;
+        if (!WorldGen.InWorld(tileX, tileY, 1))
+        {
+            return false;
+        }
+
+        if (!InGameNarrationSystem.CursorDescriptors.TryDescribe(tileX, tileY, out CursorDescriptorService.CursorDescriptor descriptor) ||
+            descriptor.IsAir)
+        {
+            return false;
+        }
+
+        previewPosition = ResolveCustomTileWorldPosition(tileX, tileY);
+        filter = new CustomGuidanceFilter(CustomFilterKind.Tile, descriptor.TileType, ResolveCustomFilterLabel(descriptor.Name, CustomTargets.Count));
+        return true;
+    }
+
+    private static bool TryCreateCustomTargetFromNpc(NPC npc, Player player, out CustomGuidanceFilter filter, out Vector2 previewPosition)
+    {
+        filter = default;
+        previewPosition = npc.Center;
+
+        if (NPCID.Sets.CountsAsCritter[npc.type])
+        {
+            filter = new CustomGuidanceFilter(CustomFilterKind.Critter, npc.type, ResolveCritterDisplayName(npc));
+            return true;
+        }
+
+        if (IsEligibleHostileMob(npc, player))
+        {
+            filter = new CustomGuidanceFilter(CustomFilterKind.HostileMob, npc.type, ResolveHostileMobDisplayName(npc));
+            return true;
+        }
+
+        if (IsTrackableNpc(npc))
+        {
+            filter = new CustomGuidanceFilter(CustomFilterKind.Npc, npc.type, ResolveNpcDisplayName(npc));
+            return true;
+        }
+
+        return false;
+    }
+
+    private static string ResolveCustomFilterLabel(string? rawName, int fallbackIndex)
+    {
+        string cleaned = SanitizeLabel(rawName);
+        if (!string.IsNullOrWhiteSpace(cleaned))
+        {
+            return cleaned;
+        }
+
+        int index = fallbackIndex + 1;
+        return $"Custom target {index}";
+    }
+
+    private static Vector2 ResolveCustomTileWorldPosition(int tileX, int tileY)
+    {
+        Vector2 tileCenter = new(tileX * 16f + 8f, tileY * 16f + 8f);
+        if (!WorldGen.InWorld(tileX, tileY, 1))
+        {
+            return tileCenter;
+        }
+
+        Tile tile = Main.tile[tileX, tileY];
+        if (!tile.HasTile)
+        {
+            return tileCenter;
+        }
+
+        if (IsTrackableTreeTile(tile.TileType))
+        {
+            return ResolveTreeTrackingWorldPosition(tileX, tileY);
+        }
+
+        TileObjectData? tileData = TileObjectData.GetTileData(tile.TileType, 0);
+        if (tileData is null || tileData.Width <= 0 || tileData.Height <= 0 ||
+            tileData.CoordinateHeights is null || tileData.CoordinateHeights.Length == 0)
+        {
+            return tileCenter;
+        }
+
+        int tileWidth = tileData.CoordinateWidth + tileData.CoordinatePadding;
+        int subX = tileWidth > 0 ? (tile.TileFrameX % Math.Max(tileWidth * tileData.Width, 1)) / tileWidth : 0;
+        int subY = ResolveTileFrameRow(tileData, tile.TileFrameY);
+        int originX = tileX - subX;
+        int originY = tileY - subY;
+        Vector2 objectCenter = new(
+            (originX + tileData.Width * 0.5f) * 16f,
+            (originY + tileData.Height * 0.5f) * 16f);
+
+        return IsValidWaypointPosition(objectCenter) ? objectCenter : tileCenter;
+    }
+
+    private static int ResolveTileFrameRow(TileObjectData tileData, int frameY)
+    {
+        if (tileData.Height <= 1)
+        {
+            return 0;
+        }
+
+        int cycleHeight = 0;
+        for (int row = 0; row < tileData.Height; row++)
+        {
+            int rowHeight = tileData.CoordinateHeights[Math.Min(row, tileData.CoordinateHeights.Length - 1)] + tileData.CoordinatePadding;
+            cycleHeight += Math.Max(1, rowHeight);
+        }
+
+        if (cycleHeight <= 0)
+        {
+            return 0;
+        }
+
+        int remaining = frameY % cycleHeight;
+        for (int row = 0; row < tileData.Height; row++)
+        {
+            int rowHeight = tileData.CoordinateHeights[Math.Min(row, tileData.CoordinateHeights.Length - 1)] + tileData.CoordinatePadding;
+            int step = Math.Max(1, rowHeight);
+            if (remaining < step)
+            {
+                return row;
+            }
+
+            remaining -= step;
+        }
+
+        return 0;
+    }
+
+    private static bool IsTrackableTreeTile(int tileType)
+    {
+        return tileType == TileID.PalmTree ||
+               tileType == TileID.MushroomTrees ||
+               (tileType >= 0 && tileType < TileID.Sets.IsATreeTrunk.Length && TileID.Sets.IsATreeTrunk[tileType]);
+    }
+
+    private static Vector2 ResolveTreeTrackingWorldPosition(int tileX, int tileY)
+    {
+        int x = tileX;
+        int y = tileY;
+        Tile startTile = Framing.GetTileSafely(x, y);
+        int tileType = startTile.TileType;
+
+        if (tileType != TileID.PalmTree)
+        {
+            int frameCol = startTile.TileFrameX / 22;
+            int frameRow = startTile.TileFrameY / 22;
+
+            if (frameCol == 3 && frameRow <= 2)
+            {
+                x++;
+            }
+            else if (frameCol == 4 && frameRow >= 3 && frameRow <= 5)
+            {
+                x--;
+            }
+            else if (frameCol == 1 && frameRow >= 6 && frameRow <= 8)
+            {
+                x--;
+            }
+            else if (frameCol == 2 && frameRow >= 6 && frameRow <= 8)
+            {
+                x++;
+            }
+            else if (frameCol == 2 && frameRow >= 9)
+            {
+                x++;
+            }
+            else if (frameCol == 3 && frameRow >= 9)
+            {
+                x--;
+            }
+        }
+
+        while (y < Main.maxTilesY - 2)
+        {
+            Tile candidate = Framing.GetTileSafely(x, y);
+            if (!candidate.HasTile)
+            {
+                y++;
+                continue;
+            }
+
+            if (candidate.TileType == TileID.PalmTree ||
+                candidate.TileType == TileID.MushroomTrees ||
+                (candidate.TileType >= 0 && candidate.TileType < TileID.Sets.IsATreeTrunk.Length && TileID.Sets.IsATreeTrunk[candidate.TileType]))
+            {
+                y++;
+                continue;
+            }
+
+            break;
+        }
+
+        int trunkTileY = Math.Max(0, y - 1);
+        return new Vector2(x * 16f + 8f, trunkTileY * 16f + 8f);
+    }
+
+    private static int GetHoveredNpcIndex(Vector2 cursorWorld)
+    {
+        for (int i = 0; i < Main.maxNPCs; i++)
+        {
+            NPC npc = Main.npc[i];
+            if (!npc.active)
+            {
+                continue;
+            }
+
+            Rectangle bounds = npc.getRect();
+            bounds.Inflate(4, 4);
+            if (bounds.Contains((int)cursorWorld.X, (int)cursorWorld.Y))
+            {
+                return i;
+            }
+        }
+
+        return -1;
+    }
+
+    private static int GetHoveredOtherPlayerIndex(Player localPlayer, Vector2 cursorWorld)
+    {
+        if (Main.netMode == NetmodeID.SinglePlayer)
+        {
+            return -1;
+        }
+
+        for (int i = 0; i < Main.maxPlayers; i++)
+        {
+            Player other = Main.player[i];
+            if (!other.active || other.dead || other.ghost || other == localPlayer)
+            {
+                continue;
+            }
+
+            Rectangle bounds = other.getRect();
+            bounds.Inflate(4, 4);
+            if (bounds.Contains((int)cursorWorld.X, (int)cursorWorld.Y))
+            {
+                return i;
+            }
+        }
+
+        return -1;
+    }
+
+    private static int GetHoveredDroppedItemIndex(Vector2 cursorWorld)
+    {
+        for (int i = 0; i < Main.maxItems; i++)
+        {
+            Item item = Main.item[i];
+            if (!item.active || item.stack <= 0)
+            {
+                continue;
+            }
+
+            Rectangle bounds = new((int)item.position.X, (int)item.position.Y, Math.Max(1, item.width), Math.Max(1, item.height));
+            bounds.Inflate(4, 4);
+            if (bounds.Contains((int)cursorWorld.X, (int)cursorWorld.Y))
+            {
+                return i;
+            }
+        }
+
+        return -1;
+    }
+
+    private static string ResolvePlayerDisplayName(Player player)
+    {
+        return !string.IsNullOrWhiteSpace(player.name) ? player.name : "Player";
+    }
+
+    private static string ResolveProjectileDisplayName(Projectile projectile)
+    {
+        string name = Lang.GetProjectileName(projectile.type).Value;
+        return !string.IsNullOrWhiteSpace(name) ? name : $"Projectile {projectile.type}";
+    }
+
     private static void LogPing(string message)
     {
         if (!LogGuidancePings)
@@ -429,6 +881,7 @@ public sealed partial class GuidanceSystem : ModSystem
         RefreshCritterEntries(player);
         RefreshPlantlifeEntries(player);
         RefreshHostileMobEntries(player);
+        RefreshCustomEntries(player);
 
         _lastTargetRefreshFrame = Main.GameUpdateCount;
         _lastTargetRefreshPlayerIndex = player.whoAmI;
@@ -459,7 +912,14 @@ public sealed partial class GuidanceSystem : ModSystem
                         $"NamingActive={NamingDialog.IsActive}, GameMenu={Main.gameMenu}, InFancyUI={Main.inFancyUI}, " +
                         $"BlockInput={Main.blockInput}, WritingText={PlayerInput.WritingText}, " +
                         $"DrawingPlayerChat={Main.drawingPlayerChat}, EditSign={Main.editSign}, EditChest={Main.editChest}");
-            BeginNaming(player);
+            if (_selectionMode == SelectionMode.Custom)
+            {
+                AddFocusedCustomTarget(player);
+            }
+            else
+            {
+                BeginNaming(player);
+            }
             return;
         }
 
@@ -495,7 +955,7 @@ public sealed partial class GuidanceSystem : ModSystem
 
         if (GuidanceKeybinds.Delete?.JustPressed ?? false)
         {
-            DeleteSelectedWaypoint(player);
+            DeleteSelectedGuidanceTarget(player);
         }
     }
 
@@ -580,98 +1040,75 @@ public sealed partial class GuidanceSystem : ModSystem
         return $"Waypoint {index}";
     }
 
-    private static (List<Waypoint> waypoints, SelectionMode selectionMode, int selectedIndex) BuildSerializableWaypointState(string source, bool normalizeRuntime = false)
+    private static (List<Waypoint> waypoints,
+        List<CustomGuidanceFilter> customTargets,
+        SelectionMode selectionMode,
+        int selectedWaypointIndex,
+        int selectedCustomIndex) BuildSerializableWaypointState(string source, bool normalizeRuntime = false)
     {
-        List<Waypoint> sanitized = new(Waypoints.Count);
-        int mappedSelection = -1;
-
-        for (int i = 0; i < Waypoints.Count; i++)
-        {
-            Waypoint waypoint = Waypoints[i];
-            if (!TryCreateWaypoint(waypoint.Name, waypoint.WorldPosition.X, waypoint.WorldPosition.Y, sanitized.Count, source, out Waypoint sanitizedWaypoint))
-            {
-                continue;
-            }
-
-            if (_selectionMode == SelectionMode.Waypoint && _selectedIndex == i)
-            {
-                mappedSelection = sanitized.Count;
-            }
-
-            sanitized.Add(sanitizedWaypoint);
-        }
+        List<Waypoint> sanitizedWaypoints = SanitizePersistentTargets(Waypoints, source, out int mappedWaypointSelection, _selectedIndex, _selectionMode == SelectionMode.Waypoint);
+        List<CustomGuidanceFilter> sanitizedCustomTargets = SanitizeCustomFilters(CustomTargets, out int mappedCustomSelection, _selectedCustomIndex, _selectionMode == SelectionMode.Custom);
 
         SelectionMode selectionMode = _selectionMode;
-        int selectedIndex = _selectedIndex;
+        int selectedWaypointIndex = ClampPersistentSelection(_selectedIndex, sanitizedWaypoints.Count, mappedWaypointSelection, _selectionMode == SelectionMode.Waypoint);
+        int selectedCustomIndex = ClampCustomSelectionIndex(_selectedCustomIndex, sanitizedCustomTargets.Count, mappedCustomSelection, _selectionMode == SelectionMode.Custom);
 
-        if (sanitized.Count == 0)
+        if (selectionMode == SelectionMode.Waypoint && selectedWaypointIndex < 0)
         {
             selectionMode = SelectionMode.None;
-            selectedIndex = -1;
         }
-        else if (selectionMode == SelectionMode.Waypoint)
+        else if (selectionMode == SelectionMode.Custom && sanitizedCustomTargets.Count == 0)
         {
-            selectedIndex = mappedSelection >= 0
-                ? mappedSelection
-                : Math.Clamp(_selectedIndex, 0, sanitized.Count - 1);
-
-            if (selectedIndex < 0 || selectedIndex >= sanitized.Count)
-            {
-                selectionMode = SelectionMode.None;
-                selectedIndex = -1;
-            }
-        }
-        else
-        {
-            selectedIndex = Math.Clamp(_selectedIndex, -1, sanitized.Count - 1);
+            selectionMode = SelectionMode.None;
         }
 
-        if (normalizeRuntime && (sanitized.Count != Waypoints.Count || selectionMode != _selectionMode || selectedIndex != _selectedIndex))
+        if (normalizeRuntime &&
+            (sanitizedWaypoints.Count != Waypoints.Count ||
+             sanitizedCustomTargets.Count != CustomTargets.Count ||
+             selectedWaypointIndex != _selectedIndex ||
+             selectedCustomIndex != _selectedCustomIndex ||
+             selectionMode != _selectionMode))
         {
             Waypoints.Clear();
-            Waypoints.AddRange(sanitized);
+            Waypoints.AddRange(sanitizedWaypoints);
+            CustomTargets.Clear();
+            CustomTargets.AddRange(sanitizedCustomTargets);
+            _selectedIndex = selectedWaypointIndex;
+            _selectedCustomIndex = selectedCustomIndex;
             _selectionMode = selectionMode;
-            _selectedIndex = selectedIndex;
             _nextPingUpdateFrame = -1;
             _arrivalAnnounced = false;
         }
 
-        return (sanitized, selectionMode, selectedIndex);
+        return (sanitizedWaypoints, sanitizedCustomTargets, selectionMode, selectedWaypointIndex, selectedCustomIndex);
     }
 
     internal static bool SaveWaypointData(TagCompound tag, string source, bool normalizeRuntime = true)
     {
-        LogWaypoint($"SaveWaypointData: source=\"{source}\", WaypointCount={Waypoints.Count}, " +
-                    $"SelectionMode={_selectionMode}, SelectedIndex={_selectedIndex}, NormalizeRuntime={normalizeRuntime}");
-        (List<Waypoint> waypoints, SelectionMode selectionMode, int selectedIndex) = BuildSerializableWaypointState(source, normalizeRuntime: normalizeRuntime);
-        LogWaypoint($"SaveWaypointData: After sanitize: {waypoints.Count} waypoints, " +
-                    $"SelectionMode={selectionMode}, SelectedIndex={selectedIndex}");
+        LogWaypoint($"SaveWaypointData: source=\"{source}\", WaypointCount={Waypoints.Count}, CustomTargetCount={CustomTargets.Count}, " +
+                    $"SelectionMode={_selectionMode}, SelectedIndex={_selectedIndex}, SelectedCustomIndex={_selectedCustomIndex}, " +
+                    $"NormalizeRuntime={normalizeRuntime}");
+        (List<Waypoint> waypoints,
+            List<CustomGuidanceFilter> customTargets,
+            SelectionMode selectionMode,
+            int selectedWaypointIndex,
+            int selectedCustomIndex) = BuildSerializableWaypointState(source, normalizeRuntime: normalizeRuntime);
+        LogWaypoint($"SaveWaypointData: After sanitize: {waypoints.Count} waypoints, {customTargets.Count} custom targets, " +
+                    $"SelectionMode={selectionMode}, SelectedWaypointIndex={selectedWaypointIndex}, SelectedCustomIndex={selectedCustomIndex}");
+
         bool hasData = false;
+        hasData |= SerializePersistentTargets(tag, WaypointListKey, waypoints);
+        hasData |= SerializeCustomFilters(tag, CustomTargetListKey, customTargets);
 
-        if (waypoints.Count > 0)
+        SelectionMode persistentSelectionMode = selectionMode switch
         {
-            List<TagCompound> serialized = new(waypoints.Count);
-            foreach (Waypoint waypoint in waypoints)
-            {
-                serialized.Add(new TagCompound
-                {
-                    ["name"] = waypoint.Name,
-                    ["x"] = waypoint.WorldPosition.X,
-                    ["y"] = waypoint.WorldPosition.Y,
-                });
-            }
+            SelectionMode.Exploration or SelectionMode.Waypoint or SelectionMode.Custom => selectionMode,
+            _ => SelectionMode.None
+        };
 
-            tag[WaypointListKey] = serialized;
-            hasData = true;
-        }
-        else
+        if (persistentSelectionMode == SelectionMode.Waypoint && selectedWaypointIndex >= 0 && selectedWaypointIndex < waypoints.Count)
         {
-            tag.Remove(WaypointListKey);
-        }
-
-        if (selectionMode == SelectionMode.Waypoint && selectedIndex >= 0 && selectedIndex < waypoints.Count)
-        {
-            tag[SelectedIndexKey] = selectedIndex;
+            tag[SelectedIndexKey] = selectedWaypointIndex;
             hasData = true;
         }
         else
@@ -679,7 +1116,17 @@ public sealed partial class GuidanceSystem : ModSystem
             tag.Remove(SelectedIndexKey);
         }
 
-        if (selectionMode == SelectionMode.Exploration)
+        if (persistentSelectionMode == SelectionMode.Custom && selectedCustomIndex >= 0 && selectedCustomIndex < customTargets.Count)
+        {
+            tag[SelectedCustomIndexKey] = selectedCustomIndex;
+            hasData = true;
+        }
+        else
+        {
+            tag.Remove(SelectedCustomIndexKey);
+        }
+
+        if (persistentSelectionMode == SelectionMode.Exploration)
         {
             tag[ExplorationModeKey] = true;
             hasData = true;
@@ -689,53 +1136,30 @@ public sealed partial class GuidanceSystem : ModSystem
             tag.Remove(ExplorationModeKey);
         }
 
+        if (persistentSelectionMode != SelectionMode.None)
+        {
+            tag[PersistentSelectionModeKey] = (int)persistentSelectionMode;
+            hasData = true;
+        }
+        else
+        {
+            tag.Remove(PersistentSelectionModeKey);
+        }
+
         return hasData;
     }
 
     internal static bool LoadWaypointData(TagCompound tag, string source, bool announceSelection)
     {
         LogWaypoint($"LoadWaypointData: source=\"{source}\", AnnounceSelection={announceSelection}, " +
-                    $"HasWaypointList={tag.ContainsKey(WaypointListKey)}, " +
-                    $"HasSelectedIndex={tag.ContainsKey(SelectedIndexKey)}, " +
-                    $"HasExplorationMode={tag.ContainsKey(ExplorationModeKey)}");
+                    $"HasWaypointList={tag.ContainsKey(WaypointListKey)}, HasCustomTargetList={tag.ContainsKey(CustomTargetListKey)}, " +
+                    $"HasSelectedIndex={tag.ContainsKey(SelectedIndexKey)}, HasSelectedCustomIndex={tag.ContainsKey(SelectedCustomIndexKey)}, " +
+                    $"HasSelectionMode={tag.ContainsKey(PersistentSelectionModeKey)}, HasExplorationMode={tag.ContainsKey(ExplorationModeKey)}");
 
         ResetWaypointSelectionState();
 
-        if (tag.ContainsKey(WaypointListKey))
-        {
-            int loadedCount = 0;
-            int droppedCount = 0;
-            foreach (TagCompound entry in tag.GetList<TagCompound>(WaypointListKey))
-            {
-                if (!entry.ContainsKey("x") || !entry.ContainsKey("y"))
-                {
-                    LogWaypointWarning($"Dropped waypoint from {source}: missing coordinates.");
-                    droppedCount++;
-                    continue;
-                }
-
-                string name = entry.GetString("name");
-                float x = entry.GetFloat("x");
-                float y = entry.GetFloat("y");
-
-                if (TryCreateWaypoint(name, x, y, Waypoints.Count, source, out Waypoint waypoint))
-                {
-                    Waypoints.Add(waypoint);
-                    loadedCount++;
-                    LogWaypoint($"LoadWaypointData: Loaded waypoint \"{waypoint.Name}\" at ({x:F1}, {y:F1})");
-                }
-                else
-                {
-                    droppedCount++;
-                }
-            }
-
-            LogWaypoint($"LoadWaypointData: Loaded {loadedCount} waypoints, dropped {droppedCount}.");
-        }
-        else
-        {
-            LogWaypoint("LoadWaypointData: No waypoint list found in tag data.");
-        }
+        LoadPersistentTargets(tag, WaypointListKey, Waypoints, source, "waypoint");
+        LoadCustomFilters(tag, CustomTargetListKey, CustomTargets, source);
 
         if (tag.ContainsKey(SelectedIndexKey))
         {
@@ -743,40 +1167,303 @@ public sealed partial class GuidanceSystem : ModSystem
             _selectedIndex = Waypoints.Count > 0
                 ? Math.Clamp(rawIndex, 0, Waypoints.Count - 1)
                 : -1;
-            LogWaypoint($"LoadWaypointData: SelectedIndex raw={rawIndex}, clamped={_selectedIndex}");
+            LogWaypoint($"LoadWaypointData: SelectedWaypointIndex raw={rawIndex}, clamped={_selectedIndex}");
         }
 
+        if (tag.ContainsKey(SelectedCustomIndexKey))
+        {
+            int rawIndex = tag.GetInt(SelectedCustomIndexKey);
+            _selectedCustomIndex = CustomTargets.Count > 0
+                ? Math.Clamp(rawIndex, 0, CustomTargets.Count - 1)
+                : -1;
+            LogWaypoint($"LoadWaypointData: SelectedCustomIndex raw={rawIndex}, clamped={_selectedCustomIndex}");
+        }
+
+        bool hasExplicitSelectionMode = tag.ContainsKey(PersistentSelectionModeKey);
+        SelectionMode persistentSelectionMode = hasExplicitSelectionMode
+            ? (SelectionMode)tag.GetInt(PersistentSelectionModeKey)
+            : SelectionMode.None;
         bool explorationMode = tag.ContainsKey(ExplorationModeKey) && tag.GetBool(ExplorationModeKey);
-        if (explorationMode)
+
+        if (!hasExplicitSelectionMode)
         {
-            _selectionMode = SelectionMode.Exploration;
-        }
-        else if (_selectedIndex >= 0 && _selectedIndex < Waypoints.Count)
-        {
-            _selectionMode = SelectionMode.Waypoint;
-        }
-        else
-        {
-            _selectionMode = SelectionMode.None;
-            _selectedIndex = -1;
+            if (explorationMode)
+            {
+                persistentSelectionMode = SelectionMode.Exploration;
+            }
+            else if (_selectedCustomIndex >= 0 && _selectedCustomIndex < CustomTargets.Count)
+            {
+                persistentSelectionMode = SelectionMode.Custom;
+            }
+            else if (_selectedIndex >= 0 && _selectedIndex < Waypoints.Count)
+            {
+                persistentSelectionMode = SelectionMode.Waypoint;
+            }
         }
 
-        LogWaypoint($"LoadWaypointData: Final state: SelectionMode={_selectionMode}, SelectedIndex={_selectedIndex}, " +
-                    $"TotalWaypoints={Waypoints.Count}, ExplorationMode={explorationMode}");
+        _selectionMode = persistentSelectionMode switch
+        {
+            SelectionMode.Exploration => SelectionMode.Exploration,
+            SelectionMode.Custom when CustomTargets.Count > 0 => SelectionMode.Custom,
+            SelectionMode.Waypoint when _selectedIndex >= 0 && _selectedIndex < Waypoints.Count => SelectionMode.Waypoint,
+            _ => SelectionMode.None
+        };
+
+        if (_selectionMode != SelectionMode.Waypoint)
+        {
+            _selectedIndex = Math.Clamp(_selectedIndex, -1, Waypoints.Count - 1);
+        }
+
+        if (_selectionMode != SelectionMode.Custom)
+        {
+            _selectedCustomIndex = Math.Clamp(_selectedCustomIndex, -1, CustomTargets.Count - 1);
+        }
+
+        LogWaypoint($"LoadWaypointData: Final state: SelectionMode={_selectionMode}, SelectedWaypointIndex={_selectedIndex}, " +
+                    $"SelectedCustomIndex={_selectedCustomIndex}, TotalWaypoints={Waypoints.Count}, " +
+                    $"TotalCustomTargets={CustomTargets.Count}, ExplorationMode={explorationMode}");
 
         ClearCategoryAnnouncement();
         ResetProximityProgress();
 
-        if (announceSelection && _selectionMode == SelectionMode.Waypoint && _selectedIndex >= 0 && _selectedIndex < Waypoints.Count)
+        if (announceSelection && Main.LocalPlayer is { active: true } player)
         {
-            if (Main.LocalPlayer is { active: true } player)
+            if (_selectionMode == SelectionMode.Waypoint && _selectedIndex >= 0 && _selectedIndex < Waypoints.Count)
             {
                 LogWaypoint($"LoadWaypointData: Rescheduling ping for waypoint \"{Waypoints[_selectedIndex].Name}\".");
                 RescheduleGuidancePing(player);
             }
+            else if (_selectionMode == SelectionMode.Custom && CustomTargets.Count > 0)
+            {
+                LogWaypoint($"LoadWaypointData: Rescheduling ping for custom target selection \"{(_selectedCustomIndex >= 0 && _selectedCustomIndex < CustomTargets.Count ? CustomTargets[_selectedCustomIndex].Label : "All")}\".");
+                RescheduleGuidancePing(player);
+            }
         }
 
-        return Waypoints.Count > 0 || explorationMode;
+        return Waypoints.Count > 0 || CustomTargets.Count > 0 || _selectionMode == SelectionMode.Exploration;
+    }
+
+    private static List<Waypoint> SanitizePersistentTargets(List<Waypoint> sourceTargets, string source, out int mappedSelection, int currentSelectionIndex, bool selectionBelongsToList)
+    {
+        List<Waypoint> sanitized = new(sourceTargets.Count);
+        mappedSelection = -1;
+
+        for (int i = 0; i < sourceTargets.Count; i++)
+        {
+            Waypoint target = sourceTargets[i];
+            if (!TryCreateWaypoint(target.Name, target.WorldPosition.X, target.WorldPosition.Y, sanitized.Count, source, out Waypoint sanitizedTarget))
+            {
+                continue;
+            }
+
+            if (selectionBelongsToList && currentSelectionIndex == i)
+            {
+                mappedSelection = sanitized.Count;
+            }
+
+            sanitized.Add(sanitizedTarget);
+        }
+
+        return sanitized;
+    }
+
+    private static List<CustomGuidanceFilter> SanitizeCustomFilters(List<CustomGuidanceFilter> sourceFilters, out int mappedSelection, int currentSelectionIndex, bool selectionBelongsToList)
+    {
+        List<CustomGuidanceFilter> sanitized = new(sourceFilters.Count);
+        mappedSelection = -1;
+
+        for (int i = 0; i < sourceFilters.Count; i++)
+        {
+            CustomGuidanceFilter filter = sourceFilters[i];
+            string label = ResolveCustomFilterLabel(filter.Label, sanitized.Count);
+            CustomGuidanceFilter sanitizedFilter = new(filter.Kind, filter.TypeId, label);
+
+            if (selectionBelongsToList && currentSelectionIndex == i)
+            {
+                mappedSelection = sanitized.Count;
+            }
+
+            sanitized.Add(sanitizedFilter);
+        }
+
+        return sanitized;
+    }
+
+    private static int ClampPersistentSelection(int currentSelectionIndex, int totalCount, int mappedSelection, bool selectionBelongsToList)
+    {
+        if (totalCount == 0)
+        {
+            return -1;
+        }
+
+        if (selectionBelongsToList)
+        {
+            if (mappedSelection >= 0)
+            {
+                return mappedSelection;
+            }
+
+            return Math.Clamp(currentSelectionIndex, 0, totalCount - 1);
+        }
+
+        return Math.Clamp(currentSelectionIndex, -1, totalCount - 1);
+    }
+
+    private static int ClampCustomSelectionIndex(int currentSelectionIndex, int totalCount, int mappedSelection, bool selectionBelongsToList)
+    {
+        if (totalCount == 0)
+        {
+            return -1;
+        }
+
+        if (!selectionBelongsToList)
+        {
+            return Math.Clamp(currentSelectionIndex, -1, totalCount - 1);
+        }
+
+        if (currentSelectionIndex < 0)
+        {
+            return -1;
+        }
+
+        if (mappedSelection >= 0)
+        {
+            return mappedSelection;
+        }
+
+        return Math.Clamp(currentSelectionIndex, 0, totalCount - 1);
+    }
+
+    private static bool SerializePersistentTargets(TagCompound tag, string listKey, List<Waypoint> targets)
+    {
+        if (targets.Count == 0)
+        {
+            tag.Remove(listKey);
+            return false;
+        }
+
+        List<TagCompound> serialized = new(targets.Count);
+        foreach (Waypoint target in targets)
+        {
+            serialized.Add(new TagCompound
+            {
+                ["name"] = target.Name,
+                ["x"] = target.WorldPosition.X,
+                ["y"] = target.WorldPosition.Y,
+            });
+        }
+
+        tag[listKey] = serialized;
+        return true;
+    }
+
+    private static bool SerializeCustomFilters(TagCompound tag, string listKey, List<CustomGuidanceFilter> filters)
+    {
+        if (filters.Count == 0)
+        {
+            tag.Remove(listKey);
+            return false;
+        }
+
+        List<TagCompound> serialized = new(filters.Count);
+        foreach (CustomGuidanceFilter filter in filters)
+        {
+            serialized.Add(new TagCompound
+            {
+                ["kind"] = (int)filter.Kind,
+                ["typeId"] = filter.TypeId,
+                ["label"] = filter.Label,
+            });
+        }
+
+        tag[listKey] = serialized;
+        return true;
+    }
+
+    private static void LoadPersistentTargets(TagCompound tag, string listKey, List<Waypoint> destination, string source, string targetLabel)
+    {
+        if (!tag.ContainsKey(listKey))
+        {
+            LogWaypoint($"LoadWaypointData: No {targetLabel} list found in tag data.");
+            return;
+        }
+
+        int loadedCount = 0;
+        int droppedCount = 0;
+        foreach (TagCompound entry in tag.GetList<TagCompound>(listKey))
+        {
+            if (!entry.ContainsKey("x") || !entry.ContainsKey("y"))
+            {
+                LogWaypointWarning($"Dropped {targetLabel} from {source}: missing coordinates.");
+                droppedCount++;
+                continue;
+            }
+
+            string name = entry.GetString("name");
+            float x = entry.GetFloat("x");
+            float y = entry.GetFloat("y");
+
+            if (TryCreateWaypoint(name, x, y, destination.Count, source, out Waypoint target))
+            {
+                destination.Add(target);
+                loadedCount++;
+                LogWaypoint($"LoadWaypointData: Loaded {targetLabel} \"{target.Name}\" at ({x:F1}, {y:F1})");
+            }
+            else
+            {
+                droppedCount++;
+            }
+        }
+
+        LogWaypoint($"LoadWaypointData: Loaded {loadedCount} {targetLabel}s, dropped {droppedCount}.");
+    }
+
+    private static void LoadCustomFilters(TagCompound tag, string listKey, List<CustomGuidanceFilter> destination, string source)
+    {
+        if (!tag.ContainsKey(listKey))
+        {
+            LogWaypoint("LoadWaypointData: No custom target list found in tag data.");
+            return;
+        }
+
+        int loadedCount = 0;
+        int droppedCount = 0;
+        foreach (TagCompound entry in tag.GetList<TagCompound>(listKey))
+        {
+            if ((!entry.ContainsKey("kind") || !entry.ContainsKey("label")) &&
+                entry.ContainsKey("x") && entry.ContainsKey("y"))
+            {
+                int tileX = (int)(entry.GetFloat("x") / 16f);
+                int tileY = (int)(entry.GetFloat("y") / 16f);
+                if (WorldGen.InWorld(tileX, tileY, 1) &&
+                    InGameNarrationSystem.CursorDescriptors.TryDescribe(tileX, tileY, out CursorDescriptorService.CursorDescriptor descriptor) &&
+                    !descriptor.IsAir)
+                {
+                    string legacyLabel = entry.ContainsKey("name") ? entry.GetString("name") : descriptor.Name;
+                    string resolvedLabel = ResolveCustomFilterLabel(legacyLabel, destination.Count);
+                    destination.Add(new CustomGuidanceFilter(CustomFilterKind.Tile, descriptor.TileType, resolvedLabel));
+                    loadedCount++;
+                    LogWaypoint($"LoadWaypointData: Converted legacy custom target \"{resolvedLabel}\" to tile tracker.");
+                    continue;
+                }
+            }
+
+            if (!entry.ContainsKey("kind") || !entry.ContainsKey("label"))
+            {
+                LogWaypointWarning($"Dropped custom target from {source}: missing kind or label.");
+                droppedCount++;
+                continue;
+            }
+
+            CustomFilterKind kind = (CustomFilterKind)entry.GetInt("kind");
+            int typeId = entry.ContainsKey("typeId") ? entry.GetInt("typeId") : 0;
+            string label = ResolveCustomFilterLabel(entry.GetString("label"), destination.Count);
+            destination.Add(new CustomGuidanceFilter(kind, typeId, label));
+            loadedCount++;
+            LogWaypoint($"LoadWaypointData: Loaded custom target \"{label}\" of kind {kind}.");
+        }
+
+        LogWaypoint($"LoadWaypointData: Loaded {loadedCount} custom targets, dropped {droppedCount}.");
     }
 
     private static bool TryCreateWaypoint(string? rawName, float x, float y, int fallbackIndex, string source, out Waypoint waypoint)
@@ -835,8 +1522,11 @@ public sealed partial class GuidanceSystem : ModSystem
     private static void ResetWaypointSelectionState()
     {
         Waypoints.Clear();
+        CustomTargets.Clear();
+        NearbyCustomMatches.Clear();
         _selectionMode = SelectionMode.None;
         _selectedIndex = -1;
+        _selectedCustomIndex = -1;
         _nextPingUpdateFrame = -1;
         _arrivalAnnounced = false;
         ClearCategoryAnnouncement();
@@ -851,6 +1541,7 @@ public sealed partial class GuidanceSystem : ModSystem
         SelectionMode.Npc,
         SelectionMode.Player,
         SelectionMode.Waypoint,
+        SelectionMode.Custom,
         SelectionMode.DroppedItem,
         SelectionMode.Critter,
         SelectionMode.Plantlife,
@@ -911,6 +1602,7 @@ public sealed partial class GuidanceSystem : ModSystem
             case SelectionMode.None:
                 _selectionMode = SelectionMode.None;
                 _selectedIndex = Math.Min(_selectedIndex, Waypoints.Count - 1);
+                _selectedCustomIndex = Math.Min(_selectedCustomIndex, CustomTargets.Count - 1);
                 ExplorationTargetRegistry.SetSelectedTarget(null);
                 ClearCategoryAnnouncement();
                 RescheduleGuidancePing(player);
@@ -923,6 +1615,7 @@ public sealed partial class GuidanceSystem : ModSystem
                 RefreshExplorationEntries();
                 ExplorationTargetRegistry.SetSelectedTarget(null);
                 _selectedIndex = Math.Min(_selectedIndex, Waypoints.Count - 1);
+                _selectedCustomIndex = Math.Min(_selectedCustomIndex, CustomTargets.Count - 1);
                 ClearCategoryAnnouncement();
                 _nextPingUpdateFrame = -1;
                 _arrivalAnnounced = false;
@@ -1013,6 +1706,24 @@ public sealed partial class GuidanceSystem : ModSystem
                 RescheduleGuidancePing(player);
                 AnnounceWaypointSelection(player);
                 EmitCurrentGuidancePing(player);
+                return;
+            case SelectionMode.Custom:
+                _selectionMode = SelectionMode.Custom;
+                ExplorationTargetRegistry.SetSelectedTarget(null);
+                if (CustomTargets.Count == 0)
+                {
+                    _selectedCustomIndex = -1;
+                    ClearCategoryAnnouncement();
+                    RescheduleGuidancePing(player);
+                    AnnounceCategorySelection("Custom", "No custom trackers saved. Press the create waypoint key while hovering something to add it.");
+                    return;
+                }
+
+                _selectedCustomIndex = -1;
+
+                BeginCategoryAnnouncement(SelectionMode.Custom);
+                RescheduleGuidancePing(player);
+                AnnounceCustomTargetSelection(player);
                 return;
             case SelectionMode.DroppedItem:
                 _selectionMode = SelectionMode.DroppedItem;
@@ -1139,6 +1850,29 @@ public sealed partial class GuidanceSystem : ModSystem
                 RescheduleGuidancePing(player);
                 AnnounceWaypointSelection(player);
                 EmitCurrentGuidancePing(player);
+                return;
+            }
+            case SelectionMode.Custom:
+            {
+                int totalCustomTargets = CustomTargets.Count;
+                if (totalCustomTargets == 0)
+                {
+                    ClearCategoryAnnouncement();
+                    AnnounceCategorySelection("Custom", "No custom trackers saved. Press the create waypoint key while hovering something to add it.");
+                    return;
+                }
+
+                int totalSlots = totalCustomTargets + 1;
+                int currentSlot = _selectedCustomIndex + 1;
+                int nextSlot = Modulo(currentSlot + direction, totalSlots);
+                _selectedCustomIndex = nextSlot - 1;
+
+                RescheduleGuidancePing(player);
+                AnnounceCustomTargetSelection(player);
+                if (!IsSweepModeActive())
+                {
+                    EmitCurrentGuidancePing(player);
+                }
                 return;
             }
             case SelectionMode.Npc:
@@ -1352,7 +2086,7 @@ public sealed partial class GuidanceSystem : ModSystem
                 return;
             }
             default:
-                ScreenReaderService.Announce("Select a waypoint, player, NPC, or crafting category to browse entries.");
+                ScreenReaderService.Announce("Select a custom, waypoint, player, NPC, or crafting category to browse entries.");
                 return;
         }
     }
@@ -1367,6 +2101,17 @@ public sealed partial class GuidanceSystem : ModSystem
         Waypoint waypoint = Waypoints[_selectedIndex];
         string announcement = ComposeWaypointAnnouncement(waypoint, player);
         AnnounceSelectedEntry(SelectionMode.Waypoint, "Waypoints", announcement);
+    }
+
+    private static void AnnounceCustomTargetSelection(Player player)
+    {
+        if (_selectionMode != SelectionMode.Custom)
+        {
+            return;
+        }
+
+        string announcement = ComposeCustomTargetAnnouncement(player);
+        AnnounceSelectedEntry(SelectionMode.Custom, "Custom", announcement);
     }
 
     private static void AnnounceNpcSelection(Player player)
@@ -1734,6 +2479,16 @@ public sealed partial class GuidanceSystem : ModSystem
         return result < 0 ? result + modulus : result;
     }
 
+    private static void DeleteSelectedGuidanceTarget(Player player)
+    {
+        if (_selectionMode == SelectionMode.Custom)
+        {
+            DeleteSelectedCustomTarget(player);
+            return;
+        }
+
+        DeleteSelectedWaypoint(player);
+    }
 
     private static void DeleteSelectedWaypoint(Player player)
     {
@@ -1785,6 +2540,70 @@ public sealed partial class GuidanceSystem : ModSystem
         EmitCurrentGuidancePing(player);
     }
 
+    private static void DeleteSelectedCustomTarget(Player player)
+    {
+        if (CustomTargets.Count == 0)
+        {
+            LogWaypoint("DeleteSelectedCustomTarget: No custom targets exist.");
+            ScreenReaderService.Announce("No custom trackers saved.");
+            return;
+        }
+
+        if (_selectionMode != SelectionMode.Custom)
+        {
+            ScreenReaderService.Announce("No custom target selected.");
+            return;
+        }
+
+        if (_selectedCustomIndex < 0)
+        {
+            ScreenReaderService.Announce("Select a custom tracker before deleting.");
+            return;
+        }
+
+        if (_selectedCustomIndex >= CustomTargets.Count)
+        {
+            LogWaypoint($"DeleteSelectedCustomTarget: No custom target selected. SelectionMode={_selectionMode}, " +
+                        $"SelectedCustomIndex={_selectedCustomIndex}, CustomTargetCount={CustomTargets.Count}");
+            ScreenReaderService.Announce("No custom target selected.");
+            return;
+        }
+
+        int removedIndex = _selectedCustomIndex;
+        CustomGuidanceFilter removed = CustomTargets[removedIndex];
+        LogWaypoint($"DeleteSelectedCustomTarget: Removing custom target at index {removedIndex}. " +
+                    $"Name=\"{removed.Label}\", Kind={removed.Kind}, TotalBefore={CustomTargets.Count}, NetMode={Main.netMode}");
+        CustomTargets.RemoveAt(removedIndex);
+        SendCustomTargetDeletedToServer(removedIndex);
+        RefreshCustomEntries(player);
+
+        if (CustomTargets.Count == 0)
+        {
+            _selectedCustomIndex = -1;
+            _selectionMode = SelectionMode.None;
+            ClearCategoryAnnouncement();
+            _nextPingUpdateFrame = -1;
+            _arrivalAnnounced = false;
+            ScreenReaderService.Announce($"Deleted custom tracker {SanitizeLabel(removed.Label)}.");
+            AnnounceDisabledSelection();
+            return;
+        }
+
+        if (_selectedCustomIndex >= CustomTargets.Count)
+        {
+            _selectedCustomIndex = CustomTargets.Count - 1;
+        }
+
+        string nextAnnouncement = ComposeCustomTargetAnnouncement(player);
+        ScreenReaderService.Announce($"Deleted custom tracker {SanitizeLabel(removed.Label)}.");
+        AnnounceSelectedEntry(SelectionMode.Custom, "Custom", nextAnnouncement);
+        RescheduleGuidancePing(player);
+        if (!IsSweepModeActive())
+        {
+            EmitCurrentGuidancePing(player);
+        }
+    }
+
     private static void AnnounceDisabledSelection()
     {
         ClearCategoryAnnouncement();
@@ -1800,17 +2619,7 @@ public sealed partial class GuidanceSystem : ModSystem
 
     private static string ComposeWaypointAnnouncement(Waypoint waypoint, Player player)
     {
-        int total = Waypoints.Count;
-        int position = _selectedIndex + 1;
-
-        string waypointName = SanitizeLabel(waypoint.Name);
-        string ordinal = FormatEntryOrdinal(position, total);
-        string label = string.IsNullOrWhiteSpace(ordinal)
-            ? waypointName
-            : $"{waypointName} {ordinal}";
-
-        string relative = DescribeCursorStyleOffset(player, waypoint.WorldPosition);
-        return TextSanitizer.JoinWithComma(label, relative);
+        return ComposePersistentTargetAnnouncement(waypoint, player, _selectedIndex + 1, Waypoints.Count);
     }
 
     private static string ComposeCreationAnnouncement(string waypointName, Player player, Vector2 worldPosition)
@@ -1823,6 +2632,78 @@ public sealed partial class GuidanceSystem : ModSystem
         }
 
         return $"Created waypoint {sanitizedName}, {relative}";
+    }
+
+    private static string ComposeCustomTargetAnnouncement(Player player)
+    {
+        if (_selectedCustomIndex < 0)
+        {
+            int allTotalSlots = CustomTargets.Count + 1;
+            int totalMatches = NearbyCustomMatches.Count;
+            string allDetail = totalMatches > 0
+                ? $"{totalMatches} matches nearby"
+                : "No tracked matches nearby";
+            return $"All, 1 of {allTotalSlots}, {allDetail}";
+        }
+
+        if (_selectedCustomIndex >= CustomTargets.Count)
+        {
+            return "Custom target unavailable";
+        }
+
+        CustomGuidanceFilter customTarget = CustomTargets[_selectedCustomIndex];
+        int totalSlots = CustomTargets.Count + 1;
+        int position = _selectedCustomIndex + 2;
+        int matchCount = CountCustomMatchesForSelection(_selectedCustomIndex);
+        string ordinal = FormatEntryOrdinal(position, totalSlots);
+        string label = string.IsNullOrWhiteSpace(ordinal)
+            ? customTarget.Label
+            : $"{customTarget.Label} {ordinal}";
+        string detail = matchCount > 0
+            ? $"{matchCount} matches nearby"
+            : "No matches nearby";
+
+        if (matchCount == 1 && TryGetCurrentTrackingTarget(player, out Vector2 worldPosition, out _))
+        {
+            string relative = DescribeCursorStyleOffset(player, worldPosition);
+            return TextSanitizer.JoinWithComma(label, detail, relative);
+        }
+
+        return TextSanitizer.JoinWithComma(label, detail);
+    }
+
+    private static string ComposeCustomCreationAnnouncement(string targetName, Player player, Vector2 worldPosition)
+    {
+        string sanitizedName = SanitizeLabel(targetName);
+        if (string.IsNullOrWhiteSpace(sanitizedName))
+        {
+            sanitizedName = "target";
+        }
+
+        string relative = DescribeRelativeOffset(player.Center, worldPosition);
+        if (string.IsNullOrWhiteSpace(relative))
+        {
+            return $"Added custom tracker {sanitizedName}";
+        }
+
+        return $"Added custom tracker {sanitizedName}, {relative}";
+    }
+
+    private static string ComposePersistentTargetAnnouncement(Waypoint target, Player player, int position, int total)
+    {
+        string targetName = SanitizeLabel(target.Name);
+        if (string.IsNullOrWhiteSpace(targetName))
+        {
+            targetName = "target";
+        }
+
+        string ordinal = FormatEntryOrdinal(position, total);
+        string label = string.IsNullOrWhiteSpace(ordinal)
+            ? targetName
+            : $"{targetName} {ordinal}";
+
+        string relative = DescribeCursorStyleOffset(player, target.WorldPosition);
+        return TextSanitizer.JoinWithComma(label, relative);
     }
 
     private static bool TryGetSelectedNpc(Player player, out NPC npc, out GuidanceEntry entry)
@@ -2106,6 +2987,7 @@ public sealed partial class GuidanceSystem : ModSystem
             SelectionMode.Player => "Players",
             SelectionMode.Interactable => "Crafting",
             SelectionMode.Waypoint => "Waypoints",
+            SelectionMode.Custom => "Custom",
             SelectionMode.DroppedItem => "Items",
             SelectionMode.Critter => "Critters",
             SelectionMode.Plantlife => "Plants",
@@ -2198,6 +3080,52 @@ public sealed partial class GuidanceSystem : ModSystem
         return false;
     }
 
+    private static bool TryGetSelectedCustomTarget(out CustomGuidanceFilter target)
+    {
+        if (_selectionMode == SelectionMode.Custom && _selectedCustomIndex >= 0 && _selectedCustomIndex < CustomTargets.Count)
+        {
+            target = CustomTargets[_selectedCustomIndex];
+            return true;
+        }
+
+        target = default;
+        return false;
+    }
+
+    private static int CountCustomMatchesForSelection(int filterIndex)
+    {
+        if (filterIndex < 0)
+        {
+            return NearbyCustomMatches.Count;
+        }
+
+        int count = 0;
+        foreach (CustomGuidanceMatch match in NearbyCustomMatches)
+        {
+            if (match.FilterIndex == filterIndex)
+            {
+                count++;
+            }
+        }
+
+        return count;
+    }
+
+    private static bool TryGetCurrentCustomTrackingTarget(out GuidanceEntry entry)
+    {
+        foreach (CustomGuidanceMatch match in NearbyCustomMatches)
+        {
+            if (_selectedCustomIndex < 0 || match.FilterIndex == _selectedCustomIndex)
+            {
+                entry = match.Entry;
+                return true;
+            }
+        }
+
+        entry = default;
+        return false;
+    }
+
     private static bool TryGetCurrentTrackingTarget(Player player, out Vector2 worldPosition, out string label)
     {
         EnsureTargetsUpToDate(player);
@@ -2207,6 +3135,10 @@ public sealed partial class GuidanceSystem : ModSystem
             case SelectionMode.Waypoint when TryGetSelectedWaypoint(out Waypoint waypoint):
                 worldPosition = waypoint.WorldPosition;
                 label = SanitizeLabel(waypoint.Name);
+                return true;
+            case SelectionMode.Custom when TryGetCurrentCustomTrackingTarget(out GuidanceEntry customTarget):
+                worldPosition = customTarget.WorldPosition;
+                label = SanitizeLabel(customTarget.DisplayName);
                 return true;
             case SelectionMode.Exploration when TryGetSelectedExploration(out ExplorationTargetRegistry.ExplorationTarget exploration):
                 worldPosition = exploration.WorldPosition;
@@ -2311,6 +3243,7 @@ public sealed partial class GuidanceSystem : ModSystem
             SelectionMode.Exploration => false,
             SelectionMode.None => false,
             SelectionMode.Waypoint when _selectedIndex < 0 => false,
+            SelectionMode.Custom => CountCustomMatchesForSelection(_selectedCustomIndex) > 0,
             SelectionMode.DroppedItem when _selectedDroppedItemIndex < 0 => false,
             SelectionMode.Critter when _selectedCritterIndex < 0 => false,
             SelectionMode.Plantlife when _selectedPlantlifeIndex < 0 => false,
@@ -2323,6 +3256,7 @@ public sealed partial class GuidanceSystem : ModSystem
         return _selectionMode switch
         {
             SelectionMode.Waypoint => new ProximityTargetKey(SelectionMode.Waypoint, _selectedIndex),
+            SelectionMode.Custom => new ProximityTargetKey(SelectionMode.Custom, _selectedCustomIndex),
             SelectionMode.Npc when TryGetSelectedNpc(player, out _, out GuidanceEntry npcEntry)
                 => new ProximityTargetKey(SelectionMode.Npc, npcEntry.Index),
             SelectionMode.Player when TryGetSelectedPlayer(player, out _, out GuidanceEntry playerEntry)

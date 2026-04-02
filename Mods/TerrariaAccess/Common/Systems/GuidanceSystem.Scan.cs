@@ -68,6 +68,7 @@ public sealed partial class GuidanceSystem
     private static readonly HashSet<Point> PlantlifeAnchorScratch = new();
 
     private static readonly List<GuidanceEntry> NearbyHostileMobs = new();
+    private static readonly HashSet<int> CustomEntryScratch = new();
 
     private static readonly int[] PlantlifeTileTypes =
     {
@@ -693,13 +694,14 @@ public sealed partial class GuidanceSystem
 
     private static string ResolveDroppedItemDisplayName(Item item)
     {
-        string name = Lang.GetItemNameValue(item.type);
-        if (string.IsNullOrWhiteSpace(name))
-        {
-            name = "Item";
-        }
-
+        string name = ResolveDroppedItemBaseName(item);
         return item.stack > 1 ? $"{item.stack} {name}" : name;
+    }
+
+    private static string ResolveDroppedItemBaseName(Item item)
+    {
+        string name = Lang.GetItemNameValue(item.type);
+        return !string.IsNullOrWhiteSpace(name) ? name : "Item";
     }
 
     private static void RefreshCritterEntries(Player player)
@@ -997,5 +999,211 @@ public sealed partial class GuidanceSystem
     {
         string name = Lang.GetNPCNameValue(npc.type);
         return !string.IsNullOrWhiteSpace(name) ? name : "Enemy";
+    }
+
+    private static void RefreshCustomEntries(Player player)
+    {
+        NearbyCustomMatches.Clear();
+        CustomEntryScratch.Clear();
+
+        if (player is null || !player.active || CustomTargets.Count == 0)
+        {
+            _selectedCustomIndex = -1;
+            return;
+        }
+
+        Vector2 origin = player.Center;
+
+        for (int filterIndex = 0; filterIndex < CustomTargets.Count; filterIndex++)
+        {
+            CustomGuidanceFilter filter = CustomTargets[filterIndex];
+            switch (filter.Kind)
+            {
+                case CustomFilterKind.Tile:
+                    AppendCustomTileMatches(filterIndex, filter, origin);
+                    break;
+                case CustomFilterKind.Npc:
+                    foreach (GuidanceEntry entry in NearbyNpcs)
+                    {
+                        if (entry.Index < 0 || entry.Index >= Main.maxNPCs)
+                        {
+                            continue;
+                        }
+
+                        NPC npc = Main.npc[entry.Index];
+                        if (npc.active && npc.type == filter.TypeId)
+                        {
+                            NearbyCustomMatches.Add(new CustomGuidanceMatch(filterIndex, entry));
+                        }
+                    }
+                    break;
+                case CustomFilterKind.Player:
+                    foreach (GuidanceEntry entry in NearbyPlayers)
+                    {
+                        if (entry.Index < 0 || entry.Index >= Main.maxPlayers)
+                        {
+                            continue;
+                        }
+
+                        Player candidate = Main.player[entry.Index];
+                        if (candidate.active && string.Equals(SanitizeLabel(candidate.name), SanitizeLabel(filter.Label), StringComparison.OrdinalIgnoreCase))
+                        {
+                            NearbyCustomMatches.Add(new CustomGuidanceMatch(filterIndex, entry));
+                        }
+                    }
+                    break;
+                case CustomFilterKind.Projectile:
+                    AppendCustomProjectileMatches(filterIndex, filter, origin);
+                    break;
+                case CustomFilterKind.DroppedItem:
+                    foreach (GuidanceEntry entry in NearbyDroppedItems)
+                    {
+                        if (entry.Index < 0 || entry.Index >= Main.maxItems)
+                        {
+                            continue;
+                        }
+
+                        Item item = Main.item[entry.Index];
+                        if (item.active && item.type == filter.TypeId)
+                        {
+                            NearbyCustomMatches.Add(new CustomGuidanceMatch(filterIndex, entry));
+                        }
+                    }
+                    break;
+                case CustomFilterKind.Critter:
+                    foreach (GuidanceEntry entry in NearbyCritters)
+                    {
+                        if (entry.Index < 0 || entry.Index >= Main.maxNPCs)
+                        {
+                            continue;
+                        }
+
+                        NPC npc = Main.npc[entry.Index];
+                        if (npc.active && npc.type == filter.TypeId)
+                        {
+                            NearbyCustomMatches.Add(new CustomGuidanceMatch(filterIndex, entry));
+                        }
+                    }
+                    break;
+                case CustomFilterKind.Plantlife:
+                    foreach (GuidanceEntry entry in NearbyPlantlife)
+                    {
+                        if (LabelsMatch(entry.DisplayName, filter.Label))
+                        {
+                            NearbyCustomMatches.Add(new CustomGuidanceMatch(filterIndex, entry));
+                        }
+                    }
+                    break;
+                case CustomFilterKind.HostileMob:
+                    foreach (GuidanceEntry entry in NearbyHostileMobs)
+                    {
+                        if (entry.Index < 0 || entry.Index >= Main.maxNPCs)
+                        {
+                            continue;
+                        }
+
+                        NPC npc = Main.npc[entry.Index];
+                        if (npc.active && npc.type == filter.TypeId)
+                        {
+                            NearbyCustomMatches.Add(new CustomGuidanceMatch(filterIndex, entry));
+                        }
+                    }
+                    break;
+            }
+        }
+
+        NearbyCustomMatches.Sort(static (left, right) =>
+        {
+            int compareFilter = left.FilterIndex.CompareTo(right.FilterIndex);
+            if (compareFilter != 0)
+            {
+                return compareFilter;
+            }
+
+            return CompareGuidanceEntries(left.Entry, right.Entry);
+        });
+
+        if (_selectedCustomIndex >= CustomTargets.Count)
+        {
+            _selectedCustomIndex = CustomTargets.Count - 1;
+        }
+    }
+
+    private static void AppendCustomTileMatches(int filterIndex, CustomGuidanceFilter filter, Vector2 origin)
+    {
+        int scanRadius = (int)Math.Clamp(ScanRangeTiles + 8f, 4f, 240f);
+        int playerTileX = (int)(origin.X / 16f);
+        int playerTileY = (int)(origin.Y / 16f);
+        int minX = Math.Max(0, playerTileX - scanRadius);
+        int maxX = Math.Min(Main.maxTilesX - 1, playerTileX + scanRadius);
+        int minY = Math.Max(0, playerTileY - scanRadius);
+        int maxY = Math.Min(Main.maxTilesY - 1, playerTileY + scanRadius);
+
+        for (int x = minX; x <= maxX; x++)
+        {
+            for (int y = minY; y <= maxY; y++)
+            {
+                Tile tile = Main.tile[x, y];
+                if (!tile.HasTile && tile.WallType <= 0 && tile.LiquidAmount <= 0)
+                {
+                    continue;
+                }
+
+                if (!InGameNarrationSystem.CursorDescriptors.TryDescribe(x, y, out CursorDescriptorService.CursorDescriptor descriptor) ||
+                    descriptor.IsAir ||
+                    descriptor.TileType != filter.TypeId ||
+                    !LabelsMatch(descriptor.Name, filter.Label))
+                {
+                    continue;
+                }
+
+                Vector2 worldPosition = ResolveCustomTileWorldPosition(x, y);
+                float distanceTiles = Vector2.Distance(worldPosition, origin) / 16f;
+                if (distanceTiles > ScanRangeTiles)
+                {
+                    continue;
+                }
+
+                int positionKey = HashCode.Combine(
+                    filterIndex,
+                    (int)MathF.Round(worldPosition.X),
+                    (int)MathF.Round(worldPosition.Y),
+                    descriptor.TileType);
+                if (!CustomEntryScratch.Add(positionKey))
+                {
+                    continue;
+                }
+
+                Point anchor = new((int)MathF.Floor(worldPosition.X / 16f), (int)MathF.Floor(worldPosition.Y / 16f));
+                GuidanceEntry entry = GuidanceEntry.CreateInteractable(anchor, filter.Label, worldPosition, distanceTiles);
+                NearbyCustomMatches.Add(new CustomGuidanceMatch(filterIndex, entry));
+            }
+        }
+    }
+
+    private static void AppendCustomProjectileMatches(int filterIndex, CustomGuidanceFilter filter, Vector2 origin)
+    {
+        for (int i = 0; i < Main.maxProjectiles; i++)
+        {
+            Projectile projectile = Main.projectile[i];
+            if (!projectile.active || projectile.type != filter.TypeId || !IsWorldPositionApproximatelyOnScreen(projectile.Center))
+            {
+                continue;
+            }
+
+            float distanceTiles = Vector2.Distance(origin, projectile.Center) / 16f;
+            if (distanceTiles > ScanRangeTiles)
+            {
+                continue;
+            }
+
+            GuidanceEntry entry = GuidanceEntry.CreateInteractable(Point.Zero, filter.Label, projectile.Center, distanceTiles);
+            NearbyCustomMatches.Add(new CustomGuidanceMatch(filterIndex, entry));
+        }
+    }
+
+    private static bool LabelsMatch(string left, string right)
+    {
+        return string.Equals(SanitizeLabel(left), SanitizeLabel(right), StringComparison.OrdinalIgnoreCase);
     }
 }

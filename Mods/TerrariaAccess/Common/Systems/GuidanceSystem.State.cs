@@ -10,9 +10,49 @@ public sealed partial class GuidanceSystem
 {
     private readonly record struct ProximityTargetKey(SelectionMode Mode, int Index);
 
-    private static readonly List<Waypoint> Waypoints = new();
+    private enum CustomFilterKind : byte
+    {
+        Tile,
+        Npc,
+        Player,
+        Projectile,
+        DroppedItem,
+        Critter,
+        Plantlife,
+        HostileMob
+    }
 
-    internal static bool HasWaypointState => Waypoints.Count > 0 || _selectionMode != SelectionMode.None;
+    private readonly struct CustomGuidanceFilter
+    {
+        public readonly CustomFilterKind Kind;
+        public readonly int TypeId;
+        public readonly string Label;
+
+        public CustomGuidanceFilter(CustomFilterKind kind, int typeId, string label)
+        {
+            Kind = kind;
+            TypeId = typeId;
+            Label = label;
+        }
+    }
+
+    private readonly struct CustomGuidanceMatch
+    {
+        public readonly int FilterIndex;
+        public readonly GuidanceEntry Entry;
+
+        public CustomGuidanceMatch(int filterIndex, GuidanceEntry entry)
+        {
+            FilterIndex = filterIndex;
+            Entry = entry;
+        }
+    }
+
+    private static readonly List<Waypoint> Waypoints = new();
+    private static readonly List<CustomGuidanceFilter> CustomTargets = new();
+    private static readonly List<CustomGuidanceMatch> NearbyCustomMatches = new();
+
+    internal static bool HasWaypointState => Waypoints.Count > 0 || CustomTargets.Count > 0 || _selectionMode != SelectionMode.None;
     internal static bool IsNamingActive => NamingDialog.IsActive;
 
     private enum SelectionMode
@@ -23,6 +63,7 @@ public sealed partial class GuidanceSystem
         Npc,
         Player,
         Waypoint,
+        Custom,
         DroppedItem,
         Critter,
         Plantlife,
@@ -35,6 +76,7 @@ public sealed partial class GuidanceSystem
     private static int _selectedPlayerIndex = -1;
     private static int _selectedInteractableIndex = -1;
     private static int _selectedExplorationIndex = -1;
+    private static int _selectedCustomIndex = -1;
     private static int _selectedDroppedItemIndex = -1;
     private static int _selectedCritterIndex = -1;
     private static int _selectedPlantlifeIndex = -1;
@@ -90,6 +132,8 @@ public sealed partial class GuidanceSystem
     internal static void ResetTrackingState()
     {
         Waypoints.Clear();
+        CustomTargets.Clear();
+        NearbyCustomMatches.Clear();
         NearbyNpcs.Clear();
         NearbyPlayers.Clear();
         NearbyInteractables.Clear();
@@ -103,6 +147,7 @@ public sealed partial class GuidanceSystem
         _selectedPlayerIndex = -1;
         _selectedInteractableIndex = -1;
         _selectedExplorationIndex = -1;
+        _selectedCustomIndex = -1;
         _selectedDroppedItemIndex = -1;
         _selectedCritterIndex = -1;
         _selectedPlantlifeIndex = -1;

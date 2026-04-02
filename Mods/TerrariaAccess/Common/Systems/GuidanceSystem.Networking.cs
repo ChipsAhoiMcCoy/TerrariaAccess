@@ -23,7 +23,9 @@ public sealed partial class GuidanceSystem
     {
         SyncWaypoints,
         WaypointAdded,
-        WaypointDeleted
+        WaypointDeleted,
+        CustomTargetAdded,
+        CustomTargetDeleted
     }
 
     public override void NetSend(BinaryWriter writer)
@@ -75,6 +77,12 @@ public sealed partial class GuidanceSystem
                 break;
             case GuidancePacketType.WaypointDeleted:
                 ReceiveWaypointDeleted(reader, sender);
+                break;
+            case GuidancePacketType.CustomTargetAdded:
+                ReceiveCustomTargetAdded(reader, sender);
+                break;
+            case GuidancePacketType.CustomTargetDeleted:
+                ReceiveCustomTargetDeleted(reader, sender);
                 break;
             default:
                 throw new ArgumentOutOfRangeException(nameof(packetType), packetType, "Unknown guidance packet type.");
@@ -134,9 +142,66 @@ public sealed partial class GuidanceSystem
         }
     }
 
+    private static void ReceiveCustomTargetAdded(BinaryReader reader, int sender)
+    {
+        LogWaypoint($"ReceiveCustomTargetAdded: Sender={sender}, NetMode={Main.netMode}, " +
+                    $"CurrentCustomTargetCount={CustomTargets.Count}");
+
+        if (!TryReadCustomFilter(reader, CustomTargets.Count, "custom target add packet", out CustomGuidanceFilter target))
+        {
+            LogWaypoint("ReceiveCustomTargetAdded: Failed to read custom target from packet.");
+            return;
+        }
+
+        CustomTargets.Add(target);
+        ClampSelectedCustomIndex();
+        LogWaypoint($"ReceiveCustomTargetAdded: Added \"{target.Label}\" of kind {target.Kind}. " +
+                    $"TotalCustomTargets={CustomTargets.Count}");
+
+        if (Main.netMode == NetmodeID.Server)
+        {
+            BroadcastWaypointSync(ignoreClient: sender);
+        }
+        else
+        {
+            RescheduleLocalPingAfterSync();
+        }
+    }
+
+    private static void ReceiveCustomTargetDeleted(BinaryReader reader, int sender)
+    {
+        int removedIndex = reader.ReadInt32();
+        LogWaypoint($"ReceiveCustomTargetDeleted: Sender={sender}, RemovedIndex={removedIndex}, " +
+                    $"CustomTargetCount={CustomTargets.Count}, NetMode={Main.netMode}");
+
+        if (removedIndex < 0 || removedIndex >= CustomTargets.Count)
+        {
+            LogWaypoint($"ReceiveCustomTargetDeleted: Index {removedIndex} out of range [0, {CustomTargets.Count}). Ignoring.");
+            return;
+        }
+
+        string removedName = CustomTargets[removedIndex].Label;
+        CustomTargets.RemoveAt(removedIndex);
+        ClampSelectedCustomIndex();
+        LogWaypoint($"ReceiveCustomTargetDeleted: Removed \"{removedName}\". TotalCustomTargets={CustomTargets.Count}");
+
+        if (Main.netMode == NetmodeID.Server)
+        {
+            BroadcastWaypointSync(ignoreClient: sender);
+        }
+        else
+        {
+            RescheduleLocalPingAfterSync();
+        }
+    }
+
     private static void WriteWaypointState(BinaryWriter writer)
     {
-        (List<Waypoint> waypoints, SelectionMode selectionMode, int selectedIndex) = BuildSerializableWaypointState("network sync", normalizeRuntime: true);
+        (List<Waypoint> waypoints,
+            List<CustomGuidanceFilter> customTargets,
+            SelectionMode selectionMode,
+            int selectedWaypointIndex,
+            int selectedCustomIndex) = BuildSerializableWaypointState("network sync", normalizeRuntime: true);
 
         writer.Write(waypoints.Count);
         foreach (Waypoint waypoint in waypoints)
@@ -146,8 +211,15 @@ public sealed partial class GuidanceSystem
             writer.Write(waypoint.WorldPosition.Y);
         }
 
+        writer.Write(customTargets.Count);
+        foreach (CustomGuidanceFilter customTarget in customTargets)
+        {
+            WriteCustomFilter(writer, customTarget);
+        }
+
         writer.Write((byte)selectionMode);
-        writer.Write(selectedIndex);
+        writer.Write(selectedWaypointIndex);
+        writer.Write(selectedCustomIndex);
     }
 
     private static void ReadWaypointState(BinaryReader reader, bool announceSelection)
@@ -170,19 +242,37 @@ public sealed partial class GuidanceSystem
             Waypoints.Add(waypoint);
         }
 
-        if (!TryReadWaypointSelection(reader, out SelectionMode selectionMode, out int selectedIndex))
+        if (!TryReadWaypointCount(reader, out int customTargetCount))
+        {
+            return;
+        }
+
+        for (int i = 0; i < customTargetCount; i++)
+        {
+            if (!TryReadCustomFilter(reader, i, "network sync custom target", out CustomGuidanceFilter customTarget))
+            {
+                ResetWaypointSelectionState();
+                return;
+            }
+
+            CustomTargets.Add(customTarget);
+        }
+
+        if (!TryReadWaypointSelection(reader, out SelectionMode selectionMode, out int selectedWaypointIndex, out int selectedCustomIndex))
         {
             return;
         }
 
         _selectionMode = selectionMode;
-        _selectedIndex = selectedIndex;
+        _selectedIndex = selectedWaypointIndex;
+        _selectedCustomIndex = selectedCustomIndex;
         ClampSelectedWaypointIndex();
+        ClampSelectedCustomIndex();
 
         ClearCategoryAnnouncement();
         ResetProximityProgress();
 
-        if (!announceSelection || _selectionMode != SelectionMode.Waypoint || _selectedIndex < 0 || _selectedIndex >= Waypoints.Count)
+        if (!announceSelection)
         {
             return;
         }
@@ -192,7 +282,11 @@ public sealed partial class GuidanceSystem
             return;
         }
 
-        RescheduleGuidancePing(Main.LocalPlayer);
+        if ((_selectionMode == SelectionMode.Waypoint && _selectedIndex >= 0 && _selectedIndex < Waypoints.Count) ||
+            (_selectionMode == SelectionMode.Custom && CustomTargets.Count > 0))
+        {
+            RescheduleGuidancePing(Main.LocalPlayer);
+        }
     }
 
     private static void BroadcastWaypointSync(int toClient = -1, int ignoreClient = -1)
@@ -261,6 +355,50 @@ public sealed partial class GuidanceSystem
         LogWaypoint($"SendWaypointDeletedToServer: Sent delete for index {index}.");
     }
 
+    private static void SendCustomTargetAddedToServer(CustomGuidanceFilter target)
+    {
+        if (Main.netMode != NetmodeID.MultiplayerClient || !CanUseNetworkSync())
+        {
+            LogWaypoint($"SendCustomTargetAddedToServer: Skipped (NetMode={Main.netMode}, " +
+                        $"CanUseNetworkSync={CanUseNetworkSync()})");
+            return;
+        }
+
+        ModPacket? packet = TerrariaAccess.Instance?.GetPacket();
+        if (packet is null)
+        {
+            LogWaypoint("SendCustomTargetAddedToServer: Failed to get ModPacket.");
+            return;
+        }
+
+        packet.Write((byte)GuidancePacketType.CustomTargetAdded);
+        WriteCustomFilter(packet, target);
+        packet.Send();
+        LogWaypoint($"SendCustomTargetAddedToServer: Sent custom target \"{target.Label}\" of kind {target.Kind}");
+    }
+
+    private static void SendCustomTargetDeletedToServer(int index)
+    {
+        if (Main.netMode != NetmodeID.MultiplayerClient || !CanUseNetworkSync())
+        {
+            LogWaypoint($"SendCustomTargetDeletedToServer: Skipped (NetMode={Main.netMode}, " +
+                        $"CanUseNetworkSync={CanUseNetworkSync()})");
+            return;
+        }
+
+        ModPacket? packet = TerrariaAccess.Instance?.GetPacket();
+        if (packet is null)
+        {
+            LogWaypoint("SendCustomTargetDeletedToServer: Failed to get ModPacket.");
+            return;
+        }
+
+        packet.Write((byte)GuidancePacketType.CustomTargetDeleted);
+        packet.Write(index);
+        packet.Send();
+        LogWaypoint($"SendCustomTargetDeletedToServer: Sent delete for index {index}.");
+    }
+
     private static void ClampSelectedWaypointIndex()
     {
         if (_selectionMode != SelectionMode.Waypoint)
@@ -279,6 +417,24 @@ public sealed partial class GuidanceSystem
         _selectedIndex = Math.Clamp(_selectedIndex, 0, Waypoints.Count - 1);
     }
 
+    private static void ClampSelectedCustomIndex()
+    {
+        if (_selectionMode != SelectionMode.Custom)
+        {
+            _selectedCustomIndex = Math.Clamp(_selectedCustomIndex, -1, CustomTargets.Count - 1);
+            return;
+        }
+
+        if (CustomTargets.Count == 0)
+        {
+            _selectionMode = SelectionMode.None;
+            _selectedCustomIndex = -1;
+            return;
+        }
+
+        _selectedCustomIndex = Math.Clamp(_selectedCustomIndex, -1, CustomTargets.Count - 1);
+    }
+
     private static void RescheduleLocalPingAfterSync()
     {
         if (Main.gameMenu || Main.LocalPlayer is not { active: true } player)
@@ -286,7 +442,8 @@ public sealed partial class GuidanceSystem
             return;
         }
 
-        if (_selectionMode == SelectionMode.Waypoint && _selectedIndex >= 0 && _selectedIndex < Waypoints.Count)
+        if ((_selectionMode == SelectionMode.Waypoint && _selectedIndex >= 0 && _selectedIndex < Waypoints.Count) ||
+            (_selectionMode == SelectionMode.Custom && CustomTargets.Count > 0))
         {
             RescheduleGuidancePing(player);
         }
@@ -332,19 +489,49 @@ public sealed partial class GuidanceSystem
         return TryCreateWaypoint(name, x, y, fallbackIndex, source, out waypoint);
     }
 
-    private static bool TryReadWaypointSelection(BinaryReader reader, out SelectionMode selectionMode, out int selectedIndex)
+    private static void WriteCustomFilter(BinaryWriter writer, CustomGuidanceFilter filter)
     {
-        selectionMode = SelectionMode.None;
-        selectedIndex = -1;
+        writer.Write((byte)filter.Kind);
+        writer.Write(filter.TypeId);
+        writer.Write(filter.Label ?? string.Empty);
+    }
+
+    private static bool TryReadCustomFilter(BinaryReader reader, int fallbackIndex, string source, out CustomGuidanceFilter filter)
+    {
+        filter = default;
 
         if (!HasRemainingBytes(reader, sizeof(byte) + sizeof(int)))
+        {
+            LogWaypointWarning($"Custom target payload missing kind/type for {source}.");
+            return false;
+        }
+
+        CustomFilterKind kind = (CustomFilterKind)reader.ReadByte();
+        int typeId = reader.ReadInt32();
+        if (!TryReadStringSafe(reader, out string label))
+        {
+            return false;
+        }
+
+        filter = new CustomGuidanceFilter(kind, typeId, ResolveCustomFilterLabel(label, fallbackIndex));
+        return true;
+    }
+
+    private static bool TryReadWaypointSelection(BinaryReader reader, out SelectionMode selectionMode, out int selectedWaypointIndex, out int selectedCustomIndex)
+    {
+        selectionMode = SelectionMode.None;
+        selectedWaypointIndex = -1;
+        selectedCustomIndex = -1;
+
+        if (!HasRemainingBytes(reader, sizeof(byte) + sizeof(int) + sizeof(int)))
         {
             LogWaypointWarning("Waypoint sync payload missing selection data.");
             return false;
         }
 
         selectionMode = (SelectionMode)reader.ReadByte();
-        selectedIndex = reader.ReadInt32();
+        selectedWaypointIndex = reader.ReadInt32();
+        selectedCustomIndex = reader.ReadInt32();
         return true;
     }
 
