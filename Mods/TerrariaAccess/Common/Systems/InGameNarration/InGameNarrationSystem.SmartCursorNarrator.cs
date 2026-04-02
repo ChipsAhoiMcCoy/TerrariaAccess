@@ -9,6 +9,7 @@ using Microsoft.Xna.Framework;
 using Microsoft.Xna.Framework.Audio;
 using Microsoft.Xna.Framework.Graphics;
 using TerrariaAccess.Common.Services;
+using TerrariaAccess.Common.Systems.GamepadEmulation;
 using TerrariaAccess.Common.Systems.MenuNarration;
 using TerrariaAccess.Common.Utilities;
 using AnnouncementCategory = TerrariaAccess.Common.Services.ScreenReaderService.AnnouncementCategory;
@@ -119,7 +120,7 @@ public sealed partial class InGameNarrationSystem
             }
 
             bool hasInteract = Main.HasSmartInteractTarget;
-            bool hasSmartCursor = Main.SmartCursorIsUsed || Main.SmartCursorWanted;
+            bool hasSmartCursor = GamepadEmulationSystem.GetEffectiveSmartCursorState();
             string? modeChangeAnnouncement = null;
 
             if (_lastSmartCursorEnabled != hasSmartCursor)

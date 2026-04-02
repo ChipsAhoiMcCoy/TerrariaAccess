@@ -214,16 +214,6 @@ internal static class VirtualStickService
 
     private static bool GetEffectiveSmartCursorState()
     {
-        bool smartCursorActive;
-        if (GamepadEmulationSystem.TryGetForcedSmartCursorState(out bool forcedState))
-        {
-            smartCursorActive = forcedState;
-        }
-        else
-        {
-            smartCursorActive = Main.SmartCursorIsUsed || Main.SmartCursorWanted;
-        }
-
-        return smartCursorActive;
+        return GamepadEmulationSystem.GetEffectiveSmartCursorState(ignoreTemporarySuppression: true);
     }
 }

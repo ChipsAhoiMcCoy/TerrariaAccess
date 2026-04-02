@@ -921,7 +921,7 @@ public sealed class BuildModePlayer : ModPlayer
 
     private static bool IsSmartCursorActive()
     {
-        return Main.SmartCursorIsUsed || Main.SmartCursorWanted;
+        return GamepadEmulationSystem.GetEffectiveSmartCursorState();
     }
 
     private bool IsPlayerMoving()

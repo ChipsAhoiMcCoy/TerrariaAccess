@@ -264,7 +264,7 @@ public sealed partial class InGameNarrationSystem
                 return;
             }
 
-            bool smartCursorActive = Main.SmartCursorIsUsed || Main.SmartCursorWanted;
+            bool smartCursorActive = GamepadEmulationSystem.GetEffectiveSmartCursorState();
             bool gamepadCursorActive = IsGamepadCursorActive();
             bool hasSmartInteract = Main.HasSmartInteractTarget;
             bool canProvideCursorFeedback = !hasSmartInteract || gamepadCursorActive;

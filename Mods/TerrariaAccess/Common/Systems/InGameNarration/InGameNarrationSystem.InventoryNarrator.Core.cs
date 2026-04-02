@@ -57,11 +57,15 @@ public sealed partial class InGameNarrationSystem
 
         private static readonly bool NarrationDebugEnabled = !string.IsNullOrEmpty(Environment.GetEnvironmentVariable("SRM_DEBUG_NARRATION"));
         private static readonly bool InputDebugEnabled = !string.IsNullOrEmpty(Environment.GetEnvironmentVariable("SRM_DEBUG_INPUT"));
+        private static readonly bool HotbarDebugEnabled =
+            !string.IsNullOrEmpty(Environment.GetEnvironmentVariable("SRM_DEBUG_HOTBAR")) ||
+            !string.IsNullOrEmpty(Environment.GetEnvironmentVariable("SRM_DEBUG_INPUT"));
         private static readonly bool UiTickDebugEnabled =
             !string.IsNullOrEmpty(Environment.GetEnvironmentVariable("SRM_DEBUG_UI_TICKS")) ||
             !string.IsNullOrEmpty(Environment.GetEnvironmentVariable("SRM_DEBUG_INPUT"));
         private static int _lastLoggedFocusLinkPoint = -999;
         private static string? _lastLoggedFocusItemName;
+        private static string? _lastHotbarDebugState;
 
         private static readonly Lazy<FieldInfo?> MouseTextCacheField = new(() =>
             typeof(Main).GetField("_mouseTextCache", BindingFlags.Instance | BindingFlags.NonPublic));
@@ -416,7 +420,12 @@ public sealed partial class InGameNarrationSystem
 
             string combined = NarrationTextFormatter.CombineItemAnnouncement(message, details);
             int slotSignature = ComputeSlotSignature(target.Focus);
-            if (TryAnnounceCue(NarrationCue.ForItem(target.Identity, combined, target.Location, target.NormalizedTooltip, details, slotSignature), focus: target.Focus, regionPrefix: regionPrefix))
+            bool announced = TryAnnounceCue(
+                NarrationCue.ForItem(target.Identity, combined, target.Location, target.NormalizedTooltip, details, slotSignature),
+                focus: target.Focus,
+                regionPrefix: regionPrefix);
+            LogHotbarInventoryDebug("hover-item", target, currentRegion, regionPrefix, combined, announced);
+            if (announced)
             {
                 _lastAnnouncedItemIdentity = target.Identity;
                 _narrationHistory.Reset(NarrationKind.EmptySlot);
@@ -500,7 +509,12 @@ public sealed partial class InGameNarrationSystem
             string message = $"Empty, {target.Location}";
 
             int slotSignature = ComputeSlotSignature(target.Focus);
-            if (TryAnnounceCue(NarrationCue.ForEmpty(message, target.Location, slotSignature), focus: target.Focus, regionPrefix: regionPrefix))
+            bool announced = TryAnnounceCue(
+                NarrationCue.ForEmpty(message, target.Location, slotSignature),
+                focus: target.Focus,
+                regionPrefix: regionPrefix);
+            LogHotbarInventoryDebug("empty-slot", target, currentRegion, regionPrefix, message, announced);
+            if (announced)
             {
                 _narrationHistory.Reset(NarrationKind.HoverItem);
                 _narrationHistory.Reset(NarrationKind.Tooltip);
@@ -1619,6 +1633,50 @@ public sealed partial class InGameNarrationSystem
                 $"inputMode={inputMode}";
 
             global::TerrariaAccess.TerrariaAccess.Instance?.Logger.Info(message);
+        }
+
+        private static void LogHotbarInventoryDebug(
+            string action,
+            HoverTarget target,
+            InventoryRegion region,
+            string? regionPrefix,
+            string message,
+            bool announced)
+        {
+            if (!HotbarDebugEnabled || !ShouldLogHotbarInventoryDebug(region))
+            {
+                return;
+            }
+
+            int linkPoint = PlayerInput.UsingGamepadUI ? UILinkPointNavigator.CurrentPoint : -1;
+            int focusContext = target.Focus?.Context ?? -1;
+            int focusSlot = target.Focus?.Slot ?? -1;
+            string itemName = target.Identity.IsAir
+                ? "Empty"
+                : NarrationTextFormatter.ComposeItemName(target.Item);
+            string activeArea = UiAreaNarrationContext.ActiveArea.ToString();
+            string state = $"{action}|region={region}|linkPoint={linkPoint}|context={focusContext}|slot={focusSlot}|item={itemName}|message={message}|announced={announced}";
+            if (string.Equals(state, _lastHotbarDebugState, StringComparison.Ordinal))
+            {
+                return;
+            }
+
+            _lastHotbarDebugState = state;
+            TerrariaAccess.Instance?.Logger.Info(
+                $"[HotbarDebug][Inventory] action={action} frame={Main.GameUpdateCount} announced={announced} " +
+                $"region={region} regionPrefix='{regionPrefix ?? string.Empty}' activeArea={activeArea} " +
+                $"linkPoint={linkPoint} focusContext={focusContext} focusSlot={focusSlot} " +
+                $"location='{target.Location}' item='{itemName}' message='{message}'");
+        }
+
+        private static bool ShouldLogHotbarInventoryDebug(InventoryRegion region)
+        {
+            return region is InventoryRegion.Hotbar or
+                InventoryRegion.Inventory or
+                InventoryRegion.Coins or
+                InventoryRegion.Ammo or
+                InventoryRegion.CharacterPanel or
+                InventoryRegion.InventoryExtras;
         }
 
     }

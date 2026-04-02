@@ -35,6 +35,9 @@ public class TerrariaAccessConfig : ModConfig
     [DefaultValue(EdgeDetectionMode.Static)]
     public EdgeDetectionMode EdgeDetectionMode { get; set; } = EdgeDetectionMode.Static;
 
+    [DefaultValue(true)]
+    public bool OverheadTraversalCuesEnabled { get; set; } = true;
+
     // Multiplayer footsteps
     [DefaultValue(true)]
     public bool MultiplayerFootstepsEnabled { get; set; } = true;

@@ -1,4 +1,7 @@
 #nullable enable
+using System;
+using Microsoft.Xna.Framework;
+using Microsoft.Xna.Framework.Input;
 using TerrariaAccess.Common.Systems.ModBrowser;
 using Terraria;
 using Terraria.GameInput;
@@ -10,6 +13,9 @@ namespace TerrariaAccess.Common.Systems.GamepadEmulation;
 /// </summary>
 internal static class InputStateHelper
 {
+    private const float GamepadStickDeadzone = 0.35f;
+    private const float GamepadTriggerThreshold = 0.25f;
+
     internal static bool IsSignEditingActive()
     {
         Player? player = Main.myPlayer >= 0 ? Main.player[Main.myPlayer] : null;
@@ -141,5 +147,85 @@ internal static class InputStateHelper
         }
 
         return true;
+    }
+
+    /// <summary>
+    /// Returns true when a real controller is actively driving in-world gameplay.
+    /// In this state, keyboard emulation should not force world input mode back to keyboard
+    /// or re-virtualize the physical D-pad on top of vanilla controller handling.
+    /// </summary>
+    internal static bool ShouldUseNativeGamepadWorldInput(bool needsUiMode = false)
+    {
+        if (needsUiMode || Main.gameMenu || IsTextInputActive())
+        {
+            return false;
+        }
+
+        if (!TryGetPhysicalGamepadState(out GamePadState state))
+        {
+            return false;
+        }
+
+        InputMode inputMode = PlayerInput.CurrentInputMode;
+        if (inputMode == InputMode.XBoxGamepad || inputMode == InputMode.XBoxGamepadUI)
+        {
+            return true;
+        }
+
+        return HasMeaningfulPhysicalGamepadInput(state);
+    }
+
+    internal static bool IsPhysicalGamepadConnected()
+    {
+        return TryGetPhysicalGamepadState(out _);
+    }
+
+    private static bool TryGetPhysicalGamepadState(out GamePadState state)
+    {
+        try
+        {
+            state = GamePad.GetState(PlayerIndex.One);
+            return state.IsConnected;
+        }
+        catch
+        {
+            state = default;
+            return false;
+        }
+    }
+
+    private static bool HasMeaningfulPhysicalGamepadInput(GamePadState state)
+    {
+        if (state.DPad.Up == ButtonState.Pressed
+            || state.DPad.Right == ButtonState.Pressed
+            || state.DPad.Down == ButtonState.Pressed
+            || state.DPad.Left == ButtonState.Pressed)
+        {
+            return true;
+        }
+
+        if (state.Buttons.A == ButtonState.Pressed
+            || state.Buttons.B == ButtonState.Pressed
+            || state.Buttons.X == ButtonState.Pressed
+            || state.Buttons.Y == ButtonState.Pressed
+            || state.Buttons.LeftShoulder == ButtonState.Pressed
+            || state.Buttons.RightShoulder == ButtonState.Pressed
+            || state.Buttons.Start == ButtonState.Pressed
+            || state.Buttons.Back == ButtonState.Pressed
+            || state.Buttons.LeftStick == ButtonState.Pressed
+            || state.Buttons.RightStick == ButtonState.Pressed)
+        {
+            return true;
+        }
+
+        if (state.Triggers.Left > GamepadTriggerThreshold || state.Triggers.Right > GamepadTriggerThreshold)
+        {
+            return true;
+        }
+
+        return Math.Abs(state.ThumbSticks.Left.X) > GamepadStickDeadzone
+            || Math.Abs(state.ThumbSticks.Left.Y) > GamepadStickDeadzone
+            || Math.Abs(state.ThumbSticks.Right.X) > GamepadStickDeadzone
+            || Math.Abs(state.ThumbSticks.Right.Y) > GamepadStickDeadzone;
     }
 }

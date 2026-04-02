@@ -36,10 +36,18 @@ public sealed class DpadVirtualizationSystem : ModSystem
         }
 
         Vector2 nudges = CollectDpadNudges();
+        bool dpadHeld = AreAnyEffectiveDpadDirectionsHeld();
         if (nudges == Vector2.Zero)
         {
-            RestoreSmartCursorWantedStateIfNeeded();
-            ClampAnalogStickCursorIfNeeded();
+            // Keep Smart Cursor suppressed for the full duration of a held D-pad input.
+            // Otherwise it flickers back on between repeat-delay frames and the narrator
+            // announces repeated mode changes instead of continuous tile movement.
+            if (!dpadHeld)
+            {
+                RestoreSmartCursorWantedStateIfNeeded();
+                ClampAnalogStickCursorIfNeeded();
+            }
+
             return;
         }
 
@@ -83,18 +91,39 @@ public sealed class DpadVirtualizationSystem : ModSystem
             return false;
         }
 
+        if (InputStateHelper.ShouldUseNativeGamepadWorldInput())
+        {
+            return false;
+        }
+
         return true;
     }
 
     private Vector2 CollectDpadNudges()
     {
+        Vector2 nudges = Vector2.Zero;
+        GetEffectiveDpadState(out bool up, out bool right, out bool down, out bool left);
+
+        nudges += EvaluateDirection(up, -Vector2.UnitY, 0);
+        nudges += EvaluateDirection(right, Vector2.UnitX, 1);
+        nudges += EvaluateDirection(down, Vector2.UnitY, 2);
+        nudges += EvaluateDirection(left, -Vector2.UnitX, 3);
+
+        return nudges;
+    }
+
+    private static bool AreAnyEffectiveDpadDirectionsHeld()
+    {
+        GetEffectiveDpadState(out bool up, out bool right, out bool down, out bool left);
+        return up || right || down || left;
+    }
+
+    private static void GetEffectiveDpadState(out bool up, out bool right, out bool down, out bool left)
+    {
         // D-pad virtualization uses different keys based on Smart Cursor state:
         // - Smart Cursor OFF: OKLS keys act as D-pad (arrow keys act as analog stick)
         // - Smart Cursor ON: Arrow keys act as D-pad (OKLS keys act as analog stick)
         bool smartCursorActive = GetEffectiveSmartCursorState();
-
-        Vector2 nudges = Vector2.Zero;
-        bool up, right, down, left;
 
         if (smartCursorActive)
         {
@@ -113,14 +142,10 @@ public sealed class DpadVirtualizationSystem : ModSystem
             left = IsPressed(GamepadEmulationKeybinds.RightStickLeft);
         }
 
-        AppendPhysicalGamepadDpad(ref up, ref right, ref down, ref left);
-
-        nudges += EvaluateDirection(up, -Vector2.UnitY, 0);
-        nudges += EvaluateDirection(right, Vector2.UnitX, 1);
-        nudges += EvaluateDirection(down, Vector2.UnitY, 2);
-        nudges += EvaluateDirection(left, -Vector2.UnitX, 3);
-
-        return nudges;
+        if (!InputStateHelper.ShouldUseNativeGamepadWorldInput())
+        {
+            AppendPhysicalGamepadDpad(ref up, ref right, ref down, ref left);
+        }
     }
 
     private Vector2 EvaluateDirection(bool pressed, Vector2 unit, int index)
@@ -234,7 +259,7 @@ public sealed class DpadVirtualizationSystem : ModSystem
         // - Smart Cursor ON: Arrow keys act as D-pad
         bool smartCursorActive = GetEffectiveSmartCursorState();
 
-        bool physicalDpadHeld = IsPhysicalGamepadDpadHeld();
+        bool physicalDpadHeld = !InputStateHelper.ShouldUseNativeGamepadWorldInput() && IsPhysicalGamepadDpadHeld();
 
         if (smartCursorActive)
         {
@@ -425,16 +450,6 @@ public sealed class DpadVirtualizationSystem : ModSystem
 
     private static bool GetEffectiveSmartCursorState()
     {
-        bool smartCursorActive;
-        if (GamepadEmulationSystem.TryGetForcedSmartCursorState(out bool forcedState))
-        {
-            smartCursorActive = forcedState;
-        }
-        else
-        {
-            smartCursorActive = Main.SmartCursorIsUsed || Main.SmartCursorWanted;
-        }
-
-        return smartCursorActive;
+        return GamepadEmulationSystem.GetEffectiveSmartCursorState(ignoreTemporarySuppression: true);
     }
 }

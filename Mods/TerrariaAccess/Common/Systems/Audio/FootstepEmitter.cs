@@ -24,7 +24,6 @@ internal sealed class FootstepEmitter : AudioEmitterBase
 
     private Point _lastFootTile = new(-1, -1);
     private float _lastFootX = float.NaN;
-    private bool _suppressNextStep = true;
     private bool _wasAirborne;
     private float _airborneStartY;
     private float _maxAirborneDisplacement;
@@ -44,7 +43,36 @@ internal sealed class FootstepEmitter : AudioEmitterBase
     private float _lastEdgeStaticVolume;
     private float _lastEdgeStaticPan;
 
+    // Overhead traversal cue configuration
+    private const int MaxPlatformCueHeightTiles = 4;
+    private const int MaxMinecartCueHeightTiles = 4;
+    private const int MaxRopeCueHeightTiles = 7;
+    private const float OverheadCueBaseVolume = 0.22f;
+    private const float OverheadCueCloseFrequencyStepHz = 35f;
+
     private readonly record struct EdgeScanResult(Vector2 WorldPosition, bool IsPlatform, float DistancePixels);
+    private readonly record struct OverheadTraversalCue(
+        OverheadTraversalType Type,
+        Point Tile,
+        Vector2 WorldPosition,
+        int DistanceTiles,
+        VerticalTraversalDirection Direction);
+    private const int NoRopeCueTile = int.MinValue;
+    private int _lastAnnouncedRopeTileX = NoRopeCueTile;
+    private VerticalTraversalDirection _lastAnnouncedRopeDirection;
+
+    private enum OverheadTraversalType
+    {
+        Platform,
+        Rope,
+        MinecartTrack
+    }
+
+    private enum VerticalTraversalDirection
+    {
+        Above,
+        Below
+    }
 
     public override void Update(Player player)
     {
@@ -96,14 +124,6 @@ internal sealed class FootstepEmitter : AudioEmitterBase
 
         UpdateHarmfulTone(player, footTile);
 
-        if (_suppressNextStep)
-        {
-            _suppressNextStep = false;
-            _lastFootTile = footTile;
-            _lastFootX = footX;
-            return;
-        }
-
         // Compute elevation change before updating last tile.
         // Terraria Y increases downward, so lastY > currentY means player went up.
         int elevationDelta = (_lastFootTile.Y >= 0) ? _lastFootTile.Y - footTile.Y : 0;
@@ -112,6 +132,7 @@ internal sealed class FootstepEmitter : AudioEmitterBase
         bool onPlatform = IsPlatform(footTile.X, footTile.Y);
         bool onHarmfulTile = IsHarmfulTile(player, footTile);
         PlayStep(player, onPlatform, onHarmfulTile, elevationDelta);
+        MaybePlayOverheadTraversalCue(player, footTile);
     }
 
     public override void Reset()
@@ -154,12 +175,13 @@ internal sealed class FootstepEmitter : AudioEmitterBase
 
     private void ResetState()
     {
-        _suppressNextStep = true;
         _lastFootTile = new Point(-1, -1);
         _lastFootX = float.NaN;
         _wasAirborne = false;
         _airborneStartY = 0f;
         _maxAirborneDisplacement = 0f;
+        _lastAnnouncedRopeTileX = NoRopeCueTile;
+        _lastAnnouncedRopeDirection = VerticalTraversalDirection.Above;
         StopHarmfulTone();
         ResetEdgeBeep();
         StopEdgeStatic();
@@ -223,6 +245,38 @@ internal sealed class FootstepEmitter : AudioEmitterBase
         }
 
         // A solid wall blocks horizontal movement (not platforms, not top-solid-only)
+        return Main.tileSolid[tile.TileType] && !Main.tileSolidTop[tile.TileType];
+    }
+
+    private static bool IsBlockingCeilingTile(int tileX, int tileY)
+    {
+        Tile tile = Framing.GetTileSafely(tileX, tileY);
+        if (!tile.HasTile || tile.IsActuated)
+        {
+            return false;
+        }
+
+        if (Main.tileRope[tile.TileType] || TileID.Sets.Platforms[tile.TileType] || tile.TileType == TileID.MinecartTrack)
+        {
+            return false;
+        }
+
+        return Main.tileSolid[tile.TileType] && !Main.tileSolidTop[tile.TileType];
+    }
+
+    private static bool IsBlockingFloorTile(int tileX, int tileY)
+    {
+        Tile tile = Framing.GetTileSafely(tileX, tileY);
+        if (!tile.HasTile || tile.IsActuated)
+        {
+            return false;
+        }
+
+        if (Main.tileRope[tile.TileType])
+        {
+            return false;
+        }
+
         return Main.tileSolid[tile.TileType] && !Main.tileSolidTop[tile.TileType];
     }
 
@@ -351,6 +405,239 @@ internal sealed class FootstepEmitter : AudioEmitterBase
 
         float baseVolume = 0.45f;
         loudness = SoundLoudnessUtility.ApplyDistanceFalloff(baseVolume, distanceTiles: 0f, referenceTiles: 1f);
+    }
+
+    private void MaybePlayOverheadTraversalCue(Player player, Point footTile)
+    {
+        if (TerrariaAccessConfig.Instance?.OverheadTraversalCuesEnabled == false)
+        {
+            _lastAnnouncedRopeTileX = NoRopeCueTile;
+            _lastAnnouncedRopeDirection = VerticalTraversalDirection.Above;
+            return;
+        }
+
+        OverheadTraversalCue? cue = ScanForOverheadTraversalCue(player, footTile);
+        if (!cue.HasValue)
+        {
+            _lastAnnouncedRopeTileX = NoRopeCueTile;
+            _lastAnnouncedRopeDirection = VerticalTraversalDirection.Above;
+            return;
+        }
+
+        OverheadTraversalCue currentCue = cue.Value;
+        if (currentCue.Type == OverheadTraversalType.Rope)
+        {
+            if (_lastAnnouncedRopeTileX == currentCue.Tile.X &&
+                _lastAnnouncedRopeDirection == currentCue.Direction)
+            {
+                return;
+            }
+
+            _lastAnnouncedRopeTileX = currentCue.Tile.X;
+            _lastAnnouncedRopeDirection = currentCue.Direction;
+        }
+        else
+        {
+            _lastAnnouncedRopeTileX = NoRopeCueTile;
+            _lastAnnouncedRopeDirection = VerticalTraversalDirection.Above;
+        }
+
+        PlayOverheadTraversalCue(player, currentCue);
+        AnnounceTraversalCue(currentCue);
+    }
+
+    private static void PlayOverheadTraversalCue(Player player, OverheadTraversalCue cue)
+    {
+        ComputeOverheadCueAudio(cue, out float frequency, out float loudness, out bool useTriangleWave);
+
+        SpatialAudioPanner.SpatialAudioSample sample = SpatialAudioPanner.Compute(
+            player.Center,
+            cue.WorldPosition,
+            loudness);
+
+        float configVolume = TerrariaAccessConfig.Instance?.FootstepVolume ?? 1f;
+        FootstepToneProvider.Play(frequency, sample.Volume * configVolume, useTriangleWave, sample.Pan);
+    }
+
+    private static void ComputeOverheadCueAudio(OverheadTraversalCue cue, out float frequency, out float loudness, out bool useTriangleWave)
+    {
+        float closenessBoost = Math.Max(0, 5 - cue.DistanceTiles) * OverheadCueCloseFrequencyStepHz;
+
+        switch (cue.Type)
+        {
+            case OverheadTraversalType.Rope:
+                frequency = cue.Direction == VerticalTraversalDirection.Above
+                    ? 900f + closenessBoost
+                    : 820f + closenessBoost;
+                loudness = OverheadCueBaseVolume;
+                useTriangleWave = false;
+                break;
+            case OverheadTraversalType.MinecartTrack:
+                frequency = 1180f + closenessBoost;
+                loudness = OverheadCueBaseVolume * 0.95f;
+                useTriangleWave = true;
+                break;
+            default:
+                frequency = 720f + closenessBoost;
+                loudness = OverheadCueBaseVolume;
+                useTriangleWave = false;
+                break;
+        }
+    }
+
+    private static void AnnounceTraversalCue(OverheadTraversalCue cue)
+    {
+        if (cue.Type != OverheadTraversalType.Rope)
+        {
+            return;
+        }
+
+        string message = cue.Direction == VerticalTraversalDirection.Above
+            ? "Rope above"
+            : "Rope below";
+        ScreenReaderService.Announce(
+            message,
+            force: true,
+            category: ScreenReaderService.AnnouncementCategory.Tile,
+            requestInterrupt: false);
+    }
+
+    private static OverheadTraversalCue? ScanForOverheadTraversalCue(Player player, Point footTile)
+    {
+        Rectangle hitbox = player.Hitbox;
+        int anchorTileX = footTile.X;
+        int headTileY = Math.Clamp(hitbox.Top / 16, 0, Main.maxTilesY - 1);
+        int footTileY = footTile.Y;
+        bool blocked = false;
+        int maxDistance = Math.Max(MaxRopeCueHeightTiles, Math.Max(MaxPlatformCueHeightTiles, MaxMinecartCueHeightTiles));
+
+        for (int distance = 1; distance <= maxDistance; distance++)
+        {
+            int tileY = headTileY - distance;
+            if (tileY < 0)
+            {
+                break;
+            }
+
+            OverheadTraversalCue? ropeCue = null;
+            OverheadTraversalCue? minecartCue = null;
+            OverheadTraversalCue? platformCue = null;
+
+            if (!blocked)
+            {
+                int tileX = anchorTileX;
+                Tile tile = Framing.GetTileSafely(tileX, tileY);
+                if (tile.HasTile && !tile.IsActuated)
+                {
+                    Vector2 worldPosition = new(tileX * 16f + 8f, tileY * 16f + 8f);
+                    Point tilePoint = new(tileX, tileY);
+
+                    if (ropeCue is null && distance <= MaxRopeCueHeightTiles && Main.tileRope[tile.TileType])
+                    {
+                        ropeCue = new OverheadTraversalCue(
+                            OverheadTraversalType.Rope,
+                            tilePoint,
+                            worldPosition,
+                            distance,
+                            VerticalTraversalDirection.Above);
+                    }
+
+                    if (minecartCue is null && distance <= MaxMinecartCueHeightTiles && tile.TileType == TileID.MinecartTrack)
+                    {
+                        minecartCue = new OverheadTraversalCue(
+                            OverheadTraversalType.MinecartTrack,
+                            tilePoint,
+                            worldPosition,
+                            distance,
+                            VerticalTraversalDirection.Above);
+                    }
+
+                    if (platformCue is null && distance <= MaxPlatformCueHeightTiles && TileID.Sets.Platforms[tile.TileType])
+                    {
+                        platformCue = new OverheadTraversalCue(
+                            OverheadTraversalType.Platform,
+                            tilePoint,
+                            worldPosition,
+                            distance,
+                            VerticalTraversalDirection.Above);
+                    }
+                }
+
+                if (IsBlockingCeilingTile(tileX, tileY))
+                {
+                    blocked = true;
+                }
+            }
+
+            if (ropeCue.HasValue)
+            {
+                return ropeCue.Value;
+            }
+
+            if (minecartCue.HasValue)
+            {
+                return minecartCue.Value;
+            }
+
+            if (platformCue.HasValue)
+            {
+                return platformCue.Value;
+            }
+        }
+
+        OverheadTraversalCue? ropeBelowCue = ScanForTraversalCueBelow(anchorTileX, footTileY);
+        if (ropeBelowCue.HasValue)
+        {
+            return ropeBelowCue.Value;
+        }
+
+        return null;
+    }
+
+    private static OverheadTraversalCue? ScanForTraversalCueBelow(int anchorTileX, int footTileY)
+    {
+        bool blocked = false;
+        for (int distance = 1; distance <= MaxRopeCueHeightTiles; distance++)
+        {
+            int tileY = footTileY + distance;
+            if (tileY >= Main.maxTilesY)
+            {
+                break;
+            }
+
+            OverheadTraversalCue? ropeCue = null;
+            if (!blocked)
+            {
+                int tileX = anchorTileX;
+                Tile tile = Framing.GetTileSafely(tileX, tileY);
+                if (tile.HasTile && !tile.IsActuated)
+                {
+                    if (ropeCue is null && Main.tileRope[tile.TileType])
+                    {
+                        Point tilePoint = new(tileX, tileY);
+                        Vector2 worldPosition = new(tileX * 16f + 8f, tileY * 16f + 8f);
+                        ropeCue = new OverheadTraversalCue(
+                            OverheadTraversalType.Rope,
+                            tilePoint,
+                            worldPosition,
+                            distance,
+                            VerticalTraversalDirection.Below);
+                    }
+
+                    if (IsBlockingFloorTile(tileX, tileY))
+                    {
+                        blocked = true;
+                    }
+                }
+            }
+
+            if (ropeCue.HasValue)
+            {
+                return ropeCue.Value;
+            }
+        }
+
+        return null;
     }
 
     private void UpdateHarmfulTone(Player player, Point tileCoords)

@@ -537,6 +537,11 @@ public sealed class GamepadEmulationSystem : ModSystem
             return;
         }
 
+        if (InputStateHelper.ShouldUseNativeGamepadWorldInput(needsUiMode))
+        {
+            return;
+        }
+
         if (GamepadEmulationState.Enabled)
         {
             if (IsLockOnContextActive())
@@ -668,6 +673,21 @@ public sealed class GamepadEmulationSystem : ModSystem
 
         enabled = _smartCursorDesiredEnabled;
         return true;
+    }
+
+    internal static bool GetEffectiveSmartCursorState(bool ignoreTemporarySuppression = false)
+    {
+        if (!ignoreTemporarySuppression && DpadVirtualizationSystem.IsTemporarilySuppressingSmartCursor())
+        {
+            return false;
+        }
+
+        if (TryGetForcedSmartCursorState(out bool enabled))
+        {
+            return enabled;
+        }
+
+        return GetActualSmartCursorState();
     }
 
     private static bool GetActualSmartCursorState()
@@ -1065,6 +1085,8 @@ public sealed class GamepadEmulationSystem : ModSystem
         bool usingGamepadUi = PlayerInput.UsingGamepadUI;
         bool emulationEnabled = GamepadEmulationState.Enabled;
         bool textInputActive = InputStateHelper.IsTextInputActive();
+        bool physicalGamepadConnected = InputStateHelper.IsPhysicalGamepadConnected();
+        bool nativeWorldGamepad = InputStateHelper.ShouldUseNativeGamepadWorldInput();
         int chestIndex = player?.chest ?? -1;
         bool firstLetterNavEnabled = FirstLetterNavigation.FirstLetterNavigationManager.IsEnabled;
 
@@ -1081,6 +1103,8 @@ public sealed class GamepadEmulationSystem : ModSystem
             $"usingGamepadUi={usingGamepadUi} " +
             $"emulation={emulationEnabled} " +
             $"textInput={textInputActive} " +
+            $"physicalGamepad={physicalGamepadConnected} " +
+            $"nativeWorldGamepad={nativeWorldGamepad} " +
             $"chest={chestIndex} " +
             $"firstLetterNav={firstLetterNavEnabled} " +
             $"mouseL={mouseLeftActive} " +

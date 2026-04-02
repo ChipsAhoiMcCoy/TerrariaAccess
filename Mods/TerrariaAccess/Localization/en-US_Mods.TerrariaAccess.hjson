@@ -12,6 +12,11 @@ Mods: {
 					Beeps.Label: Beeps
 				}
 
+				OverheadTraversalCuesEnabled: {
+					Label: Overhead Traversal Cues
+					Tooltip: When enabled, footsteps play a companion tone when you are directly underneath a nearby rope, platform, or minecart track that you can use.
+				}
+
 				CursorTileSounds: {
 					Label: Cursor Tile Sounds
 					Tooltip: When enabled, Smart Cursor emits a sound when it focuses a new tile. Disable to silence tile focus sounds.
@@ -648,6 +653,11 @@ Configs: {
 
 		FallDetectionVolume: {
 			Label: Fall Detection Volume
+			Tooltip: ""
+		}
+
+		OverheadTraversalCuesEnabled: {
+			Label: Overhead Traversal Cues Enabled
 			Tooltip: ""
 		}
 	}
