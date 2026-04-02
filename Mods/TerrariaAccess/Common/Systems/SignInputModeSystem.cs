@@ -39,6 +39,10 @@ public sealed class SignInputModeSystem : ModSystem
     private static bool _wasEscapePressed;
     private static bool _wasInventorySelectPressed;
     private static bool _wasInventoryInteractPressed;
+    private static int _preDrawMouseX;
+    private static int _preDrawMouseY;
+    private static int _preDrawPlayerInputMouseX;
+    private static int _preDrawPlayerInputMouseY;
     private static SignButtonSelection _selectedButton = SignButtonSelection.Save;
 
     internal static bool IsSignOpenForLocalPlayer => TryGetLocalActiveSignPlayer(out _);
@@ -53,6 +57,14 @@ public sealed class SignInputModeSystem : ModSystem
         IsSignOpenForLocalPlayer &&
         !IsButtonNavigationActive;
 
+    internal static bool IsSaveButtonSelected =>
+        IsButtonNavigationActive &&
+        _selectedButton == SignButtonSelection.Save;
+
+    internal static bool IsCloseButtonSelected =>
+        IsButtonNavigationActive &&
+        _selectedButton == SignButtonSelection.Close;
+
     public override void Load()
     {
         if (Main.dedServ)
@@ -61,6 +73,7 @@ public sealed class SignInputModeSystem : ModSystem
         }
 
         On_Main.InputTextSign += HandleInputTextSign;
+        On_Main.DrawNPCChatButtons += HandleDrawNpcChatButtons;
     }
 
     public override void Unload()
@@ -71,6 +84,7 @@ public sealed class SignInputModeSystem : ModSystem
         }
 
         On_Main.InputTextSign -= HandleInputTextSign;
+        On_Main.DrawNPCChatButtons -= HandleDrawNpcChatButtons;
         ResetState();
     }
 
@@ -95,7 +109,7 @@ public sealed class SignInputModeSystem : ModSystem
         if (IsButtonNavigationActive)
         {
             HandleButtonNavigationInput();
-            ApplyVisualButtonFocus();
+            ClearVisualButtonFocus();
         }
         else
         {
@@ -127,6 +141,28 @@ public sealed class SignInputModeSystem : ModSystem
         PlayerInput.WritingText = false;
         Main.inputTextEnter = false;
         Main.inputTextEscape = false;
+    }
+
+    private static void HandleDrawNpcChatButtons(On_Main.orig_DrawNPCChatButtons orig, int superColor, Microsoft.Xna.Framework.Color chatColor, int numLines, string focusText, string focusText3)
+    {
+        if (!IsButtonNavigationActive)
+        {
+            orig(superColor, chatColor, numLines, focusText, focusText3);
+            return;
+        }
+
+        ClearVisualButtonFocus();
+        ParkMouseAwayFromDialogueButtons();
+
+        try
+        {
+            orig(superColor, chatColor, numLines, focusText, focusText3);
+        }
+        finally
+        {
+            RestoreMouseAfterDialogueDraw();
+            ClearVisualButtonFocus();
+        }
     }
 
     private static void ToggleMode()
@@ -164,7 +200,7 @@ public sealed class SignInputModeSystem : ModSystem
         _selectedButton = SignButtonSelection.Save;
         ResetButtonInputLatch();
         _awaitDirectionalNeutral = true;
-        ApplyVisualButtonFocus();
+        ClearVisualButtonFocus();
 
         LogState("Entered button navigation");
 
@@ -236,9 +272,11 @@ public sealed class SignInputModeSystem : ModSystem
         KeyboardState keyState = Main.keyState;
 
         bool leftPressed = keyState.IsKeyDown(Keys.Left) ||
+                           keyState.IsKeyDown(Keys.A) ||
                            (GamepadEmulationKeybinds.ArrowLeft is { } leftKeybind &&
                             VirtualTriggerService.IsKeybindPressed(leftKeybind));
         bool rightPressed = keyState.IsKeyDown(Keys.Right) ||
+                            keyState.IsKeyDown(Keys.D) ||
                             (GamepadEmulationKeybinds.ArrowRight is { } rightKeybind &&
                              VirtualTriggerService.IsKeybindPressed(rightKeybind));
 
@@ -287,11 +325,10 @@ public sealed class SignInputModeSystem : ModSystem
         if (leftJustPressed ^ rightJustPressed)
         {
             bool selectionChanged = leftJustPressed
-                ? SetSelectedButton(SignButtonSelection.Close)
-                : SetSelectedButton(SignButtonSelection.Save);
+                ? SetSelectedButton(SignButtonSelection.Save)
+                : SetSelectedButton(SignButtonSelection.Close);
 
             _awaitDirectionalNeutral = true;
-            ApplyVisualButtonFocus();
             if (selectionChanged)
             {
                 AnnounceSelectedButton(includeModeHint: false);
@@ -307,7 +344,6 @@ public sealed class SignInputModeSystem : ModSystem
         if (escapeJustPressed || inventoryInteractJustPressed)
         {
             _selectedButton = SignButtonSelection.Close;
-            ApplyVisualButtonFocus();
             ActivateSelectedButton();
         }
     }
@@ -320,6 +356,10 @@ public sealed class SignInputModeSystem : ModSystem
         }
 
         _selectedButton = selection;
+        // Sign button navigation bypasses vanilla hover focus to avoid the
+        // rapid refocus loop, so we emit the same tick sound here when the
+        // logical selection changes.
+        SoundEngine.PlaySound(SoundID.MenuTick);
         LogState($"Selected {_selectedButton}");
         return true;
     }
@@ -336,14 +376,6 @@ public sealed class SignInputModeSystem : ModSystem
         {
             Main.CloseNPCChatOrSign();
         }
-    }
-
-    private static void ApplyVisualButtonFocus()
-    {
-        Main.npcChatFocus2 = _selectedButton == SignButtonSelection.Save;
-        Main.npcChatFocus1 = _selectedButton == SignButtonSelection.Close;
-        Main.npcChatFocus3 = false;
-        Main.npcChatFocus4 = false;
     }
 
     private static void ClearVisualButtonFocus()
@@ -368,7 +400,7 @@ public sealed class SignInputModeSystem : ModSystem
         {
             string hint = LocalizationHelper.GetTextOrFallback(
                 "Mods.TerrariaAccess.SignInput.ButtonNavigationEnabled",
-                "Sign button navigation. Save selected. Use arrow keys to move between buttons. Press Tab to return to editing.");
+                "Sign button navigation. Save selected. Use left and right or A and D to move between buttons. Press Tab to return to editing.");
             announcement = $"{hint} {announcement}";
         }
 
@@ -385,6 +417,29 @@ public sealed class SignInputModeSystem : ModSystem
         _wasEscapePressed = false;
         _wasInventorySelectPressed = false;
         _wasInventoryInteractPressed = false;
+    }
+
+    private static void ParkMouseAwayFromDialogueButtons()
+    {
+        _preDrawMouseX = Main.mouseX;
+        _preDrawMouseY = Main.mouseY;
+        _preDrawPlayerInputMouseX = PlayerInput.MouseX;
+        _preDrawPlayerInputMouseY = PlayerInput.MouseY;
+
+        const int parkedX = -4096;
+        const int parkedY = -4096;
+        Main.mouseX = parkedX;
+        Main.mouseY = parkedY;
+        PlayerInput.MouseX = parkedX;
+        PlayerInput.MouseY = parkedY;
+    }
+
+    private static void RestoreMouseAfterDialogueDraw()
+    {
+        Main.mouseX = _preDrawMouseX;
+        Main.mouseY = _preDrawMouseY;
+        PlayerInput.MouseX = _preDrawPlayerInputMouseX;
+        PlayerInput.MouseY = _preDrawPlayerInputMouseY;
     }
 
     private static bool TryGetLocalActiveSignPlayer(out Player? player)

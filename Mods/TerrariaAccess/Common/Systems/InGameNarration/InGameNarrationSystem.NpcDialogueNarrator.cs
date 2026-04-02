@@ -533,10 +533,10 @@ public sealed partial class InGameNarrationSystem
             {
                 return buttonType switch
                 {
-                    ButtonType.Primary => Main.npcChatFocus2,
-                    ButtonType.Close => Main.npcChatFocus1,
-                    ButtonType.Secondary => Main.npcChatFocus3,
-                    ButtonType.Happiness => Main.npcChatFocus4,
+                    ButtonType.Primary => SignInputModeSystem.IsSaveButtonSelected,
+                    ButtonType.Close => SignInputModeSystem.IsCloseButtonSelected,
+                    ButtonType.Secondary => false,
+                    ButtonType.Happiness => false,
                     _ => false,
                 };
             }
