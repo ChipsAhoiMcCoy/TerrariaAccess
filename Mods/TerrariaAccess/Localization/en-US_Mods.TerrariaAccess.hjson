@@ -497,6 +497,7 @@ Mods: {
 			GamepadEmulationArrowLeft.DisplayName: Gamepad Emulation Arrow Left
 			GamepadEmulationArrowRight.DisplayName: Gamepad Emulation Arrow Right
 			StatusCheck.DisplayName: Status Checker
+			InfoAccessoryCheck.DisplayName: Info Accessory Checker
 			CavitySonarScan.DisplayName: Cavity Sonar Scan
 		}
 	}
@@ -534,6 +535,7 @@ Keybinds: {
 	GamepadEmulationArrowLeft.DisplayName: Gamepad Emulation Arrow Left
 	GamepadEmulationArrowRight.DisplayName: Gamepad Emulation Arrow Right
 	StatusCheck.DisplayName: Status Checker
+	InfoAccessoryCheck.DisplayName: Info Accessory Checker
 	CavitySonarScan.DisplayName: Cavity Sonar Scan
 }
 

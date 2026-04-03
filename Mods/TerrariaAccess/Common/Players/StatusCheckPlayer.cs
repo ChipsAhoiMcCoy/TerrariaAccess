@@ -21,5 +21,10 @@ public sealed class StatusCheckPlayer : ModPlayer
         {
             StatusCheckSystem.AnnounceStatus(Player);
         }
+
+        if (StatusCheckKeybinds.InfoAccessoryCheck?.JustPressed ?? false)
+        {
+            InfoAccessoryStatusSystem.Announce(Player);
+        }
     }
 }
