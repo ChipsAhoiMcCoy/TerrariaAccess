@@ -11,6 +11,7 @@ using Microsoft.Xna.Framework;
 using Microsoft.Xna.Framework.Audio;
 using Microsoft.Xna.Framework.Graphics;
 using TerrariaAccess.Common.Services;
+using TerrariaAccess.Common.Systems.InGameNarration;
 using TerrariaAccess.Common.Systems.MenuNarration;
 using TerrariaAccess.Common.Utilities;
 using Terraria;
@@ -833,6 +834,11 @@ public sealed partial class InGameNarrationSystem
                 }
             }
 
+            if (identity.IsAir)
+            {
+                return TryDescribeGamepadEmptyLocation();
+            }
+
             if (TryMatch(player.inventory, identity, out int inventoryIndex))
             {
                 if (inventoryIndex < 10)
@@ -918,6 +924,115 @@ public sealed partial class InGameNarrationSystem
             }
 
             return string.Empty;
+        }
+
+        private static string TryDescribeGamepadEmptyLocation()
+        {
+            if (!PlayerInput.UsingGamepadUI)
+            {
+                return string.Empty;
+            }
+
+            int currentPoint = UILinkPointNavigator.CurrentPoint;
+            if (SlotNavigationHelper.TryResolveInventorySlot(currentPoint, out int inventorySlot, out int inventoryContext))
+            {
+                return inventoryContext == ItemSlot.Context.InventoryItem ||
+                    inventoryContext == ItemSlot.Context.InventoryCoin ||
+                    inventoryContext == ItemSlot.Context.InventoryAmmo
+                    ? SlotContextFormatter.DescribeInventorySlot(inventorySlot)
+                    : string.Empty;
+            }
+
+            if (SlotNavigationHelper.TryResolveChestSlot(currentPoint, out int chestSlot))
+            {
+                return $"Slot {chestSlot + 1}";
+            }
+
+            Player? player = Main.LocalPlayer;
+            if (player is not null && TryResolveEquipmentFocusDirectly(player, currentPoint, out SlotFocus equipmentFocus))
+            {
+                return DescribeFocusedSlot(player, equipmentFocus);
+            }
+
+            return string.Empty;
+        }
+
+        private static bool TryResolveEquipmentFocusDirectly(Player player, int point, out SlotFocus focus)
+        {
+            focus = default;
+
+            if (player is null || point < 100)
+            {
+                return false;
+            }
+
+            if (point >= 100 && point < 120)
+            {
+                int armorSlot = point - 100;
+                if ((uint)armorSlot >= (uint)player.armor.Length)
+                {
+                    return false;
+                }
+
+                int armorContext = armorSlot switch
+                {
+                    <= 2 => ItemSlot.Context.EquipArmor,
+                    <= 9 => ItemSlot.Context.EquipAccessory,
+                    <= 12 => ItemSlot.Context.EquipArmorVanity,
+                    _ => ItemSlot.Context.EquipAccessoryVanity,
+                };
+
+                focus = new SlotFocus(player.armor, null, armorContext, armorSlot);
+                return true;
+            }
+
+            if (point >= 120 && point < 130)
+            {
+                int dyeSlot = point - 120;
+                if ((uint)dyeSlot >= (uint)player.dye.Length)
+                {
+                    return false;
+                }
+
+                focus = new SlotFocus(player.dye, null, ItemSlot.Context.EquipDye, dyeSlot);
+                return true;
+            }
+
+            if (point >= 130 && point < 135)
+            {
+                int miscEquipSlot = point - 130;
+                if ((uint)miscEquipSlot >= (uint)player.miscEquips.Length)
+                {
+                    return false;
+                }
+
+                int miscContext = miscEquipSlot switch
+                {
+                    0 => ItemSlot.Context.EquipPet,
+                    1 => ItemSlot.Context.EquipLight,
+                    2 => ItemSlot.Context.EquipMinecart,
+                    3 => ItemSlot.Context.EquipMount,
+                    4 => ItemSlot.Context.EquipGrapple,
+                    _ => ItemSlot.Context.EquipPet,
+                };
+
+                focus = new SlotFocus(player.miscEquips, null, miscContext, miscEquipSlot);
+                return true;
+            }
+
+            if (point >= 135 && point < 140)
+            {
+                int miscDyeSlot = point - 135;
+                if ((uint)miscDyeSlot >= (uint)player.miscDyes.Length)
+                {
+                    return false;
+                }
+
+                focus = new SlotFocus(player.miscDyes, null, ItemSlot.Context.EquipMiscDye, miscDyeSlot);
+                return true;
+            }
+
+            return false;
         }
 
         private static bool IsPlayerInventoryItem(Player player, ItemIdentity identity)

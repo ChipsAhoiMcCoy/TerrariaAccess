@@ -185,6 +185,17 @@ public sealed partial class InGameNarrationSystem
                     ItemSlot.Context.BankItem or
                     ItemSlot.Context.VoidItem => SlotNavigationHelper.TryResolveChestSlot(point, out int slot) && slot == focus.Slot,
                     ItemSlot.Context.CraftingMaterial => SlotNavigationHelper.IsCraftingGridLinkPoint(point) || SlotNavigationHelper.IsCraftingListLinkPoint(point),
+                    ItemSlot.Context.EquipArmor or
+                    ItemSlot.Context.EquipArmorVanity or
+                    ItemSlot.Context.EquipAccessory or
+                    ItemSlot.Context.EquipAccessoryVanity or
+                    ItemSlot.Context.EquipDye or
+                    ItemSlot.Context.EquipMiscDye or
+                    ItemSlot.Context.EquipGrapple or
+                    ItemSlot.Context.EquipMount or
+                    ItemSlot.Context.EquipMinecart or
+                    ItemSlot.Context.EquipPet or
+                    ItemSlot.Context.EquipLight => MatchesEquipmentPoint(point, focus, context),
                     _ => true,
                 };
 
@@ -205,6 +216,22 @@ public sealed partial class InGameNarrationSystem
                 }
 
                 return resolvedSlot == slot && resolvedContext == context;
+            }
+
+            private static bool MatchesEquipmentPoint(int point, in SlotFocus focus, int context)
+            {
+                Player? player = Main.LocalPlayer;
+                if (player is null)
+                {
+                    return false;
+                }
+
+                if (!TryResolveEquipmentFocusDirectly(player, point, out SlotFocus expected))
+                {
+                    return false;
+                }
+
+                return expected.Slot == focus.Slot && expected.Context == context;
             }
 
             private SlotFocus? ConsumePending(bool usingGamepad)
@@ -348,6 +375,11 @@ public sealed partial class InGameNarrationSystem
                     {
                         items = player.bank4.item;
                     }
+                }
+
+                if (items is null && TryResolveEquipmentFocusDirectly(player, point, out SlotFocus equipmentFocus))
+                {
+                    return equipmentFocus;
                 }
 
                 if (items is null || slot < 0 || (uint)slot >= (uint)items.Length)
