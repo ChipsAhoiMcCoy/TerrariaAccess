@@ -38,6 +38,11 @@ tModLoader.zip
 Tools/Decompiled/
 TModLoader Decompiled/
 Terraria Decompiled/
+.tmp_ilspy_*/
+
+# Ignore portable .NET SDK and dotnet tools used by decompile-terraria.ps1
+Tools/dotnet/
+Tools/dotnet-tools/
 
 # Ignore installer build output (but keep bundled release files)
 Release/Output/
