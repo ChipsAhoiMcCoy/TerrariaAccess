@@ -250,18 +250,35 @@ internal static class StatusCheckSystem
         double hours24 = (time / totalDay * 24.0) + 4.5;
         hours24 %= 24.0;
 
-        int hours = (int)hours24;
-        int minutes = (int)((hours24 - hours) * 60.0);
-
-        string period = hours >= 12 ? "PM" : "AM";
-        int displayHour = hours % 12;
-        if (displayHour == 0)
+        if (hours24 < 4.5)
         {
-            displayHour = 12;
+            return "Late night";
         }
-
-        string phase = Main.dayTime ? "Daytime" : "Night";
-        return $"{phase}, {displayHour}:{minutes:00} {period}";
+        if (hours24 < 7.0)
+        {
+            return "Dawn";
+        }
+        if (hours24 < 11.0)
+        {
+            return "Morning";
+        }
+        if (hours24 < 13.0)
+        {
+            return "Noon";
+        }
+        if (hours24 < 17.0)
+        {
+            return "Afternoon";
+        }
+        if (hours24 < 19.5)
+        {
+            return "Evening";
+        }
+        if (hours24 < 23.0)
+        {
+            return "Night";
+        }
+        return "Midnight";
     }
 
     private sealed record BiomeDefinition(string Key, string FallbackName, Func<Player, bool> Predicate);
