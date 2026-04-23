@@ -70,13 +70,23 @@ public sealed partial class GuidanceSystem
     private static readonly List<GuidanceEntry> NearbyHostileMobs = new();
     private static readonly HashSet<int> CustomEntryScratch = new();
 
+    // Tile 703 is JunglePlantsEcho (Don't Dig Up seed); not named in tModLoader's TileID reference.
+    private const int JunglePlantsEchoTileId = 703;
+
     private static readonly int[] PlantlifeTileTypes =
     {
         TileID.MatureHerbs,
         TileID.BloomingHerbs,
         TileID.MushroomPlants,
-        TileID.DyePlants
+        TileID.DyePlants,
+        TileID.JunglePlants,
+        JunglePlantsEchoTileId
     };
+
+    // Jungle Plants tiles share one TileID across many frames (tall grass, vines,
+    // spore plants, etc.). Only frameX == 144 is the Jungle Spores variant — see
+    // Terraria WorldGen.KillTile drop logic for tile types 61 and 703.
+    private const int JungleSporeFrameX = 144;
 
     private static Dictionary<int, List<InteractableDefinition>> BuildInteractableDefinitionMap()
     {
@@ -817,6 +827,11 @@ public sealed partial class GuidanceSystem
                     continue;
                 }
 
+                if (!IsTrackablePlantlifeFrame(tile))
+                {
+                    continue;
+                }
+
                 Point anchor = new(x, y);
                 if (!PlantlifeAnchorScratch.Add(anchor))
                 {
@@ -861,8 +876,23 @@ public sealed partial class GuidanceSystem
         }
     }
 
+    private static bool IsTrackablePlantlifeFrame(Tile tile)
+    {
+        if (tile.TileType == TileID.JunglePlants || tile.TileType == JunglePlantsEchoTileId)
+        {
+            return tile.TileFrameX == JungleSporeFrameX;
+        }
+
+        return true;
+    }
+
     private static string ResolvePlantDisplayName(Tile tile)
     {
+        if (tile.TileType == TileID.JunglePlants || tile.TileType == JunglePlantsEchoTileId)
+        {
+            return "Jungle Spores";
+        }
+
         return tile.TileType switch
         {
             TileID.MushroomPlants => "Glowing Mushroom",
