@@ -149,7 +149,23 @@ public sealed partial class InGameNarrationSystem
                     widthTiles: 1,
                     heightTiles: 1,
                     profile: InteractableCueProfile.GelatinCrystal,
-                    tilePredicate: static tile => tile.TileFrameX >= 324)));
+                    tilePredicate: static tile => tile.TileFrameX >= 324),
+                new TileInteractableDefinition(
+                    tileTypes: new[] { (int)TileID.LargePiles },
+                    frameWidth: 54,
+                    frameHeight: 36,
+                    widthTiles: 3,
+                    heightTiles: 2,
+                    profile: InteractableCueProfile.EnchantedSword,
+                    tilePredicate: static tile => tile.TileFrameX == 810),
+                new TileInteractableDefinition(
+                    tileTypes: new[] { (int)TileID.LargePiles2 },
+                    frameWidth: 54,
+                    frameHeight: 36,
+                    widthTiles: 3,
+                    heightTiles: 2,
+                    profile: InteractableCueProfile.EnchantedSword,
+                    tilePredicate: static tile => tile.TileFrameX == 918)));
 
             RegisterSource(new OreInteractableSource(
                 scanRadiusTiles: 90f));
@@ -1456,6 +1472,18 @@ public sealed partial class InGameNarrationSystem
             minIntervalFrames: SweepIntervalFrames,
             maxIntervalFrames: 54,
             arrivalLabel: "a Lihzahrd altar");
+
+        public static InteractableCueProfile EnchantedSword { get; } = new(
+            id: "enchanted-sword",
+            fundamentalFrequency: 820f,
+            partialMultipliers: new[] { 2f, 2.5f, 3.2f },
+            envelope: SynthesizedSoundFactory.ToneEnvelopes.WorldCue,
+            durationSeconds: 0.26f,
+            baseGain: 0.4f,
+            maxAudibleDistanceTiles: 90f,
+            minIntervalFrames: SweepIntervalFrames,
+            maxIntervalFrames: 52,
+            arrivalLabel: "an Enchanted Sword");
 
         /// <summary>
         /// Gelatin Crystal - shimmering pink crystal found in the Underground Hallow.
