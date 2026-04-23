@@ -80,7 +80,8 @@ public sealed partial class GuidanceSystem
         TileID.MushroomPlants,
         TileID.DyePlants,
         TileID.JunglePlants,
-        JunglePlantsEchoTileId
+        JunglePlantsEchoTileId,
+        TileID.AbigailsFlower
     };
 
     // Jungle Plants tiles share one TileID across many frames (tall grass, vines,
@@ -899,6 +900,7 @@ public sealed partial class GuidanceSystem
             TileID.MatureHerbs => ResolveHerbName(tile, "Mature"),
             TileID.BloomingHerbs => ResolveHerbName(tile, "Blooming"),
             TileID.DyePlants => ResolveDyePlantName(tile),
+            TileID.AbigailsFlower => "Abigail's Flower",
             _ => "Plant"
         };
     }
