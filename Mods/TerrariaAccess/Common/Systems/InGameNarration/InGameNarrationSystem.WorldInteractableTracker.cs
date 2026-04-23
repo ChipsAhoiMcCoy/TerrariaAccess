@@ -899,6 +899,14 @@ public sealed partial class InGameNarrationSystem
             TileID.AmberStoneBlock
         };
 
+        // Fossils aren't in TileID.Sets.Ore but function as ore-equivalent deposits
+        // in the Underground Desert (mined for Sturdy Fossil drops).
+        private static readonly int[] FossilTileTypes =
+        {
+            TileID.DesertFossil,
+            TileID.FossilOre
+        };
+
         public OreInteractableSource(float scanRadiusTiles)
             : base(scanRadiusTiles, CreateDefinition())
         {
@@ -986,6 +994,7 @@ public sealed partial class InGameNarrationSystem
                 .Range(0, TileID.Sets.Ore.Length)
                 .Where(id => TileID.Sets.Ore[id])
                 .Concat(GemTileTypes)
+                .Concat(FossilTileTypes)
                 .Distinct()
                 .ToArray();
 
@@ -1005,7 +1014,12 @@ public sealed partial class InGameNarrationSystem
                 return true;
             }
 
-            return Array.IndexOf(GemTileTypes, tileType) >= 0;
+            if (Array.IndexOf(GemTileTypes, tileType) >= 0)
+            {
+                return true;
+            }
+
+            return Array.IndexOf(FossilTileTypes, tileType) >= 0;
         }
 
         private static bool IsGem(int tileType) => Array.IndexOf(GemTileTypes, tileType) >= 0;
