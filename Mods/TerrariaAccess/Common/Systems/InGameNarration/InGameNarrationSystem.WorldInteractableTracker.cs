@@ -170,6 +170,22 @@ public sealed partial class InGameNarrationSystem
             RegisterSource(new OreInteractableSource(
                 scanRadiusTiles: 90f));
 
+            RegisterSource(new StatueInteractableSource(
+                scanRadiusTiles: 80f,
+                new TileInteractableDefinition(
+                    tileTypes: new[]
+                    {
+                        (int)TileID.Statues,
+                        (int)TileID.AlphabetStatues,
+                        (int)TileID.MushroomStatue,
+                        (int)TileID.BoulderStatue,
+                    },
+                    frameWidth: 36,
+                    frameHeight: 54,
+                    widthTiles: 2,
+                    heightTiles: 3,
+                    profile: InteractableCueProfile.Statue)));
+
             RegisterSource(new NpcInteractableSource(
                 scanRadiusTiles: 80f,
                 InteractableCueProfile.RescueNpc,
@@ -901,6 +917,73 @@ public sealed partial class InGameNarrationSystem
         }
     }
 
+    private sealed class StatueInteractableSource : TileInteractableSource
+    {
+        public StatueInteractableSource(float scanRadiusTiles, params TileInteractableDefinition[] definitions)
+            : base(scanRadiusTiles, definitions)
+        {
+        }
+
+        public override void Collect(Player player, List<Candidate> buffer)
+        {
+            if (Definitions.Count == 0)
+            {
+                return;
+            }
+
+            Vector2 playerCenter = player.Center;
+            int playerTileX = (int)(playerCenter.X / 16f);
+            int playerTileY = (int)(playerCenter.Y / 16f);
+            int scanRadius = (int)Math.Clamp(ScanRadiusTiles, 1f, 200f);
+
+            int minX = Math.Max(0, playerTileX - scanRadius);
+            int maxX = Math.Min(Main.maxTilesX - 1, playerTileX + scanRadius);
+            int minY = Math.Max(0, playerTileY - scanRadius);
+            int maxY = Math.Min(Main.maxTilesY - 1, playerTileY + scanRadius);
+
+            for (int x = minX; x <= maxX; x++)
+            {
+                for (int y = minY; y <= maxY; y++)
+                {
+                    Tile tile = Main.tile[x, y];
+                    if (!tile.HasTile)
+                    {
+                        continue;
+                    }
+
+                    foreach (TileInteractableDefinition definition in Definitions)
+                    {
+                        if (!definition.MatchesTile(tile))
+                        {
+                            continue;
+                        }
+
+                        if (!IsAnchorTile(tile, definition))
+                        {
+                            continue;
+                        }
+
+                        Point anchor = new(x, y);
+                        Vector2 worldPosition = definition.GetWorldCenter(anchor);
+                        int localId = HashCode.Combine(definition.DefinitionId, anchor.X, anchor.Y);
+                        string label = ResolveStatueLabel(anchor);
+                        buffer.Add(new Candidate(new TrackedInteractableKey(SourceId, localId), worldPosition, definition.Profile, label));
+                    }
+                }
+            }
+        }
+
+        private static string ResolveStatueLabel(Point anchor)
+        {
+            if (CursorDescriptors.TryDescribe(anchor.X, anchor.Y, out CursorDescriptorService.CursorDescriptor descriptor) && !string.IsNullOrWhiteSpace(descriptor.Name))
+            {
+                return descriptor.Name;
+            }
+
+            return "Statue";
+        }
+    }
+
     private sealed class OreInteractableSource : TileInteractableSource
     {
         private const int OreFrameSizePixels = 18;
@@ -1484,6 +1567,22 @@ public sealed partial class InGameNarrationSystem
             minIntervalFrames: SweepIntervalFrames,
             maxIntervalFrames: 52,
             arrivalLabel: "an Enchanted Sword");
+
+        // Stone-toned cue for decorative and functional statues.
+        // Individual statue names ("Angel Statue", "Heart Statue", etc.) are
+        // resolved at runtime via CursorDescriptors; this arrival label is
+        // only a fallback when the descriptor lookup fails.
+        public static InteractableCueProfile Statue { get; } = new(
+            id: "statue",
+            fundamentalFrequency: 580f,
+            partialMultipliers: new[] { 1.18f, 1.4f },
+            envelope: SynthesizedSoundFactory.ToneEnvelopes.WorldCue,
+            durationSeconds: 0.22f,
+            baseGain: 0.36f,
+            maxAudibleDistanceTiles: 80f,
+            minIntervalFrames: SweepIntervalFrames,
+            maxIntervalFrames: 54,
+            arrivalLabel: "a statue");
 
         /// <summary>
         /// Gelatin Crystal - shimmering pink crystal found in the Underground Hallow.

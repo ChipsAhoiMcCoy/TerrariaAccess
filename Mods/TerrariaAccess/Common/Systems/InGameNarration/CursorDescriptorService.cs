@@ -701,6 +701,75 @@ internal sealed class CursorDescriptorService
             }
         }
 
+        if (TryLookupItemNameForStyle(tileType, style, out name))
+        {
+            return true;
+        }
+
+        // TileObjectData.GetTileStyle returns the frame-derived style, which for
+        // alternate placements (e.g. a right-facing statue) equals placeStyle plus
+        // the alternate's Style offset. Our map only stores base placeStyles, so
+        // retry with each registered alternate offset subtracted.
+        TileObjectData? baseData;
+        try
+        {
+            baseData = TileObjectData.GetTileData(tileType, 0, 0);
+        }
+        catch
+        {
+            baseData = null;
+        }
+
+        if (baseData == null)
+        {
+            return false;
+        }
+
+        for (int alternateIndex = 1; alternateIndex <= MaxAlternatePlacementsToProbe; alternateIndex++)
+        {
+            TileObjectData? altData;
+            try
+            {
+                altData = TileObjectData.GetTileData(tileType, 0, alternateIndex);
+            }
+            catch
+            {
+                break;
+            }
+
+            // GetTileData returns the base when the alternate index is out of range,
+            // so reference equality signals that we've exhausted the alternates.
+            if (altData == null || ReferenceEquals(altData, baseData))
+            {
+                break;
+            }
+
+            int altOffset = altData.Style;
+            if (altOffset <= 0)
+            {
+                continue;
+            }
+
+            int adjustedStyle = style - altOffset;
+            if (adjustedStyle < 0)
+            {
+                continue;
+            }
+
+            if (TryLookupItemNameForStyle(tileType, adjustedStyle, out name))
+            {
+                return true;
+            }
+        }
+
+        return false;
+    }
+
+    private const int MaxAlternatePlacementsToProbe = 8;
+
+    private static bool TryLookupItemNameForStyle(int tileType, int style, out string? name)
+    {
+        name = null;
         if (!TryResolveStyleItemType(tileType, style, out int itemType) || itemType <= ItemID.None)
         {
             return false;
