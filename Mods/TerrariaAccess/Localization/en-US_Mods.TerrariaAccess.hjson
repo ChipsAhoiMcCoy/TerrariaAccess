@@ -491,7 +491,7 @@ Mods: {
 			WaypointNext.DisplayName: Next Waypoint
 			WaypointPrevious.DisplayName: Previous Waypoint
 			WaypointCreate.DisplayName: Create Waypoint
-			WaypointDelete.DisplayName: Waypoint Delete
+			WaypointDelete.DisplayName: Delete Focus
 			GuidanceCategoryNext.DisplayName: Next Guidance Category
 			GuidanceCategoryPrevious.DisplayName: Previous Guidance Category
 			GuidanceEntryNext.DisplayName: Next Guidance Entry
@@ -530,7 +530,7 @@ Keybinds: {
 	WaypointNext.DisplayName: Waypoint Next
 	WaypointPrevious.DisplayName: Waypoint Previous
 	WaypointCreate.DisplayName: Waypoint Create
-	WaypointDelete.DisplayName: Waypoint Delete
+	WaypointDelete.DisplayName: Delete Focus
 	SpeechInterrupt.DisplayName: Toggle Speech Interrupt
 	GuidanceCategoryNext.DisplayName: Next Guidance Category
 	GuidanceCategoryPrevious.DisplayName: Previous Guidance Category

@@ -955,6 +955,14 @@ public sealed partial class GuidanceSystem : ModSystem
 
         if (GuidanceKeybinds.Delete?.JustPressed ?? false)
         {
+            // Contextual delete: if the user just cycled onto an individual buff via the status check,
+            // cancel that buff instead of deleting a waypoint. Only fall through to waypoint deletion
+            // when no buff is currently focused.
+            if (StatusCheckSystem.TryCancelFocusedBuff(player))
+            {
+                return;
+            }
+
             DeleteSelectedGuidanceTarget(player);
         }
     }
