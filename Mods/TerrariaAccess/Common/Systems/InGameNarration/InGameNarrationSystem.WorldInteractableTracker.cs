@@ -165,7 +165,18 @@ public sealed partial class InGameNarrationSystem
                     widthTiles: 3,
                     heightTiles: 2,
                     profile: InteractableCueProfile.EnchantedSword,
-                    tilePredicate: static tile => tile.TileFrameX == 918)));
+                    tilePredicate: static tile => tile.TileFrameX == 918),
+                // Nature's Gift plant — frameX == 162 on JunglePlants (61) and
+                // JunglePlantsEcho (703, Don't Dig Up seed; unnamed in tModLoader's
+                // TileID reference). See Terraria WorldGen.KillTile drop logic.
+                new TileInteractableDefinition(
+                    tileTypes: new[] { (int)TileID.JunglePlants, 703 },
+                    frameWidth: 18,
+                    frameHeight: 18,
+                    widthTiles: 1,
+                    heightTiles: 1,
+                    profile: InteractableCueProfile.NaturesGiftPlant,
+                    tilePredicate: static tile => tile.TileFrameX == 162)));
 
             RegisterSource(new OreInteractableSource(
                 scanRadiusTiles: 90f));
@@ -1567,6 +1578,18 @@ public sealed partial class InGameNarrationSystem
             minIntervalFrames: SweepIntervalFrames,
             maxIntervalFrames: 52,
             arrivalLabel: "an Enchanted Sword");
+
+        public static InteractableCueProfile NaturesGiftPlant { get; } = new(
+            id: "natures-gift-plant",
+            fundamentalFrequency: 700f,
+            partialMultipliers: new[] { 1.4f, 1.85f, 2.35f },
+            envelope: SynthesizedSoundFactory.ToneEnvelopes.WorldCue,
+            durationSeconds: 0.22f,
+            baseGain: 0.4f,
+            maxAudibleDistanceTiles: 85f,
+            minIntervalFrames: SweepIntervalFrames,
+            maxIntervalFrames: 52,
+            arrivalLabel: "a Nature's Gift plant");
 
         // Stone-toned cue for decorative and functional statues.
         // Individual statue names ("Angel Statue", "Heart Statue", etc.) are
