@@ -37,6 +37,13 @@ Mods: {
 					Tooltip: Adjusts the volume of guidance system audio cues used for waypoints, NPCs, and other tracking targets.
 				}
 
+				GuidanceAllMode: {
+					Label: Guidance All Mode
+					Tooltip: Controls how pings play when a guidance category (such as Items, Critters, Plants, or Custom) is set to the All option. Sweep plays a ping for every tracked target in a left-to-right sweep. Nearest Only plays a single ping for the closest target each cycle.
+					Sweep.Label: Sweep
+					NearestOnly.Label: Nearest Only
+				}
+
 				InteractableCueVolume: {
 					Label: Interactable Cue Volume
 					Tooltip: Adjusts the volume of audio cues for nearby interactable objects like chests, doors, and crafting stations.
@@ -589,6 +596,11 @@ Configs: {
 			Tooltip: ""
 		}
 
+		GuidanceAllMode: {
+			Label: Guidance All Mode
+			Tooltip: ""
+		}
+
 		InteractableCueVolume: {
 			Label: Interactable Cue Volume
 			Tooltip: ""
@@ -719,6 +731,20 @@ Configs: {
 
 		Beeps: {
 			Label: Beeps
+			Tooltip: ""
+		}
+	}
+
+	GuidanceAllMode: {
+		Tooltip: ""
+
+		Sweep: {
+			Label: Sweep
+			Tooltip: ""
+		}
+
+		NearestOnly: {
+			Label: Nearest Only
 			Tooltip: ""
 		}
 	}

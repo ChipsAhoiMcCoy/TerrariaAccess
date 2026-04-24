@@ -329,6 +329,15 @@ public sealed partial class InGameNarrationSystem
                 ExplorationTargetRegistry.SetSelectedTarget(null);
             }
 
+            if (!focused
+                && (TerrariaAccessConfig.Instance?.GuidanceAllMode ?? GuidanceAllMode.Sweep) == GuidanceAllMode.NearestOnly
+                && _distanceScratch.Count > 1)
+            {
+                CandidateDistance nearest = _distanceScratch[0];
+                _distanceScratch.Clear();
+                _distanceScratch.Add(nearest);
+            }
+
             _visibleThisFrame.Clear();
 
             // Track arrival state for all currently-visible items regardless of sweep cycle

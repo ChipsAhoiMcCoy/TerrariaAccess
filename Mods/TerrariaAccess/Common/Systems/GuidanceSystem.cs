@@ -317,6 +317,24 @@ public sealed partial class GuidanceSystem : ModSystem
                 break;
         }
 
+        if ((TerrariaAccessConfig.Instance?.GuidanceAllMode ?? GuidanceAllMode.Sweep) == GuidanceAllMode.NearestOnly
+            && SweepOrder.Count > 1)
+        {
+            int nearestIndex = 0;
+            for (int i = 1; i < SweepOrder.Count; i++)
+            {
+                if (SweepOrder[i].DistanceTiles < SweepOrder[nearestIndex].DistanceTiles)
+                {
+                    nearestIndex = i;
+                }
+            }
+
+            SweepTarget nearest = SweepOrder[nearestIndex];
+            SweepOrder.Clear();
+            SweepOrder.Add(nearest);
+            return;
+        }
+
         // Sort by X position (left to right), then by Y, then by distance
         SweepOrder.Sort(static (left, right) =>
         {

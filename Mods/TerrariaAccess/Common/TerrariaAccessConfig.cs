@@ -17,6 +17,12 @@ public enum FallProximityMode
     Beeps
 }
 
+public enum GuidanceAllMode
+{
+    Sweep,
+    NearestOnly
+}
+
 public class TerrariaAccessConfig : ModConfig
 {
     public static TerrariaAccessConfig Instance { get; private set; } = null!;
@@ -70,6 +76,9 @@ public class TerrariaAccessConfig : ModConfig
     [Range(0f, 1f)]
     [Slider]
     public float GuidanceVolume { get; set; } = 1f;
+
+    [DefaultValue(GuidanceAllMode.Sweep)]
+    public GuidanceAllMode GuidanceAllMode { get; set; } = GuidanceAllMode.Sweep;
 
     [DefaultValue(1f)]
     [Range(0f, 1f)]
