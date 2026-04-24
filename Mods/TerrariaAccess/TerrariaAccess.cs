@@ -40,10 +40,12 @@ public class TerrariaAccess : Mod
         StatusCheckKeybinds.EnsureInitialized(this);
         BuildModeKeybinds.EnsureInitialized(this);
         CavitySonarKeybinds.EnsureInitialized(this);
+        EventProgressKeybinds.EnsureInitialized(this);
     }
 
     public override void Unload()
     {
+        EventProgressKeybinds.Unload();
         GamepadEmulationKeybinds.Unload();
         BuildModeKeybinds.Unload();
         StatusCheckKeybinds.Unload();

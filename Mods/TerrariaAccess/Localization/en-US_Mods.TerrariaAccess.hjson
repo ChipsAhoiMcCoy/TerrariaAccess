@@ -432,6 +432,25 @@ Mods: {
 			}
 
 			InventorySpecial.LoadoutControls: Loadout controls
+
+			EventProgress: {
+				NoActiveEvent: No active events.
+				Status: "{0}. {1} percent remaining."
+				StatusWithWave: "{0} wave {1}. {2} percent remaining."
+				WaveChange: "{0} wave {1}. {2} percent remaining."
+				Remaining: "{0} percent remaining."
+
+				EventNames: {
+					GoblinArmy: Goblin Army
+					FrostLegion: Frost Legion
+					PirateInvasion: Pirate Invasion
+					MartianMadness: Martian Madness
+					PumpkinMoon: Pumpkin Moon
+					FrostMoon: Frost Moon
+					OldOnesArmy: Old One's Army
+					Unknown: Event
+				}
+			}
 		}
 
 		InventoryRegions: {
@@ -499,6 +518,7 @@ Mods: {
 			StatusCheck.DisplayName: Status Checker
 			InfoAccessoryCheck.DisplayName: Info Accessory Checker
 			CavitySonarScan.DisplayName: Cavity Sonar Scan
+			EventProgressCheck.DisplayName: Event Progress Checker
 		}
 	}
 }
@@ -537,6 +557,7 @@ Keybinds: {
 	StatusCheck.DisplayName: Status Checker
 	InfoAccessoryCheck.DisplayName: Info Accessory Checker
 	CavitySonarScan.DisplayName: Cavity Sonar Scan
+	EventProgressCheck.DisplayName: Event Progress Checker
 }
 
 Configs: {
