@@ -134,6 +134,12 @@ internal static partial class MenuNarrationCatalog
             return true;
         }
 
+        if (typeName.Contains("UICharacterCreation", StringComparison.Ordinal))
+        {
+            label = "Character creation";
+            return true;
+        }
+
         if (typeName.Contains("UIWorldSelect", StringComparison.Ordinal) ||
             typeName.Contains("UIWorldList", StringComparison.Ordinal))
         {
