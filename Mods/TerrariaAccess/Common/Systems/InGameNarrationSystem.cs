@@ -57,6 +57,9 @@ public sealed partial class InGameNarrationSystem : ModSystem
     private readonly LockOnNarrator _lockOnNarrator;
     private readonly ChatInputNarrator _chatInputNarrator;
     private readonly WireColorMenuNarrator _wireColorMenuNarrator;
+    private readonly JourneyToggleNarrator _journeyToggleNarrator;
+    private readonly JourneyResearchNarrator _journeyResearchNarrator;
+    private readonly JourneyPowersNarrator _journeyPowersNarrator;
     private readonly CursorDescriptorService _cursorDescriptorService;
     private static CursorDescriptorService? _sharedCursorDescriptorService;
     private readonly INarrationScheduler _narrationScheduler;
@@ -71,6 +74,9 @@ public sealed partial class InGameNarrationSystem : ModSystem
     private readonly INarrationService _interactableTrackerNarrationService;
     private readonly INarrationService _chatInputNarrationService;
     private readonly INarrationService _wireColorMenuNarrationService;
+    private readonly INarrationService _journeyToggleNarrationService;
+    private readonly INarrationService _journeyResearchNarrationService;
+    private readonly INarrationService _journeyPowersNarrationService;
     private static readonly bool SchedulerTraceOnly = NarrationSchedulerSettings.IsTraceOnlyEnabled();
     private const float ScreenEdgePaddingPixels = 48f;
     private static readonly TimeSpan ChatRepeatWindow = TimeSpan.FromMilliseconds(750);
@@ -154,6 +160,9 @@ public sealed partial class InGameNarrationSystem : ModSystem
         _lockOnNarrator = new LockOnNarrator();
         _chatInputNarrator = new ChatInputNarrator();
         _wireColorMenuNarrator = new WireColorMenuNarrator();
+        _journeyToggleNarrator = new JourneyToggleNarrator();
+        _journeyResearchNarrator = new JourneyResearchNarrator();
+        _journeyPowersNarrator = new JourneyPowersNarrator();
         _narrationScheduler = new NarrationScheduler();
         _sharedCursorDescriptorService = _cursorDescriptorService;
         OptionsTracker = _optionsLabelTracker;
@@ -198,6 +207,15 @@ public sealed partial class InGameNarrationSystem : ModSystem
         _wireColorMenuNarrationService = new DelegatedNarrationService(
             "WireColorMenu",
             _ => _wireColorMenuNarrator.Update());
+        _journeyToggleNarrationService = new DelegatedNarrationService(
+            "JourneyToggle",
+            _ => _journeyToggleNarrator.Update());
+        _journeyResearchNarrationService = new DelegatedNarrationService(
+            "JourneyResearch",
+            ctx => _journeyResearchNarrator.Update(ctx.Player));
+        _journeyPowersNarrationService = new DelegatedNarrationService(
+            "JourneyPowers",
+            ctx => _journeyPowersNarrator.Update(ctx.Player));
     }
 
     public override void Load()
@@ -327,6 +345,24 @@ public sealed partial class InGameNarrationSystem : ModSystem
             }));
         _narrationScheduler.Register(new NarrationServiceRegistration(
             _wireColorMenuNarrationService,
+            new NarrationServiceGating
+            {
+                Category = ScreenReaderService.AnnouncementCategory.Default,
+            }));
+        _narrationScheduler.Register(new NarrationServiceRegistration(
+            _journeyToggleNarrationService,
+            new NarrationServiceGating
+            {
+                Category = ScreenReaderService.AnnouncementCategory.Default,
+            }));
+        _narrationScheduler.Register(new NarrationServiceRegistration(
+            _journeyResearchNarrationService,
+            new NarrationServiceGating
+            {
+                Category = ScreenReaderService.AnnouncementCategory.Default,
+            }));
+        _narrationScheduler.Register(new NarrationServiceRegistration(
+            _journeyPowersNarrationService,
             new NarrationServiceGating
             {
                 Category = ScreenReaderService.AnnouncementCategory.Default,

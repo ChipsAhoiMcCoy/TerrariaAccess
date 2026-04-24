@@ -1,5 +1,6 @@
 #nullable enable
 using System;
+using TerrariaAccess.Common.Services;
 using TerrariaAccess.Common.Utilities;
 using Terraria;
 using Terraria.GameInput;
@@ -96,6 +97,11 @@ public sealed partial class InGameNarrationSystem
                     return InventoryRegion.Shop;
 
                 default:
+                    if (ItemSlotContextFacts.ResolveArea(context) == UiNarrationArea.Creative)
+                    {
+                        return InventoryRegion.Creative;
+                    }
+
                     return InventoryRegion.None;
             }
         }
@@ -177,6 +183,8 @@ public sealed partial class InGameNarrationSystem
                     "Mods.TerrariaAccess.InventoryRegions.Storage", "Storage"),
                 InventoryRegion.Shop => LocalizationHelper.GetTextOrFallback(
                     "Mods.TerrariaAccess.InventoryRegions.Shop", "Shop"),
+                InventoryRegion.Creative => LocalizationHelper.GetTextOrFallback(
+                    "Mods.TerrariaAccess.InventoryRegions.Creative", "Journey"),
                 _ => null,
             };
         }

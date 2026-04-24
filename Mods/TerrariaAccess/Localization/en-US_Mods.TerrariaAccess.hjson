@@ -471,6 +471,98 @@ Mods: {
 			CraftingGrid: Crafting Grid
 			Storage: Storage
 			Shop: Shop
+			Creative: Journey
+		}
+
+		JourneyMode: {
+			Toggle: {
+				Opened: Journey menu opened
+				Closed: Journey menu closed
+				FocusOn: Journey toggle, currently on
+				FocusOff: Journey toggle, currently off
+				Blocked: Journey menu is currently blocked
+				NotJourneyMode: Journey menu is only available for Journey mode characters
+				BlockedByChest: Close the chest before opening the Journey menu
+			}
+
+			Panel: {
+				Duplication: Duplication
+				Research: Research
+				SwitchedToResearch: Switched to Research panel
+				SwitchedToDuplication: Switched to Duplication panel
+			}
+
+			Duplication: {
+				SearchFocus: Search field, type to filter items
+				FilterFocusFormat: Category filter: {0}
+			}
+
+			Sacrifice: {
+				Empty: Sacrifice slot empty, place an item to see research progress
+				FocusEmpty: Sacrifice slot, empty
+				FullyResearched: Sacrifice slot: {0}, fully researched
+				ProgressFormat: Sacrifice slot: {0}, {1} of {2} to research
+				CannotResearch: Sacrifice slot: {0}, cannot be researched
+				ConfirmFocus: Research button, press to sacrifice and unlock infinite copies
+				Completed: Fully researched
+			}
+
+			Powers: {
+				Tab: {
+					InfiniteItems: Infinite Items
+					Research: Research
+					Time: Time
+					Weather: Weather
+					EnemyDifficulty: Enemy Difficulty
+					PersonalPowers: Personal Powers
+				}
+
+				FocusToggleFormat: "{0}, currently {1}"
+				FocusSliderFormat: "{0}, {1}"
+				FocusOneShotFormat: "{0}, press to activate"
+				ToggleOnFormat: "{0} on"
+				ToggleOffFormat: "{0} off"
+				SliderAnnouncementFormat: "{0}: {1}"
+				OneShotActivatedFormat: "{0} activated"
+			}
+
+			Power: {
+				Godmode: Godmode
+				FreezeTime: Freeze time
+				SetDawn: Set time to dawn
+				SetNoon: Set time to noon
+				SetDusk: Set time to dusk
+				SetMidnight: Set time to midnight
+				TimeRate: Time speed
+				FreezeWind: Freeze wind
+				WindStrength: Wind strength
+				FreezeRain: Freeze rain
+				RainStrength: Rain strength
+				SpawnRate: NPC spawn rate
+				Difficulty: Enemy difficulty
+				PlacementRange: Increased placement range
+				StopBiomeSpread: Stop biome spread
+				PersonalLight: Personal light
+				Unknown: Creative power
+			}
+
+			State: {
+				On: on
+				Off: off
+			}
+
+			SliderUnit: {
+				TimesFormat: "{0} times"
+				PercentFormat: "{0} percent"
+				SignedPercentFormat: "{0} percent"
+			}
+
+			Keybind: {
+				ToggleMenu: Toggle Journey menu
+				PanelStateCheck: Journey panel state check
+				CyclePowerCategory: Cycle Journey power category
+				ReadSacrificeProgress: Read sacrifice slot progress
+			}
 		}
 
 		InventorySpecial: {
@@ -526,6 +618,10 @@ Mods: {
 			InfoAccessoryCheck.DisplayName: Info Accessory Checker
 			CavitySonarScan.DisplayName: Cavity Sonar Scan
 			EventProgressCheck.DisplayName: Event Progress Checker
+			JourneyToggleMenu.DisplayName: Journey Toggle Menu
+			JourneyPanelStateCheck.DisplayName: Journey Panel State Check
+			JourneyCyclePowerCategory.DisplayName: Journey Read Current Power Tab
+			JourneyReadSacrificeProgress.DisplayName: Journey Read Sacrifice Progress
 		}
 	}
 }
@@ -565,6 +661,10 @@ Keybinds: {
 	InfoAccessoryCheck.DisplayName: Info Accessory Checker
 	CavitySonarScan.DisplayName: Cavity Sonar Scan
 	EventProgressCheck.DisplayName: Event Progress Checker
+	JourneyToggleMenu.DisplayName: Journey Toggle Menu
+	JourneyPanelStateCheck.DisplayName: Journey Panel State Check
+	JourneyCyclePowerCategory.DisplayName: Journey Read Current Power Tab
+	JourneyReadSacrificeProgress.DisplayName: Journey Read Sacrifice Progress
 }
 
 Configs: {

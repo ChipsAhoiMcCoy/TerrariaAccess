@@ -214,7 +214,8 @@ public sealed partial class InGameNarrationSystem
                    player.chest != -1 ||
                    Main.npcShop != 0 ||
                    Main.InGuideCraftMenu ||
-                   Main.InReforgeMenu;
+                   Main.InReforgeMenu ||
+                   Main.CreativeMenu.Enabled;
         }
 
         private void HandleMouseItem()
