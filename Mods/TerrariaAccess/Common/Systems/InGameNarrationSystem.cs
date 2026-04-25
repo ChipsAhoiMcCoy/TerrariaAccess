@@ -286,6 +286,12 @@ public sealed partial class InGameNarrationSystem : ModSystem
                 Category = ScreenReaderService.AnnouncementCategory.Default,
             }));
         _narrationScheduler.Register(new NarrationServiceRegistration(
+            _journeyToggleNarrationService,
+            new NarrationServiceGating
+            {
+                Category = ScreenReaderService.AnnouncementCategory.Default,
+            }));
+        _narrationScheduler.Register(new NarrationServiceRegistration(
             _inventoryNarrationService,
             new NarrationServiceGating
             {
@@ -345,12 +351,6 @@ public sealed partial class InGameNarrationSystem : ModSystem
             }));
         _narrationScheduler.Register(new NarrationServiceRegistration(
             _wireColorMenuNarrationService,
-            new NarrationServiceGating
-            {
-                Category = ScreenReaderService.AnnouncementCategory.Default,
-            }));
-        _narrationScheduler.Register(new NarrationServiceRegistration(
-            _journeyToggleNarrationService,
             new NarrationServiceGating
             {
                 Category = ScreenReaderService.AnnouncementCategory.Default,

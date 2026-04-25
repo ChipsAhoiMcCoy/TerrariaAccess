@@ -210,6 +210,38 @@ public class GuidanceEntryTests
 
     #endregion
 
+    #region CreateHostileMob Tests
+
+    [Fact]
+    public void CreateHostileMob_SetsCorrectCategory()
+    {
+        var entry = GuidanceEntry.CreateHostileMob(
+            npcIndex: 88,
+            displayName: "Cave Bat",
+            worldPosition: new Vector2(320, 480),
+            distanceTiles: 18f);
+
+        entry.Category.Should().Be(GuidanceCategory.HostileMob);
+    }
+
+    [Fact]
+    public void CreateHostileMob_SetsAllProperties()
+    {
+        var entry = GuidanceEntry.CreateHostileMob(
+            npcIndex: 91,
+            displayName: "Skeleton",
+            worldPosition: new Vector2(640, 720),
+            distanceTiles: 32.25f);
+
+        entry.Index.Should().Be(91);
+        entry.DisplayName.Should().Be("Skeleton");
+        entry.WorldPosition.Should().Be(new Vector2(640, 720));
+        entry.DistanceTiles.Should().Be(32.25f);
+        entry.Anchor.Should().Be(Point.Zero);
+    }
+
+    #endregion
+
     #region Category Coverage Tests
 
     [Fact]
@@ -217,8 +249,6 @@ public class GuidanceEntryTests
     {
         // Verify we have a factory method for each category
         var categories = Enum.GetValues<GuidanceCategory>();
-
-        categories.Should().HaveCount(6);
 
         // Create one of each to verify
         var entries = new[]
@@ -228,10 +258,12 @@ public class GuidanceEntryTests
             GuidanceEntry.CreateInteractable(Point.Zero, "Interactable", Vector2.Zero, 0),
             GuidanceEntry.CreateDroppedItem(0, "Item", Vector2.Zero, 0),
             GuidanceEntry.CreateCritter(0, "Critter", Vector2.Zero, 0),
-            GuidanceEntry.CreatePlantlife(Point.Zero, "Plant", Vector2.Zero, 0)
+            GuidanceEntry.CreatePlantlife(Point.Zero, "Plant", Vector2.Zero, 0),
+            GuidanceEntry.CreateHostileMob(0, "Hostile", Vector2.Zero, 0)
         };
 
         entries.Select(e => e.Category).Should().BeEquivalentTo(categories);
+        entries.Select(e => e.Category).Should().OnlyHaveUniqueItems();
     }
 
     #endregion

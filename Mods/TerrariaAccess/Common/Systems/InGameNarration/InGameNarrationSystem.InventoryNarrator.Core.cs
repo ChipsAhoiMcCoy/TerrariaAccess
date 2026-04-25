@@ -46,6 +46,8 @@ public sealed partial class InGameNarrationSystem
         private string? _pendingGamepadFallbackFocusKey;
         private ItemIdentity _lastAnnouncedItemIdentity;
         private bool _wasInventoryOpen;
+        private bool _wasCreativeMenuOpen;
+        private bool _queueNextCreativeAnnouncementAsFollowUp;
         private int _lastChestIndex = -1;
         // Region tracking state moved to InventoryNarrator.Regions.cs
         private const UiNarrationArea InventoryNarrationAreas =
@@ -162,9 +164,23 @@ public sealed partial class InGameNarrationSystem
                     OnInventoryJustClosed();
                 }
                 _wasInventoryOpen = false;
+                _wasCreativeMenuOpen = false;
+                _queueNextCreativeAnnouncementAsFollowUp = false;
                 Reset();
                 return;
             }
+
+            bool isCreativeMenuOpen = Main.CreativeMenu.Enabled;
+            if (isCreativeMenuOpen && !_wasCreativeMenuOpen)
+            {
+                _queueNextCreativeAnnouncementAsFollowUp = true;
+            }
+            else if (!isCreativeMenuOpen)
+            {
+                _queueNextCreativeAnnouncementAsFollowUp = false;
+            }
+
+            _wasCreativeMenuOpen = isCreativeMenuOpen;
 
             // Detect inventory just opened - set focus to inventory area and notify other narrators
             if (!_wasInventoryOpen)
@@ -632,6 +648,8 @@ public sealed partial class InGameNarrationSystem
             _pendingGamepadFallbackFocusKey = null;
             _lastAnnouncedItemIdentity = default;
             _inventoryOpenGraceFrames = 0;
+            _wasCreativeMenuOpen = false;
+            _queueNextCreativeAnnouncementAsFollowUp = false;
             _lastChestIndex = -1;
             _lastAnnouncedRegion = InventoryRegion.None;
             _lastAnnouncedStorageContainer = null;
@@ -1638,7 +1656,35 @@ public sealed partial class InGameNarrationSystem
                 ? cue.Message
                 : $"{regionPrefix}. {cue.Message}";
 
-            ScreenReaderService.Announce(message, force);
+            bool requestInterrupt = !ConsumeCreativeMenuFollowUp(allowedAreas, focus, regionPrefix);
+            ScreenReaderService.Announce(message, force, requestInterrupt: requestInterrupt);
+            return true;
+        }
+
+        private bool ConsumeCreativeMenuFollowUp(
+            UiNarrationArea allowedAreas,
+            SlotFocus? focus,
+            string? regionPrefix)
+        {
+            if (!_queueNextCreativeAnnouncementAsFollowUp || !Main.CreativeMenu.Enabled)
+            {
+                return false;
+            }
+
+            bool allowsCreative = (allowedAreas & UiNarrationArea.Creative) != 0;
+            bool focusIsCreative = focus.HasValue &&
+                ItemSlotContextFacts.ResolveArea(focus.Value.Context) == UiNarrationArea.Creative;
+            bool prefixIsCreative = string.Equals(
+                regionPrefix,
+                GetRegionDisplayName(InventoryRegion.Creative),
+                StringComparison.OrdinalIgnoreCase);
+
+            if (!allowsCreative && !focusIsCreative && !prefixIsCreative)
+            {
+                return false;
+            }
+
+            _queueNextCreativeAnnouncementAsFollowUp = false;
             return true;
         }
 

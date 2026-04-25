@@ -54,3 +54,6 @@ Agents.md
 nul
 tmpclaude-*
 Optimization.md
+
+# Ignore local Codex navigation notes and scratch files
+.codex-local/
