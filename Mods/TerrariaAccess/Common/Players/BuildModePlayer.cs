@@ -530,12 +530,13 @@ public sealed class BuildModePlayer : ModPlayer
     private void AnnounceCompletion(SelectionAction action, Rectangle selection, Item held)
     {
         string itemName = TextSanitizer.Clean(held.AffixName());
+        int selectedPositions = _selectionIterator.TotalPositions;
         switch (action)
         {
             case SelectionAction.Clear:
                 if (_tilesCleared > 0 || _wallsCleared > 0)
                 {
-                    ScreenReaderService.Announce(BuildModeNarrationCatalog.ClearedBlocks(_tilesCleared + _wallsCleared, itemName));
+                    ScreenReaderService.Announce(BuildModeNarrationCatalog.ClearedBlocks(_tilesCleared + _wallsCleared, selectedPositions, itemName));
                 }
                 else
                 {
@@ -548,7 +549,7 @@ public sealed class BuildModePlayer : ModPlayer
                 if (_tilesPlaced > 0)
                 {
                     string blockName = TextSanitizer.Clean(held.Name);
-                    ScreenReaderService.Announce(BuildModeNarrationCatalog.PlacedTiles(_tilesPlaced, blockName));
+                    ScreenReaderService.Announce(BuildModeNarrationCatalog.PlacedTiles(_tilesPlaced, selectedPositions, blockName));
                 }
                 else
                 {
@@ -561,7 +562,7 @@ public sealed class BuildModePlayer : ModPlayer
                 if (_wallsPlaced > 0)
                 {
                     string wallName = TextSanitizer.Clean(held.Name);
-                    ScreenReaderService.Announce(BuildModeNarrationCatalog.PlacedWalls(_wallsPlaced, wallName));
+                    ScreenReaderService.Announce(BuildModeNarrationCatalog.PlacedWalls(_wallsPlaced, selectedPositions, wallName));
                 }
                 else
                 {
@@ -950,6 +951,7 @@ public sealed class BuildModePlayer : ModPlayer
         private bool _outlineMode;
 
         public bool Completed => HasSelection && _index >= _total;
+        public int TotalPositions => _total;
 
         private bool HasSelection => _total > 0 && Selection != Rectangle.Empty;
 
