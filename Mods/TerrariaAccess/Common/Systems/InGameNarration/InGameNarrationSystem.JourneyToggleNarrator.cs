@@ -1,5 +1,6 @@
 #nullable enable
 using TerrariaAccess.Common.Services;
+using TerrariaAccess.Common.Systems.Journey;
 using TerrariaAccess.Common.Utilities;
 using Terraria;
 
@@ -10,7 +11,7 @@ public sealed partial class InGameNarrationSystem
     private sealed class JourneyToggleNarrator
     {
         private bool _wasEnabled;
-        private bool _wasShowingResearch;
+        private int _lastCategoryOption = -1;
 
         public void Update()
         {
@@ -23,7 +24,7 @@ public sealed partial class InGameNarrationSystem
                         "Mods.TerrariaAccess.JourneyMode.Toggle.Opened",
                         "Journey menu opened"),
                     force: true);
-                _wasShowingResearch = SafeIsShowingResearchMenu();
+                _lastCategoryOption = SafeGetCurrentCategoryOption();
                 _wasEnabled = true;
                 return;
             }
@@ -36,7 +37,7 @@ public sealed partial class InGameNarrationSystem
                         "Journey menu closed"),
                     force: true);
                 _wasEnabled = false;
-                _wasShowingResearch = false;
+                _lastCategoryOption = -1;
                 return;
             }
 
@@ -45,29 +46,51 @@ public sealed partial class InGameNarrationSystem
                 return;
             }
 
-            bool showingResearch = SafeIsShowingResearchMenu();
-            if (showingResearch != _wasShowingResearch)
+            int categoryOption = SafeGetCurrentCategoryOption();
+            if (categoryOption != _lastCategoryOption)
             {
-                string key = showingResearch
-                    ? "Mods.TerrariaAccess.JourneyMode.Panel.SwitchedToResearch"
-                    : "Mods.TerrariaAccess.JourneyMode.Panel.SwitchedToDuplication";
-                string fallback = showingResearch ? "Switched to Research panel" : "Switched to Duplication panel";
-                ScreenReaderService.Announce(
-                    LocalizationHelper.GetTextOrFallback(key, fallback),
-                    force: true);
-                _wasShowingResearch = showingResearch;
+                AnnouncePanelStateChange(_lastCategoryOption, categoryOption);
+                _lastCategoryOption = categoryOption;
+                return;
             }
         }
 
-        private static bool SafeIsShowingResearchMenu()
+        private static void AnnouncePanelStateChange(int previousOption, int currentOption)
+        {
+            bool wasPanelOpen = IsPanelOption(previousOption);
+            bool isPanelOpen = IsPanelOption(currentOption);
+
+            if (!isPanelOpen)
+            {
+                if (wasPanelOpen)
+                {
+                    ScreenReaderService.Announce(
+                        LocalizationHelper.GetTextOrFallback(
+                            "Mods.TerrariaAccess.JourneyMode.Panel.Closed",
+                            "Panel closed"),
+                        force: true);
+                }
+                return;
+            }
+
+            ScreenReaderService.Announce(
+                LocalizationHelper.GetTextOrFallback(
+                    "Mods.TerrariaAccess.JourneyMode.Panel.Opened",
+                    "Panel opened"),
+                force: true);
+        }
+
+        private static bool IsPanelOption(int option) => option is >= 1 and <= 6;
+
+        private static int SafeGetCurrentCategoryOption()
         {
             try
             {
-                return Main.CreativeMenu.IsShowingResearchMenu();
+                return JourneyReflection.TryGetCurrentPowersCategoryOption() ?? 0;
             }
             catch
             {
-                return false;
+                return 0;
             }
         }
     }

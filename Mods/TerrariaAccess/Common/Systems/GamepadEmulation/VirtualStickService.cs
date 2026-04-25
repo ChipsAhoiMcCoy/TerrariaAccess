@@ -94,6 +94,7 @@ internal static class VirtualStickService
                 PlayerInput.CurrentProfile?.RightThumbstickInvertX == true,
                 PlayerInput.CurrentProfile?.RightThumbstickInvertY == true);
             PlayerInput.GamepadThumbstickRight = aim;
+            MirrorJourneySliderInputToLeftStick(aim);
         }
 
         if (movementOverride || aimOverride || state.IsKeyDown(Keys.Space) || Main.mouseLeft || Main.mouseRight)
@@ -203,6 +204,18 @@ internal static class VirtualStickService
         {
             stick.Y *= -1f;
         }
+    }
+
+    private static void MirrorJourneySliderInputToLeftStick(Vector2 aim)
+    {
+        if (!Main.CreativeMenu.Enabled || Math.Abs(aim.Y) <= 0f)
+        {
+            return;
+        }
+
+        Vector2 leftStick = PlayerInput.GamepadThumbstickLeft;
+        leftStick.Y = aim.Y;
+        PlayerInput.GamepadThumbstickLeft = leftStick;
     }
 
     /// <summary>

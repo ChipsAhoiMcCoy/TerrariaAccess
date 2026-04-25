@@ -3,9 +3,11 @@ using System;
 using System.Collections.Generic;
 using System.Reflection;
 using TerrariaAccess.Common.Systems.InGameNarration;
+using TerrariaAccess.Common.Systems.Journey;
 using TerrariaAccess.Common.Services;
 using TerrariaAccess.Common.Utilities;
 using Terraria;
+using Terraria.GameContent.Creative;
 using Terraria.GameContent.UI.States;
 using Terraria.GameInput;
 using Terraria.Localization;
@@ -28,7 +30,13 @@ public sealed partial class InGameNarrationSystem
                 return false;
             }
 
-            if (!SpecialSelectionRepeat.ShouldAnnounce(currentPoint))
+            string activationLabel = string.Empty;
+            bool announceActivation = IsJourneyActivationJustPressed() &&
+                TryGetJourneyOneShotActivationLabel(currentPoint, out activationLabel);
+            string announcement = announceActivation ? activationLabel : label;
+            string repeatKey = GetSpecialSelectionRepeatKey(currentPoint, announcement);
+
+            if (!announceActivation && !SpecialSelectionRepeat.ShouldAnnounce(repeatKey))
             {
                 return true;
             }
@@ -51,15 +59,27 @@ public sealed partial class InGameNarrationSystem
 
             ResetHoverSlotsAndTooltips();
             _narrationHistory.Reset(NarrationKind.SpecialSelection);
-            UiAreaNarrationContext.RecordArea(UiNarrationArea.Inventory);
-            SpecialSelectionRepeat.Record(currentPoint);
-            TryAnnounceCue(NarrationCue.ForSpecial(label), force: true, regionPrefix: regionPrefix);
+            UiAreaNarrationContext.RecordArea(IsJourneySpecialPoint(currentPoint) ? UiNarrationArea.Creative : UiNarrationArea.Inventory);
+            SpecialSelectionRepeat.Record(repeatKey);
+            TryAnnounceCue(NarrationCue.ForSpecial(announcement), force: true, regionPrefix: regionPrefix);
             return true;
+        }
+
+        private static string GetSpecialSelectionRepeatKey(int point, string announcement)
+        {
+            return GetJourneySpecialSelectionRepeatKey(point) ??
+                point.ToString(System.Globalization.CultureInfo.InvariantCulture) + ":" + announcement;
         }
 
         private static string? GetSpecialSelectionLabel(int point, bool hoverIsAir, string? location)
         {
-            string? result = point switch
+            string? result = GetJourneySpecialSelectionLabel(point);
+            if (!string.IsNullOrEmpty(result))
+            {
+                return result;
+            }
+
+            result = point switch
             {
                 301 => FormatButtonLabel(Language.GetTextValue("GameUI.QuickStackToNearby")),
                 302 => FormatButtonLabel(Language.GetTextValue("GameUI.SortInventory")),
@@ -81,12 +101,6 @@ public sealed partial class InGameNarrationSystem
             };
 
             static string? Button(string? text) => FormatButtonLabel(text);
-
-            static string? FormatButtonLabel(string? text)
-            {
-                string cleaned = TextSanitizer.Clean(text ?? string.Empty);
-                return string.IsNullOrWhiteSpace(cleaned) ? null : $"{cleaned} button";
-            }
 
             static string? GetLoadoutLabel(int point)
             {
@@ -147,6 +161,11 @@ public sealed partial class InGameNarrationSystem
 
         internal static bool IsSpecialInventoryPoint(int point)
         {
+            if (IsJourneySpecialPoint(point))
+            {
+                return true;
+            }
+
             return point switch
             {
                 301 or 302 or 304 or 305 or 306 or 307 or 308 or 309 or 310 or 311 => true,
@@ -162,6 +181,11 @@ public sealed partial class InGameNarrationSystem
 
         private static InventoryRegion ResolveRegionForSpecialPoint(int point)
         {
+            if (IsJourneySpecialPoint(point))
+            {
+                return InventoryRegion.Creative;
+            }
+
             return point switch
             {
                 // Inventory management buttons (Quick Stack, Sort)
@@ -180,6 +204,461 @@ public sealed partial class InGameNarrationSystem
                 1570 => InventoryRegion.CharacterPanel,
                 _ => InventoryRegion.None,
             };
+        }
+
+        private static bool IsJourneySpecialPoint(int point)
+        {
+            if (!Main.CreativeMenu.Enabled)
+            {
+                return false;
+            }
+
+            if (point == 15000)
+            {
+                return true;
+            }
+
+            if (point < 10000 || point > 11000)
+            {
+                return false;
+            }
+
+            if (point <= 10006)
+            {
+                return true;
+            }
+
+            int option = JourneyReflection.TryGetCurrentPowersCategoryOption() ?? 0;
+            return option switch
+            {
+                1 => point >= 10007 && point <= 10018,
+                2 => point == 10007,
+                3 => point >= 10007 && point <= 10013,
+                4 => point >= 10007 && point <= 10011,
+                5 => point == 10007,
+                6 => point >= 10007 && point <= 10010,
+                _ => false,
+            };
+        }
+
+        private static string? GetJourneySpecialSelectionLabel(int point)
+        {
+            if (!Main.CreativeMenu.Enabled)
+            {
+                return null;
+            }
+
+            if (point == 15000)
+            {
+                return DescribeJourneySacrificeSlot();
+            }
+
+            if (point < 10000 || point > 11000)
+            {
+                return null;
+            }
+
+            if (point <= 10006)
+            {
+                return DescribeJourneyMainStripPoint(point);
+            }
+
+            int option = JourneyReflection.TryGetCurrentPowersCategoryOption() ?? 0;
+            int offset = point - 10007;
+            return option switch
+            {
+                1 => DescribeJourneyDuplicationPoint(offset),
+                2 => offset == 0 ? LocalizationHelper.GetTextOrFallback(
+                    "Mods.TerrariaAccess.JourneyMode.Sacrifice.ConfirmFocus",
+                    "Research button, press to sacrifice and unlock infinite copies") : null,
+                3 => DescribeJourneyTimePoint(offset),
+                4 => DescribeJourneyWeatherPoint(offset),
+                5 => offset == 0 ? DescribeJourneyPowerFocus("setdifficulty") : null,
+                6 => DescribeJourneyPersonalPoint(offset),
+                _ => null,
+            };
+        }
+
+        private static string? GetJourneySpecialSelectionRepeatKey(int point)
+        {
+            if (!Main.CreativeMenu.Enabled)
+            {
+                return null;
+            }
+
+            if (point == 15000)
+            {
+                return "journey:sacrifice-slot";
+            }
+
+            if (point < 10000 || point > 11000)
+            {
+                return null;
+            }
+
+            if (point <= 10006)
+            {
+                int offset = point - 10000;
+                return offset switch
+                {
+                    5 => "journey:power:biomespread_setfrozen",
+                    6 => "journey:power:setdifficulty",
+                    _ => $"journey:main:{offset}",
+                };
+            }
+
+            int option = JourneyReflection.TryGetCurrentPowersCategoryOption() ?? 0;
+            int powerOffset = point - 10007;
+            string? powerKey = option switch
+            {
+                3 => GetJourneyTimePowerKey(powerOffset),
+                4 => GetJourneyWeatherPowerKey(powerOffset),
+                5 => powerOffset == 0 ? "setdifficulty" : null,
+                6 => GetJourneyPersonalPowerKey(powerOffset),
+                _ => null,
+            };
+
+            if (!string.IsNullOrWhiteSpace(powerKey))
+            {
+                return $"journey:power:{powerKey}";
+            }
+
+            return $"journey:option:{option}:{powerOffset}";
+        }
+
+        private static string? DescribeJourneyMainStripPoint(int point)
+        {
+            int offset = point - 10000;
+            return offset switch
+            {
+                0 => FormatButtonLabel(LocalizationHelper.GetTextOrFallback(
+                    "Mods.TerrariaAccess.JourneyMode.Powers.Tab.InfiniteItems",
+                    "Infinite Items")),
+                1 => FormatButtonLabel(LocalizationHelper.GetTextOrFallback(
+                    "Mods.TerrariaAccess.JourneyMode.Powers.Tab.Research",
+                    "Research")),
+                2 => FormatButtonLabel(LocalizationHelper.GetTextOrFallback(
+                    "Mods.TerrariaAccess.JourneyMode.Powers.Tab.Time",
+                    "Time")),
+                3 => FormatButtonLabel(LocalizationHelper.GetTextOrFallback(
+                    "Mods.TerrariaAccess.JourneyMode.Powers.Tab.Weather",
+                    "Weather")),
+                4 => FormatButtonLabel(LocalizationHelper.GetTextOrFallback(
+                    "Mods.TerrariaAccess.JourneyMode.Powers.Tab.PersonalPowers",
+                    "Personal Powers")),
+                5 => DescribeJourneyPowerFocus("biomespread_setfrozen"),
+                6 => DescribeJourneyPowerFocus("setdifficulty"),
+                _ => null,
+            };
+        }
+
+        private static string? DescribeJourneyDuplicationPoint(int offset)
+        {
+            if (offset == 0)
+            {
+                return LocalizationHelper.GetTextOrFallback(
+                    "Mods.TerrariaAccess.JourneyMode.Duplication.SearchFocus",
+                    "Search field, type to filter items");
+            }
+
+            string? filter = GetJourneyDuplicationFilterName(offset - 1);
+            if (string.IsNullOrWhiteSpace(filter))
+            {
+                return null;
+            }
+
+            return string.Format(
+                LocalizationHelper.GetTextOrFallback(
+                    "Mods.TerrariaAccess.JourneyMode.Duplication.FilterFocusFormat",
+                    "Category filter: {0}"),
+                filter);
+        }
+
+        private static string? DescribeJourneyTimePoint(int offset)
+        {
+            return offset switch
+            {
+                0 => DescribeJourneyPowerFocus("time_setfrozen"),
+                1 => DescribeJourneyPowerFocus("time_setdawn"),
+                2 => DescribeJourneyPowerFocus("time_setnoon"),
+                3 => DescribeJourneyPowerFocus("time_setdusk"),
+                4 => DescribeJourneyPowerFocus("time_setmidnight"),
+                5 or 6 => DescribeJourneyPowerFocus("time_setspeed"),
+                _ => null,
+            };
+        }
+
+        private static bool TryGetJourneyOneShotActivationLabel(int point, out string label)
+        {
+            label = string.Empty;
+
+            if (!Main.CreativeMenu.Enabled || point < 10007 || point > 11000)
+            {
+                return false;
+            }
+
+            int option = JourneyReflection.TryGetCurrentPowersCategoryOption() ?? 0;
+            if (option != 3)
+            {
+                return false;
+            }
+
+            string? key = (point - 10007) switch
+            {
+                1 => "time_setdawn",
+                2 => "time_setnoon",
+                3 => "time_setdusk",
+                4 => "time_setmidnight",
+                _ => null,
+            };
+
+            if (key is null || !JourneyPowerRegistry.TryFind(key, out JourneyPowerEntry entry))
+            {
+                return false;
+            }
+
+            string powerLabel = LocalizationHelper.GetTextOrFallback(
+                $"Mods.TerrariaAccess.JourneyMode.Power.{entry.LocSuffix}",
+                entry.FallbackLabel);
+            label = string.Format(
+                LocalizationHelper.GetTextOrFallback(
+                    "Mods.TerrariaAccess.JourneyMode.Powers.OneShotActivatedFormat",
+                    "{0} activated"),
+                powerLabel);
+            return true;
+        }
+
+        private static bool IsJourneyActivationJustPressed()
+        {
+            return PlayerInput.Triggers.JustPressed.MouseLeft;
+        }
+
+        private static string? GetJourneyTimePowerKey(int offset)
+        {
+            return offset switch
+            {
+                0 => "time_setfrozen",
+                1 => "time_setdawn",
+                2 => "time_setnoon",
+                3 => "time_setdusk",
+                4 => "time_setmidnight",
+                5 or 6 => "time_setspeed",
+                _ => null,
+            };
+        }
+
+        private static string? GetJourneyWeatherPowerKey(int offset)
+        {
+            return offset switch
+            {
+                0 => "wind_setstrength",
+                1 => "wind_setfrozen",
+                2 => "rain_setstrength",
+                3 => "rain_setfrozen",
+                4 => JourneyReflection.TryGetWeatherPowersSubcategoryOption() == 2
+                    ? "rain_setstrength"
+                    : "wind_setstrength",
+                _ => null,
+            };
+        }
+
+        private static string? GetJourneyPersonalPowerKey(int offset)
+        {
+            return offset switch
+            {
+                0 => "godmode",
+                1 => "increaseplacementrange",
+                2 or 3 => "setspawnrate",
+                _ => null,
+            };
+        }
+
+        private static string? DescribeJourneyWeatherPoint(int offset)
+        {
+            return offset switch
+            {
+                0 => DescribeJourneyPowerFocus("wind_setstrength"),
+                1 => DescribeJourneyPowerFocus("wind_setfrozen"),
+                2 => DescribeJourneyPowerFocus("rain_setstrength"),
+                3 => DescribeJourneyPowerFocus("rain_setfrozen"),
+                4 => DescribeJourneyPowerFocus(
+                    JourneyReflection.TryGetWeatherPowersSubcategoryOption() == 2
+                        ? "rain_setstrength"
+                        : "wind_setstrength"),
+                _ => null,
+            };
+        }
+
+        private static string? DescribeJourneyPersonalPoint(int offset)
+        {
+            return offset switch
+            {
+                0 => DescribeJourneyPowerFocus("godmode"),
+                1 => DescribeJourneyPowerFocus("increaseplacementrange"),
+                2 or 3 => DescribeJourneyPowerFocus("setspawnrate"),
+                _ => null,
+            };
+        }
+
+        private static string? DescribeJourneyPowerFocus(string key)
+        {
+            if (!JourneyPowerRegistry.TryFind(key, out JourneyPowerEntry entry))
+            {
+                return null;
+            }
+
+            string label = LocalizationHelper.GetTextOrFallback(
+                $"Mods.TerrariaAccess.JourneyMode.Power.{entry.LocSuffix}",
+                entry.FallbackLabel);
+
+            object? power = JourneyPowersReflection.TryGetPower(entry.Key);
+            Player? player = Main.LocalPlayer;
+            int playerIndex = player?.whoAmI ?? Main.myPlayer;
+
+            return entry.Kind switch
+            {
+                JourneyPowerKind.Toggle or JourneyPowerKind.Shared => FormatJourneyToggleFocus(entry, label, power, playerIndex),
+                JourneyPowerKind.Slider => FormatJourneySliderFocus(entry, label, power, playerIndex),
+                JourneyPowerKind.OneShot => string.Format(
+                    LocalizationHelper.GetTextOrFallback(
+                        "Mods.TerrariaAccess.JourneyMode.Powers.FocusOneShotFormat",
+                        "{0}, press to activate"),
+                    label),
+                _ => label,
+            };
+        }
+
+        private static string FormatJourneyToggleFocus(JourneyPowerEntry entry, string label, object? power, int playerIndex)
+        {
+            bool? state = power is null ? null : JourneyPowersReflection.TryGetTogglePerPlayerState(power, playerIndex);
+            if (!state.HasValue)
+            {
+                return label;
+            }
+
+            string stateWord = state.Value
+                ? LocalizationHelper.GetTextOrFallback("Mods.TerrariaAccess.JourneyMode.State.On", "on")
+                : LocalizationHelper.GetTextOrFallback("Mods.TerrariaAccess.JourneyMode.State.Off", "off");
+            return string.Format(
+                LocalizationHelper.GetTextOrFallback(
+                    "Mods.TerrariaAccess.JourneyMode.Powers.FocusToggleFormat",
+                    "{0}, currently {1}"),
+                label,
+                stateWord);
+        }
+
+        private static string FormatJourneySliderFocus(JourneyPowerEntry entry, string label, object? power, int playerIndex)
+        {
+            float? value = power is null ? null : JourneyPowersReflection.TryGetSliderValue(power, playerIndex);
+            if (!value.HasValue)
+            {
+                return label;
+            }
+
+            string valueText = JourneySliderValueFormatter.Format(entry.Key, value.Value);
+            return string.Format(
+                LocalizationHelper.GetTextOrFallback(
+                    "Mods.TerrariaAccess.JourneyMode.Powers.FocusSliderFormat",
+                    "{0}, {1}"),
+                label,
+                valueText);
+        }
+
+        private static string? DescribeJourneySacrificeSlot()
+        {
+            Item? sacrifice = JourneyReflection.TryGetSacrificeItem();
+            if (sacrifice is null || sacrifice.IsAir)
+            {
+                return LocalizationHelper.GetTextOrFallback(
+                    "Mods.TerrariaAccess.JourneyMode.Sacrifice.FocusEmpty",
+                    "Sacrifice slot, empty");
+            }
+
+            Player? player = Main.LocalPlayer;
+            var tracker = player?.creativeTracker?.ItemSacrifices;
+            string itemName = sacrifice.AffixName();
+            int itemId = sacrifice.type;
+
+            bool canResearch = CreativeItemSacrificesCatalog.Instance
+                .TryGetSacrificeCountCapToUnlockInfiniteItems(itemId, out _);
+            int have = 0;
+            int needed = 0;
+            bool hasNumbers = tracker?.TryGetSacrificeNumbers(itemId, out have, out needed) == true;
+            bool fully = canResearch && hasNumbers && needed > 0 && have >= needed;
+
+            if (fully)
+            {
+                return string.Format(
+                    LocalizationHelper.GetTextOrFallback(
+                        "Mods.TerrariaAccess.JourneyMode.Sacrifice.FullyResearched",
+                        "Sacrifice slot: {0}, fully researched"),
+                    itemName);
+            }
+
+            if (canResearch && hasNumbers)
+            {
+                return string.Format(
+                    LocalizationHelper.GetTextOrFallback(
+                        "Mods.TerrariaAccess.JourneyMode.Sacrifice.ProgressFormat",
+                        "Sacrifice slot: {0}, {1} of {2} to research"),
+                    itemName,
+                    have,
+                    needed);
+            }
+
+            return string.Format(
+                LocalizationHelper.GetTextOrFallback(
+                    "Mods.TerrariaAccess.JourneyMode.Sacrifice.CannotResearch",
+                    "Sacrifice slot: {0}, cannot be researched"),
+                itemName);
+        }
+
+        private static string? GetJourneyDuplicationFilterName(int index)
+        {
+            string key = index switch
+            {
+                0 => "CreativePowers.TabWeapons",
+                1 => "CreativePowers.TabArmor",
+                2 => "CreativePowers.TabVanity",
+                3 => "CreativePowers.TabBlocks",
+                4 => "CreativePowers.TabFurniture",
+                5 => "CreativePowers.TabAccessories",
+                6 => "CreativePowers.TabAccessoriesMisc",
+                7 => "CreativePowers.TabConsumables",
+                8 => "CreativePowers.TabTools",
+                9 => "CreativePowers.TabMaterials",
+                10 => "CreativePowers.TabMisc",
+                _ => string.Empty,
+            };
+
+            if (string.IsNullOrEmpty(key))
+            {
+                return null;
+            }
+
+            string fallback = index switch
+            {
+                0 => "Weapons",
+                1 => "Armor",
+                2 => "Vanity",
+                3 => "Blocks",
+                4 => "Furniture",
+                5 => "Accessories",
+                6 => "Miscellaneous accessories",
+                7 => "Consumables",
+                8 => "Tools",
+                9 => "Materials",
+                10 => "Miscellaneous",
+                _ => string.Empty,
+            };
+
+            return LocalizationHelper.GetTextOrFallback(key, fallback);
+        }
+
+        private static string? FormatButtonLabel(string? text)
+        {
+            string cleaned = TextSanitizer.Clean(text ?? string.Empty);
+            return string.IsNullOrWhiteSpace(cleaned) ? null : $"{cleaned} button";
         }
 
         private static string? GetPvpToggleText()
@@ -236,27 +715,28 @@ public sealed partial class InGameNarrationSystem
 
         private sealed class SpecialSelectionRepeatGuard
         {
-            private int _lastPoint = -1;
+            private string? _lastKey;
 
-            public bool ShouldAnnounce(int point)
+            public bool ShouldAnnounce(string key)
             {
-                return point >= 0 && point != _lastPoint;
+                return !string.IsNullOrWhiteSpace(key) &&
+                    !string.Equals(key, _lastKey, StringComparison.Ordinal);
             }
 
-            public void Record(int point)
+            public void Record(string key)
             {
-                if (point < 0)
+                if (string.IsNullOrWhiteSpace(key))
                 {
                     Clear();
                     return;
                 }
 
-                _lastPoint = point;
+                _lastKey = key;
             }
 
             public void Clear()
             {
-                _lastPoint = -1;
+                _lastKey = null;
             }
         }
 

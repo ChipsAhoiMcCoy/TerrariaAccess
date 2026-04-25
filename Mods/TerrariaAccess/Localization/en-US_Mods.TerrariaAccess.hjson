@@ -488,6 +488,9 @@ Mods: {
 			Panel: {
 				Duplication: Duplication
 				Research: Research
+				Opened: Panel opened
+				OpenedFormat: "{0} panel opened"
+				Closed: Panel closed
 				SwitchedToResearch: Switched to Research panel
 				SwitchedToDuplication: Switched to Duplication panel
 			}

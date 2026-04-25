@@ -26,7 +26,7 @@ internal static class JourneyPowerRegistry
         new("wind_setfrozen", JourneyPowerKind.Shared, "FreezeWind", "Freeze wind"),
         new("rain_setfrozen", JourneyPowerKind.Shared, "FreezeRain", "Freeze rain"),
         new("increaseplacementrange", JourneyPowerKind.Toggle, "PlacementRange", "Increased placement range"),
-        new("stopbiomespread", JourneyPowerKind.Shared, "StopBiomeSpread", "Stop biome spread"),
+        new("biomespread_setfrozen", JourneyPowerKind.Shared, "StopBiomeSpread", "Stop biome spread"),
         new("time_setspeed", JourneyPowerKind.Slider, "TimeRate", "Time speed"),
         new("wind_setstrength", JourneyPowerKind.Slider, "WindStrength", "Wind strength"),
         new("rain_setstrength", JourneyPowerKind.Slider, "RainStrength", "Rain strength"),

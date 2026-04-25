@@ -18,8 +18,15 @@ internal static class JourneyPowersReflection
     {
         Type? t = CreativePowerManagerType.Value;
         if (t is null) return null;
+
         PropertyInfo? prop = t.GetProperty("Instance", StaticAny);
-        return prop?.GetValue(null);
+        if (prop?.GetValue(null) is object propertyValue)
+        {
+            return propertyValue;
+        }
+
+        FieldInfo? field = t.GetField("Instance", StaticAny);
+        return field?.GetValue(null);
     });
 
     private static readonly Lazy<IDictionary?> PowersByName = new(() =>
@@ -31,8 +38,8 @@ internal static class JourneyPowersReflection
     });
 
     private static readonly Dictionary<Type, MethodInfo?> IsEnabledForPlayerCache = new();
+    private static readonly Dictionary<Type, MemberInfo?> SharedEnabledMemberCache = new();
     private static readonly Dictionary<Type, MethodInfo?> GetSliderValueCache = new();
-    private static readonly Dictionary<Type, MethodInfo?> GetSliderValueForPlayerCache = new();
 
     public static object? TryGetPower(string key)
     {
@@ -54,46 +61,49 @@ internal static class JourneyPowersReflection
     public static bool? TryGetTogglePerPlayerState(object power, int playerIndex)
     {
         MethodInfo? method = ResolveMethod(power.GetType(), IsEnabledForPlayerCache, "IsEnabledForPlayer", typeof(int));
-        if (method is null) return null;
+        if (method is not null)
+        {
+            try
+            {
+                object? result = method.Invoke(power, new object[] { playerIndex });
+                return result as bool?;
+            }
+            catch
+            {
+                return null;
+            }
+        }
+
+        MemberInfo? enabledMember = ResolveSharedEnabledMember(power.GetType());
         try
         {
-            object? result = method.Invoke(power, new object[] { playerIndex });
+            object? result = enabledMember switch
+            {
+                PropertyInfo property => property.GetValue(power),
+                FieldInfo field => field.GetValue(power),
+                _ => null,
+            };
             return result as bool?;
         }
         catch
         {
-            return null;
         }
+
+        return null;
     }
 
     public static float? TryGetSliderValue(object power, int playerIndex)
     {
         Type t = power.GetType();
-        MethodInfo? perPlayer = ResolveMethod(t, GetSliderValueForPlayerCache, "GetRemappedSliderValueFor", typeof(int));
-        if (perPlayer is not null)
-        {
-            try
-            {
-                object? result = perPlayer.Invoke(power, new object[] { playerIndex });
-                if (result is float f1)
-                {
-                    return f1;
-                }
-            }
-            catch
-            {
-            }
-        }
-
         MethodInfo? generic = ResolveMethod(t, GetSliderValueCache, "GetSliderValue");
         if (generic is not null)
         {
             try
             {
                 object? result = generic.Invoke(power, null);
-                if (result is float f2)
+                if (result is float f)
                 {
-                    return f2;
+                    return f;
                 }
             }
             catch
@@ -127,6 +137,26 @@ internal static class JourneyPowersReflection
 
         cache[t] = method;
         return method;
+    }
+
+    private static MemberInfo? ResolveSharedEnabledMember(Type t)
+    {
+        if (SharedEnabledMemberCache.TryGetValue(t, out MemberInfo? cached))
+        {
+            return cached;
+        }
+
+        MemberInfo? member = null;
+        Type? cursor = t;
+        while (cursor is not null && member is null)
+        {
+            member = cursor.GetProperty("Enabled", InstanceAny);
+            member ??= cursor.GetField("Enabled", InstanceAny);
+            cursor = cursor.BaseType;
+        }
+
+        SharedEnabledMemberCache[t] = member;
+        return member;
     }
 
     private static Type? ResolveType(string fullName)

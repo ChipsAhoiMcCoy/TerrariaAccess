@@ -1,4 +1,5 @@
 #nullable enable
+using System;
 using System.Globalization;
 using TerrariaAccess.Common.Utilities;
 
@@ -12,7 +13,7 @@ internal static class JourneySliderValueFormatter
         return powerKey switch
         {
             "time_setspeed" => FormatTimes(MapTimeRate(clamped)),
-            "setdifficulty" => FormatTimes(MapDifficulty(clamped)),
+            "setdifficulty" => FormatTimes(MapDifficulty(clamped), "0.##"),
             "setspawnrate" => FormatPercent(clamped * 100f),
             "wind_setstrength" => FormatSignedPercent((clamped * 2f - 1f) * 100f),
             "rain_setstrength" => FormatPercent(clamped * 100f),
@@ -26,7 +27,7 @@ internal static class JourneySliderValueFormatter
         return powerKey switch
         {
             "time_setspeed" => (int)(MapTimeRate(clamped) * 10f),
-            "setdifficulty" => (int)(MapDifficulty(clamped) * 10f),
+            "setdifficulty" => (int)Math.Round(MapDifficulty(clamped) * 20f),
             _ => (int)(clamped * 100f),
         };
     }
@@ -38,12 +39,16 @@ internal static class JourneySliderValueFormatter
 
     private static float MapDifficulty(float v)
     {
-        return 0.5f + v * 2.5f;
+        float mapped = v <= 0.33f
+            ? 0.5f + (v / 0.33f) * 0.5f
+            : 1f + ((v - 0.33f) / 0.67f) * 2f;
+
+        return (float)Math.Round(mapped * 20f) / 20f;
     }
 
-    private static string FormatTimes(float value)
+    private static string FormatTimes(float value, string format = "0.#")
     {
-        string num = value.ToString("0.#", CultureInfo.InvariantCulture);
+        string num = value.ToString(format, CultureInfo.InvariantCulture);
         return string.Format(
             LocalizationHelper.GetTextOrFallback(
                 "Mods.TerrariaAccess.JourneyMode.SliderUnit.TimesFormat",
