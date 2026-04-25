@@ -41,11 +41,22 @@ public sealed class WireColorMenuPlayer : ModPlayer
 
         if (menu.IsOpen)
         {
-            // Handle navigation input directly from keyboard state
-            HandleNavigationInput(menu);
-
             // Block all player controls while menu is open
             SuppressAllPlayerControls();
+
+            // Handle navigation input directly from keyboard state. This can close
+            // the menu and restore Main.blockInput, so no full suppression should
+            // run after it when the menu has closed.
+            HandleNavigationInput(menu);
+            if (!menu.IsOpen)
+            {
+                if (_suppressUntilButtonRelease)
+                {
+                    SuppressInteractionControls();
+                }
+
+                return;
+            }
 
             // Check close conditions
             CheckCloseConditions(menu);
