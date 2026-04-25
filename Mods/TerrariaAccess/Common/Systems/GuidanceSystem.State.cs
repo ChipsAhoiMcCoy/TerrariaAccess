@@ -27,12 +27,14 @@ public sealed partial class GuidanceSystem
         public readonly CustomFilterKind Kind;
         public readonly int TypeId;
         public readonly string Label;
+        public readonly bool RequireLabelMatch;
 
-        public CustomGuidanceFilter(CustomFilterKind kind, int typeId, string label)
+        public CustomGuidanceFilter(CustomFilterKind kind, int typeId, string label, bool requireLabelMatch = true)
         {
             Kind = kind;
             TypeId = typeId;
             Label = label;
+            RequireLabelMatch = requireLabelMatch;
         }
     }
 
@@ -53,7 +55,7 @@ public sealed partial class GuidanceSystem
     private static readonly List<CustomGuidanceMatch> NearbyCustomMatches = new();
 
     internal static bool HasWaypointState => Waypoints.Count > 0 || CustomTargets.Count > 0 || _selectionMode != SelectionMode.None;
-    internal static bool IsNamingActive => NamingDialog.IsActive;
+    internal static bool IsNamingActive => NamingDialog.IsActive || CustomTargetDialog.IsActive;
 
     private enum SelectionMode
     {
@@ -111,6 +113,7 @@ public sealed partial class GuidanceSystem
     private static SoundEffect? _waypointTone;
     private static readonly List<SoundEffectInstance> ActiveWaypointInstances = new();
     private static readonly GuidanceNamingDialogController NamingDialog = new();
+    private static readonly GuidanceCustomTargetDialogController CustomTargetDialog = new();
     private static readonly bool LogGuidancePings = false;
     private static uint _lastTargetRefreshFrame;
     private static int _lastTargetRefreshPlayerIndex = -1;

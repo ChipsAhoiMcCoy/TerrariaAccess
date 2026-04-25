@@ -11,6 +11,7 @@ using Terraria;
 using Terraria.Audio;
 using Terraria.GameInput;
 using Terraria.ID;
+using Terraria.Map;
 using Terraria.ModLoader;
 using Terraria.ModLoader.IO;
 using Terraria.ObjectData;
@@ -47,6 +48,7 @@ public sealed partial class GuidanceSystem : ModSystem
     {
         ResetTrackingState();
         NamingDialog.Close(LogWaypoint);
+        CustomTargetDialog.Close(LogWaypoint);
         DisposeToneResources();
     }
 
@@ -62,6 +64,7 @@ public sealed partial class GuidanceSystem : ModSystem
 
         ResetTrackingState();
         CloseNaming();
+        CloseCustomTargetInput();
         DisposeToneResources();
         LogWaypoint("OnWorldUnload: Cleanup complete.");
     }
@@ -69,6 +72,7 @@ public sealed partial class GuidanceSystem : ModSystem
     public override void UpdateUI(GameTime gameTime)
     {
         UpdateNaming();
+        UpdateCustomTargetInput();
     }
 
     public override void LoadWorldData(TagCompound tag)
@@ -100,7 +104,7 @@ public sealed partial class GuidanceSystem : ModSystem
         // This causes HandleIME() in the draw phase to disable the IME service, which stops
         // OS text input events from being delivered. Re-assert WritingText here so the IME
         // stays enabled and GetInputText() receives keystrokes (including Enter/Escape).
-        if (NamingDialog.IsActive)
+        if (NamingDialog.IsActive || CustomTargetDialog.IsActive)
         {
             PlayerInput.WritingText = true;
         }
@@ -108,7 +112,7 @@ public sealed partial class GuidanceSystem : ModSystem
 
     public override void PostUpdatePlayers()
     {
-        if (Main.dedServ || Main.gameMenu || Main.inFancyUI || NamingDialog.IsActive)
+        if (Main.dedServ || Main.gameMenu || Main.inFancyUI || NamingDialog.IsActive || CustomTargetDialog.IsActive)
         {
             _nextPingUpdateFrame = -1;
             _arrivalAnnounced = false;
@@ -375,6 +379,17 @@ public sealed partial class GuidanceSystem : ModSystem
         NamingDialog.Close(LogWaypoint);
     }
 
+    private static void BeginCustomTargetInput(Player player)
+    {
+        _nextPingUpdateFrame = -1;
+        CustomTargetDialog.Begin(player, LogWaypoint);
+    }
+
+    private static void CloseCustomTargetInput()
+    {
+        CustomTargetDialog.Close(LogWaypoint);
+    }
+
     private static void UpdateNaming()
     {
         GuidanceNamingUpdateResult result = NamingDialog.Update(LogWaypoint);
@@ -427,6 +442,48 @@ public sealed partial class GuidanceSystem : ModSystem
         }
     }
 
+    private static void UpdateCustomTargetInput()
+    {
+        GuidanceCustomTargetInputUpdateResult result = CustomTargetDialog.Update(LogWaypoint);
+        if (result.Kind == GuidanceCustomTargetInputUpdateKind.None)
+        {
+            return;
+        }
+
+        if (result.Kind == GuidanceCustomTargetInputUpdateKind.Confirmed)
+        {
+            Player? owner = ResolveNamingPlayer(result.PlayerIndex);
+            if (owner is null)
+            {
+                ScreenReaderService.Announce("Custom tracker target could not be saved because the player was unavailable.");
+                LogWaypoint($"UpdateCustomTargetInput: Owner player could not be resolved (index={result.PlayerIndex}).");
+                return;
+            }
+
+            if (!TryResolveCustomTargetInput(result.RawInput, owner, out CustomGuidanceFilter filter, out string failure))
+            {
+                string announcement = string.IsNullOrWhiteSpace(failure)
+                    ? "Custom tracker target not recognized."
+                    : failure;
+                ScreenReaderService.Announce(announcement, force: true);
+                LogWaypoint($"UpdateCustomTargetInput: Failed to resolve \"{result.RawInput}\". Reason=\"{announcement}\"");
+                return;
+            }
+
+            AddCustomTarget(owner, filter);
+            return;
+        }
+
+        if (result.Kind == GuidanceCustomTargetInputUpdateKind.Canceled)
+        {
+            Player? owner = ResolveNamingPlayer(result.PlayerIndex);
+            if (owner is not null && _selectionMode == SelectionMode.Custom)
+            {
+                RescheduleGuidancePing(owner);
+            }
+        }
+    }
+
     private static Player? ResolveNamingPlayer(int playerIndex)
     {
         if (playerIndex < 0 || playerIndex >= Main.maxPlayers)
@@ -438,14 +495,8 @@ public sealed partial class GuidanceSystem : ModSystem
         return candidate?.active == true ? candidate : null;
     }
 
-    private static void AddFocusedCustomTarget(Player player)
+    private static void AddCustomTarget(Player player, CustomGuidanceFilter filter)
     {
-        if (!TryResolveFocusedCustomTarget(player, out CustomGuidanceFilter filter, out Vector2 previewPosition))
-        {
-            ScreenReaderService.Announce("Nothing under the cursor can be saved to Custom.");
-            return;
-        }
-
         int existingIndex = FindExistingCustomTargetIndex(filter);
         if (existingIndex >= 0)
         {
@@ -466,9 +517,15 @@ public sealed partial class GuidanceSystem : ModSystem
         RefreshCustomEntries(player);
         RescheduleGuidancePing(player);
 
-        string announcement = ComposeCustomCreationAnnouncement(filter.Label, player, previewPosition);
+        bool hasTrackingPosition = TryGetCurrentTrackingTarget(player, out Vector2 trackingPosition, out _);
+        string announcement = hasTrackingPosition
+            ? ComposeCustomCreationAnnouncement(filter.Label, player, trackingPosition)
+            : ComposeCustomCreationAnnouncement(filter.Label, player, null);
         ScreenReaderService.Announce(announcement);
-        EmitPing(player, previewPosition);
+        if (hasTrackingPosition)
+        {
+            EmitPing(player, trackingPosition);
+        }
         ScreenReaderService.SuppressNext(SuppressionKeyArrival);
     }
 
@@ -479,6 +536,7 @@ public sealed partial class GuidanceSystem : ModSystem
             CustomGuidanceFilter existing = CustomTargets[i];
             if (existing.Kind == target.Kind &&
                 existing.TypeId == target.TypeId &&
+                existing.RequireLabelMatch == target.RequireLabelMatch &&
                 string.Equals(SanitizeLabel(existing.Label), SanitizeLabel(target.Label), StringComparison.OrdinalIgnoreCase))
             {
                 return i;
@@ -486,6 +544,515 @@ public sealed partial class GuidanceSystem : ModSystem
         }
 
         return -1;
+    }
+
+    private enum CustomTargetInputKind
+    {
+        Any,
+        Tile,
+        Object,
+        Item,
+        Npc,
+        Enemy,
+        Critter,
+        Projectile,
+        Player
+    }
+
+    private static bool TryResolveCustomTargetInput(
+        string input,
+        Player player,
+        out CustomGuidanceFilter filter,
+        out string failure)
+    {
+        filter = default;
+        failure = string.Empty;
+
+        if (string.IsNullOrWhiteSpace(input))
+        {
+            failure = "Type a custom tracker target before pressing Enter.";
+            return false;
+        }
+
+        ParseCustomTargetInput(input, out CustomTargetInputKind kind, out string selector);
+        if (string.IsNullOrWhiteSpace(selector))
+        {
+            failure = "Type an ID or name after the custom tracker category.";
+            return false;
+        }
+
+        bool resolved = kind switch
+        {
+            CustomTargetInputKind.Tile => TryResolveTileCustomTarget(selector, out filter),
+            CustomTargetInputKind.Object => TryResolveObjectCustomTarget(selector, out filter),
+            CustomTargetInputKind.Item => TryResolveDroppedItemCustomTarget(selector, out filter),
+            CustomTargetInputKind.Npc => TryResolveNpcCustomTarget(selector, NpcInputCategory.Any, out filter),
+            CustomTargetInputKind.Enemy => TryResolveNpcCustomTarget(selector, NpcInputCategory.Enemy, out filter),
+            CustomTargetInputKind.Critter => TryResolveNpcCustomTarget(selector, NpcInputCategory.Critter, out filter),
+            CustomTargetInputKind.Projectile => TryResolveProjectileCustomTarget(selector, out filter),
+            CustomTargetInputKind.Player => TryResolvePlayerCustomTarget(selector, player, out filter),
+            _ => TryResolveObjectCustomTarget(selector, out filter) ||
+                 TryResolveDroppedItemCustomTarget(selector, out filter) ||
+                 TryResolveNpcCustomTarget(selector, NpcInputCategory.Any, out filter) ||
+                 TryResolveProjectileCustomTarget(selector, out filter) ||
+                 TryResolvePlayerCustomTarget(selector, player, out filter)
+        };
+
+        if (resolved)
+        {
+            return true;
+        }
+
+        failure = kind switch
+        {
+            CustomTargetInputKind.Tile => $"Tile target {selector} was not recognized.",
+            CustomTargetInputKind.Object => $"Object target {selector} was not recognized.",
+            CustomTargetInputKind.Item => $"Item target {selector} was not recognized.",
+            CustomTargetInputKind.Npc => $"NPC target {selector} was not recognized.",
+            CustomTargetInputKind.Enemy => $"Enemy target {selector} was not recognized.",
+            CustomTargetInputKind.Critter => $"Critter target {selector} was not recognized.",
+            CustomTargetInputKind.Projectile => $"Projectile target {selector} was not recognized.",
+            CustomTargetInputKind.Player => $"Player target {selector} was not recognized.",
+            _ => $"Custom tracker target {selector} was not recognized. Try a category like tile, object, item, NPC, enemy, critter, or projectile before the ID or name."
+        };
+        return false;
+    }
+
+    private static void ParseCustomTargetInput(string input, out CustomTargetInputKind kind, out string selector)
+    {
+        string trimmed = input.Trim();
+        int separatorIndex = trimmed.IndexOf(':');
+        if (separatorIndex > 0)
+        {
+            string prefix = trimmed[..separatorIndex].Trim();
+            if (TryParseCustomTargetPrefix(prefix, out kind))
+            {
+                selector = trimmed[(separatorIndex + 1)..].Trim();
+                return;
+            }
+        }
+
+        int whitespaceIndex = trimmed.IndexOfAny(new[] { ' ', '\t' });
+        if (whitespaceIndex > 0)
+        {
+            string prefix = trimmed[..whitespaceIndex].Trim();
+            if (TryParseCustomTargetPrefix(prefix, out kind))
+            {
+                selector = trimmed[(whitespaceIndex + 1)..].Trim();
+                return;
+            }
+        }
+
+        kind = CustomTargetInputKind.Any;
+        selector = trimmed;
+    }
+
+    private static bool TryParseCustomTargetPrefix(string prefix, out CustomTargetInputKind kind)
+    {
+        switch (NormalizeSelector(prefix))
+        {
+            case "tile":
+            case "tiles":
+                kind = CustomTargetInputKind.Tile;
+                return true;
+            case "object":
+            case "objects":
+            case "obj":
+                kind = CustomTargetInputKind.Object;
+                return true;
+            case "item":
+            case "items":
+            case "drop":
+            case "droppeditem":
+            case "droppeditems":
+                kind = CustomTargetInputKind.Item;
+                return true;
+            case "npc":
+            case "npcs":
+                kind = CustomTargetInputKind.Npc;
+                return true;
+            case "enemy":
+            case "enemies":
+            case "hostile":
+            case "mob":
+            case "mobs":
+                kind = CustomTargetInputKind.Enemy;
+                return true;
+            case "critter":
+            case "critters":
+                kind = CustomTargetInputKind.Critter;
+                return true;
+            case "projectile":
+            case "projectiles":
+            case "proj":
+                kind = CustomTargetInputKind.Projectile;
+                return true;
+            case "player":
+            case "players":
+                kind = CustomTargetInputKind.Player;
+                return true;
+            default:
+                kind = CustomTargetInputKind.Any;
+                return false;
+        }
+    }
+
+    private enum NpcInputCategory
+    {
+        Any,
+        Enemy,
+        Critter
+    }
+
+    private static bool TryResolveObjectCustomTarget(string selector, out CustomGuidanceFilter filter)
+    {
+        filter = default;
+        if (TryResolveItemType(selector, out int itemType) &&
+            ContentSamples.ItemsByType.TryGetValue(itemType, out Item? item) &&
+            item.createTile >= 0 &&
+            TryCreateTileFilter(item.createTile, ResolveCustomFilterLabel(Lang.GetItemNameValue(itemType), CustomTargets.Count), requireLabelMatch: false, out filter))
+        {
+            return true;
+        }
+
+        return TryResolveTileCustomTarget(selector, out filter);
+    }
+
+    private static bool TryResolveTileCustomTarget(string selector, out CustomGuidanceFilter filter)
+    {
+        filter = default;
+        if (!TryResolveTileType(selector, out int tileType))
+        {
+            return false;
+        }
+
+        string label = ResolveTileTypeDisplayName(tileType);
+        return TryCreateTileFilter(tileType, label, requireLabelMatch: false, out filter);
+    }
+
+    private static bool TryCreateTileFilter(int tileType, string label, bool requireLabelMatch, out CustomGuidanceFilter filter)
+    {
+        filter = default;
+        if (tileType < 0 || tileType >= TileLoader.TileCount)
+        {
+            return false;
+        }
+
+        filter = new CustomGuidanceFilter(
+            CustomFilterKind.Tile,
+            tileType,
+            ResolveCustomFilterLabel(label, CustomTargets.Count),
+            requireLabelMatch);
+        return true;
+    }
+
+    private static bool TryResolveDroppedItemCustomTarget(string selector, out CustomGuidanceFilter filter)
+    {
+        filter = default;
+        if (!TryResolveItemType(selector, out int itemType))
+        {
+            return false;
+        }
+
+        string label = ResolveCustomFilterLabel(Lang.GetItemNameValue(itemType), CustomTargets.Count);
+        filter = new CustomGuidanceFilter(CustomFilterKind.DroppedItem, itemType, label);
+        return true;
+    }
+
+    private static bool TryResolveNpcCustomTarget(string selector, NpcInputCategory category, out CustomGuidanceFilter filter)
+    {
+        filter = default;
+        if (!TryResolveNpcType(selector, out int npcType) || npcType < 0 || npcType >= NPCLoader.NPCCount)
+        {
+            return false;
+        }
+
+        CustomFilterKind filterKind;
+        string label;
+        if (category == NpcInputCategory.Critter || NPCID.Sets.CountsAsCritter[npcType])
+        {
+            filterKind = CustomFilterKind.Critter;
+            label = ResolveCustomFilterLabel(Lang.GetNPCNameValue(npcType), CustomTargets.Count);
+        }
+        else if (category == NpcInputCategory.Enemy || IsHostileNpcType(npcType))
+        {
+            filterKind = CustomFilterKind.HostileMob;
+            label = ResolveCustomFilterLabel(Lang.GetNPCNameValue(npcType), CustomTargets.Count);
+        }
+        else
+        {
+            filterKind = CustomFilterKind.Npc;
+            label = ResolveCustomFilterLabel(Lang.GetNPCNameValue(npcType), CustomTargets.Count);
+        }
+
+        filter = new CustomGuidanceFilter(filterKind, npcType, label);
+        return true;
+    }
+
+    private static bool IsHostileNpcType(int npcType)
+    {
+        if (!ContentSamples.NpcsByNetId.TryGetValue(npcType, out NPC? npc))
+        {
+            return false;
+        }
+
+        return npc.lifeMax > 5 &&
+               npc.damage > 0 &&
+               !npc.townNPC &&
+               !npc.friendly &&
+               !NPCID.Sets.CountsAsCritter[npcType];
+    }
+
+    private static bool TryResolveProjectileCustomTarget(string selector, out CustomGuidanceFilter filter)
+    {
+        filter = default;
+        if (!TryResolveProjectileType(selector, out int projectileType) ||
+            projectileType < 0 ||
+            projectileType >= ProjectileLoader.ProjectileCount)
+        {
+            return false;
+        }
+
+        string label = ResolveCustomFilterLabel(Lang.GetProjectileName(projectileType).Value, CustomTargets.Count);
+        filter = new CustomGuidanceFilter(CustomFilterKind.Projectile, projectileType, label);
+        return true;
+    }
+
+    private static bool TryResolvePlayerCustomTarget(string selector, Player owner, out CustomGuidanceFilter filter)
+    {
+        filter = default;
+        string normalizedSelector = NormalizeSelector(selector);
+        if (string.IsNullOrWhiteSpace(normalizedSelector))
+        {
+            return false;
+        }
+
+        for (int i = 0; i < Main.maxPlayers; i++)
+        {
+            Player candidate = Main.player[i];
+            if (candidate is null || !candidate.active || candidate == owner)
+            {
+                continue;
+            }
+
+            if (NormalizeSelector(candidate.name) == normalizedSelector)
+            {
+                filter = new CustomGuidanceFilter(CustomFilterKind.Player, 0, ResolvePlayerDisplayName(candidate));
+                return true;
+            }
+        }
+
+        return false;
+    }
+
+    private static bool TryResolveItemType(string selector, out int itemType)
+    {
+        if (TryParseBoundedId(selector, 1, ItemLoader.ItemCount - 1, out itemType))
+        {
+            return true;
+        }
+
+        if (ItemID.Search.TryGetId(selector, out int searchedType) &&
+            searchedType > ItemID.None &&
+            searchedType < ItemLoader.ItemCount)
+        {
+            itemType = searchedType;
+            return true;
+        }
+
+        string normalizedSelector = NormalizeSelector(selector);
+        foreach (KeyValuePair<int, Item> entry in ContentSamples.ItemsByType)
+        {
+            if (entry.Key <= ItemID.None || entry.Key >= ItemLoader.ItemCount || entry.Value.IsAir)
+            {
+                continue;
+            }
+
+            if (SelectorMatches(normalizedSelector, Lang.GetItemNameValue(entry.Key)) ||
+                SelectorMatches(normalizedSelector, entry.Value.Name) ||
+                SelectorMatches(normalizedSelector, TryGetSearchName(ItemID.Search, entry.Key)))
+            {
+                itemType = entry.Key;
+                return true;
+            }
+        }
+
+        itemType = ItemID.None;
+        return false;
+    }
+
+    private static bool TryResolveTileType(string selector, out int tileType)
+    {
+        if (TryParseBoundedId(selector, 0, TileLoader.TileCount - 1, out tileType))
+        {
+            return true;
+        }
+
+        if (TileID.Search.TryGetId(selector, out int searchedType) &&
+            searchedType >= 0 &&
+            searchedType < TileLoader.TileCount)
+        {
+            tileType = searchedType;
+            return true;
+        }
+
+        string normalizedSelector = NormalizeSelector(selector);
+        for (int type = 0; type < TileLoader.TileCount; type++)
+        {
+            if (SelectorMatches(normalizedSelector, TryGetSearchName(TileID.Search, type)) ||
+                SelectorMatches(normalizedSelector, ResolveTileTypeDisplayName(type)))
+            {
+                tileType = type;
+                return true;
+            }
+        }
+
+        tileType = -1;
+        return false;
+    }
+
+    private static bool TryResolveNpcType(string selector, out int npcType)
+    {
+        if (TryParseBoundedId(selector, 0, NPCLoader.NPCCount - 1, out npcType))
+        {
+            return true;
+        }
+
+        if (NPCID.Search.TryGetId(selector, out int searchedType) &&
+            searchedType >= 0 &&
+            searchedType < NPCLoader.NPCCount)
+        {
+            npcType = searchedType;
+            return true;
+        }
+
+        string normalizedSelector = NormalizeSelector(selector);
+        foreach (KeyValuePair<int, NPC> entry in ContentSamples.NpcsByNetId)
+        {
+            if (entry.Key < 0 || entry.Key >= NPCLoader.NPCCount)
+            {
+                continue;
+            }
+
+            if (SelectorMatches(normalizedSelector, Lang.GetNPCNameValue(entry.Key)) ||
+                SelectorMatches(normalizedSelector, entry.Value.FullName) ||
+                SelectorMatches(normalizedSelector, TryGetSearchName(NPCID.Search, entry.Key)))
+            {
+                npcType = entry.Key;
+                return true;
+            }
+        }
+
+        npcType = NPCID.None;
+        return false;
+    }
+
+    private static bool TryResolveProjectileType(string selector, out int projectileType)
+    {
+        if (TryParseBoundedId(selector, 0, ProjectileLoader.ProjectileCount - 1, out projectileType))
+        {
+            return true;
+        }
+
+        if (ProjectileID.Search.TryGetId(selector, out int searchedType) &&
+            searchedType >= 0 &&
+            searchedType < ProjectileLoader.ProjectileCount)
+        {
+            projectileType = searchedType;
+            return true;
+        }
+
+        string normalizedSelector = NormalizeSelector(selector);
+        foreach (KeyValuePair<int, Projectile> entry in ContentSamples.ProjectilesByType)
+        {
+            if (entry.Key < 0 || entry.Key >= ProjectileLoader.ProjectileCount)
+            {
+                continue;
+            }
+
+            if (SelectorMatches(normalizedSelector, Lang.GetProjectileName(entry.Key).Value) ||
+                SelectorMatches(normalizedSelector, TryGetSearchName(ProjectileID.Search, entry.Key)))
+            {
+                projectileType = entry.Key;
+                return true;
+            }
+        }
+
+        projectileType = -1;
+        return false;
+    }
+
+    private static bool TryParseBoundedId(string selector, int min, int max, out int id)
+    {
+        if (int.TryParse(selector.Trim(), out id) && id >= min && id <= max)
+        {
+            return true;
+        }
+
+        id = min - 1;
+        return false;
+    }
+
+    private static string ResolveTileTypeDisplayName(int tileType)
+    {
+        if (tileType < 0 || tileType >= TileLoader.TileCount)
+        {
+            return "Tile";
+        }
+
+        try
+        {
+            string mapName = Lang.GetMapObjectName(MapHelper.TileToLookup(tileType, 0));
+            if (!string.IsNullOrWhiteSpace(mapName))
+            {
+                return mapName;
+            }
+        }
+        catch
+        {
+            // Some tile IDs do not have a base map entry.
+        }
+
+        string searchName = TryGetSearchName(TileID.Search, tileType);
+        return !string.IsNullOrWhiteSpace(searchName) ? searchName : $"Tile {tileType}";
+    }
+
+    private static bool SelectorMatches(string normalizedSelector, string? candidate)
+    {
+        return !string.IsNullOrWhiteSpace(normalizedSelector) &&
+               NormalizeSelector(candidate) == normalizedSelector;
+    }
+
+    private static string NormalizeSelector(string? value)
+    {
+        if (string.IsNullOrWhiteSpace(value))
+        {
+            return string.Empty;
+        }
+
+        Span<char> buffer = stackalloc char[value.Length];
+        int length = 0;
+        foreach (char c in value)
+        {
+            if (char.IsLetterOrDigit(c))
+            {
+                buffer[length++] = char.ToLowerInvariant(c);
+            }
+        }
+
+        return new string(buffer[..length]);
+    }
+
+    private static string TryGetSearchName(ReLogic.Reflection.IdDictionary search, int id)
+    {
+        try
+        {
+            return search.GetName(id) ?? string.Empty;
+        }
+        catch
+        {
+            return string.Empty;
+        }
     }
 
     private static bool TryResolveFocusedCustomTarget(Player player, out CustomGuidanceFilter filter, out Vector2 previewPosition)
@@ -907,7 +1474,7 @@ public sealed partial class GuidanceSystem : ModSystem
 
     internal static void HandleKeybinds(Player player)
     {
-        if (NamingDialog.IsActive)
+        if (NamingDialog.IsActive || CustomTargetDialog.IsActive)
         {
             return;
         }
@@ -932,7 +1499,7 @@ public sealed partial class GuidanceSystem : ModSystem
                         $"DrawingPlayerChat={Main.drawingPlayerChat}, EditSign={Main.editSign}, EditChest={Main.editChest}");
             if (_selectionMode == SelectionMode.Custom)
             {
-                AddFocusedCustomTarget(player);
+                BeginCustomTargetInput(player);
             }
             else
             {
@@ -1302,7 +1869,7 @@ public sealed partial class GuidanceSystem : ModSystem
         {
             CustomGuidanceFilter filter = sourceFilters[i];
             string label = ResolveCustomFilterLabel(filter.Label, sanitized.Count);
-            CustomGuidanceFilter sanitizedFilter = new(filter.Kind, filter.TypeId, label);
+            CustomGuidanceFilter sanitizedFilter = new(filter.Kind, filter.TypeId, label, filter.RequireLabelMatch);
 
             if (selectionBelongsToList && currentSelectionIndex == i)
             {
@@ -1399,6 +1966,7 @@ public sealed partial class GuidanceSystem : ModSystem
                 ["kind"] = (int)filter.Kind,
                 ["typeId"] = filter.TypeId,
                 ["label"] = filter.Label,
+                ["requireLabelMatch"] = filter.RequireLabelMatch,
             });
         }
 
@@ -1484,7 +2052,8 @@ public sealed partial class GuidanceSystem : ModSystem
             CustomFilterKind kind = (CustomFilterKind)entry.GetInt("kind");
             int typeId = entry.ContainsKey("typeId") ? entry.GetInt("typeId") : 0;
             string label = ResolveCustomFilterLabel(entry.GetString("label"), destination.Count);
-            destination.Add(new CustomGuidanceFilter(kind, typeId, label));
+            bool requireLabelMatch = !entry.ContainsKey("requireLabelMatch") || entry.GetBool("requireLabelMatch");
+            destination.Add(new CustomGuidanceFilter(kind, typeId, label, requireLabelMatch));
             loadedCount++;
             LogWaypoint($"LoadWaypointData: Loaded custom target \"{label}\" of kind {kind}.");
         }
@@ -1741,7 +2310,7 @@ public sealed partial class GuidanceSystem : ModSystem
                     _selectedCustomIndex = -1;
                     ClearCategoryAnnouncement();
                     RescheduleGuidancePing(player);
-                    AnnounceCategorySelection("Custom", "No custom trackers saved. Press the create waypoint key while hovering something to add it.");
+                    AnnounceCategorySelection("Custom", "No custom trackers saved. Press the create waypoint key to type a tracker target.");
                     return;
                 }
 
@@ -1884,7 +2453,7 @@ public sealed partial class GuidanceSystem : ModSystem
                 if (totalCustomTargets == 0)
                 {
                     ClearCategoryAnnouncement();
-                    AnnounceCategorySelection("Custom", "No custom trackers saved. Press the create waypoint key while hovering something to add it.");
+                    AnnounceCategorySelection("Custom", "No custom trackers saved. Press the create waypoint key to type a tracker target.");
                     return;
                 }
 
@@ -2606,12 +3175,12 @@ public sealed partial class GuidanceSystem : ModSystem
         if (CustomTargets.Count == 0)
         {
             _selectedCustomIndex = -1;
-            _selectionMode = SelectionMode.None;
+            _selectionMode = SelectionMode.Custom;
             ClearCategoryAnnouncement();
             _nextPingUpdateFrame = -1;
             _arrivalAnnounced = false;
             ScreenReaderService.Announce($"Deleted custom tracker {SanitizeLabel(removed.Label)}.");
-            AnnounceDisabledSelection();
+            AnnounceCategorySelection("Custom", "No custom trackers saved. Press the create waypoint key to type a tracker target.");
             return;
         }
 
@@ -2698,7 +3267,7 @@ public sealed partial class GuidanceSystem : ModSystem
         return TextSanitizer.JoinWithComma(label, detail);
     }
 
-    private static string ComposeCustomCreationAnnouncement(string targetName, Player player, Vector2 worldPosition)
+    private static string ComposeCustomCreationAnnouncement(string targetName, Player player, Vector2? worldPosition)
     {
         string sanitizedName = SanitizeLabel(targetName);
         if (string.IsNullOrWhiteSpace(sanitizedName))
@@ -2706,7 +3275,12 @@ public sealed partial class GuidanceSystem : ModSystem
             sanitizedName = "target";
         }
 
-        string relative = DescribeRelativeOffset(player.Center, worldPosition);
+        if (worldPosition is null)
+        {
+            return $"Added custom tracker {sanitizedName}. No matches nearby.";
+        }
+
+        string relative = DescribeRelativeOffset(player.Center, worldPosition.Value);
         if (string.IsNullOrWhiteSpace(relative))
         {
             return $"Added custom tracker {sanitizedName}";

@@ -1184,7 +1184,7 @@ public sealed partial class GuidanceSystem
                 if (!InGameNarrationSystem.CursorDescriptors.TryDescribe(x, y, out CursorDescriptorService.CursorDescriptor descriptor) ||
                     descriptor.IsAir ||
                     descriptor.TileType != filter.TypeId ||
-                    !LabelsMatch(descriptor.Name, filter.Label))
+                    (filter.RequireLabelMatch && !LabelsMatch(descriptor.Name, filter.Label)))
                 {
                     continue;
                 }
