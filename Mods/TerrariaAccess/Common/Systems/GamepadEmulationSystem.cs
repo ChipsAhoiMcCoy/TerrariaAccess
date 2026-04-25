@@ -919,30 +919,13 @@ public sealed class GamepadEmulationSystem : ModSystem
         int originalType = item.type;
         int originalStack = item.stack;
 
-        bool previousMouseLeft = Main.mouseLeft;
-        bool previousMouseLeftRelease = Main.mouseLeftRelease;
-        int previousCursorOverride = Main.cursorOverride;
-
-        Main.mouseLeft = true;
-        Main.mouseLeftRelease = true;
-        Main.cursorOverride = 10;
-
-        try
-        {
-            ItemSlot.LeftClick(player.inventory, context, slot);
-        }
-        finally
-        {
-            Main.cursorOverride = previousCursorOverride;
-            Main.mouseLeft = previousMouseLeft;
-            Main.mouseLeftRelease = previousMouseLeftRelease;
-        }
+        ItemSlot.SellOrTrash(player.inventory, context, slot);
 
         Item remainingItem = player.inventory[slot];
         bool sold = remainingItem.IsAir ||
                     remainingItem.type != originalType ||
                     remainingItem.stack < originalStack;
-        if (!sold)
+        if (!sold || (Main.mouseItem is not null && !Main.mouseItem.IsAir))
         {
             return;
         }
