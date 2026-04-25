@@ -10,6 +10,7 @@ using MonoMod.RuntimeDetour;
 using TerrariaAccess.Common.Services;
 using TerrariaAccess.Common.Systems.FirstLetterNavigation;
 using TerrariaAccess.Common.Systems.GamepadEmulation;
+using TerrariaAccess.Common.Systems.InGameNarration;
 using TerrariaAccess.Common.Systems.ModBrowser;
 using TerrariaAccess.Common.Utilities;
 using Terraria;
@@ -488,9 +489,11 @@ public sealed class GamepadEmulationSystem : ModSystem
         // Skip entirely when first letter navigation is active — keys are reserved for searching.
         // Skip when fancy UI is active (mod config, bestiary, etc.) — injecting MouseLeft here
         // causes clicks at the mouse cursor position instead of the focused element.
+        bool shopInventoryActive = Main.npcShop != 0;
+
         if (GamepadEmulationState.Enabled && Main.playerInventory && !Main.inFancyUI
             && !InputStateHelper.IsTextInputActive() && !FirstLetterNavigationManager.IsEnabled
-            && !dialogueUiActive)
+            && (!dialogueUiActive || shopInventoryActive))
         {
             VirtualTriggerService.InjectFromKeybind(GamepadEmulationKeybinds.InventorySelect, TriggerNames.MouseLeft);
         }
@@ -810,7 +813,8 @@ public sealed class GamepadEmulationSystem : ModSystem
             return;
         }
 
-        if (DialogueInputGuard.IsDialogueUiActive(player))
+        bool shopInventoryActive = Main.npcShop != 0;
+        if (DialogueInputGuard.IsDialogueUiActive(player) && !shopInventoryActive)
         {
             if (IsPressed(GamepadEmulationKeybinds.InventorySelect) || IsPressed(GamepadEmulationKeybinds.InventoryQuickUse))
             {
@@ -833,6 +837,11 @@ public sealed class GamepadEmulationSystem : ModSystem
         // This blanket approach avoids whack-a-mole suppression of individual keybinds.
         if (FirstLetterNavigationManager.IsEnabled)
         {
+            if (shopInventoryActive)
+            {
+                VirtualTriggerService.InjectFromKeybind(GamepadEmulationKeybinds.SmartSelect, TriggerNames.SmartSelect);
+            }
+
             VirtualTriggerService.UpdateTrackingOnly();
             return;
         }
@@ -841,6 +850,7 @@ public sealed class GamepadEmulationSystem : ModSystem
         VirtualTriggerService.ApplyMouseLeftFromTrigger();
 
         VirtualTriggerService.InjectFromKeybind(GamepadEmulationKeybinds.SmartSelect, TriggerNames.SmartSelect);
+        TryHandleShopQuickSellFallback(player);
 
         // Only inject MouseRight if no chest/container is open.
         // When a container is open, continued MouseRight injection can cause it to toggle closed.
@@ -867,6 +877,81 @@ public sealed class GamepadEmulationSystem : ModSystem
         {
             VirtualTriggerService.ApplyMouseRightFromTrigger();
         }
+    }
+
+    private static void TryHandleShopQuickSellFallback(Player player)
+    {
+        if (Main.npcShop <= 0 ||
+            (Main.mouseItem is not null && !Main.mouseItem.IsAir) ||
+            !PlayerInput.Triggers.JustPressed.SmartSelect ||
+            !PlayerInput.UsingGamepadUI)
+        {
+            return;
+        }
+
+        Chest[]? shops = Main.instance?.shop;
+        if (shops is null || Main.npcShop >= shops.Length || shops[Main.npcShop] is null)
+        {
+            return;
+        }
+
+        int point = UILinkPointNavigator.CurrentPoint;
+        if (!SlotNavigationHelper.TryResolveInventorySlot(point, out int slot, out int context))
+        {
+            return;
+        }
+
+        if ((uint)slot >= (uint)player.inventory.Length)
+        {
+            return;
+        }
+
+        Item item = player.inventory[slot];
+        if (item.IsAir || item.favorited)
+        {
+            return;
+        }
+
+        string soldLabel = NarrationStringCatalog.ItemLabel(
+            TextSanitizer.Clean(item.Name),
+            item.stack,
+            favorited: false);
+        int originalType = item.type;
+        int originalStack = item.stack;
+
+        bool previousMouseLeft = Main.mouseLeft;
+        bool previousMouseLeftRelease = Main.mouseLeftRelease;
+        int previousCursorOverride = Main.cursorOverride;
+
+        Main.mouseLeft = true;
+        Main.mouseLeftRelease = true;
+        Main.cursorOverride = 10;
+
+        try
+        {
+            ItemSlot.LeftClick(player.inventory, context, slot);
+        }
+        finally
+        {
+            Main.cursorOverride = previousCursorOverride;
+            Main.mouseLeft = previousMouseLeft;
+            Main.mouseLeftRelease = previousMouseLeftRelease;
+        }
+
+        Item remainingItem = player.inventory[slot];
+        bool sold = remainingItem.IsAir ||
+                    remainingItem.type != originalType ||
+                    remainingItem.stack < originalStack;
+        if (!sold)
+        {
+            return;
+        }
+
+        PlayerInput.Triggers.Current.KeyStatus[TriggerNames.SmartSelect] = false;
+        PlayerInput.Triggers.JustPressed.KeyStatus[TriggerNames.SmartSelect] = false;
+        PlayerInput.LockGamepadButtons(TriggerNames.SmartSelect);
+
+        ScreenReaderService.Announce($"Sold {soldLabel}", force: true);
     }
 
     private static void ApplyDialogueVirtualTriggers(bool uiModeActive)

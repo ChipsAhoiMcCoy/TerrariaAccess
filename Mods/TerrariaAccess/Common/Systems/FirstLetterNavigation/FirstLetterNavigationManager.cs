@@ -4,6 +4,7 @@ using System.Collections.Generic;
 using Microsoft.Xna.Framework;
 using Microsoft.Xna.Framework.Input;
 using TerrariaAccess.Common.Services;
+using TerrariaAccess.Common.Systems.GamepadEmulation;
 using TerrariaAccess.Common.Systems.ModBrowser;
 using TerrariaAccess.Common.Utilities;
 using Terraria;
@@ -147,6 +148,11 @@ internal static class FirstLetterNavigationManager
 
             if (pressed && !wasPressed)
             {
+                if (ShouldReserveLetterKeyForShopSmartSelect(key))
+                {
+                    continue;
+                }
+
                 char letter = (char)('A' + i);
                 LogDebug($"Letter key '{letter}' just pressed, CurrentPoint before={UILinkPointNavigator.CurrentPoint}");
                 ProcessLetter(player, letter);
@@ -503,6 +509,14 @@ internal static class FirstLetterNavigationManager
 
         // Also clear the thumbstick to prevent any residual analog navigation
         PlayerInput.GamepadThumbstickLeft = Vector2.Zero;
+    }
+
+    private static bool ShouldReserveLetterKeyForShopSmartSelect(Keys key)
+    {
+        return Main.npcShop != 0 &&
+               GamepadEmulationState.Enabled &&
+               VirtualTriggerService.IsKeybindPressedRaw(GamepadEmulationKeybinds.SmartSelect) &&
+               VirtualTriggerService.IsKeybindBoundToKey(GamepadEmulationKeybinds.SmartSelect, key);
     }
 
     /// <summary>

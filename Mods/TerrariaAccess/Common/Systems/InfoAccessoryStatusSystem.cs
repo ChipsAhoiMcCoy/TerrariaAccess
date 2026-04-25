@@ -219,7 +219,7 @@ internal static class InfoAccessoryStatusSystem
         return $"Mechanical Ruler: {state}";
     }
 
-    private static string BuildWatchValue(Player player)
+    internal static string BuildWatchValue(Player player)
     {
         string period = Language.GetTextValue("GameUI.TimeAtMorning");
         double currentTime = Main.time;
@@ -373,7 +373,7 @@ internal static class InfoAccessoryStatusSystem
         return value;
     }
 
-    private static string BuildMoonPhaseValue()
+    internal static string BuildMoonPhaseValue()
     {
         return Main.moonPhase switch
         {

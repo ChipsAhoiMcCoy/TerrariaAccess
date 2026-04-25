@@ -53,6 +53,9 @@ internal static class StatusCheckSystem
 
     internal static void AnnounceStatus(Player player)
     {
+        // Keep inventory-held watches reflected in player.accWatch before building the time status.
+        player.RefreshInfoAccs();
+
         int currentFrame = (int)Main.GameUpdateCount;
         int framesSinceLastPress = currentFrame - _lastPressFrame;
 
@@ -268,7 +271,7 @@ internal static class StatusCheckSystem
             1 => GetManaString(player),
             2 => GetArmorString(player),
             3 => GetBiomeString(player),
-            4 => GetTimeString(),
+            4 => GetTimeString(player),
             5 => GetBuffStringDetailed(player),
             _ => string.Empty,
         };
@@ -280,7 +283,7 @@ internal static class StatusCheckSystem
         string mana = GetManaString(player);
         string armor = GetArmorString(player);
         string biome = GetBiomeString(player);
-        string time = GetTimeString();
+        string time = GetTimeString(player);
         string buffs = GetBuffString(player);
 
         return $"{health}. {mana}. {armor}. {biome}. {time}. {buffs}.";
@@ -313,9 +316,21 @@ internal static class StatusCheckSystem
         return $"Biome: {biomeName}";
     }
 
-    private static string GetTimeString()
+    private static string GetTimeString(Player player)
     {
-        string timeDesc = DescribeTime();
+        string timeDesc = player.accWatch > 0
+            ? InfoAccessoryStatusSystem.BuildWatchValue(player)
+            : DescribeTime();
+
+        if (!Main.dayTime)
+        {
+            string moonPhase = InfoAccessoryStatusSystem.BuildMoonPhaseValue();
+            if (!string.IsNullOrWhiteSpace(moonPhase))
+            {
+                timeDesc = $"{timeDesc}, Moon phase: {moonPhase}";
+            }
+        }
+
         return $"Time: {timeDesc}";
     }
 

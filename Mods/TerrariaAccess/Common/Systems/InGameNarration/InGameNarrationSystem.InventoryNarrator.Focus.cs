@@ -185,6 +185,7 @@ public sealed partial class InGameNarrationSystem
                     ItemSlot.Context.ChestItem or
                     ItemSlot.Context.BankItem or
                     ItemSlot.Context.VoidItem => SlotNavigationHelper.TryResolveChestSlot(point, out int slot) && slot == focus.Slot,
+                    ItemSlot.Context.ShopItem => SlotNavigationHelper.TryResolveShopSlot(point, out int slot) && slot == focus.Slot,
                     ItemSlot.Context.CraftingMaterial => SlotNavigationHelper.IsCraftingGridLinkPoint(point) || SlotNavigationHelper.IsCraftingListLinkPoint(point),
                     ItemSlot.Context.EquipArmor or
                     ItemSlot.Context.EquipArmorVanity or
@@ -375,6 +376,17 @@ public sealed partial class InGameNarrationSystem
                     else if (player.chest == -5)
                     {
                         items = player.bank4.item;
+                    }
+                }
+                else if (SlotNavigationHelper.TryResolveShopSlot(point, out int shopSlot))
+                {
+                    slot = shopSlot;
+                    context = ItemSlot.Context.ShopItem;
+
+                    Chest[]? shops = Main.instance?.shop;
+                    if (Main.npcShop > 0 && shops is not null && Main.npcShop < shops.Length)
+                    {
+                        items = shops[Main.npcShop]?.item;
                     }
                 }
                 else if (JourneyReflection.TryGetInfiniteItemsItemForLinkPoint(point, out Item? creativeItem) &&

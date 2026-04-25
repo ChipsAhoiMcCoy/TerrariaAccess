@@ -125,6 +125,32 @@ internal static class VirtualTriggerService
         return false;
     }
 
+    internal static bool IsKeybindBoundToKey(ModKeybind? keybind, Keys key)
+    {
+        if (keybind is null)
+        {
+            return false;
+        }
+
+        try
+        {
+            foreach (string keyName in GetAssignedKeysSafe(keybind))
+            {
+                if (Enum.TryParse(keyName, ignoreCase: true, out Keys assignedKey) &&
+                    assignedKey == key)
+                {
+                    return true;
+                }
+            }
+        }
+        catch
+        {
+            // Ignore errors
+        }
+
+        return false;
+    }
+
     /// <summary>
     /// Reads ModKeybind.Current defensively because tModLoader can throw when a
     /// registered keybind is missing from the current input dictionary.
