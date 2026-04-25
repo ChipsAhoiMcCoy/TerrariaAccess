@@ -1651,12 +1651,21 @@ public sealed partial class InGameNarrationSystem
 
             NarrationInstrumentationContext.SetPendingKey(BuildInstrumentationKey(cue));
 
-            // Prepend region prefix only when actually announcing (after deduplication check)
+            bool creativeMenuFollowUp = ConsumeCreativeMenuFollowUp(allowedAreas, focus, regionPrefix);
+            bool suppressRegionPrefix = creativeMenuFollowUp && string.Equals(
+                regionPrefix,
+                GetRegionDisplayName(InventoryRegion.Creative),
+                StringComparison.OrdinalIgnoreCase);
+
+            // Prepend region prefix only when actually announcing (after deduplication check).
+            // The first Journey focus follows "Journey menu opened", so repeating the Journey
+            // region there reads as "Journey opened Journey ...".
             string message = string.IsNullOrWhiteSpace(regionPrefix)
+                || suppressRegionPrefix
                 ? cue.Message
                 : $"{regionPrefix}. {cue.Message}";
 
-            bool requestInterrupt = !ConsumeCreativeMenuFollowUp(allowedAreas, focus, regionPrefix);
+            bool requestInterrupt = !creativeMenuFollowUp;
             ScreenReaderService.Announce(message, force, requestInterrupt: requestInterrupt);
             return true;
         }

@@ -93,6 +93,7 @@ public sealed partial class InGameNarrationSystem
                 311 => FormatButtonLabel(LocalizationHelper.GetTextOrFallback("Mods.TerrariaAccess.InventorySpecial.LoadoutControls", "Loadout controls")),
                 int loadout when loadout >= 312 && loadout <= 320 => Button(GetLoadoutLabel(loadout)),
                 int chestButton when chestButton >= 500 && chestButton <= 505 => DescribeChestButton(chestButton),
+                int builderToggle when builderToggle >= 6000 && builderToggle <= 6011 => DescribeBuilderAccessoryToggle(builderToggle),
                 1550 => Button(GetPvpToggleText()),
                 int teamButton when teamButton >= 1551 && teamButton <= 1556 => Button(GetTeamButtonText(teamButton)),
                 1557 => DescribeDefenseCounter(),
@@ -171,6 +172,7 @@ public sealed partial class InGameNarrationSystem
                 301 or 302 or 304 or 305 or 306 or 307 or 308 or 309 or 310 or 311 => true,
                 >= 312 and <= 320 => true,
                 >= 500 and <= 505 => true,
+                >= 6000 and <= 6011 => true,
                 1550 => true,
                 >= 1551 and <= 1556 => true,
                 1557 => true,
@@ -198,6 +200,8 @@ public sealed partial class InGameNarrationSystem
                 >= 312 and <= 320 => InventoryRegion.CharacterPanel,
                 // Chest buttons
                 >= 500 and <= 505 => InventoryRegion.Storage,
+                // Builder accessory toggles
+                >= 6000 and <= 6011 => InventoryRegion.InventoryExtras,
                 // PvP and team buttons, defense counter
                 >= 1550 and <= 1557 => InventoryRegion.CharacterPanel,
                 // Achievement Advisor
@@ -711,6 +715,151 @@ public sealed partial class InGameNarrationSystem
             string label = LocalizationHelper.GetTextOrFallback("Mods.TerrariaAccess.InventorySpecial.Defense", "Defense");
             string cleaned = TextSanitizer.Clean(label);
             return $"{cleaned} {defense}";
+        }
+
+        private static string? DescribeBuilderAccessoryToggle(int point)
+        {
+            Player? player = Main.LocalPlayer;
+            if (player is null || player.builderAccStatus is null)
+            {
+                return null;
+            }
+
+            int offset = point - 6000;
+            int visibleCount = UILinkPointNavigator.Shortcuts.BUILDERACCCOUNT;
+            if (offset < 0 || visibleCount <= 0 || offset >= visibleCount)
+            {
+                return null;
+            }
+
+            int index = 0;
+            if (offset == index++)
+            {
+                return FormatButtonLabel(GetToggleText(
+                    player.builderAccStatus[Player.BuilderAccToggleIDs.BlockSwap] == 0,
+                    "GameUI.BlockReplacerOn",
+                    "GameUI.BlockReplacerOff"));
+            }
+
+            if (player.unlockedBiomeTorches)
+            {
+                if (offset == index++)
+                {
+                    return FormatButtonLabel(GetToggleText(
+                        player.builderAccStatus[Player.BuilderAccToggleIDs.TorchBiome] == 0,
+                        "GameUI.TorchTypeSwapperOn",
+                        "GameUI.TorchTypeSwapperOff"));
+                }
+            }
+
+            int[] drawOrder =
+            {
+                Player.BuilderAccToggleIDs.HideAllWires,
+                Player.BuilderAccToggleIDs.WireVisibility_Actuators,
+                Player.BuilderAccToggleIDs.RulerLine,
+                Player.BuilderAccToggleIDs.RulerGrid,
+                Player.BuilderAccToggleIDs.AutoActuate,
+                Player.BuilderAccToggleIDs.AutoPaint,
+                Player.BuilderAccToggleIDs.WireVisibility_Red,
+                Player.BuilderAccToggleIDs.WireVisibility_Green,
+                Player.BuilderAccToggleIDs.WireVisibility_Blue,
+                Player.BuilderAccToggleIDs.WireVisibility_Yellow,
+            };
+
+            foreach (int toggleId in drawOrder)
+            {
+                if (!IsBuilderToggleVisible(player, toggleId))
+                {
+                    continue;
+                }
+
+                if (offset == index++)
+                {
+                    return FormatButtonLabel(DescribeVisibleBuilderToggle(player, toggleId));
+                }
+            }
+
+            return null;
+        }
+
+        private static bool IsBuilderToggleVisible(Player player, int toggleId)
+        {
+            return toggleId switch
+            {
+                Player.BuilderAccToggleIDs.HideAllWires or
+                Player.BuilderAccToggleIDs.WireVisibility_Red or
+                Player.BuilderAccToggleIDs.WireVisibility_Green or
+                Player.BuilderAccToggleIDs.WireVisibility_Blue or
+                Player.BuilderAccToggleIDs.WireVisibility_Yellow or
+                Player.BuilderAccToggleIDs.WireVisibility_Actuators => player.InfoAccMechShowWires,
+                Player.BuilderAccToggleIDs.RulerLine => player.rulerLine,
+                Player.BuilderAccToggleIDs.RulerGrid => player.rulerGrid,
+                Player.BuilderAccToggleIDs.AutoActuate => player.autoActuator,
+                Player.BuilderAccToggleIDs.AutoPaint => player.autoPaint,
+                _ => false,
+            };
+        }
+
+        private static string? DescribeVisibleBuilderToggle(Player player, int toggleId)
+        {
+            int status = player.builderAccStatus[toggleId];
+            return toggleId switch
+            {
+                Player.BuilderAccToggleIDs.HideAllWires => GetToggleText(
+                    status == 0,
+                    "GameUI.WireModeForced",
+                    "GameUI.WireModeNormal"),
+                Player.BuilderAccToggleIDs.RulerLine => GetToggleText(
+                    status == 0,
+                    "GameUI.RulerOn",
+                    "GameUI.RulerOff"),
+                Player.BuilderAccToggleIDs.RulerGrid => GetToggleText(
+                    status == 0,
+                    "GameUI.MechanicalRulerOn",
+                    "GameUI.MechanicalRulerOff"),
+                Player.BuilderAccToggleIDs.AutoActuate => GetToggleText(
+                    status == 0,
+                    "GameUI.ActuationDeviceOn",
+                    "GameUI.ActuationDeviceOff"),
+                Player.BuilderAccToggleIDs.AutoPaint => GetToggleText(
+                    status == 0,
+                    "GameUI.PaintSprayerOn",
+                    "GameUI.PaintSprayerOff"),
+                Player.BuilderAccToggleIDs.WireVisibility_Red or
+                Player.BuilderAccToggleIDs.WireVisibility_Green or
+                Player.BuilderAccToggleIDs.WireVisibility_Blue or
+                Player.BuilderAccToggleIDs.WireVisibility_Yellow or
+                Player.BuilderAccToggleIDs.WireVisibility_Actuators => DescribeWireVisibilityToggle(status, toggleId),
+                _ => null,
+            };
+        }
+
+        private static string GetToggleText(bool enabled, string enabledKey, string disabledKey)
+        {
+            return Language.GetTextValue(enabled ? enabledKey : disabledKey);
+        }
+
+        private static string DescribeWireVisibilityToggle(int status, int toggleId)
+        {
+            string target = toggleId switch
+            {
+                Player.BuilderAccToggleIDs.WireVisibility_Red => Language.GetTextValue("Game.RedWires"),
+                Player.BuilderAccToggleIDs.WireVisibility_Green => Language.GetTextValue("Game.GreenWires"),
+                Player.BuilderAccToggleIDs.WireVisibility_Blue => Language.GetTextValue("Game.BlueWires"),
+                Player.BuilderAccToggleIDs.WireVisibility_Yellow => Language.GetTextValue("Game.YellowWires"),
+                Player.BuilderAccToggleIDs.WireVisibility_Actuators => Language.GetTextValue("Game.Actuators"),
+                _ => string.Empty,
+            };
+            string mode = status switch
+            {
+                0 => Language.GetTextValue("GameUI.Bright"),
+                1 => Language.GetTextValue("GameUI.Normal"),
+                2 => Language.GetTextValue("GameUI.Faded"),
+                3 => Language.GetTextValue("GameUI.Hidden"),
+                _ => Language.GetTextValue("GameUI.Normal"),
+            };
+
+            return string.IsNullOrWhiteSpace(target) ? mode : $"{target}: {mode}";
         }
 
         private sealed class SpecialSelectionRepeatGuard

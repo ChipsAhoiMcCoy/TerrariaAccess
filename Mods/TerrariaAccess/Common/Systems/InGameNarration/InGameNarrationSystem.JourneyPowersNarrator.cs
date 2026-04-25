@@ -77,7 +77,7 @@ public sealed partial class InGameNarrationSystem
                         }
 
                         _lastSliderQuantized[entry.Key] = quantized;
-                        if (!primingPass)
+                        if (!primingPass && ShouldAutoAnnounceSliderChanges(entry.Key))
                         {
                             AnnounceSlider(entry, value.Value);
                         }
@@ -87,6 +87,13 @@ public sealed partial class InGameNarrationSystem
             }
 
             _primed = true;
+        }
+
+        private static bool ShouldAutoAnnounceSliderChanges(string powerKey)
+        {
+            // Weather values can drift naturally while the Journey menu is open. Announcing each
+            // quantized wind or rain movement produces speech spam unrelated to user navigation.
+            return powerKey is not ("wind_setstrength" or "rain_setstrength");
         }
 
         public string BuildCurrentStateSummary(Player player)
