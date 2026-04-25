@@ -167,7 +167,7 @@ internal sealed class CursorDescriptorService
             name = Lang.GetMapObjectName(lookup);
 
             // Append growth stage for herbs
-            string? growthStage = GetHerbGrowthStageLabel(tileType);
+            string? growthStage = GetHerbGrowthStageLabel(tileType, baseOption);
             if (!string.IsNullOrWhiteSpace(name) && growthStage != null)
             {
                 name = $"{name}, {growthStage}";
@@ -1059,8 +1059,13 @@ internal sealed class CursorDescriptorService
     /// <summary>
     /// Gets the growth stage label for herb tiles.
     /// </summary>
-    private static string? GetHerbGrowthStageLabel(int tileType)
+    private static string? GetHerbGrowthStageLabel(int tileType, int herbStyle)
     {
+        if (tileType == TileID.MatureHerbs && WorldGen.IsHarvestableHerbWithSeed(tileType, herbStyle))
+        {
+            return GetLocalizedWithFallback("Mods.TerrariaAccess.HerbStages.Blooming", "blooming");
+        }
+
         return tileType switch
         {
             TileID.ImmatureHerbs => GetLocalizedWithFallback("Mods.TerrariaAccess.HerbStages.Immature", "immature"),

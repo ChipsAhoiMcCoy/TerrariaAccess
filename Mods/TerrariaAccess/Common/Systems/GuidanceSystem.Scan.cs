@@ -897,8 +897,7 @@ public sealed partial class GuidanceSystem
         return tile.TileType switch
         {
             TileID.MushroomPlants => "Glowing Mushroom",
-            TileID.MatureHerbs => ResolveHerbName(tile, "Mature"),
-            TileID.BloomingHerbs => ResolveHerbName(tile, "Blooming"),
+            TileID.MatureHerbs or TileID.BloomingHerbs => ResolveHerbName(tile),
             TileID.DyePlants => ResolveDyePlantName(tile),
             TileID.AbigailsFlower => "Abigail's Flower",
             _ => "Plant"
@@ -926,9 +925,12 @@ public sealed partial class GuidanceSystem
         };
     }
 
-    private static string ResolveHerbName(Tile tile, string prefix)
+    private static string ResolveHerbName(Tile tile)
     {
         int frameX = tile.TileFrameX / 18;
+        string prefix = WorldGen.IsHarvestableHerbWithSeed(tile.TileType, frameX)
+            ? "Blooming"
+            : "Mature";
         string herbName = frameX switch
         {
             0 => "Daybloom",
