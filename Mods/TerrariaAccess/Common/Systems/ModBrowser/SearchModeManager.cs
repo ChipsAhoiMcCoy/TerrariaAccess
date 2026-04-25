@@ -1,6 +1,7 @@
 #nullable enable
 using Microsoft.Xna.Framework.Input;
 using TerrariaAccess.Common.Services;
+using TerrariaAccess.Common.Systems.Journey;
 using TerrariaAccess.Common.Utilities;
 using Terraria;
 using Terraria.Audio;
@@ -81,6 +82,13 @@ internal static class SearchModeManager
                 }
             }
 
+            if (!Main.gameMenu &&
+                Main.CreativeMenu?.Enabled == true &&
+                JourneyReflection.TryGetCurrentPowersCategoryOption() == 1)
+            {
+                return true;
+            }
+
             return false;
         }
     }
@@ -89,7 +97,7 @@ internal static class SearchModeManager
     /// Called each frame to handle mode toggling via Tab key.
     /// Should be called from the accessibility systems during menu processing.
     /// </summary>
-    internal static void Update()
+    internal static void Update(bool enqueueSearchPrefix = true)
     {
         bool inRelevantMenu = IsRelevantMenu;
 
@@ -122,7 +130,7 @@ internal static class SearchModeManager
 
         if (tabJustPressed)
         {
-            Toggle();
+            Toggle(enqueueSearchPrefix);
         }
 
         // Check for Enter key press to exit search mode (like submitting in chat)
@@ -148,7 +156,7 @@ internal static class SearchModeManager
     /// Toggles between search mode and navigation mode.
     /// Only announces when entering search mode.
     /// </summary>
-    internal static void Toggle()
+    internal static void Toggle(bool enqueueSearchPrefix = true)
     {
         _isSearchModeActive = !_isSearchModeActive;
 
@@ -157,8 +165,11 @@ internal static class SearchModeManager
             // Play menu open sound and enqueue search mode text as a prefix
             // so it plays before the next announcement rather than getting interrupted
             SoundEngine.PlaySound(SoundID.MenuOpen);
-            string announcement = GetSearchModeAnnouncement();
-            ScreenReaderService.EnqueuePrefix(announcement);
+            if (enqueueSearchPrefix)
+            {
+                string announcement = GetSearchModeAnnouncement();
+                ScreenReaderService.EnqueuePrefix(announcement);
+            }
         }
         else
         {

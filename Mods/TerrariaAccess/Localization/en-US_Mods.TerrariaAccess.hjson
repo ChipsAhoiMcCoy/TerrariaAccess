@@ -496,7 +496,7 @@ Mods: {
 			}
 
 			Duplication: {
-				SearchFocus: Search field, type to filter items
+				SearchFocus: Search field. Press Tab to search items
 				FilterFocusFormat: Category filter: {0}
 			}
 
@@ -522,10 +522,13 @@ Mods: {
 
 				FocusToggleFormat: "{0}, currently {1}"
 				FocusSliderFormat: "{0}, {1}"
+				FocusSliderLandingFormat: "{0} slider, {1}"
+				SliderValueFormat: Slider: {0}
 				FocusOneShotFormat: "{0}, press to activate"
 				ToggleOnFormat: "{0} on"
 				ToggleOffFormat: "{0} off"
 				SliderAnnouncementFormat: "{0}: {1}"
+				SliderOpenedFormat: "{0} slider opened. Navigate right to access it."
 				OneShotActivatedFormat: "{0} activated"
 			}
 

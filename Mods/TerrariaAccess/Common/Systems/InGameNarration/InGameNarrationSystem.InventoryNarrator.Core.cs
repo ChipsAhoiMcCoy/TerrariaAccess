@@ -13,6 +13,8 @@ using Microsoft.Xna.Framework.Graphics;
 using TerrariaAccess.Common.Services;
 using TerrariaAccess.Common.Systems.InGameNarration;
 using TerrariaAccess.Common.Systems.MenuNarration;
+using TerrariaAccess.Common.Systems.ModBrowser;
+using TerrariaAccess.Common.Systems.Journey;
 using TerrariaAccess.Common.Utilities;
 using Terraria;
 using Terraria.Audio;
@@ -214,6 +216,14 @@ public sealed partial class InGameNarrationSystem
                 ClearSpecialLinkPointFocus();
             }
 
+            if (IsJourneyInfiniteItemsSearchActive())
+            {
+                ResetHoverSlotsAndTooltips();
+                SpecialSelectionRepeat.Clear();
+                _currentFocus = null;
+                return;
+            }
+
             SlotFocus? nextFocus = _focusTracker.Consume(usingGamepad);
 
             _currentFocus = nextFocus.HasValue && IsFocusValid(nextFocus.Value) ? nextFocus : null;
@@ -354,6 +364,13 @@ public sealed partial class InGameNarrationSystem
             }
 
             TryAnnounceTooltipFallback(target);
+        }
+
+        private static bool IsJourneyInfiniteItemsSearchActive()
+        {
+            return SearchModeManager.IsSearchModeActive &&
+                Main.CreativeMenu.Enabled &&
+                JourneyReflection.TryGetCurrentPowersCategoryOption() == 1;
         }
 
         private static Item ResolveHoverItem(bool usingGamepad, bool usingGamepadFocus, Item? focusedItem)

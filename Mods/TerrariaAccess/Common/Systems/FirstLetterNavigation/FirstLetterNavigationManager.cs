@@ -4,6 +4,7 @@ using System.Collections.Generic;
 using Microsoft.Xna.Framework;
 using Microsoft.Xna.Framework.Input;
 using TerrariaAccess.Common.Services;
+using TerrariaAccess.Common.Systems.ModBrowser;
 using TerrariaAccess.Common.Utilities;
 using Terraria;
 using Terraria.Audio;
@@ -71,6 +72,12 @@ internal static class FirstLetterNavigationManager
 
         if (!inventoryOpen)
         {
+            return;
+        }
+
+        if (SearchModeManager.IsRelevantMenu)
+        {
+            DisableForSearchMode();
             return;
         }
 
@@ -425,6 +432,12 @@ internal static class FirstLetterNavigationManager
             return;
         }
 
+        if (SearchModeManager.IsRelevantMenu)
+        {
+            DisableForSearchMode();
+            return;
+        }
+
         // Skip when in text input mode
         if (Main.drawingPlayerChat || Main.editSign || Main.editChest)
         {
@@ -499,6 +512,17 @@ internal static class FirstLetterNavigationManager
     {
         current.KeyStatus[triggerName] = false;
         justPressed.KeyStatus[triggerName] = false;
+    }
+
+    private static void DisableForSearchMode()
+    {
+        if (!_isEnabled)
+        {
+            return;
+        }
+
+        _isEnabled = false;
+        ClearMatches();
     }
 
     /// <summary>

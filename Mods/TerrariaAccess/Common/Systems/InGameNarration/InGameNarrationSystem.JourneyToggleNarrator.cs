@@ -3,6 +3,7 @@ using TerrariaAccess.Common.Services;
 using TerrariaAccess.Common.Systems.Journey;
 using TerrariaAccess.Common.Utilities;
 using Terraria;
+using Terraria.UI.Gamepad;
 
 namespace TerrariaAccess.Common.Systems;
 
@@ -49,13 +50,13 @@ public sealed partial class InGameNarrationSystem
             int categoryOption = SafeGetCurrentCategoryOption();
             if (categoryOption != _lastCategoryOption)
             {
-                AnnouncePanelStateChange(_lastCategoryOption, categoryOption);
+                AnnouncePanelStateChange(_lastCategoryOption, categoryOption, ShouldSuppressPanelChangeForSliderActivation(categoryOption));
                 _lastCategoryOption = categoryOption;
                 return;
             }
         }
 
-        private static void AnnouncePanelStateChange(int previousOption, int currentOption)
+        private static void AnnouncePanelStateChange(int previousOption, int currentOption, bool suppressOpenedAnnouncement)
         {
             bool wasPanelOpen = IsPanelOption(previousOption);
             bool isPanelOpen = IsPanelOption(currentOption);
@@ -73,6 +74,11 @@ public sealed partial class InGameNarrationSystem
                 return;
             }
 
+            if (suppressOpenedAnnouncement)
+            {
+                return;
+            }
+
             ScreenReaderService.Announce(
                 LocalizationHelper.GetTextOrFallback(
                     "Mods.TerrariaAccess.JourneyMode.Panel.Opened",
@@ -81,6 +87,24 @@ public sealed partial class InGameNarrationSystem
         }
 
         private static bool IsPanelOption(int option) => option is >= 1 and <= 6;
+
+        private static bool ShouldSuppressPanelChangeForSliderActivation(int currentOption)
+        {
+            if (currentOption == 5)
+            {
+                return true;
+            }
+
+            int point = UILinkPointNavigator.CurrentPoint;
+            return currentOption switch
+            {
+                3 => point is 10012 or 10013,
+                4 => point is 10007 or 10009 or 10011,
+                5 => point is 10006 or 10007,
+                6 => point is 10009 or 10010,
+                _ => false,
+            };
+        }
 
         private static int SafeGetCurrentCategoryOption()
         {

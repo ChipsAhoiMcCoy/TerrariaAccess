@@ -5,6 +5,7 @@ using TerrariaAccess.Common.Services;
 using TerrariaAccess.Common.Systems.Journey;
 using TerrariaAccess.Common.Utilities;
 using Terraria;
+using Terraria.UI.Gamepad;
 
 namespace TerrariaAccess.Common.Systems;
 
@@ -93,7 +94,32 @@ public sealed partial class InGameNarrationSystem
         {
             // Weather values can drift naturally while the Journey menu is open. Announcing each
             // quantized wind or rain movement produces speech spam unrelated to user navigation.
-            return powerKey is not ("wind_setstrength" or "rain_setstrength");
+            // While focus is on the weather slider itself, those changes are user-driven and should
+            // be narrated just like the other Journey sliders.
+            return powerKey is not ("wind_setstrength" or "rain_setstrength") ||
+                IsCurrentJourneySliderPointFor(powerKey);
+        }
+
+        private static bool IsCurrentJourneySliderPointFor(string powerKey)
+        {
+            if (!Main.CreativeMenu.Enabled)
+            {
+                return false;
+            }
+
+            int point = UILinkPointNavigator.CurrentPoint;
+            int option = JourneyReflection.TryGetCurrentPowersCategoryOption() ?? 0;
+            return option switch
+            {
+                3 => point == 10013 && powerKey == "time_setspeed",
+                4 => point == 10011 && powerKey == (
+                    JourneyReflection.TryGetWeatherPowersSubcategoryOption() == 2
+                        ? "rain_setstrength"
+                        : "wind_setstrength"),
+                5 => point == 10007 && powerKey == "setdifficulty",
+                6 => point == 10010 && powerKey == "setspawnrate",
+                _ => false,
+            };
         }
 
         public string BuildCurrentStateSummary(Player player)
@@ -165,6 +191,17 @@ public sealed partial class InGameNarrationSystem
         {
             string label = ResolveLabel(entry);
             string valueText = JourneySliderValueFormatter.Format(entry.Key, value01);
+            if (IsCurrentJourneySliderPointFor(entry.Key))
+            {
+                string focusedMessage = string.Format(
+                    LocalizationHelper.GetTextOrFallback(
+                        "Mods.TerrariaAccess.JourneyMode.Powers.SliderValueFormat",
+                        "Slider: {0}"),
+                    valueText);
+                ScreenReaderService.Announce(focusedMessage, force: false);
+                return;
+            }
+
             string message = string.Format(
                 LocalizationHelper.GetTextOrFallback(
                     "Mods.TerrariaAccess.JourneyMode.Powers.SliderAnnouncementFormat",

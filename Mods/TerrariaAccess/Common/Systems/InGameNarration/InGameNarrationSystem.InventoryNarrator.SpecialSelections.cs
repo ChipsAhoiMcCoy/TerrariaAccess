@@ -32,7 +32,7 @@ public sealed partial class InGameNarrationSystem
 
             string activationLabel = string.Empty;
             bool announceActivation = IsJourneyActivationJustPressed() &&
-                TryGetJourneyOneShotActivationLabel(currentPoint, out activationLabel);
+                TryGetJourneyActivationLabel(currentPoint, out activationLabel);
             string announcement = announceActivation ? activationLabel : label;
             string repeatKey = GetSpecialSelectionRepeatKey(currentPoint, announcement);
 
@@ -277,7 +277,7 @@ public sealed partial class InGameNarrationSystem
                     "Research button, press to sacrifice and unlock infinite copies") : null,
                 3 => DescribeJourneyTimePoint(offset),
                 4 => DescribeJourneyWeatherPoint(offset),
-                5 => offset == 0 ? DescribeJourneyPowerFocus("setdifficulty") : null,
+                5 => offset == 0 ? DescribeJourneyPowerFocus("setdifficulty", isSliderControl: true) : null,
                 6 => DescribeJourneyPersonalPoint(offset),
                 _ => null,
             };
@@ -324,10 +324,27 @@ public sealed partial class InGameNarrationSystem
 
             if (!string.IsNullOrWhiteSpace(powerKey))
             {
+                if (IsJourneySliderControlPoint(option, powerOffset))
+                {
+                    return $"journey:slider:{powerKey}";
+                }
+
                 return $"journey:power:{powerKey}";
             }
 
             return $"journey:option:{option}:{powerOffset}";
+        }
+
+        private static bool IsJourneySliderControlPoint(int option, int powerOffset)
+        {
+            return option switch
+            {
+                3 => powerOffset == 6,
+                4 => powerOffset == 4,
+                5 => powerOffset == 0,
+                6 => powerOffset == 3,
+                _ => false,
+            };
         }
 
         private static string? DescribeJourneyMainStripPoint(int point)
@@ -387,18 +404,24 @@ public sealed partial class InGameNarrationSystem
                 2 => DescribeJourneyPowerFocus("time_setnoon"),
                 3 => DescribeJourneyPowerFocus("time_setdusk"),
                 4 => DescribeJourneyPowerFocus("time_setmidnight"),
-                5 or 6 => DescribeJourneyPowerFocus("time_setspeed"),
+                5 => DescribeJourneyPowerFocus("time_setspeed"),
+                6 => DescribeJourneyPowerFocus("time_setspeed", isSliderControl: true),
                 _ => null,
             };
         }
 
-        private static bool TryGetJourneyOneShotActivationLabel(int point, out string label)
+        private static bool TryGetJourneyActivationLabel(int point, out string label)
         {
             label = string.Empty;
 
-            if (!Main.CreativeMenu.Enabled || point < 10007 || point > 11000)
+            if (!Main.CreativeMenu.Enabled || point < 10006 || point > 11000)
             {
                 return false;
+            }
+
+            if (TryGetJourneySliderOpenedActivationLabel(point, out label))
+            {
+                return true;
             }
 
             int option = JourneyReflection.TryGetCurrentPowersCategoryOption() ?? 0;
@@ -428,6 +451,39 @@ public sealed partial class InGameNarrationSystem
                 LocalizationHelper.GetTextOrFallback(
                     "Mods.TerrariaAccess.JourneyMode.Powers.OneShotActivatedFormat",
                     "{0} activated"),
+                powerLabel);
+            return true;
+        }
+
+        private static bool TryGetJourneySliderOpenedActivationLabel(int point, out string label)
+        {
+            label = string.Empty;
+
+            int option = JourneyReflection.TryGetCurrentPowersCategoryOption() ?? 0;
+            int offset = point - 10007;
+            string? key = option switch
+            {
+                not 5 when point == 10006 => "setdifficulty",
+                5 when point == 10007 => "setdifficulty",
+                3 when offset == 5 && JourneyReflection.TryGetTimePowersSubcategoryOption() != 1 => "time_setspeed",
+                4 when offset == 0 && JourneyReflection.TryGetWeatherPowersSubcategoryOption() != 1 => "wind_setstrength",
+                4 when offset == 2 && JourneyReflection.TryGetWeatherPowersSubcategoryOption() != 2 => "rain_setstrength",
+                6 when offset == 2 && JourneyReflection.TryGetPersonalPowersSubcategoryOption() != 1 => "setspawnrate",
+                _ => null,
+            };
+
+            if (key is null || !JourneyPowerRegistry.TryFind(key, out JourneyPowerEntry entry))
+            {
+                return false;
+            }
+
+            string powerLabel = LocalizationHelper.GetTextOrFallback(
+                $"Mods.TerrariaAccess.JourneyMode.Power.{entry.LocSuffix}",
+                entry.FallbackLabel);
+            label = string.Format(
+                LocalizationHelper.GetTextOrFallback(
+                    "Mods.TerrariaAccess.JourneyMode.Powers.SliderOpenedFormat",
+                    "{0} slider opened. Navigate right to access it."),
                 powerLabel);
             return true;
         }
@@ -488,7 +544,8 @@ public sealed partial class InGameNarrationSystem
                 4 => DescribeJourneyPowerFocus(
                     JourneyReflection.TryGetWeatherPowersSubcategoryOption() == 2
                         ? "rain_setstrength"
-                        : "wind_setstrength"),
+                        : "wind_setstrength",
+                    isSliderControl: true),
                 _ => null,
             };
         }
@@ -499,12 +556,13 @@ public sealed partial class InGameNarrationSystem
             {
                 0 => DescribeJourneyPowerFocus("godmode"),
                 1 => DescribeJourneyPowerFocus("increaseplacementrange"),
-                2 or 3 => DescribeJourneyPowerFocus("setspawnrate"),
+                2 => DescribeJourneyPowerFocus("setspawnrate"),
+                3 => DescribeJourneyPowerFocus("setspawnrate", isSliderControl: true),
                 _ => null,
             };
         }
 
-        private static string? DescribeJourneyPowerFocus(string key)
+        private static string? DescribeJourneyPowerFocus(string key, bool isSliderControl = false)
         {
             if (!JourneyPowerRegistry.TryFind(key, out JourneyPowerEntry entry))
             {
@@ -522,7 +580,7 @@ public sealed partial class InGameNarrationSystem
             return entry.Kind switch
             {
                 JourneyPowerKind.Toggle or JourneyPowerKind.Shared => FormatJourneyToggleFocus(entry, label, power, playerIndex),
-                JourneyPowerKind.Slider => FormatJourneySliderFocus(entry, label, power, playerIndex),
+                JourneyPowerKind.Slider => FormatJourneySliderFocus(entry, label, power, playerIndex, isSliderControl),
                 JourneyPowerKind.OneShot => string.Format(
                     LocalizationHelper.GetTextOrFallback(
                         "Mods.TerrariaAccess.JourneyMode.Powers.FocusOneShotFormat",
@@ -551,7 +609,7 @@ public sealed partial class InGameNarrationSystem
                 stateWord);
         }
 
-        private static string FormatJourneySliderFocus(JourneyPowerEntry entry, string label, object? power, int playerIndex)
+        private static string FormatJourneySliderFocus(JourneyPowerEntry entry, string label, object? power, int playerIndex, bool isSliderControl)
         {
             float? value = power is null ? null : JourneyPowersReflection.TryGetSliderValue(power, playerIndex);
             if (!value.HasValue)
@@ -560,6 +618,15 @@ public sealed partial class InGameNarrationSystem
             }
 
             string valueText = JourneySliderValueFormatter.Format(entry.Key, value.Value);
+            if (isSliderControl)
+            {
+                return string.Format(
+                    LocalizationHelper.GetTextOrFallback(
+                        "Mods.TerrariaAccess.JourneyMode.Powers.SliderValueFormat",
+                        "Slider: {0}"),
+                    valueText);
+            }
+
             return string.Format(
                 LocalizationHelper.GetTextOrFallback(
                     "Mods.TerrariaAccess.JourneyMode.Powers.FocusSliderFormat",

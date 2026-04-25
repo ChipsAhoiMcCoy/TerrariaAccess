@@ -6,6 +6,7 @@ using Terraria.UI;
 using Terraria.UI.Gamepad;
 using TerrariaAccess.Common.Services;
 using TerrariaAccess.Common.Systems.InGameNarration;
+using TerrariaAccess.Common.Systems.Journey;
 
 namespace TerrariaAccess.Common.Systems;
 
@@ -375,6 +376,11 @@ public sealed partial class InGameNarrationSystem
                     {
                         items = player.bank4.item;
                     }
+                }
+                else if (JourneyReflection.TryGetInfiniteItemsItemForLinkPoint(point, out Item? creativeItem) &&
+                    creativeItem is not null)
+                {
+                    return new SlotFocus(null, creativeItem, ItemSlot.Context.CreativeInfinite, -1);
                 }
 
                 if (items is null && TryResolveEquipmentFocusDirectly(player, point, out SlotFocus equipmentFocus))
