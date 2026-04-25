@@ -562,13 +562,6 @@ Mods: {
 				PercentFormat: "{0} percent"
 				SignedPercentFormat: "{0} percent"
 			}
-
-			Keybind: {
-				ToggleMenu: Toggle Journey menu
-				PanelStateCheck: Journey panel state check
-				CyclePowerCategory: Cycle Journey power category
-				ReadSacrificeProgress: Read sacrifice slot progress
-			}
 		}
 
 		InventorySpecial: {
@@ -624,10 +617,6 @@ Mods: {
 			InfoAccessoryCheck.DisplayName: Info Accessory Checker
 			CavitySonarScan.DisplayName: Cavity Sonar Scan
 			EventProgressCheck.DisplayName: Event Progress Checker
-			JourneyToggleMenu.DisplayName: Journey Toggle Menu
-			JourneyPanelStateCheck.DisplayName: Journey Panel State Check
-			JourneyCyclePowerCategory.DisplayName: Journey Read Current Power Tab
-			JourneyReadSacrificeProgress.DisplayName: Journey Read Sacrifice Progress
 		}
 	}
 }
@@ -667,10 +656,6 @@ Keybinds: {
 	InfoAccessoryCheck.DisplayName: Info Accessory Checker
 	CavitySonarScan.DisplayName: Cavity Sonar Scan
 	EventProgressCheck.DisplayName: Event Progress Checker
-	JourneyToggleMenu.DisplayName: Journey Toggle Menu
-	JourneyPanelStateCheck.DisplayName: Journey Panel State Check
-	JourneyCyclePowerCategory.DisplayName: Journey Read Current Power Tab
-	JourneyReadSacrificeProgress.DisplayName: Journey Read Sacrifice Progress
 }
 
 Configs: {

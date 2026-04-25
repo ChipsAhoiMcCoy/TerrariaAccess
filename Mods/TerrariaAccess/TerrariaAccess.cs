@@ -7,7 +7,6 @@ using TerrariaAccess.Common.Systems.BuildMode;
 using TerrariaAccess.Common.Systems.Guidance;
 using TerrariaAccess.Common.Systems.Audio;
 using TerrariaAccess.Common.Systems.GamepadEmulation;
-using TerrariaAccess.Common.Systems.Journey;
 using TerrariaAccess.Common.Utilities;
 using Terraria;
 using Terraria.ModLoader;
@@ -42,12 +41,10 @@ public class TerrariaAccess : Mod
         BuildModeKeybinds.EnsureInitialized(this);
         CavitySonarKeybinds.EnsureInitialized(this);
         EventProgressKeybinds.EnsureInitialized(this);
-        JourneyModeKeybinds.EnsureInitialized(this);
     }
 
     public override void Unload()
     {
-        JourneyModeKeybinds.Unload();
         EventProgressKeybinds.Unload();
         GamepadEmulationKeybinds.Unload();
         BuildModeKeybinds.Unload();
