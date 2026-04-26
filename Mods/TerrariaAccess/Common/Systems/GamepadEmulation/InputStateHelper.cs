@@ -30,6 +30,16 @@ internal static class InputStateHelper
     /// </summary>
     internal static bool IsTextInputActive()
     {
+        if (CharacterCreationNameInputSystem.IsNameEntryActive)
+        {
+            return true;
+        }
+
+        if (WorldCreationNameInputSystem.IsNameEntryActive)
+        {
+            return true;
+        }
+
         if (Main.drawingPlayerChat || Main.editChest)
         {
             return true;

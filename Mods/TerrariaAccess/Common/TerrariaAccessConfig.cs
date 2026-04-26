@@ -37,6 +37,9 @@ public class TerrariaAccessConfig : ModConfig
     [DefaultValue(false)]
     public bool AnnounceDamageNumbers { get; set; }
 
+    [DefaultValue(true)]
+    public bool BossWarningsEnabled { get; set; } = true;
+
     // Movement audio cues
     [DefaultValue(EdgeDetectionMode.Static)]
     public EdgeDetectionMode EdgeDetectionMode { get; set; } = EdgeDetectionMode.Static;

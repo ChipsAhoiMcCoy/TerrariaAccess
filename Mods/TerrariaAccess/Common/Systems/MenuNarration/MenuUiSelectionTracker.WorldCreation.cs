@@ -270,7 +270,7 @@ internal sealed partial class MenuUiSelectionTracker
         // Try explicit field references first (UICharacterNameButton types)
         if (TryMatchExplicitWorldCreationInput(root, element, WorldCreationNamePlateField, out UIElement? nameInput))
         {
-            label = BuildWorldTextInputLabel("World name", nameInput!);
+            label = BuildWorldTextInputLabel("World name", nameInput!, includeEditHint: true);
             return true;
         }
 
@@ -283,7 +283,7 @@ internal sealed partial class MenuUiSelectionTracker
         // Fall back to dynamic matching for compatibility
         if (TryMatchWorldCreationInput(root, element, "name", out nameInput))
         {
-            label = BuildWorldTextInputLabel("World name", nameInput!);
+            label = BuildWorldTextInputLabel("World name", nameInput!, includeEditHint: true);
             return true;
         }
 
@@ -399,7 +399,7 @@ internal sealed partial class MenuUiSelectionTracker
             || typeName.IndexOf("Box", StringComparison.OrdinalIgnoreCase) >= 0;
     }
 
-    private static string BuildWorldTextInputLabel(string prefix, UIElement input)
+    private static string BuildWorldTextInputLabel(string prefix, UIElement input, bool includeEditHint = false)
     {
         string value = TryGetInputText(input);
 
@@ -411,11 +411,17 @@ internal sealed partial class MenuUiSelectionTracker
         // If no value, return prefix with placeholder
         if (string.IsNullOrWhiteSpace(value))
         {
-            return TextSanitizer.JoinWithComma(prefix, placeholder);
+            string emptyLabel = TextSanitizer.JoinWithComma(prefix, placeholder);
+            return includeEditHint
+                ? TextSanitizer.JoinWithComma(emptyLabel, "Press Tab to begin typing")
+                : emptyLabel;
         }
 
         // Return prefix with value
-        return TextSanitizer.JoinWithComma(prefix, value);
+        string label = TextSanitizer.JoinWithComma(prefix, value);
+        return includeEditHint
+            ? TextSanitizer.JoinWithComma(label, "Press Tab to begin typing")
+            : label;
     }
 
     private static WorldCreationInput BuildWorldTextInputValue(string prefix, UIElement input)
@@ -927,7 +933,7 @@ internal sealed partial class MenuUiSelectionTracker
         {
             if (WorldCreationNamePlateField?.GetValue(root) is UIElement plate)
             {
-                return BuildWorldTextInputLabel("World name", plate);
+                return BuildWorldTextInputLabel("World name", plate, includeEditHint: true);
             }
         }
         catch

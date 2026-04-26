@@ -59,6 +59,11 @@ Mods: {
 					Tooltip: Announces the damage numbers you deal to hostile NPCs.
 				}
 
+				BossWarningsEnabled: {
+					Label: Boss Warnings
+					Tooltip: Announces selected boss attack windups and dangerous projectiles with brief dodge guidance.
+				}
+
 				SpatialInventoryAudio: {
 					Label: Experimental Spatial Inventory Audio
 					Tooltip: Experimental feature. When enabled, inventory navigation clicks use panning (left/right) and pitch (high/low) to indicate slot position.
@@ -705,6 +710,11 @@ Configs: {
 
 		AnnounceDamageNumbers: {
 			Label: Announce Damage Numbers
+			Tooltip: ""
+		}
+
+		BossWarningsEnabled: {
+			Label: Boss Warnings
 			Tooltip: ""
 		}
 
