@@ -180,6 +180,7 @@ Mods: {
 			Water: Water
 			Lava: Lava
 			Honey: Honey
+			Shimmer: Shimmer
 		}
 
 		TileShapes: {

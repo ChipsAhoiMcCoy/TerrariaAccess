@@ -916,6 +916,7 @@ internal sealed class CursorDescriptorService
             LiquidID.Water => "Mods.TerrariaAccess.CursorLiquids.Water",
             LiquidID.Lava => "Mods.TerrariaAccess.CursorLiquids.Lava",
             LiquidID.Honey => "Mods.TerrariaAccess.CursorLiquids.Honey",
+            LiquidID.Shimmer => "Mods.TerrariaAccess.CursorLiquids.Shimmer",
             _ => null,
         };
 
@@ -929,6 +930,7 @@ internal sealed class CursorDescriptorService
             LiquidID.Water => "Water",
             LiquidID.Lava => "Lava",
             LiquidID.Honey => "Honey",
+            LiquidID.Shimmer => "Shimmer",
             _ => string.Empty,
         };
 
