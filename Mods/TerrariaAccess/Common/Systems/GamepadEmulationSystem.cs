@@ -1057,6 +1057,11 @@ public sealed class GamepadEmulationSystem : ModSystem
             return;
         }
 
+        if (HairStyleNavigationSystem.ShouldHandleHairStyleConfirm)
+        {
+            return;
+        }
+
         // Skip menus where our accessibility systems handle the I key action internally
         // (e.g., mod list, mod browser, bestiary). For vanilla menus like player/world select,
         // allow MouseLeft injection so the I key activates the focused item.

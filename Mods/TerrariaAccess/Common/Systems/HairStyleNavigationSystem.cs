@@ -2,6 +2,7 @@
 using System;
 using System.Collections.Generic;
 using System.Reflection;
+using Microsoft.Xna.Framework;
 using Microsoft.Xna.Framework.Graphics;
 using Terraria;
 using Terraria.Audio;
@@ -13,6 +14,7 @@ using Terraria.ModLoader;
 using Terraria.UI;
 using Terraria.UI.Gamepad;
 using TerrariaAccess.Common.Services;
+using TerrariaAccess.Common.Systems.GamepadEmulation;
 
 namespace TerrariaAccess.Common.Systems;
 
@@ -42,9 +44,12 @@ public sealed class HairStyleNavigationSystem : ModSystem
     // Navigation state
     private static bool _isHairStyleModeActive;
     private static bool _hasFocusedOnHairButton; // True once user actually focuses on a hair button
+    private static int _selectedHairIndex;
     private static int _currentHairIndex;
     private static int _lastAnnouncedIndex = -1;
     private static int _framesSinceLastNavigation;
+    private static int _pendingFocusIndex = -1;
+    private static bool _selectWasPressed;
 
     /// <summary>
     /// Indicates whether this system is currently handling hair style navigation.
@@ -55,14 +60,15 @@ public sealed class HairStyleNavigationSystem : ModSystem
     {
         get
         {
-            if (!_isHairStyleModeActive)
+            if (!_isHairStyleModeActive || !IsCurrentCharacterCreationState())
                 return false;
 
             // Only handle navigation when actually on a hair button (link points 3020-3319)
-            int currentPoint = UILinkPointNavigator.CurrentPoint;
-            return currentPoint >= 3020 && currentPoint < 3020 + 300;
+            return IsOnHairButtonLinkPoint();
         }
     }
+
+    internal static bool ShouldHandleHairStyleConfirm => IsHandlingNavigation;
 
     public override void Load()
     {
@@ -92,6 +98,12 @@ public sealed class HairStyleNavigationSystem : ModSystem
             return;
         }
 
+        if (_isHairStyleModeActive && !IsCurrentCharacterCreationState())
+        {
+            ClearCache();
+            return;
+        }
+
         // Track frames for debouncing announcements
         if (_framesSinceLastNavigation < int.MaxValue)
         {
@@ -101,8 +113,16 @@ public sealed class HairStyleNavigationSystem : ModSystem
         // Only active in hair style mode
         if (!_isHairStyleModeActive)
         {
+            _selectWasPressed = false;
             return;
         }
+
+        if (IsOnHairButtonLinkPoint() && !_hasFocusedOnHairButton)
+        {
+            DetectExternalHairChanges();
+        }
+
+        ProcessConfirmInput();
 
         // Handle navigation - always check keyboard input, plus gamepad triggers if in gamepad UI mode
         // Keyboard navigation (A/D keys) should work regardless of gamepad emulation state
@@ -125,9 +145,12 @@ public sealed class HairStyleNavigationSystem : ModSystem
         _cachedScrollbar = null;
         _isHairStyleModeActive = false;
         _hasFocusedOnHairButton = false;
+        _selectedHairIndex = 0;
         _currentHairIndex = 0;
         _lastAnnouncedIndex = -1;
         _framesSinceLastNavigation = 0;
+        _pendingFocusIndex = -1;
+        _selectWasPressed = false;
     }
 
     /// <summary>
@@ -171,6 +194,7 @@ public sealed class HairStyleNavigationSystem : ModSystem
                     int idx = _cachedHairStyleIds.IndexOf(player.hair);
                     if (idx >= 0)
                     {
+                        _selectedHairIndex = idx;
                         _currentHairIndex = idx;
                         _hasFocusedOnHairButton = false; // Will be set true when user enters grid
                     }
@@ -183,7 +207,8 @@ public sealed class HairStyleNavigationSystem : ModSystem
             ClearCache();
         }
 
-        // Always update current hair index when active
+        // Track externally selected hair, but do not overwrite the focused index while
+        // the user is previewing hairstyles before confirming one.
         if (_isHairStyleModeActive && _cachedHairStyleIds is not null)
         {
             Player? player = PlayerField?.GetValue(self) as Player;
@@ -192,7 +217,11 @@ public sealed class HairStyleNavigationSystem : ModSystem
                 int idx = _cachedHairStyleIds.IndexOf(player.hair);
                 if (idx >= 0)
                 {
-                    _currentHairIndex = idx;
+                    _selectedHairIndex = idx;
+                    if (!_hasFocusedOnHairButton)
+                    {
+                        _currentHairIndex = idx;
+                    }
                 }
             }
         }
@@ -301,8 +330,7 @@ public sealed class HairStyleNavigationSystem : ModSystem
         }
 
         // Only process if we're currently on a hair link point
-        int currentPoint = UILinkPointNavigator.CurrentPoint;
-        if (currentPoint < 3020 || currentPoint >= 3020 + 300)
+        if (!IsOnHairButtonLinkPoint())
         {
             return;
         }
@@ -337,7 +365,7 @@ public sealed class HairStyleNavigationSystem : ModSystem
         if (navigated)
         {
             TerrariaAccess.Instance?.Logger.Debug($"[HairStyleNav] Navigating from index {_currentHairIndex} to {newIndex}");
-            SelectHairStyle(newIndex, announceChange: true);
+            FocusHairStyle(newIndex, announceChange: true);
             _currentHairIndex = newIndex;
             _lastAnnouncedIndex = newIndex;
             _framesSinceLastNavigation = 0;
@@ -357,6 +385,11 @@ public sealed class HairStyleNavigationSystem : ModSystem
 
         // Don't intercept A/D keys if user is typing in a text field (e.g., character name)
         if (Main.editSign || Main.editChest || Main.blockInput || PlayerInput.WritingText)
+        {
+            return;
+        }
+
+        if (!IsOnHairButtonLinkPoint())
         {
             return;
         }
@@ -398,7 +431,7 @@ public sealed class HairStyleNavigationSystem : ModSystem
         if (navigated)
         {
             TerrariaAccess.Instance?.Logger.Debug($"[HairStyleNav] Keyboard nav from {_currentHairIndex} to {newIndex}");
-            SelectHairStyle(newIndex, announceChange: true);
+            FocusHairStyle(newIndex, announceChange: true);
             _currentHairIndex = newIndex;
             _lastAnnouncedIndex = newIndex;
             _framesSinceLastNavigation = 0;
@@ -419,7 +452,7 @@ public sealed class HairStyleNavigationSystem : ModSystem
 
         // Check if user is currently focused on a hair button (link points 3020-3319)
         int currentPoint = UILinkPointNavigator.CurrentPoint;
-        bool isOnHairButton = currentPoint >= 3020 && currentPoint < 3020 + 300;
+        bool isOnHairButton = IsOnHairButtonLinkPoint(currentPoint);
 
         // If not on a hair button, reset state and return
         // This ensures we re-announce when user enters the grid again
@@ -446,32 +479,83 @@ public sealed class HairStyleNavigationSystem : ModSystem
 
         // Check if we need to announce:
         // 1. First time focusing on a hair button (user just entered the grid)
-        // 2. Hair changed externally while on a hair button
+        // 2. Hair selection changed externally while on a hair button
         bool justEnteredGrid = !_hasFocusedOnHairButton;
-        bool hairChanged = actualIndex != _currentHairIndex;
+        bool hairChanged = actualIndex != _selectedHairIndex;
 
         if (justEnteredGrid)
         {
-            TerrariaAccess.Instance?.Logger.Debug($"[HairStyleNav] User entered hair grid, current index={actualIndex}");
+            int focusedIndex = TryResolveHairIndexForLinkPoint(currentPoint, out int linkIndex)
+                ? linkIndex
+                : actualIndex;
+            TerrariaAccess.Instance?.Logger.Debug($"[HairStyleNav] User entered hair grid, focused index={focusedIndex}, selected index={actualIndex}");
             _hasFocusedOnHairButton = true;
-            _currentHairIndex = actualIndex;
+            _selectedHairIndex = actualIndex;
+            _currentHairIndex = focusedIndex;
         }
         else if (hairChanged)
         {
-            TerrariaAccess.Instance?.Logger.Debug($"[HairStyleNav] External change detected: tracked={_currentHairIndex}, actual={actualIndex}");
+            TerrariaAccess.Instance?.Logger.Debug($"[HairStyleNav] External selection change detected: selected={_selectedHairIndex}, actual={actualIndex}");
+            _selectedHairIndex = actualIndex;
             _currentHairIndex = actualIndex;
         }
 
         // Announce if just entered grid or hair changed, with debouncing
-        if ((justEnteredGrid || hairChanged) && _framesSinceLastNavigation > 3 && actualIndex != _lastAnnouncedIndex)
+        int announcementIndex = justEnteredGrid ? _currentHairIndex : actualIndex;
+        if ((justEnteredGrid || hairChanged) && _framesSinceLastNavigation > 3 && announcementIndex != _lastAnnouncedIndex)
         {
-            ScrollToIndex(actualIndex);
-            string announcement = BuildHairStyleAnnouncement(actualIndex, _cachedHairStyleIds.Count);
+            ScrollToIndex(announcementIndex);
+            string announcement = BuildHairStyleAnnouncement(announcementIndex, _cachedHairStyleIds.Count, announcementIndex == _selectedHairIndex);
             if (!string.IsNullOrWhiteSpace(announcement))
             {
                 ScreenReaderService.Announce(announcement, force: true);
             }
-            _lastAnnouncedIndex = actualIndex;
+            _lastAnnouncedIndex = announcementIndex;
+        }
+    }
+
+    private static void ProcessConfirmInput()
+    {
+        bool selectPressed = GamepadEmulationKeybinds.InventorySelect is { } keybind &&
+            VirtualTriggerService.IsKeybindPressed(keybind);
+        bool selectJustPressed = selectPressed && !_selectWasPressed;
+        _selectWasPressed = selectPressed;
+
+        if (!selectJustPressed || !IsOnHairButtonLinkPoint())
+        {
+            return;
+        }
+
+        SelectHairStyle(_currentHairIndex, announceChange: true);
+
+        // This system handled the focused hair selection. Do not let a synthetic
+        // mouse click also activate whichever vanilla link point was under the cursor.
+        Main.mouseLeft = false;
+        Main.mouseLeftRelease = false;
+        PlayerInput.Triggers.Current.KeyStatus[TriggerNames.MouseLeft] = false;
+        PlayerInput.Triggers.JustPressed.KeyStatus[TriggerNames.MouseLeft] = false;
+    }
+
+    private static void FocusHairStyle(int index, bool announceChange)
+    {
+        if (_cachedHairStyleIds is null || index < 0 || index >= _cachedHairStyleIds.Count)
+        {
+            TerrariaAccess.Instance?.Logger.Debug($"[HairStyleNav] FocusHairStyle: invalid index {index}");
+            return;
+        }
+
+        _currentHairIndex = index;
+        _pendingFocusIndex = index;
+        ScrollToIndex(index);
+        SoundEngine.PlaySound(SoundID.MenuTick);
+
+        if (announceChange)
+        {
+            string announcement = BuildHairStyleAnnouncement(index, _cachedHairStyleIds.Count, index == _selectedHairIndex);
+            if (!string.IsNullOrWhiteSpace(announcement))
+            {
+                ScreenReaderService.Announce(announcement, force: true);
+            }
         }
     }
 
@@ -502,6 +586,8 @@ public sealed class HairStyleNavigationSystem : ModSystem
         {
             int oldHair = player.hair;
             player.hair = hairId;
+            _selectedHairIndex = index;
+            _currentHairIndex = index;
             SoundEngine.PlaySound(SoundID.MenuTick);
 
             TerrariaAccess.Instance?.Logger.Debug($"[HairStyleNav] SelectHairStyle: index={index}, hairId={hairId}, oldHair={oldHair}, newHair={player.hair}");
@@ -512,7 +598,7 @@ public sealed class HairStyleNavigationSystem : ModSystem
             // Announce the new hairstyle only if requested
             if (announceChange)
             {
-                string announcement = BuildHairStyleAnnouncement(index, _cachedHairStyleIds.Count);
+                string announcement = BuildHairStyleAnnouncement(index, _cachedHairStyleIds.Count, isSelected: true);
                 if (!string.IsNullOrWhiteSpace(announcement))
                 {
                     ScreenReaderService.Announce(announcement, force: true);
@@ -576,7 +662,7 @@ public sealed class HairStyleNavigationSystem : ModSystem
     /// </summary>
     /// <param name="index">The index in AvailableHairstyles (0-based)</param>
     /// <param name="totalCount">Total number of available hairstyles</param>
-    private static string BuildHairStyleAnnouncement(int index, int totalCount)
+    private static string BuildHairStyleAnnouncement(int index, int totalCount, bool isSelected)
     {
         // Get the actual hair ID to look up the description
         int hairId = (_cachedHairStyleIds is not null && index >= 0 && index < _cachedHairStyleIds.Count)
@@ -591,14 +677,20 @@ public sealed class HairStyleNavigationSystem : ModSystem
             description = descriptions[hairId];
         }
 
-        // Format: "Selected, [description], [position] of [total]"
+        var parts = new List<string>(3);
+        if (isSelected)
+        {
+            parts.Add("Selected");
+        }
+
         // Use 1-based position for user-friendly announcement
         if (!string.IsNullOrWhiteSpace(description))
         {
-            return $"Selected, {description} {index + 1} of {totalCount}";
+            parts.Add(description);
         }
 
-        return $"Selected, {index + 1} of {totalCount}";
+        parts.Add($"{index + 1} of {totalCount}");
+        return string.Join(", ", parts);
     }
 
     /// <summary>
@@ -680,11 +772,134 @@ public sealed class HairStyleNavigationSystem : ModSystem
             linkPoint.Down = (column < 5) ? baseLinkId : (baseLinkId + 1);
         }
 
-        // NOTE: We intentionally do NOT force navigation to a specific link point here.
-        // Previously, this method called UILinkPointNavigator.ChangePoint() to move focus
-        // to the hair button matching the current selection. This caused a bug where
-        // pressing Up/Down would briefly navigate away but immediately snap back to the
-        // hair grid on the next frame. Now we only reconfigure the link point directions
-        // and let vanilla navigation handle focus changes naturally.
+        if (_pendingFocusIndex >= 0 && TryFindLinkPointForHairIndex(_pendingFocusIndex, out int targetLinkId))
+        {
+            UILinkPointNavigator.ChangePoint(targetLinkId);
+            _pendingFocusIndex = -1;
+        }
+    }
+
+    private static bool IsCurrentCharacterCreationState()
+    {
+        return Main.MenuUI?.CurrentState is UICharacterCreation current &&
+               (_cachedCharacterCreation is null || ReferenceEquals(current, _cachedCharacterCreation));
+    }
+
+    private static bool IsOnHairButtonLinkPoint()
+        => IsOnHairButtonLinkPoint(UILinkPointNavigator.CurrentPoint);
+
+    private static bool IsOnHairButtonLinkPoint(int linkPoint)
+        => linkPoint >= 3020 && linkPoint < 3020 + 300;
+
+    private static bool TryResolveHairIndexForLinkPoint(int linkPointId, out int hairIndex)
+    {
+        hairIndex = -1;
+        if (!IsOnHairButtonLinkPoint(linkPointId) ||
+            _cachedHairStyleIds is null ||
+            _cachedCharacterCreation is null ||
+            !UILinkPointNavigator.Points.TryGetValue(linkPointId, out UILinkPoint? linkPoint))
+        {
+            return false;
+        }
+
+        UIHairStyleButton? button = FindClosestHairButton(linkPoint.Position);
+        if (button is null)
+        {
+            return false;
+        }
+
+        hairIndex = _cachedHairStyleIds.IndexOf(button.HairStyleId);
+        return hairIndex >= 0;
+    }
+
+    private static bool TryFindLinkPointForHairIndex(int hairIndex, out int linkPointId)
+    {
+        linkPointId = -1;
+        if (_cachedHairStyleIds is null ||
+            hairIndex < 0 ||
+            hairIndex >= _cachedHairStyleIds.Count ||
+            _cachedCharacterCreation is null)
+        {
+            return false;
+        }
+
+        int hairId = _cachedHairStyleIds[hairIndex];
+        if (!TryFindHairButtonById(hairId, out UIHairStyleButton? button) || button is null)
+        {
+            return false;
+        }
+
+        Vector2 center = button.GetDimensions().Center();
+        float bestDistanceSquared = float.MaxValue;
+        foreach (var kvp in UILinkPointNavigator.Points)
+        {
+            if (!IsOnHairButtonLinkPoint(kvp.Key))
+            {
+                continue;
+            }
+
+            float distanceSquared = Vector2.DistanceSquared(center, kvp.Value.Position);
+            if (distanceSquared < bestDistanceSquared)
+            {
+                bestDistanceSquared = distanceSquared;
+                linkPointId = kvp.Key;
+            }
+        }
+
+        return linkPointId >= 0 && bestDistanceSquared <= 64f;
+    }
+
+    private static UIHairStyleButton? FindClosestHairButton(Vector2 position)
+    {
+        UIHairStyleButton? closest = null;
+        float bestDistanceSquared = float.MaxValue;
+
+        foreach (UIHairStyleButton button in EnumerateHairStyleButtons(_cachedCharacterCreation))
+        {
+            float distanceSquared = Vector2.DistanceSquared(button.GetDimensions().Center(), position);
+            if (distanceSquared < bestDistanceSquared)
+            {
+                bestDistanceSquared = distanceSquared;
+                closest = button;
+            }
+        }
+
+        return closest is not null && bestDistanceSquared <= 64f ? closest : null;
+    }
+
+    private static bool TryFindHairButtonById(int hairId, out UIHairStyleButton? button)
+    {
+        foreach (UIHairStyleButton candidate in EnumerateHairStyleButtons(_cachedCharacterCreation))
+        {
+            if (candidate.HairStyleId == hairId)
+            {
+                button = candidate;
+                return true;
+            }
+        }
+
+        button = null;
+        return false;
+    }
+
+    private static IEnumerable<UIHairStyleButton> EnumerateHairStyleButtons(UIElement? root)
+    {
+        if (root is null)
+        {
+            yield break;
+        }
+
+        foreach (UIElement child in root.Children)
+        {
+            if (child is UIHairStyleButton button)
+            {
+                yield return button;
+            }
+
+            foreach (UIHairStyleButton descendant in EnumerateHairStyleButtons(child))
+            {
+                yield return descendant;
+            }
+        }
     }
 }
