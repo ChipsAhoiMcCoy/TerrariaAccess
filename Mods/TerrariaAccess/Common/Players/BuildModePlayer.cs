@@ -20,6 +20,7 @@ namespace TerrariaAccess.Common.Players;
 public sealed class BuildModePlayer : ModPlayer
 {
     private const int HurtInputGraceTicks = 15;
+    private const int UiCloseUseSuppressionTicks = 3;
 
     private enum BuildModeState
     {
@@ -42,6 +43,9 @@ public sealed class BuildModePlayer : ModPlayer
     private int _actionCooldown;
     private int _autoToolRevertSlot = -1;
     private bool _wasUseHeld;
+    private bool _wasGameplayUiOpen;
+    private bool _suppressWorldUseThisFrame;
+    private int _uiCloseUseSuppressionTicks;
     private int _hurtGraceTicks;
     private SelectionIterator _selectionIterator;
     private readonly List<ContextualHotkey> _hotkeys = new();
@@ -95,6 +99,9 @@ public sealed class BuildModePlayer : ModPlayer
 
     public override void PreUpdate()
     {
+        bool gameplayUiOpen = IsGameplayUiOpen();
+        UpdateUiUseSuppressionState(gameplayUiOpen);
+
         if (!BuildModeActive)
         {
             RestorePlacementRangeIfNeeded();
@@ -103,6 +110,18 @@ public sealed class BuildModePlayer : ModPlayer
 
         EnsurePlacementRangeExpanded();
         SuppressGrappleAndMountControls();
+
+        if (_suppressWorldUseThisFrame)
+        {
+            SuppressWorldUseAfterUiClose();
+            return;
+        }
+
+        if (gameplayUiOpen)
+        {
+            return;
+        }
+
         GuardBuildModeInput();
     }
 
@@ -138,7 +157,8 @@ public sealed class BuildModePlayer : ModPlayer
 
     public override void PostUpdate()
     {
-        bool useHeld = IsUseHeld();
+        bool gameplayUiOpen = IsGameplayUiOpen();
+        bool useHeld = !gameplayUiOpen && !_suppressWorldUseThisFrame && IsUseHeld();
         bool useJustPressed = useHeld && !_wasUseHeld;
         _wasUseHeld = useHeld;
 
@@ -153,6 +173,17 @@ public sealed class BuildModePlayer : ModPlayer
         {
             // Check housing suitability while walking in build mode
             _housingAnnouncer.Update(Player);
+        }
+
+        if (gameplayUiOpen || _suppressWorldUseThisFrame)
+        {
+            ResetActiveAction();
+            if (_suppressWorldUseThisFrame)
+            {
+                SuppressWorldUseAfterUiClose();
+            }
+
+            return;
         }
 
         if (!BuildModeActive || !HasSelection)
@@ -258,6 +289,9 @@ public sealed class BuildModePlayer : ModPlayer
         RestorePlacementRangeIfNeeded();
         ResetSelection();
         ResetActiveAction();
+        _wasGameplayUiOpen = false;
+        _suppressWorldUseThisFrame = false;
+        _uiCloseUseSuppressionTicks = 0;
         _hurtGraceTicks = 0;
         _housingAnnouncer.Reset();
     }
@@ -794,6 +828,13 @@ public sealed class BuildModePlayer : ModPlayer
         Player.releaseUseTile = true;
     }
 
+    private void SuppressWorldUseAfterUiClose()
+    {
+        SuppressVanillaUseWhileActing();
+        Main.mouseLeft = false;
+        Main.mouseRight = false;
+    }
+
     private void EnsureHotkeysInitialized()
     {
         if (_hotkeys.Count > 0)
@@ -834,6 +875,12 @@ public sealed class BuildModePlayer : ModPlayer
 
     private void GuardBuildModeInput()
     {
+        if (_suppressWorldUseThisFrame)
+        {
+            SuppressWorldUseAfterUiClose();
+            return;
+        }
+
         if (!HasSelection)
         {
             return;
@@ -845,6 +892,60 @@ public sealed class BuildModePlayer : ModPlayer
         }
 
         SuppressVanillaUseWhileActing();
+    }
+
+    private void UpdateUiUseSuppressionState(bool gameplayUiOpen)
+    {
+        _suppressWorldUseThisFrame = false;
+
+        if (!BuildModeActive)
+        {
+            _wasGameplayUiOpen = gameplayUiOpen;
+            _uiCloseUseSuppressionTicks = 0;
+            return;
+        }
+
+        if (_wasGameplayUiOpen && !gameplayUiOpen)
+        {
+            _uiCloseUseSuppressionTicks = UiCloseUseSuppressionTicks;
+        }
+
+        _wasGameplayUiOpen = gameplayUiOpen;
+
+        if (gameplayUiOpen)
+        {
+            _uiCloseUseSuppressionTicks = 0;
+            return;
+        }
+
+        if (_uiCloseUseSuppressionTicks <= 0)
+        {
+            return;
+        }
+
+        _suppressWorldUseThisFrame = true;
+        _uiCloseUseSuppressionTicks--;
+    }
+
+    private bool IsGameplayUiOpen()
+    {
+        return Main.playerInventory ||
+            Main.ingameOptionsWindow ||
+            Main.inFancyUI ||
+            Main.gameMenu ||
+            Main.InGuideCraftMenu ||
+            Main.InReforgeMenu ||
+            Main.CreativeMenu.Enabled ||
+            Main.hairWindow ||
+            Main.clothesWindow ||
+            Main.drawingPlayerChat ||
+            Main.editChest ||
+            Main.editSign ||
+            Player.talkNPC != -1 ||
+            Player.sign != -1 ||
+            Player.chest != -1 ||
+            Main.npcShop != 0 ||
+            Player.tileEntityAnchor.InUse;
     }
 
     private void SuppressGrappleAndMountControls()
