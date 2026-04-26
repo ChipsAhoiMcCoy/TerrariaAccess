@@ -1560,15 +1560,25 @@ public sealed partial class GuidanceSystem : ModSystem
             return;
         }
 
-        Vector2 destination = ResolveTeleportDestination(player, target.Anchor);
+        Vector2 destination = target.Destination;
         player.RemoveAllGrapplingHooks();
-        player.Teleport(destination, target.Style);
-        player.velocity = Vector2.Zero;
-        player.fallStart = (int)(player.position.Y / 16f);
 
-        if (Main.netMode == NetmodeID.MultiplayerClient)
+        if (target.UsePlayerTeleportPacket && Main.netMode == NetmodeID.MultiplayerClient)
         {
-            NetMessage.SendData(MessageID.TeleportEntity, -1, -1, null, 0, player.whoAmI, destination.X, destination.Y, target.Style);
+            // Match vanilla wormhole/player-map teleportation so the server treats this
+            // as a player-to-player teleport instead of a generic position warp.
+            player.UnityTeleport(destination);
+        }
+        else
+        {
+            player.Teleport(destination, target.Style);
+            player.velocity = Vector2.Zero;
+            player.fallStart = (int)(destination.Y / 16f);
+
+            if (Main.netMode == NetmodeID.MultiplayerClient)
+            {
+                NetMessage.SendData(MessageID.TeleportEntity, -1, -1, null, 0, player.whoAmI, destination.X, destination.Y, target.Style);
+            }
         }
 
         _arrivalAnnounced = false;
@@ -1586,15 +1596,34 @@ public sealed partial class GuidanceSystem : ModSystem
 
     private static bool TryResolveTeleportTarget(Player player, out TeleportTarget target)
     {
+        if (_selectionMode == SelectionMode.Player && TryGetSelectedPlayer(player, out Player targetPlayer, out GuidanceEntry playerEntry))
+        {
+            Vector2 destination = ResolvePlayerTeleportDestination(player, targetPlayer);
+            target = new TeleportTarget(
+                destination,
+                SanitizeLabel(playerEntry.DisplayName),
+                TeleportationStyleID.RecallPotion,
+                UsePlayerTeleportPacket: true);
+            return true;
+        }
+
         if (TryGetCurrentTrackingTarget(player, out Vector2 worldPosition, out string label))
         {
-            target = new TeleportTarget(worldPosition, label, ResolveTeleportStyleForSelection());
+            target = new TeleportTarget(
+                ResolveTeleportDestination(player, worldPosition),
+                label,
+                ResolveTeleportStyleForSelection(),
+                UsePlayerTeleportPacket: false);
             return true;
         }
 
         if (_selectionMode == SelectionMode.Exploration && TryGetSelectedExploration(out ExplorationTargetRegistry.ExplorationTarget exploration))
         {
-            target = new TeleportTarget(exploration.WorldPosition, exploration.Label, TeleportationStyleID.RodOfDiscord);
+            target = new TeleportTarget(
+                ResolveTeleportDestination(player, exploration.WorldPosition),
+                exploration.Label,
+                TeleportationStyleID.RodOfDiscord,
+                UsePlayerTeleportPacket: false);
             return true;
         }
 
@@ -1604,17 +1633,13 @@ public sealed partial class GuidanceSystem : ModSystem
 
     private static Vector2 ResolveTeleportDestination(Player player, Vector2 anchor)
     {
-        Vector2 topLeft = anchor - new Vector2(player.width * 0.5f, player.height);
+        Vector2 topLeft = GuidanceTeleportMath.AlignTopLeftToAnchorBottom(anchor, player.width, player.height);
+        return GuidanceTeleportMath.ClampTopLeftToWorld(topLeft, player.width, player.height, Main.maxTilesX, Main.maxTilesY);
+    }
 
-        float minX = 16f;
-        float minY = 16f;
-        float maxX = (Main.maxTilesX - 2) * 16f - player.width;
-        float maxY = (Main.maxTilesY - 2) * 16f - player.height;
-
-        float clampedX = MathHelper.Clamp(topLeft.X, minX, maxX);
-        float clampedY = MathHelper.Clamp(topLeft.Y, minY, maxY);
-
-        return new Vector2(clampedX, clampedY);
+    private static Vector2 ResolvePlayerTeleportDestination(Player player, Player targetPlayer)
+    {
+        return GuidanceTeleportMath.AlignTopLeftByBottomDelta(player.position, player.Bottom, targetPlayer.Bottom);
     }
 
     private static string BuildDefaultName()
@@ -2143,7 +2168,7 @@ public sealed partial class GuidanceSystem : ModSystem
         SelectionMode.HostileMob
     };
 
-    private readonly record struct TeleportTarget(Vector2 Anchor, string Label, int Style);
+    private readonly record struct TeleportTarget(Vector2 Destination, string Label, int Style, bool UsePlayerTeleportPacket);
 
     private static bool IsCategoryAvailable(SelectionMode category, Player player)
     {

@@ -36,6 +36,7 @@
     <Compile Include="..\..\Mods\TerrariaAccess\Common\Services\SoundLoudnessUtility.cs" Link="Sources\SoundLoudnessUtility.cs" />
     <Compile Include="..\..\Mods\TerrariaAccess\Common\Services\SynthesizedSoundFactory.cs" Link="Sources\SynthesizedSoundFactory.cs" />
     <Compile Include="..\..\Mods\TerrariaAccess\Common\Systems\Guidance\GuidanceEntry.cs" Link="Sources\GuidanceEntry.cs" />
+    <Compile Include="..\..\Mods\TerrariaAccess\Common\Systems\Guidance\GuidanceTeleportMath.cs" Link="Sources\GuidanceTeleportMath.cs" />
     <Compile Include="..\..\Mods\TerrariaAccess\Common\Systems\GamepadEmulation\GamepadEmulationState.cs" Link="Sources\GamepadEmulationState.cs" />
     <!-- Tier 2: Testable with interfaces or stubs -->
     <Compile Include="..\..\Mods\TerrariaAccess\Common\Abstractions\ITerrariaLocalization.cs" Link="Sources\ITerrariaLocalization.cs" />
