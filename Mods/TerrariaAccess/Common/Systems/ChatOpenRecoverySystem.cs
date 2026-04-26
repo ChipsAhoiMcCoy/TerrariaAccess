@@ -1,5 +1,4 @@
 #nullable enable
-using Microsoft.Xna.Framework.Input;
 using Terraria;
 using Terraria.GameInput;
 using Terraria.ModLoader;
@@ -12,8 +11,6 @@ namespace TerrariaAccess.Common.Systems;
 /// </summary>
 public sealed class ChatOpenRecoverySystem : ModSystem
 {
-    private bool _enterWasPressed;
-
     public override void PostUpdateInput()
     {
         if (Main.dedServ)
@@ -21,22 +18,7 @@ public sealed class ChatOpenRecoverySystem : ModSystem
             return;
         }
 
-        bool enterPressed = Main.keyState.IsKeyDown(Keys.Enter);
-        bool enterJustPressed = enterPressed && !_enterWasPressed;
-        _enterWasPressed = enterPressed;
-
         ClearStaleGameplayTextInputOwner();
-
-        if (!enterJustPressed || !CanOpenGameplayChat())
-        {
-            return;
-        }
-
-        Main.OpenPlayerChat();
-        if (Main.drawingPlayerChat)
-        {
-            Main.chatText = string.Empty;
-        }
     }
 
     private static void ClearStaleGameplayTextInputOwner()
@@ -54,28 +36,6 @@ public sealed class ChatOpenRecoverySystem : ModSystem
         Main.CurrentInputTextTakerOverride = null;
         PlayerInput.WritingText = false;
         TerrariaAccess.Instance?.Logger.Info("[ChatOpenRecovery] Cleared stale text input owner during gameplay.");
-    }
-
-    private static bool CanOpenGameplayChat()
-    {
-        if (!IsPlainGameplayContext())
-        {
-            return false;
-        }
-
-        if (Main.drawingPlayerChat || Main.editSign || Main.editChest)
-        {
-            return false;
-        }
-
-        if (Main.keyState.IsKeyDown(Keys.LeftAlt) ||
-            Main.keyState.IsKeyDown(Keys.RightAlt) ||
-            Main.keyState.IsKeyDown(Keys.Escape))
-        {
-            return false;
-        }
-
-        return Main.hasFocus && Main.CurrentInputTextTakerOverride is null;
     }
 
     private static bool IsPlainGameplayContext()
