@@ -1,8 +1,12 @@
 #nullable enable
 using Microsoft.Xna.Framework.Input;
 using Terraria;
+using Terraria.Audio;
+using Terraria.Chat;
 using Terraria.GameInput;
+using Terraria.ID;
 using Terraria.ModLoader;
+using Terraria.UI.Chat;
 
 namespace TerrariaAccess.Common.Systems;
 
@@ -21,12 +25,18 @@ public sealed class ChatOpenRecoverySystem : ModSystem
             return;
         }
 
-        bool enterPressed = Main.keyState.IsKeyDown(Keys.Enter);
+        KeyboardState keyboard = Keyboard.GetState();
+        bool enterPressed = keyboard.IsKeyDown(Keys.Enter);
         bool enterJustPressed = enterPressed && !_enterWasPressed;
         _enterWasPressed = enterPressed;
 
         ClearStaleGameplayTextInputOwner();
-        RestoreChatOpenReleaseGate(enterJustPressed);
+        if (RecoverGameplayChatClose(enterJustPressed, keyboard))
+        {
+            return;
+        }
+
+        RecoverGameplayChatOpen(enterJustPressed, keyboard);
     }
 
     private static void ClearStaleGameplayTextInputOwner()
@@ -46,23 +56,49 @@ public sealed class ChatOpenRecoverySystem : ModSystem
         TerrariaAccess.Instance?.Logger.Info("[ChatOpenRecovery] Cleared stale text input owner during gameplay.");
     }
 
-    private static void RestoreChatOpenReleaseGate(bool enterJustPressed)
+    private static bool RecoverGameplayChatClose(bool enterJustPressed, KeyboardState keyboard)
+    {
+        if (!enterJustPressed || !Main.drawingPlayerChat)
+        {
+            return false;
+        }
+
+        if (!CanSubmitOpenGameplayChat(keyboard))
+        {
+            return false;
+        }
+
+        SubmitOpenChatText();
+        Main.chatText = string.Empty;
+        Main.ClosePlayerChat();
+        Main.chatRelease = false;
+        SoundEngine.PlaySound(SoundID.MenuClose);
+        TerrariaAccess.Instance?.Logger.Info("[ChatOpenRecovery] Closed gameplay chat from Enter fallback.");
+        return true;
+    }
+
+    private static void RecoverGameplayChatOpen(bool enterJustPressed, KeyboardState keyboard)
     {
         if (!enterJustPressed || Main.chatRelease)
         {
             return;
         }
 
-        if (!CanVanillaOpenGameplayChat())
+        if (!CanVanillaOpenGameplayChat(keyboard))
         {
             return;
         }
 
-        Main.chatRelease = true;
-        TerrariaAccess.Instance?.Logger.Info("[ChatOpenRecovery] Restored chatRelease for Enter chat open.");
+        PlayerInput.CurrentInputMode = InputMode.Keyboard;
+        PlayerInput.SettingsForUI.SetCursorMode(CursorMode.Mouse);
+        SoundEngine.PlaySound(SoundID.MenuOpen);
+        Main.OpenPlayerChat();
+        Main.chatText = string.Empty;
+        Main.chatRelease = false;
+        TerrariaAccess.Instance?.Logger.Info("[ChatOpenRecovery] Opened gameplay chat after stale chatRelease blocked Enter.");
     }
 
-    private static bool CanVanillaOpenGameplayChat()
+    private static bool CanVanillaOpenGameplayChat(KeyboardState keyboard)
     {
         if (!IsPlainGameplayContext())
         {
@@ -79,14 +115,62 @@ public sealed class ChatOpenRecoverySystem : ModSystem
             return false;
         }
 
-        if (Main.keyState.IsKeyDown(Keys.LeftAlt) ||
-            Main.keyState.IsKeyDown(Keys.RightAlt) ||
-            Main.keyState.IsKeyDown(Keys.Escape))
+        if (keyboard.IsKeyDown(Keys.LeftAlt) ||
+            keyboard.IsKeyDown(Keys.RightAlt) ||
+            keyboard.IsKeyDown(Keys.Escape))
         {
             return false;
         }
 
         return true;
+    }
+
+    private static bool CanSubmitOpenGameplayChat(KeyboardState keyboard)
+    {
+        if (Main.CurrentInputTextTakerOverride is not null)
+        {
+            return false;
+        }
+
+        if (!Main.hasFocus)
+        {
+            return false;
+        }
+
+        if (Main.gameMenu || Main.blockInput || Main.editSign || Main.editChest)
+        {
+            return false;
+        }
+
+        if (keyboard.IsKeyDown(Keys.LeftAlt) ||
+            keyboard.IsKeyDown(Keys.RightAlt) ||
+            keyboard.IsKeyDown(Keys.Escape))
+        {
+            return false;
+        }
+
+        return true;
+    }
+
+    private static void SubmitOpenChatText()
+    {
+        string chatText = Main.chatText ?? string.Empty;
+        if (chatText == string.Empty)
+        {
+            return;
+        }
+
+        ChatMessage message = ChatManager.Commands.CreateOutgoingMessage(chatText);
+        if (Main.netMode == NetmodeID.MultiplayerClient)
+        {
+            ChatHelper.SendChatMessageFromClient(message);
+            return;
+        }
+
+        if (Main.netMode == NetmodeID.SinglePlayer)
+        {
+            ChatManager.Commands.ProcessIncomingMessage(message, Main.myPlayer);
+        }
     }
 
     private static bool IsPlainGameplayContext()
