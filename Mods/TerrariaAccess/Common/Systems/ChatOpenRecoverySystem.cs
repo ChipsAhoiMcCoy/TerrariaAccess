@@ -80,6 +80,11 @@ public sealed class ChatOpenRecoverySystem : ModSystem
 
     private static bool IsPlainGameplayContext()
     {
+        if (Main.drawingPlayerChat || Main.editSign || Main.editChest)
+        {
+            return false;
+        }
+
         if (Main.gameMenu ||
             Main.playerInventory ||
             Main.inFancyUI ||
