@@ -154,6 +154,9 @@ internal static class ReflectionCache
         private static readonly Lazy<MethodInfo?> _updateUiForEnabledChange = new(() =>
             Type?.GetMethod("UpdateUIForEnabledChange", InstanceNonPublic));
 
+        private static readonly Lazy<MethodInfo?> _toggleEnabled = new(() =>
+            Type?.GetMethod("ToggleEnabled", InstanceNonPublic));
+
         internal static Type? Type => _type.Value;
         internal static FieldInfo? Mod => _mod.Value;
         internal static PropertyInfo? DisplayNameClean => _displayNameClean.Value;
@@ -167,6 +170,7 @@ internal static class ReflectionCache
         internal static FieldInfo? DialogText => _dialogText.Value;
         internal static MethodInfo? ShowMoreInfo => _showMoreInfo.Value;
         internal static MethodInfo? UpdateUiForEnabledChange => _updateUiForEnabledChange.Value;
+        internal static MethodInfo? ToggleEnabled => _toggleEnabled.Value;
     }
 
     #endregion

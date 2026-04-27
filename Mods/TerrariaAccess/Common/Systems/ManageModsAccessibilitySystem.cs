@@ -190,10 +190,14 @@ public sealed class ManageModsAccessibilitySystem : ModMenuAccessibilityBase
     {
         FilterBindings.Clear();
         ModBindingsList.Clear();
+        ModItemBindings.Clear();
         ModItemButtonGroups.Clear();
         TopActionBindingsList.Clear();
         BottomActionBindingsList.Clear();
         _currentModButtonIndex = 0;
+        // Drop cached states so re-entering the menu rebuilds baselines and
+        // doesn't announce stale mod entries that no longer exist.
+        _lastKnownModStates.Clear();
         // Clear speech queue state when leaving the menu
         ScreenReaderService.ClearContexts("managemods:");
         ScreenReaderService.ClearCooldown(CooldownKeyToggle);
@@ -321,7 +325,7 @@ public sealed class ManageModsAccessibilitySystem : ModMenuAccessibilityBase
                 if (item is UIElement modItemElement)
                 {
                     // Get the toggle button element for accurate click positioning
-                    UIElement? toggleElement = ReflectionCache.UIModItem.UiModStateText?.GetValue(item) as UIElement;
+                    UIElement? toggleElement = GetVisibleModToggleElement(item);
                     UIElement targetElement = toggleElement ?? modItemElement;
 
                     CalculatedStyle dims = targetElement.GetDimensions();
@@ -771,21 +775,32 @@ public sealed class ManageModsAccessibilitySystem : ModMenuAccessibilityBase
             return;
         }
 
+        // Run every frame: detect any mod whose enabled state changed since last
+        // frame (whether from our reflection toggle, a native click via the user's
+        // MouseLeft keybind, dependency cascades, etc.) and announce it. Mods
+        // whose state changed this frame are returned so we can avoid re-toggling
+        // them below.
+        DetectAndAnnounceStateChanges(out HashSet<object> changedThisFrame);
+
         if (!CurrentInput.ActionPressed)
         {
-            // Monitor for native toggles and re-toggle to counteract them
-            if (ScreenReaderService.IsOnCooldown(CooldownKeyToggle))
-            {
-                MonitorNativeToggles(menuState);
-            }
             return;
         }
 
-        // When action is pressed on a mod item, toggle it and announce
-        bool toggleOnCooldown = ScreenReaderService.IsOnCooldown(CooldownKeyToggle);
-        bool dialogOnCooldown = ScreenReaderService.IsOnCooldown(CooldownKeyDialogAction);
-        if (_currentRegion == FocusRegion.ModList && !toggleOnCooldown && !dialogOnCooldown)
+        int? currentPointId = GetCurrentPointId();
+        if (!currentPointId.HasValue || !BindingById.TryGetValue(currentPointId.Value, out var binding))
         {
+            return;
+        }
+
+        if (_currentRegion == FocusRegion.ModList)
+        {
+            // Don't initiate a delete confirmation while the dialog cooldown is active.
+            if (ScreenReaderService.IsOnCooldown(CooldownKeyDialogAction))
+            {
+                return;
+            }
+
             // Check if we're on a mod item button (More Info, Delete, Config)
             if (_currentModButtonIndex > 0)
             {
@@ -793,8 +808,47 @@ public sealed class ManageModsAccessibilitySystem : ModMenuAccessibilityBase
                 return;
             }
 
-            // Handle mod toggle
-            HandleModToggle(menuState);
+            // If a native click already toggled the focused mod this frame, don't
+            // toggle again — DetectAndAnnounceStateChanges already announced it.
+            if (CurrentFocusIndex >= 0 && CurrentFocusIndex < ModItemBindings.Count)
+            {
+                object? focusedMod = ModItemBindings[CurrentFocusIndex].ModItem;
+                if (focusedMod is not null && changedThisFrame.Contains(focusedMod))
+                {
+                    return;
+                }
+            }
+
+            HandleModToggle();
+            return;
+        }
+
+        HandleFocusedButtonAction(binding);
+    }
+
+    private void HandleFocusedButtonAction(PointBinding binding)
+    {
+        if (binding.Element is not UIElement element)
+        {
+            return;
+        }
+
+        Mod.Logger.Info($"[ManageMods] Clicking: {binding.Label}");
+        SoundEngine.PlaySound(SoundID.MenuTick);
+
+        try
+        {
+            CalculatedStyle dims = element.GetDimensions();
+            Vector2 center = new(dims.X + dims.Width / 2f, dims.Y + dims.Height / 2f);
+            var clickEvent = new UIMouseEvent(element, center);
+            element.LeftClick(clickEvent);
+
+            Main.mouseLeft = false;
+            Main.mouseLeftRelease = false;
+        }
+        catch (Exception ex)
+        {
+            Mod.Logger.Warn($"[ManageMods] Click failed: {ex.Message}");
         }
     }
 
@@ -869,7 +923,7 @@ public sealed class ManageModsAccessibilitySystem : ModMenuAccessibilityBase
         }
     }
 
-    private void HandleModToggle(object menuState)
+    private void HandleModToggle()
     {
         if (CurrentFocusIndex < 0 || CurrentFocusIndex >= ModItemBindings.Count)
         {
@@ -884,29 +938,39 @@ public sealed class ManageModsAccessibilitySystem : ModMenuAccessibilityBase
             return;
         }
 
-        bool currentState = GetModEnabledState(modItem);
-        bool newState = !currentState;
+        UIElement? toggleElement = GetVisibleModToggleElement(modItem);
+        if (toggleElement is null)
+        {
+            string modDisplayName = GetModDisplayName(modItem);
+            Mod.Logger.Info($"[ManageMods] Toggle ignored because {modDisplayName} does not expose an enabled-state button");
+            ScreenReaderService.Announce($"{modDisplayName} cannot be toggled", force: true);
+            return;
+        }
 
         try
         {
+            if (ReflectionCache.UIModItem.ToggleEnabled is { } toggleEnabledMethod)
+            {
+                CalculatedStyle dims = toggleElement.GetDimensions();
+                Vector2 center = new(dims.X + dims.Width / 2f, dims.Y + dims.Height / 2f);
+                var clickEvent = new UIMouseEvent(toggleElement, center);
+                toggleEnabledMethod.Invoke(modItem, new object[] { clickEvent, toggleElement });
+
+                Mod.Logger.Info($"[ManageMods] Toggled {GetModDisplayName(modItem)} via reflection");
+                Main.mouseLeft = false;
+                Main.mouseLeftRelease = false;
+                return;
+            }
+
+            bool currentState = GetModEnabledState(modItem);
             object? localMod = ReflectionCache.UIModItem.Mod?.GetValue(modItem);
+            bool fallbackState = !currentState;
             if (localMod is not null && ReflectionCache.LocalMod.Enabled is not null)
             {
-                ReflectionCache.LocalMod.Enabled.SetValue(localMod, newState);
+                ReflectionCache.LocalMod.Enabled.SetValue(localMod, fallbackState);
+                ReflectionCache.UIModItem.UpdateUiForEnabledChange?.Invoke(modItem, null);
 
-                var updateMethod = ReflectionCache.UIModItem.Type?.GetMethod("UpdateUIForEnabledChange",
-                    BindingFlags.NonPublic | BindingFlags.Instance);
-                updateMethod?.Invoke(modItem, null);
-
-                string modDisplayName = GetModDisplayName(modItem);
-                string stateText = newState ? "Enabled" : "Disabled";
-                string announcement = $"{modDisplayName} {stateText}";
-
-                Mod.Logger.Info($"[ManageMods] Toggled: {announcement}");
-                ScreenReaderService.Announce(announcement, force: true);
-
-                ScreenReaderService.SetCooldown(CooldownKeyToggle, 10);
-                _lastKnownModStates[modItem] = newState;
+                Mod.Logger.Warn("[ManageMods] ToggleEnabled reflection was unavailable; used direct enabled-state fallback");
             }
         }
         catch (Exception ex)
@@ -915,32 +979,50 @@ public sealed class ManageModsAccessibilitySystem : ModMenuAccessibilityBase
         }
     }
 
-    private void MonitorNativeToggles(object menuState)
+    /// <summary>
+    /// Compares each tracked mod's current enabled state against the cached value.
+    /// Announces every change (no matter the source — our reflection toggle, a
+    /// native click from a user-bound MouseLeft key, or a dependency cascade) and
+    /// updates the cache. Returns the set of mod items whose state changed this
+    /// frame so callers can avoid re-toggling something that just got toggled
+    /// natively.
+    /// </summary>
+    private void DetectAndAnnounceStateChanges(out HashSet<object> changedThisFrame)
     {
+        changedThisFrame = new HashSet<object>();
+
         foreach (var binding in ModItemBindings)
         {
             object? modItem = binding.ModItem;
-            if (modItem is not null && _lastKnownModStates.TryGetValue(modItem, out bool expectedState))
+            if (modItem is null)
             {
-                bool actualState = GetModEnabledState(modItem);
-                if (actualState != expectedState)
-                {
-                    try
-                    {
-                        object? localMod = ReflectionCache.UIModItem.Mod?.GetValue(modItem);
-                        if (localMod is not null && ReflectionCache.LocalMod.Enabled is not null)
-                        {
-                            ReflectionCache.LocalMod.Enabled.SetValue(localMod, expectedState);
-                            ReflectionCache.UIModItem.UpdateUiForEnabledChange?.Invoke(modItem, null);
-                            Mod.Logger.Info($"[ManageMods] Counteracted native toggle, restored to {expectedState}");
-                        }
-                    }
-                    catch (Exception ex)
-                    {
-                        Mod.Logger.Warn($"[ManageMods] Failed to counteract native toggle: {ex.Message}");
-                    }
-                }
+                continue;
             }
+
+            bool actualState = GetModEnabledState(modItem);
+
+            if (!_lastKnownModStates.TryGetValue(modItem, out bool lastState))
+            {
+                // First time we've seen this mod — establish a baseline without
+                // announcing.
+                _lastKnownModStates[modItem] = actualState;
+                continue;
+            }
+
+            if (actualState == lastState)
+            {
+                continue;
+            }
+
+            _lastKnownModStates[modItem] = actualState;
+            changedThisFrame.Add(modItem);
+
+            string modDisplayName = GetModDisplayName(modItem);
+            string stateText = actualState ? "Enabled" : "Disabled";
+            string announcement = $"{modDisplayName} {stateText}";
+
+            Mod.Logger.Info($"[ManageMods] State change detected: {announcement}");
+            ScreenReaderService.Announce(announcement, force: true);
         }
     }
 
@@ -1437,6 +1519,24 @@ public sealed class ManageModsAccessibilitySystem : ModMenuAccessibilityBase
         catch
         {
             return false;
+        }
+    }
+
+    private static UIElement? GetVisibleModToggleElement(object? modItem)
+    {
+        if (modItem is null)
+        {
+            return null;
+        }
+
+        try
+        {
+            UIElement? toggleElement = ReflectionCache.UIModItem.UiModStateText?.GetValue(modItem) as UIElement;
+            return toggleElement?.Parent is not null ? toggleElement : null;
+        }
+        catch
+        {
+            return null;
         }
     }
 
