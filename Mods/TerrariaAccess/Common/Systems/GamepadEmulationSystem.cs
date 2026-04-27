@@ -723,11 +723,6 @@ public sealed class GamepadEmulationSystem : ModSystem
 
     internal static bool GetEffectiveSmartCursorState(bool ignoreTemporarySuppression = false)
     {
-        if (!ignoreTemporarySuppression && DpadVirtualizationSystem.IsTemporarilySuppressingSmartCursor())
-        {
-            return false;
-        }
-
         if (TryGetForcedSmartCursorState(out bool enabled))
         {
             return enabled;

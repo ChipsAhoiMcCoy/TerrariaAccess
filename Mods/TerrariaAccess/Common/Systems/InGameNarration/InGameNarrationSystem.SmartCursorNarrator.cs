@@ -121,7 +121,15 @@ public sealed partial class InGameNarrationSystem
 
             bool hasInteract = Main.HasSmartInteractTarget;
             bool hasSmartCursor = GamepadEmulationSystem.GetEffectiveSmartCursorState();
+            bool smartCursorTemporarilySuppressed = DpadVirtualizationSystem.IsTemporarilySuppressingSmartCursor();
             string? modeChangeAnnouncement = null;
+
+            if (smartCursorTemporarilySuppressed && hasSmartCursor)
+            {
+                _lastSmartCursorEnabled = true;
+                ResetSmartCursorPositionTracking();
+                return;
+            }
 
             if (_lastSmartCursorEnabled != hasSmartCursor)
             {

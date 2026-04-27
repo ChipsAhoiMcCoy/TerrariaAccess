@@ -6,6 +6,7 @@ using TerrariaAccess.Common.Players;
 using Terraria;
 using Terraria.DataStructures;
 using Terraria.GameInput;
+using Terraria.ID;
 using Terraria.ModLoader;
 using Terraria.UI;
 
@@ -13,12 +14,11 @@ namespace TerrariaAccess.Common.Systems.GamepadEmulation;
 
 /// <summary>
 /// Virtualizes the right stick keys as a D-pad for tile-by-tile cursor movement when Smart Cursor is off.
-/// When Smart Cursor is on, these keys act as analog stick input instead.
+/// Arrow keys are reserved for virtual analog cursor movement in unlocked cursor mode.
 /// </summary>
 public sealed class DpadVirtualizationSystem : ModSystem
 {
     private const int DefaultRepeatDelayFrames = 6;
-    private const float TileSizePixels = 16f;
 
     private static uint _lastDpadHeldFrame = uint.MaxValue;
     private static bool _temporarilySuppressedSmartCursor;
@@ -35,6 +35,7 @@ public sealed class DpadVirtualizationSystem : ModSystem
             return;
         }
 
+        bool analogMovementApplied = ApplyUnlockedCursorArrowAnalogMovement();
         Vector2 nudges = CollectDpadNudges();
         bool dpadHeld = AreAnyEffectiveDpadDirectionsHeld();
         if (nudges == Vector2.Zero)
@@ -45,7 +46,10 @@ public sealed class DpadVirtualizationSystem : ModSystem
             if (!dpadHeld)
             {
                 RestoreSmartCursorWantedStateIfNeeded();
-                ClampAnalogStickCursorIfNeeded();
+                if (!analogMovementApplied)
+                {
+                    ClampAnalogStickCursorIfNeeded();
+                }
             }
 
             return;
@@ -120,22 +124,19 @@ public sealed class DpadVirtualizationSystem : ModSystem
 
     private static void GetEffectiveDpadState(out bool up, out bool right, out bool down, out bool left)
     {
-        // D-pad virtualization uses different keys based on Smart Cursor state:
-        // - Smart Cursor OFF: OKLS keys act as D-pad (arrow keys act as analog stick)
-        // - Smart Cursor ON: Arrow keys act as D-pad (OKLS keys act as analog stick)
+        // Keyboard D-pad virtualization is only active in unlocked cursor mode.
+        // In smart cursor mode, arrow keys intentionally do not move or snap the cursor.
         bool smartCursorActive = GetEffectiveSmartCursorState();
 
         if (smartCursorActive)
         {
-            // Arrow keys act as D-pad when Smart Cursor is ON (inverse of OKLS)
-            up = IsPressed(GamepadEmulationKeybinds.ArrowUp);
-            right = IsPressed(GamepadEmulationKeybinds.ArrowRight);
-            down = IsPressed(GamepadEmulationKeybinds.ArrowDown);
-            left = IsPressed(GamepadEmulationKeybinds.ArrowLeft);
+            up = false;
+            right = false;
+            down = false;
+            left = false;
         }
         else
         {
-            // OKLS keys act as D-pad when Smart Cursor is OFF
             up = IsPressed(GamepadEmulationKeybinds.RightStickUp);
             right = IsPressed(GamepadEmulationKeybinds.RightStickRight);
             down = IsPressed(GamepadEmulationKeybinds.RightStickDown);
@@ -200,8 +201,10 @@ public sealed class DpadVirtualizationSystem : ModSystem
             return;
         }
 
+        bool smartCursorActive = GetEffectiveSmartCursorState();
+
         // Keep both cursor wanted flags disabled while D-pad tile nudging is active.
-        if (GetEffectiveSmartCursorState())
+        if (smartCursorActive)
         {
             _temporarilySuppressedSmartCursor = true;
         }
@@ -209,9 +212,11 @@ public sealed class DpadVirtualizationSystem : ModSystem
         Main.SmartCursorWanted_Mouse = false;
         Main.SmartCursorWanted_GamePad = false;
         Matrix zoomMatrix = Main.GameViewMatrix.ZoomMatrix;
-        Matrix inverseZoom = Matrix.Invert(zoomMatrix);
-        Vector2 tileTarget = Vector2.Transform(Main.MouseScreen, inverseZoom) + nudges * new Vector2(TileSizePixels) + Main.screenPosition;
-        Point targetTile = ClampToPlacementReach(tileTarget.ToTileCoordinates());
+
+        Point originTile = ResolveDpadNudgeOriginTile(smartCursorActive);
+        Point targetTile = ClampToPlacementReach(new Point(
+            originTile.X + Math.Sign(nudges.X),
+            originTile.Y + Math.Sign(nudges.Y)));
         Vector2 snappedPixels = Vector2.Transform(targetTile.ToWorldCoordinates() - Main.screenPosition, zoomMatrix);
 
         int newX = (int)snappedPixels.X;
@@ -227,6 +232,23 @@ public sealed class DpadVirtualizationSystem : ModSystem
         ApplyCursorPosition(newX, newY);
     }
 
+    private static Point ResolveDpadNudgeOriginTile(bool smartCursorActive)
+    {
+        if (smartCursorActive && !_temporarilySuppressedSmartCursor)
+        {
+            int smartX = Main.SmartCursorX;
+            int smartY = Main.SmartCursorY;
+            if (smartX >= 0 && smartY >= 0 && WorldGen.InWorld(smartX, smartY, 1))
+            {
+                return new Point(smartX, smartY);
+            }
+        }
+
+        Matrix inverseZoom = Matrix.Invert(Main.GameViewMatrix.ZoomMatrix);
+        Vector2 cursorWorld = Vector2.Transform(Main.MouseScreen, inverseZoom) + Main.screenPosition;
+        return cursorWorld.ToTileCoordinates();
+    }
+
     private static void ApplyCursorPosition(int x, int y)
     {
         int clampedX = (int)MathHelper.Clamp(x, 0f, Main.screenWidth - 1f);
@@ -237,6 +259,134 @@ public sealed class DpadVirtualizationSystem : ModSystem
         Main.mouseX = clampedX;
         Main.mouseY = clampedY;
         PlayerInput.SettingsForUI.SetCursorMode(CursorMode.Mouse);
+    }
+
+    private static bool ApplyUnlockedCursorArrowAnalogMovement()
+    {
+        if (GetEffectiveSmartCursorState())
+        {
+            return false;
+        }
+
+        if (!VirtualStickService.TryReadUnlockedCursorArrowStick(out Vector2 stick))
+        {
+            return false;
+        }
+
+        VirtualStickService.ApplyStickInversion(ref stick,
+            PlayerInput.CurrentProfile?.RightThumbstickInvertX == true,
+            PlayerInput.CurrentProfile?.RightThumbstickInvertY == true);
+
+        Player player = Main.LocalPlayer;
+        if (player is null || !player.active)
+        {
+            return false;
+        }
+
+        Main.SmartCursorWanted_Mouse = false;
+        Main.SmartCursorWanted_GamePad = false;
+
+        Vector2 cursorDelta = stick * ResolveUnlockedCursorSpeed(player);
+        int newX = PlayerInput.MouseX + (int)cursorDelta.X;
+        int newY = PlayerInput.MouseY + (int)cursorDelta.Y;
+
+        if (!IsBuildModeActive())
+        {
+            ClampUnlockedCursorToGamepadReach(player, ref newX, ref newY);
+        }
+
+        ApplyAnalogCursorPosition(newX, newY);
+        VirtualStickService.MarkAnalogStickActiveThisFrame();
+        return true;
+    }
+
+    private static Vector2 ResolveUnlockedCursorSpeed(Player player)
+    {
+        float zoom = Main.GameViewMatrix.ZoomMatrix.M11;
+        Vector2 speed = new(8f);
+
+        Item heldItem = player.inventory[player.selectedItem];
+        if (!heldItem.mech)
+        {
+            speed += new Vector2(ResolveGamepadItemRange(player, heldItem)) / 4f;
+        }
+
+        return speed * zoom;
+    }
+
+    private static int ResolveGamepadItemRange(Player player, Item heldItem)
+    {
+        if (heldItem is null || heldItem.IsAir)
+        {
+            return 0;
+        }
+
+        int range = heldItem.tileBoost;
+        if ((uint)heldItem.type < (uint)ItemID.Sets.GamepadExtraRange.Length)
+        {
+            range += ItemID.Sets.GamepadExtraRange[heldItem.type];
+        }
+
+        if (player.yoyoString && (uint)heldItem.type < (uint)ItemID.Sets.Yoyo.Length && ItemID.Sets.Yoyo[heldItem.type])
+        {
+            range += 5;
+        }
+        else if (heldItem.createTile < 0 && heldItem.createWall <= 0 && heldItem.shoot > 0)
+        {
+            range += 10;
+        }
+        else if (player.controlTorch)
+        {
+            range++;
+        }
+
+        if (heldItem.createWall > 0 || heldItem.createTile > 0 || heldItem.tileWand > 0)
+        {
+            range += player.blockRange;
+        }
+
+        return range;
+    }
+
+    private static void ClampUnlockedCursorToGamepadReach(Player player, ref int x, ref int y)
+    {
+        int range = ResolveGamepadItemRange(player, player.inventory[player.selectedItem]);
+        float zoom = Main.GameViewMatrix.ZoomMatrix.M11;
+        Point center = Main.ReverseGravitySupport(player.Center - Main.screenPosition).ToPoint();
+
+        int offsetX = x - center.X;
+        int offsetY = y - center.Y;
+
+        float heldItemPlacementOffset = 0f;
+        Item heldItem = player.HeldItem;
+        if (heldItem.createTile >= 0 || heldItem.createWall > 0 || heldItem.tileWand >= 0)
+        {
+            heldItemPlacementOffset = 0.5f;
+        }
+
+        float maxLeft = -((Player.tileRangeX + range) - heldItemPlacementOffset) * 16f * zoom;
+        float maxRight = ((Player.tileRangeX + range) - heldItemPlacementOffset) * 16f * zoom;
+        float maxUp = -((Player.tileRangeY + range) - heldItemPlacementOffset) * 16f * zoom;
+        float maxDown = ((Player.tileRangeY + range) - heldItemPlacementOffset) * 16f * zoom;
+        maxUp -= player.height / 16 / 2 * 16;
+
+        offsetX = (int)MathHelper.Clamp(offsetX, maxLeft, maxRight);
+        offsetY = (int)MathHelper.Clamp(offsetY, maxUp, maxDown);
+
+        x = offsetX + center.X;
+        y = offsetY + center.Y;
+    }
+
+    private static void ApplyAnalogCursorPosition(int x, int y)
+    {
+        int clampedX = (int)MathHelper.Clamp(x, 0f, Main.screenWidth - 1f);
+        int clampedY = (int)MathHelper.Clamp(y, 0f, Main.screenHeight - 1f);
+
+        PlayerInput.MouseX = clampedX;
+        PlayerInput.MouseY = clampedY;
+        Main.mouseX = clampedX;
+        Main.mouseY = clampedY;
+        PlayerInput.SettingsForUI.SetCursorMode(CursorMode.Gamepad);
     }
 
     /// <summary>
@@ -254,24 +404,16 @@ public sealed class DpadVirtualizationSystem : ModSystem
     /// </summary>
     internal static bool AreDpadKeysHeld()
     {
-        // D-pad keys vary based on Smart Cursor state:
-        // - Smart Cursor OFF: OKLS keys act as D-pad
-        // - Smart Cursor ON: Arrow keys act as D-pad
+        // Keyboard D-pad keys are only active in unlocked cursor mode.
         bool smartCursorActive = GetEffectiveSmartCursorState();
 
         bool physicalDpadHeld = !InputStateHelper.ShouldUseNativeGamepadWorldInput() && IsPhysicalGamepadDpadHeld();
 
         if (smartCursorActive)
         {
-            // Arrow keys act as D-pad when Smart Cursor is ON
-            return IsPressed(GamepadEmulationKeybinds.ArrowUp)
-                || IsPressed(GamepadEmulationKeybinds.ArrowDown)
-                || IsPressed(GamepadEmulationKeybinds.ArrowLeft)
-                || IsPressed(GamepadEmulationKeybinds.ArrowRight)
-                || physicalDpadHeld;
+            return physicalDpadHeld;
         }
 
-        // OKLS keys act as D-pad when Smart Cursor is OFF
         return IsPressed(GamepadEmulationKeybinds.RightStickUp)
             || IsPressed(GamepadEmulationKeybinds.RightStickDown)
             || IsPressed(GamepadEmulationKeybinds.RightStickLeft)

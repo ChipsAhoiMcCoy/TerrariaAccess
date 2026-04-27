@@ -23,7 +23,43 @@ internal static class VirtualStickService
     /// </summary>
     internal static bool WasAnalogStickActiveThisFrame()
     {
-        return _lastAnalogStickFrame == Main.GameUpdateCount;
+        uint elapsedFrames = Main.GameUpdateCount - _lastAnalogStickFrame;
+        return elapsedFrames <= 1;
+    }
+
+    internal static bool AreUnlockedCursorArrowKeysHeld()
+    {
+        return IsKeybindPressed(GamepadEmulationKeybinds.ArrowUp)
+            || IsKeybindPressed(GamepadEmulationKeybinds.ArrowDown)
+            || IsKeybindPressed(GamepadEmulationKeybinds.ArrowLeft)
+            || IsKeybindPressed(GamepadEmulationKeybinds.ArrowRight)
+            || Main.keyState.IsKeyDown(Keys.Up)
+            || Main.keyState.IsKeyDown(Keys.Down)
+            || Main.keyState.IsKeyDown(Keys.Left)
+            || Main.keyState.IsKeyDown(Keys.Right);
+    }
+
+    internal static bool TryReadUnlockedCursorArrowStick(out Vector2 result)
+    {
+        KeyboardState state = Main.keyState;
+        bool hasInput = TryReadStick(
+            GamepadEmulationKeybinds.ArrowUp,
+            GamepadEmulationKeybinds.ArrowDown,
+            GamepadEmulationKeybinds.ArrowLeft,
+            GamepadEmulationKeybinds.ArrowRight,
+            out result);
+
+        if (!hasInput)
+        {
+            hasInput = TryReadStick(state, Keys.Up, Keys.Down, Keys.Left, Keys.Right, out result);
+        }
+
+        return hasInput;
+    }
+
+    internal static void MarkAnalogStickActiveThisFrame()
+    {
+        _lastAnalogStickFrame = Main.GameUpdateCount;
     }
 
     /// <summary>
@@ -45,13 +81,13 @@ internal static class VirtualStickService
         // This prevents letter keys from being interpreted as both navigation AND item search.
         bool suppressWasdMovement = Main.playerInventory && FirstLetterNavigationManager.IsEnabled;
         Vector2 movement = Vector2.Zero;
-        bool allowMovementStickOverride = inMenuContext || smartCursorActive;
+        bool allowMovementStickOverride = inMenuContext;
         bool movementOverride = allowMovementStickOverride &&
             !suppressWasdMovement &&
             TryReadStick(state, Keys.W, Keys.S, Keys.A, Keys.D, out movement);
 
         // When Smart Cursor is off, right stick keys (OKLS) are used for cursor nudge instead.
-        // Arrow keys behave inversely: analog stick when Smart Cursor is off, D-pad when on.
+        // Arrow keys act as virtual analog only in unlocked cursor mode.
         // In menu contexts, OKLS should always act as right stick for scrolling.
         // Suppress right stick letter keys (O, K, L) when first letter navigation is active,
         // so those keys are reserved for item searching instead of injecting stick input.
@@ -68,16 +104,6 @@ internal static class VirtualStickService
                 GamepadEmulationKeybinds.RightStickRight,
                 out aim);
         }
-        else
-        {
-            // Arrow keys act as analog stick when Smart Cursor is off (gameplay only)
-            aimOverride = TryReadStick(
-                GamepadEmulationKeybinds.ArrowUp,
-                GamepadEmulationKeybinds.ArrowDown,
-                GamepadEmulationKeybinds.ArrowLeft,
-                GamepadEmulationKeybinds.ArrowRight,
-                out aim);
-        }
 
         if (movementOverride)
         {
@@ -89,7 +115,7 @@ internal static class VirtualStickService
 
         if (aimOverride)
         {
-            _lastAnalogStickFrame = Main.GameUpdateCount;
+            MarkAnalogStickActiveThisFrame();
             ApplyStickInversion(ref aim,
                 PlayerInput.CurrentProfile?.RightThumbstickInvertX == true,
                 PlayerInput.CurrentProfile?.RightThumbstickInvertY == true);

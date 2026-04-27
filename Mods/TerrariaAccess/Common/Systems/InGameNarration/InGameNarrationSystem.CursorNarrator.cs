@@ -264,12 +264,13 @@ public sealed partial class InGameNarrationSystem
                 return;
             }
 
-            bool smartCursorActive = GamepadEmulationSystem.GetEffectiveSmartCursorState();
+            bool smartCursorTemporarilySuppressed = DpadVirtualizationSystem.IsTemporarilySuppressingSmartCursor();
+            bool smartCursorActive = GamepadEmulationSystem.GetEffectiveSmartCursorState() && !smartCursorTemporarilySuppressed;
             bool gamepadCursorActive = IsGamepadCursorActive();
             bool hasSmartInteract = Main.HasSmartInteractTarget;
             bool canProvideCursorFeedback = !hasSmartInteract || gamepadCursorActive;
 
-            if (_lastSmartCursorActive && !smartCursorActive && canProvideCursorFeedback)
+            if (_lastSmartCursorActive && !smartCursorActive && canProvideCursorFeedback && !smartCursorTemporarilySuppressed)
             {
                 CenterCursorOnPlayer(player);
                 _justTransitionedToTileByTile = true;
@@ -1093,6 +1094,11 @@ public sealed partial class InGameNarrationSystem
 
         private static bool IsGamepadCursorActive()
         {
+            if (VirtualStickService.WasAnalogStickActiveThisFrame())
+            {
+                return true;
+            }
+
             if (PlayerInput.UsingGamepad)
             {
                 return true;
