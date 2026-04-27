@@ -69,12 +69,6 @@ public sealed partial class GuidanceSystem : ModSystem
         LogWaypoint("OnWorldUnload: Cleanup complete.");
     }
 
-    public override void UpdateUI(GameTime gameTime)
-    {
-        UpdateNaming();
-        UpdateCustomTargetInput();
-    }
-
     public override void LoadWorldData(TagCompound tag)
     {
         LogWaypoint($"LoadWorldData: NetMode={Main.netMode}, WorldID={Main.worldID}, WorldName=\"{Main.worldName}\"");
@@ -107,7 +101,11 @@ public sealed partial class GuidanceSystem : ModSystem
         if (NamingDialog.IsActive || CustomTargetDialog.IsActive)
         {
             PlayerInput.WritingText = true;
+            Main.instance.HandleIME();
         }
+
+        UpdateNaming();
+        UpdateCustomTargetInput();
     }
 
     public override void PostUpdatePlayers()
