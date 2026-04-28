@@ -6,7 +6,6 @@ using System.Linq;
 using System.Reflection;
 using Microsoft.Xna.Framework;
 using Microsoft.Xna.Framework.Graphics;
-using Microsoft.Xna.Framework.Input;
 using TerrariaAccess.Common.Services;
 using TerrariaAccess.Common.Systems.ModMenuAccessibility;
 using TerrariaAccess.Common.Utilities;
@@ -82,11 +81,6 @@ public sealed class ManageModsAccessibilitySystem : ModMenuAccessibilityBase
     private const string CooldownKeyToggle = "managemods:toggle";
     private const string CooldownKeyDialogAction = "managemods:dialog-action";
     private const string ContextKeyDialogText = "managemods:dialog";
-
-    // Dialog navigation input state
-    private static bool _dialogUpWasPressed;
-    private static bool _dialogDownWasPressed;
-    private static bool _dialogAWasPressed;
 
     // Track last dialog announcement to avoid repeats
     private static int _lastDialogAnnouncedIndex = -1;
@@ -1233,8 +1227,6 @@ public sealed class ManageModsAccessibilitySystem : ModMenuAccessibilityBase
             _savedFocusPointBeforeDialog = UILinkPointNavigator.CurrentPoint;
             SetupDialogLinkPoints();
 
-            GamePadState gpState = GamePad.GetState(PlayerIndex.One);
-            _dialogAWasPressed = gpState.Buttons.A == ButtonState.Pressed;
             ScreenReaderService.SetCooldown(CooldownKeyDialogAction, 45);
 
             Mod.Logger.Info("[ManageMods] Confirmation dialog opened");
@@ -1410,26 +1402,18 @@ public sealed class ManageModsAccessibilitySystem : ModMenuAccessibilityBase
 
     private void HandleDialogNavigation()
     {
-        GamePadState gpState = GamePad.GetState(PlayerIndex.One);
-
-        if (!gpState.IsConnected)
+        if (DialogBindings.Count == 0 || !CurrentInput.HasNavigation)
         {
             return;
         }
 
-        bool upPressed = gpState.DPad.Up == ButtonState.Pressed && !_dialogUpWasPressed;
-        bool downPressed = gpState.DPad.Down == ButtonState.Pressed && !_dialogDownWasPressed;
-
-        _dialogUpWasPressed = gpState.DPad.Up == ButtonState.Pressed;
-        _dialogDownWasPressed = gpState.DPad.Down == ButtonState.Pressed;
-
-        if (upPressed && _dialogFocusIndex > 0)
+        if ((CurrentInput.Left || CurrentInput.Up) && _dialogFocusIndex > 0)
         {
             _dialogFocusIndex--;
             _lastDialogAnnouncedIndex = -1;
             UILinkPointNavigator.ChangePoint(LinkIdRegistry.DialogYes);
         }
-        else if (downPressed && _dialogFocusIndex < DialogBindings.Count - 1)
+        else if ((CurrentInput.Right || CurrentInput.Down) && _dialogFocusIndex < DialogBindings.Count - 1)
         {
             _dialogFocusIndex++;
             _lastDialogAnnouncedIndex = -1;
@@ -1439,38 +1423,43 @@ public sealed class ManageModsAccessibilitySystem : ModMenuAccessibilityBase
 
     private void HandleDialogAction(object mods)
     {
-        GamePadState gpState = GamePad.GetState(PlayerIndex.One);
+        if (CurrentInput.BackPressed && DialogBindings.Count > 1)
+        {
+            _dialogFocusIndex = 1;
+            UILinkPointNavigator.ChangePoint(LinkIdRegistry.DialogNo);
+            ClickDialogBinding(DialogBindings[_dialogFocusIndex]);
+            return;
+        }
 
-        if (!gpState.IsConnected)
+        if (CurrentInput.ActionPressed && _dialogFocusIndex >= 0 && _dialogFocusIndex < DialogBindings.Count)
+        {
+            ClickDialogBinding(DialogBindings[_dialogFocusIndex]);
+        }
+    }
+
+    private void ClickDialogBinding(PointBinding binding)
+    {
+        if (binding.Element is not UIElement button)
         {
             return;
         }
 
-        bool aPressed = gpState.Buttons.A == ButtonState.Pressed;
-        bool aJustPressed = aPressed && !_dialogAWasPressed;
-        _dialogAWasPressed = aPressed;
+        Mod.Logger.Info($"[ManageMods] Dialog: Clicking {binding.Label}");
+        SoundEngine.PlaySound(SoundID.MenuTick);
 
-        if (aJustPressed && _dialogFocusIndex >= 0 && _dialogFocusIndex < DialogBindings.Count)
+        try
         {
-            var binding = DialogBindings[_dialogFocusIndex];
-            if (binding.Element is UIElement button)
-            {
-                Mod.Logger.Info($"[ManageMods] Dialog: Clicking {binding.Label}");
-                SoundEngine.PlaySound(SoundID.MenuTick);
+            CalculatedStyle dims = button.GetDimensions();
+            Vector2 center = new(dims.X + dims.Width / 2f, dims.Y + dims.Height / 2f);
+            var clickEvent = new UIMouseEvent(button, center);
+            button.LeftClick(clickEvent);
 
-                try
-                {
-                    var clickEvent = new UIMouseEvent(button, Main.MouseScreen);
-                    button.LeftClick(clickEvent);
-
-                    Main.mouseLeft = false;
-                    Main.mouseLeftRelease = false;
-                }
-                catch (Exception ex)
-                {
-                    Mod.Logger.Warn($"[ManageMods] Dialog click failed: {ex.Message}");
-                }
-            }
+            Main.mouseLeft = false;
+            Main.mouseLeftRelease = false;
+        }
+        catch (Exception ex)
+        {
+            Mod.Logger.Warn($"[ManageMods] Dialog click failed: {ex.Message}");
         }
     }
 
