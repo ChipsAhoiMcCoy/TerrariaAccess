@@ -495,6 +495,7 @@ public sealed partial class GuidanceSystem
         writer.Write(filter.TypeId);
         writer.Write(filter.Label ?? string.Empty);
         writer.Write(filter.RequireLabelMatch);
+        writer.Write(filter.StyleId);
     }
 
     private static bool TryReadCustomFilter(BinaryReader reader, int fallbackIndex, string source, out CustomGuidanceFilter filter)
@@ -520,7 +521,13 @@ public sealed partial class GuidanceSystem
             requireLabelMatch = reader.ReadBoolean();
         }
 
-        filter = new CustomGuidanceFilter(kind, typeId, ResolveCustomFilterLabel(label, fallbackIndex), requireLabelMatch);
+        int styleId = -1;
+        if (HasRemainingBytes(reader, sizeof(int)))
+        {
+            styleId = reader.ReadInt32();
+        }
+
+        filter = new CustomGuidanceFilter(kind, typeId, ResolveCustomFilterLabel(label, fallbackIndex), requireLabelMatch, styleId);
         return true;
     }
 

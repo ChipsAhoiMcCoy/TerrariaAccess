@@ -26,13 +26,20 @@ public sealed partial class GuidanceSystem
     {
         public readonly CustomFilterKind Kind;
         public readonly int TypeId;
+        public readonly int StyleId;
         public readonly string Label;
         public readonly bool RequireLabelMatch;
 
-        public CustomGuidanceFilter(CustomFilterKind kind, int typeId, string label, bool requireLabelMatch = true)
+        public CustomGuidanceFilter(
+            CustomFilterKind kind,
+            int typeId,
+            string label,
+            bool requireLabelMatch = true,
+            int styleId = -1)
         {
             Kind = kind;
             TypeId = typeId;
+            StyleId = styleId;
             Label = label;
             RequireLabelMatch = requireLabelMatch;
         }

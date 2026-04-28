@@ -399,9 +399,29 @@ internal sealed class CursorDescriptorService
         return baseKey;
     }
 
+    internal static int ResolveAnnouncementKey(int tileType, Tile tile, int tileX, int tileY)
+    {
+        int baseKey = ResolveAnnouncementKey(tileType, tile);
+        if (!tile.HasTile || !IsTreeTile(tileType))
+        {
+            return baseKey;
+        }
+
+        (int anchorX, int anchorY) = ResolveTreeInstanceAnchor(tileX, tileY, tileType);
+        unchecked
+        {
+            return (baseKey * 397) ^ (anchorX * 31) ^ anchorY;
+        }
+    }
+
     internal static bool ShouldSuppressVariantNames(int announcementKey)
     {
         return announcementKey == TileID.Dirt;
+    }
+
+    internal static bool IsTreeTileType(int tileType)
+    {
+        return IsTreeTile(tileType);
     }
 
     private CursorDescriptor BuildDescriptor(int tileType, string? name)
@@ -675,8 +695,24 @@ internal sealed class CursorDescriptorService
     {
         name = null;
 
-        // Use frame-based style for tile types that use frame position for variant determination
-        int style;
+        if (!TryResolveTileStyle(tile, tileType, out int style))
+        {
+            return false;
+        }
+
+        if (TryLookupItemNameForStyle(tileType, style, out name))
+        {
+            return true;
+        }
+
+        return false;
+    }
+
+    internal static bool TryResolveTileStyle(Tile tile, int tileType, out int style)
+    {
+        style = -1;
+
+        // Use frame-based style for tile types that use frame position for variant determination.
         if (FrameXBasedStyleTileTypes.Contains(tileType))
         {
             style = tile.TileFrameX / 18;
@@ -687,10 +723,14 @@ internal sealed class CursorDescriptorService
         }
         else if (IsChestTile(tileType))
         {
-            // Chests are 2 tiles wide (36 pixels per style in frameX)
-            // Dressers are 3 tiles wide (54 pixels per style in frameX)
+            // Chests are 2 tiles wide (36 pixels per style in frameX).
+            // Dressers are 3 tiles wide (54 pixels per style in frameX).
             int frameWidth = tileType == TileID.Dressers ? 54 : 36;
             style = tile.TileFrameX / frameWidth;
+            if (TryGetUnlockedChestStyle(tileType, style, out int unlockedStyle))
+            {
+                style = unlockedStyle;
+            }
         }
         else
         {
@@ -701,15 +741,10 @@ internal sealed class CursorDescriptorService
             }
         }
 
-        if (TryLookupItemNameForStyle(tileType, style, out name))
-        {
-            return true;
-        }
-
         // TileObjectData.GetTileStyle returns the frame-derived style, which for
         // alternate placements (e.g. a right-facing statue) equals placeStyle plus
-        // the alternate's Style offset. Our map only stores base placeStyles, so
-        // retry with each registered alternate offset subtracted.
+        // the alternate's Style offset. Normalize it back to the base item style
+        // when the adjusted style maps to a placed item.
         TileObjectData? baseData;
         try
         {
@@ -722,7 +757,7 @@ internal sealed class CursorDescriptorService
 
         if (baseData == null)
         {
-            return false;
+            return true;
         }
 
         for (int alternateIndex = 1; alternateIndex <= MaxAlternatePlacementsToProbe; alternateIndex++)
@@ -737,8 +772,6 @@ internal sealed class CursorDescriptorService
                 break;
             }
 
-            // GetTileData returns the base when the alternate index is out of range,
-            // so reference equality signals that we've exhausted the alternates.
             if (altData == null || ReferenceEquals(altData, baseData))
             {
                 break;
@@ -756,13 +789,14 @@ internal sealed class CursorDescriptorService
                 continue;
             }
 
-            if (TryLookupItemNameForStyle(tileType, adjustedStyle, out name))
+            if (TryLookupItemNameForStyle(tileType, adjustedStyle, out _))
             {
+                style = adjustedStyle;
                 return true;
             }
         }
 
-        return false;
+        return true;
     }
 
     private const int MaxAlternatePlacementsToProbe = 8;
@@ -1096,6 +1130,63 @@ internal sealed class CursorDescriptorService
                tileType == TileID.TreeRuby ||
                tileType == TileID.TreeDiamond ||
                tileType == TileID.TreeAmber;
+    }
+
+    private static (int X, int Y) ResolveTreeInstanceAnchor(int tileX, int tileY, int treeTileType)
+    {
+        if (!WorldGen.InWorld(tileX, tileY, 1))
+        {
+            return (tileX, tileY);
+        }
+
+        int x = tileX;
+        int y = tileY;
+
+        if (treeTileType == TileID.PalmTree)
+        {
+            while (y < Main.maxTilesY - 50)
+            {
+                Tile t = Framing.GetTileSafely(x, y);
+                if (!t.HasTile || !IsTreeTile(t.TileType))
+                {
+                    break;
+                }
+
+                y++;
+            }
+
+            return (x, y);
+        }
+
+        Tile startTile = Framing.GetTileSafely(x, y);
+        int frameCol = startTile.TileFrameX / 22;
+        int frameRow = startTile.TileFrameY / 22;
+
+        if (frameCol == 3 && frameRow <= 2)
+            x++;
+        else if (frameCol == 4 && frameRow >= 3 && frameRow <= 5)
+            x--;
+        else if (frameCol == 1 && frameRow >= 6 && frameRow <= 8)
+            x--;
+        else if (frameCol == 2 && frameRow >= 6 && frameRow <= 8)
+            x++;
+        else if (frameCol == 2 && frameRow >= 9)
+            x++;
+        else if (frameCol == 3 && frameRow >= 9)
+            x--;
+
+        while (y < Main.maxTilesY - 50)
+        {
+            Tile t = Framing.GetTileSafely(x, y);
+            if (!t.HasTile || (!IsTreeTile(t.TileType) && !TileID.Sets.IsATreeTrunk[t.TileType]))
+            {
+                break;
+            }
+
+            y++;
+        }
+
+        return (x, y);
     }
 
     /// <summary>

@@ -534,6 +534,7 @@ public sealed partial class GuidanceSystem : ModSystem
             CustomGuidanceFilter existing = CustomTargets[i];
             if (existing.Kind == target.Kind &&
                 existing.TypeId == target.TypeId &&
+                existing.StyleId == target.StyleId &&
                 existing.RequireLabelMatch == target.RequireLabelMatch &&
                 string.Equals(SanitizeLabel(existing.Label), SanitizeLabel(target.Label), StringComparison.OrdinalIgnoreCase))
             {
@@ -708,7 +709,12 @@ public sealed partial class GuidanceSystem : ModSystem
         if (TryResolveItemType(selector, out int itemType) &&
             ContentSamples.ItemsByType.TryGetValue(itemType, out Item? item) &&
             item.createTile >= 0 &&
-            TryCreateTileFilter(item.createTile, ResolveCustomFilterLabel(Lang.GetItemNameValue(itemType), CustomTargets.Count), requireLabelMatch: false, out filter))
+            TryCreateTileFilter(
+                item.createTile,
+                ResolveCustomFilterLabel(Lang.GetItemNameValue(itemType), CustomTargets.Count),
+                requireLabelMatch: false,
+                item.placeStyle,
+                out filter))
         {
             return true;
         }
@@ -725,10 +731,15 @@ public sealed partial class GuidanceSystem : ModSystem
         }
 
         string label = ResolveTileTypeDisplayName(tileType);
-        return TryCreateTileFilter(tileType, label, requireLabelMatch: false, out filter);
+        return TryCreateTileFilter(tileType, label, requireLabelMatch: false, styleId: -1, out filter);
     }
 
-    private static bool TryCreateTileFilter(int tileType, string label, bool requireLabelMatch, out CustomGuidanceFilter filter)
+    private static bool TryCreateTileFilter(
+        int tileType,
+        string label,
+        bool requireLabelMatch,
+        int styleId,
+        out CustomGuidanceFilter filter)
     {
         filter = default;
         if (tileType < 0 || tileType >= TileLoader.TileCount)
@@ -736,11 +747,13 @@ public sealed partial class GuidanceSystem : ModSystem
             return false;
         }
 
+        styleId = Math.Max(-1, styleId);
         filter = new CustomGuidanceFilter(
             CustomFilterKind.Tile,
             tileType,
             ResolveCustomFilterLabel(label, CustomTargets.Count),
-            requireLabelMatch);
+            requireLabelMatch,
+            styleId);
         return true;
     }
 
@@ -1166,7 +1179,18 @@ public sealed partial class GuidanceSystem : ModSystem
         }
 
         previewPosition = ResolveCustomTileWorldPosition(tileX, tileY);
-        filter = new CustomGuidanceFilter(CustomFilterKind.Tile, descriptor.TileType, ResolveCustomFilterLabel(descriptor.Name, CustomTargets.Count));
+        int styleId = -1;
+        Tile tile = Main.tile[tileX, tileY];
+        if (tile.HasTile)
+        {
+            CursorDescriptorService.TryResolveTileStyle(tile, descriptor.TileType, out styleId);
+        }
+
+        filter = new CustomGuidanceFilter(
+            CustomFilterKind.Tile,
+            descriptor.TileType,
+            ResolveCustomFilterLabel(descriptor.Name, CustomTargets.Count),
+            styleId: styleId);
         return true;
     }
 
@@ -1892,7 +1916,7 @@ public sealed partial class GuidanceSystem : ModSystem
         {
             CustomGuidanceFilter filter = sourceFilters[i];
             string label = ResolveCustomFilterLabel(filter.Label, sanitized.Count);
-            CustomGuidanceFilter sanitizedFilter = new(filter.Kind, filter.TypeId, label, filter.RequireLabelMatch);
+            CustomGuidanceFilter sanitizedFilter = new(filter.Kind, filter.TypeId, label, filter.RequireLabelMatch, filter.StyleId);
 
             if (selectionBelongsToList && currentSelectionIndex == i)
             {
@@ -1988,6 +2012,7 @@ public sealed partial class GuidanceSystem : ModSystem
             {
                 ["kind"] = (int)filter.Kind,
                 ["typeId"] = filter.TypeId,
+                ["styleId"] = filter.StyleId,
                 ["label"] = filter.Label,
                 ["requireLabelMatch"] = filter.RequireLabelMatch,
             });
@@ -2058,7 +2083,18 @@ public sealed partial class GuidanceSystem : ModSystem
                 {
                     string legacyLabel = entry.ContainsKey("name") ? entry.GetString("name") : descriptor.Name;
                     string resolvedLabel = ResolveCustomFilterLabel(legacyLabel, destination.Count);
-                    destination.Add(new CustomGuidanceFilter(CustomFilterKind.Tile, descriptor.TileType, resolvedLabel));
+                    int legacyStyleId = -1;
+                    Tile legacyTile = Main.tile[tileX, tileY];
+                    if (legacyTile.HasTile)
+                    {
+                        CursorDescriptorService.TryResolveTileStyle(legacyTile, descriptor.TileType, out legacyStyleId);
+                    }
+
+                    destination.Add(new CustomGuidanceFilter(
+                        CustomFilterKind.Tile,
+                        descriptor.TileType,
+                        resolvedLabel,
+                        styleId: legacyStyleId));
                     loadedCount++;
                     LogWaypoint($"LoadWaypointData: Converted legacy custom target \"{resolvedLabel}\" to tile tracker.");
                     continue;
@@ -2076,12 +2112,36 @@ public sealed partial class GuidanceSystem : ModSystem
             int typeId = entry.ContainsKey("typeId") ? entry.GetInt("typeId") : 0;
             string label = ResolveCustomFilterLabel(entry.GetString("label"), destination.Count);
             bool requireLabelMatch = !entry.ContainsKey("requireLabelMatch") || entry.GetBool("requireLabelMatch");
-            destination.Add(new CustomGuidanceFilter(kind, typeId, label, requireLabelMatch));
+            int styleId = entry.ContainsKey("styleId")
+                ? entry.GetInt("styleId")
+                : ResolveLegacyCustomFilterStyle(kind, typeId, label, requireLabelMatch);
+            destination.Add(new CustomGuidanceFilter(kind, typeId, label, requireLabelMatch, styleId));
             loadedCount++;
             LogWaypoint($"LoadWaypointData: Loaded custom target \"{label}\" of kind {kind}.");
         }
 
         LogWaypoint($"LoadWaypointData: Loaded {loadedCount} custom targets, dropped {droppedCount}.");
+    }
+
+    private static int ResolveLegacyCustomFilterStyle(
+        CustomFilterKind kind,
+        int typeId,
+        string label,
+        bool requireLabelMatch)
+    {
+        if (kind != CustomFilterKind.Tile || requireLabelMatch)
+        {
+            return -1;
+        }
+
+        if (!TryResolveItemType(label, out int itemType) ||
+            !ContentSamples.ItemsByType.TryGetValue(itemType, out Item? item) ||
+            item.createTile != typeId)
+        {
+            return -1;
+        }
+
+        return Math.Max(-1, item.placeStyle);
     }
 
     private static bool TryCreateWaypoint(string? rawName, float x, float y, int fallbackIndex, string source, out Waypoint waypoint)

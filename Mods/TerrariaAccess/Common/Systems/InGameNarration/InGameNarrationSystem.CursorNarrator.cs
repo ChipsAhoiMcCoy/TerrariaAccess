@@ -475,12 +475,10 @@ public sealed partial class InGameNarrationSystem
             }
 
             int announcementKey = WorldGen.InWorld(tileX, tileY, 1)
-                ? CursorDescriptorService.ResolveAnnouncementKey(descriptor.TileType, Main.tile[tileX, tileY])
+                ? CursorDescriptorService.ResolveAnnouncementKey(descriptor.TileType, Main.tile[tileX, tileY], tileX, tileY)
                 : CursorDescriptorService.ResolveAnnouncementKey(descriptor.TileType);
 
-            // Skip repeat suppression when holding an axe so the player hears each tree announced
-            bool isHoldingAxe = (player?.HeldItem?.axe ?? 0) > 0;
-            bool suppressRepeats = !isHoldingAxe && (smartCursorActive || (gamepadCursorActive && !IsGamepadDpadPressed()));
+            bool suppressRepeats = smartCursorActive || (gamepadCursorActive && !IsGamepadDpadPressed());
             if (suppressRepeats &&
                 string.Equals(descriptor.Name, _lastTileAnnouncementName, StringComparison.Ordinal) &&
                 announcementKey == _lastTileAnnouncementKey)

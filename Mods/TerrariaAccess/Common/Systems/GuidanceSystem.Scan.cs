@@ -1186,6 +1186,7 @@ public sealed partial class GuidanceSystem
                 if (!InGameNarrationSystem.CursorDescriptors.TryDescribe(x, y, out CursorDescriptorService.CursorDescriptor descriptor) ||
                     descriptor.IsAir ||
                     descriptor.TileType != filter.TypeId ||
+                    !CustomTileStyleMatches(tile, filter) ||
                     (filter.RequireLabelMatch && !LabelsMatch(descriptor.Name, filter.Label)))
                 {
                     continue;
@@ -1202,7 +1203,8 @@ public sealed partial class GuidanceSystem
                     filterIndex,
                     (int)MathF.Round(worldPosition.X),
                     (int)MathF.Round(worldPosition.Y),
-                    descriptor.TileType);
+                    descriptor.TileType,
+                    filter.StyleId);
                 if (!CustomEntryScratch.Add(positionKey))
                 {
                     continue;
@@ -1213,6 +1215,22 @@ public sealed partial class GuidanceSystem
                 NearbyCustomMatches.Add(new CustomGuidanceMatch(filterIndex, entry));
             }
         }
+    }
+
+    private static bool CustomTileStyleMatches(Tile tile, CustomGuidanceFilter filter)
+    {
+        if (filter.StyleId < 0)
+        {
+            return true;
+        }
+
+        if (!tile.HasTile)
+        {
+            return false;
+        }
+
+        return CursorDescriptorService.TryResolveTileStyle(tile, filter.TypeId, out int style) &&
+               style == filter.StyleId;
     }
 
     private static void AppendCustomProjectileMatches(int filterIndex, CustomGuidanceFilter filter, Vector2 origin)

@@ -94,6 +94,9 @@ public sealed partial class InGameNarrationSystem
         private int _lastInteractTileType = -1;
         private int _lastCursorTileType = -1;
         private int _lastCursorAnnouncementKey = int.MinValue;
+        private int _currentAnnouncementKey = int.MinValue;
+        private int _lastDeliveredAnnouncementKey = int.MinValue;
+        private bool _currentAnnouncementCanBypassTextRepeat;
         private bool _lastSmartCursorEnabled;
         private bool _lastIsToggleOn;
 
@@ -151,7 +154,7 @@ public sealed partial class InGameNarrationSystem
                         _lastTileY = seedY;
                         Tile seedTile = Main.tile[seedX, seedY];
                         _lastCursorTileType = seedTile.TileType;
-                        _lastCursorAnnouncementKey = CursorDescriptorService.ResolveAnnouncementKey(seedTile.TileType, seedTile);
+                        _lastCursorAnnouncementKey = CursorDescriptorService.ResolveAnnouncementKey(seedTile.TileType, seedTile, seedX, seedY);
                     }
                 }
             }
@@ -164,6 +167,8 @@ public sealed partial class InGameNarrationSystem
             }
 
             AnnouncementCategory category = AnnouncementCategory.Default;
+            _currentAnnouncementKey = int.MinValue;
+            _currentAnnouncementCanBypassTextRepeat = false;
             string? message = hasInteract ? DescribeSmartInteract(out category) : DescribeSmartCursor(player, out category);
             if (string.IsNullOrWhiteSpace(message))
             {
@@ -180,14 +185,16 @@ public sealed partial class InGameNarrationSystem
                 return;
             }
 
-            // Skip duplicate suppression when holding an axe so the player hears each tree announced
-            bool isHoldingAxe = (player?.HeldItem?.axe ?? 0) > 0;
-            if (!isHoldingAxe && string.Equals(message, _lastAnnouncement, StringComparison.Ordinal))
+            int announcementKey = _currentAnnouncementKey;
+            if (string.Equals(message, _lastAnnouncement, StringComparison.Ordinal) &&
+                announcementKey == _lastDeliveredAnnouncementKey)
             {
                 return;
             }
 
             _lastAnnouncement = message;
+            _lastDeliveredAnnouncementKey = announcementKey;
+            bool forceAnnouncement = _currentAnnouncementCanBypassTextRepeat && (player?.HeldItem?.axe ?? 0) > 0;
             bool shouldQueueBehindHotbar = HotbarNarrator.WasAnnouncementIssuedRecently();
             (string? modePrefix, string? modeInstrumentationKey) = ConsumePendingCursorModeAnnouncement();
             if (!string.IsNullOrWhiteSpace(modePrefix))
@@ -195,7 +202,7 @@ public sealed partial class InGameNarrationSystem
                 NarrationInstrumentationContext.SetPendingKey(modeInstrumentationKey ?? "smart:mode");
                 ScreenReaderService.Announce(modePrefix, category: AnnouncementCategory.Default, force: true);
                 NarrationInstrumentationContext.SetPendingKey(BuildSmartCursorKey(message));
-                ScreenReaderService.Announce(message, category: category, force: isHoldingAxe, requestInterrupt: false);
+                ScreenReaderService.Announce(message, category: category, force: forceAnnouncement, requestInterrupt: false);
                 return;
             }
 
@@ -203,7 +210,7 @@ public sealed partial class InGameNarrationSystem
             ScreenReaderService.Announce(
                 message,
                 category: category,
-                force: isHoldingAxe,
+                force: forceAnnouncement,
                 requestInterrupt: !shouldQueueBehindHotbar);
         }
 
@@ -237,6 +244,9 @@ public sealed partial class InGameNarrationSystem
             _lastInteractTileType = -1;
             _lastCursorTileType = -1;
             _lastCursorAnnouncementKey = int.MinValue;
+            _currentAnnouncementKey = int.MinValue;
+            _lastDeliveredAnnouncementKey = int.MinValue;
+            _currentAnnouncementCanBypassTextRepeat = false;
             _lastIsToggleOn = false;
         }
 
@@ -250,6 +260,8 @@ public sealed partial class InGameNarrationSystem
             _lastAnnouncement = null;
             _lastCursorAnnouncementKey = int.MinValue;
             _lastCursorTileType = -1;
+            _currentAnnouncementKey = int.MinValue;
+            _currentAnnouncementCanBypassTextRepeat = false;
             _lastTileX = int.MinValue;
             _lastTileY = int.MinValue;
         }
@@ -257,6 +269,8 @@ public sealed partial class InGameNarrationSystem
         private void ResetSmartCursorPositionTracking()
         {
             _lastAnnouncement = null;
+            _currentAnnouncementKey = int.MinValue;
+            _currentAnnouncementCanBypassTextRepeat = false;
             _lastTileX = int.MinValue;
             _lastTileY = int.MinValue;
         }
@@ -365,6 +379,8 @@ public sealed partial class InGameNarrationSystem
                 {
                     _lastIsToggleOn = isOn;
                     _lastInteractTileType = tile.TileType;
+                    _currentAnnouncementKey = CursorDescriptorService.ResolveAnnouncementKey(tile.TileType, tile, tileX, tileY);
+                    _currentAnnouncementCanBypassTextRepeat = CursorDescriptorService.IsTreeTileType(tile.TileType);
                     category = AnnouncementCategory.Tile;
                     return GetToggleStateAnnouncement(isOn);
                 }
@@ -384,11 +400,20 @@ public sealed partial class InGameNarrationSystem
                     return null;
                 }
 
+                int announcementKey = CursorDescriptorService.ResolveAnnouncementKey(descriptor.TileType, tile, tileX, tileY);
+                if (announcementKey == _lastCursorAnnouncementKey)
+                {
+                    return null;
+                }
+
                 _lastTileX = tileX;
                 _lastTileY = tileY;
                 _lastNpc = -1;
                 _lastProj = -1;
                 _lastInteractTileType = descriptor.TileType;
+                _lastCursorAnnouncementKey = announcementKey;
+                _currentAnnouncementKey = announcementKey;
+                _currentAnnouncementCanBypassTextRepeat = CursorDescriptorService.IsTreeTileType(descriptor.TileType);
                 _lastIsToggleOn = isOn;
 
                 if (!string.IsNullOrWhiteSpace(descriptor.Name))
@@ -435,19 +460,19 @@ public sealed partial class InGameNarrationSystem
             {
                 _lastIsToggleOn = isOn;
                 _lastCursorTileType = tile.TileType;
+                _currentAnnouncementKey = CursorDescriptorService.ResolveAnnouncementKey(tile.TileType, tile, tileX, tileY);
+                _currentAnnouncementCanBypassTextRepeat = CursorDescriptorService.IsTreeTileType(tile.TileType);
                 category = AnnouncementCategory.Tile;
                 return GetToggleStateAnnouncement(isOn);
             }
 
-            int announcementKey = CursorDescriptorService.ResolveAnnouncementKey(descriptor.TileType, tile);
+            int announcementKey = CursorDescriptorService.ResolveAnnouncementKey(descriptor.TileType, tile, tileX, tileY);
             if (samePosition && string.Equals(descriptor.Name, _lastAnnouncement, StringComparison.Ordinal))
             {
                 return null;
             }
 
-            // Skip repeat suppression when holding an axe so the player hears each tree announced
-            bool isHoldingAxe = (player?.HeldItem?.axe ?? 0) > 0;
-            if (!isHoldingAxe && announcementKey == _lastCursorAnnouncementKey)
+            if (announcementKey == _lastCursorAnnouncementKey)
             {
                 return null;
             }
@@ -458,6 +483,8 @@ public sealed partial class InGameNarrationSystem
             _lastProj = -1;
             _lastCursorTileType = descriptor.TileType;
             _lastCursorAnnouncementKey = announcementKey;
+            _currentAnnouncementKey = announcementKey;
+            _currentAnnouncementCanBypassTextRepeat = CursorDescriptorService.IsTreeTileType(descriptor.TileType);
             _lastIsToggleOn = isOn;
 
             if (string.IsNullOrWhiteSpace(descriptor.Name))
