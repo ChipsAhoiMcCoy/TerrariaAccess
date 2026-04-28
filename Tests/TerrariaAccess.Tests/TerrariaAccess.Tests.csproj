@@ -46,6 +46,7 @@
     <Compile Include="..\..\Mods\TerrariaAccess\Common\Utilities\ChatLineParser.cs" Link="Sources\ChatLineParser.cs" />
     <Compile Include="..\..\Mods\TerrariaAccess\Common\Utilities\NarrationStringCatalog.cs" Link="Sources\NarrationStringCatalog.cs" />
     <Compile Include="..\..\Mods\TerrariaAccess\Common\Utilities\SliderNarrationHelper.cs" Link="Sources\SliderNarrationHelper.cs" />
+    <Compile Include="..\..\Mods\TerrariaAccess\Common\Utilities\MinionSlotNarrationFormatter.cs" Link="Sources\MinionSlotNarrationFormatter.cs" />
   </ItemGroup>
 
 </Project>

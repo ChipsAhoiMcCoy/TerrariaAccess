@@ -135,6 +135,11 @@ Mods: {
 
 		Combat.DamageAnnouncement: "{0} damage"
 
+		Minions: {
+			SummonedSlotUsageSingular: "{0} of {1} minion slot used"
+			SummonedSlotUsagePlural: "{0} of {1} minion slots used"
+		}
+
 		HostMenu: {
 			LobbyLabel: Steam lobby
 			FriendsLabel: Friends can join
