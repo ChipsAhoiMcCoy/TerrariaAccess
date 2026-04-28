@@ -457,6 +457,25 @@ Mods: {
 				StatusWithWave: "{0} wave {1}. {2} percent remaining."
 				WaveChange: "{0} wave {1}. {2} percent remaining."
 				Remaining: "{0} percent remaining."
+				LunarPillars: {
+					Started: Celestial pillars active. Pillar shields are up.
+					ShieldStatus: "{0} pillar shield up. {1} percent remaining. Shield strength {2} of {3}."
+					ShieldRemaining: "{0} pillar shield {1} percent remaining."
+					ShieldDown: "{0} pillar shield down. Pillar is attackable."
+					Defeated: "{0} pillar defeated."
+					Summary: "Celestial pillars active. {0}."
+					SummaryShielded: "{0} shield {1} percent"
+					SummaryAttackable: "{0} attackable"
+					SummaryDefeated: "{0} defeated"
+					NoActivePillars: no active pillars
+					MoonLordCountdown: "Moon Lord awakening in {0} seconds."
+					Names: {
+						Solar: Solar
+						Vortex: Vortex
+						Nebula: Nebula
+						Stardust: Stardust
+					}
+				}
 
 				EventNames: {
 					GoblinArmy: Goblin Army
