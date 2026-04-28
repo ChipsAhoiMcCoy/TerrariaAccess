@@ -22,6 +22,7 @@ internal sealed class MenuNarrationController
         // Register handlers in any order - they're sorted by priority automatically
         // Higher priority handlers are checked first
         _registry.RegisterHandler(new ModConfigHandler());        // Priority 100 - highest, catches mod config screens
+        _registry.RegisterHandler(new RejectionMenuHandler());    // Priority 95 - status/rejection dialogs override retained UI states
         _registry.RegisterHandler(new DeletionConfirmationHandler()); // Priority 90 - deletion dialogs override retained UI states
         _registry.RegisterHandler(new WorldCreationHandler());    // Priority 70
         _registry.RegisterHandler(new WorldSelectionHandler());   // Priority 70 - world selection (UIWorldSelect, UIWorldList)

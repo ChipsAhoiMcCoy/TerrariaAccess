@@ -180,6 +180,64 @@ internal static partial class MenuNarrationCatalog
         }
     }
 
+    private static string DescribeRejectionMenu(int index)
+    {
+        return index switch
+        {
+            0 => TryGetRejectionStatusText(Main.menuMode, out string status) ? status : string.Empty,
+            1 => GetRejectionBackLabel(),
+            _ => string.Empty,
+        };
+    }
+
+    private static string GetRejectionBackLabel()
+    {
+        string label = LocalizationHelper.GetTextOrFallback("UI.Back", "Back");
+        if (!string.IsNullOrWhiteSpace(label))
+        {
+            return label;
+        }
+
+        label = TextSanitizer.Clean(Lang.menu[5].Value);
+        return string.IsNullOrWhiteSpace(label) ? "Back" : label;
+    }
+
+    public static bool TryGetRejectionStatusText(int menuMode, out string status)
+    {
+        status = string.Empty;
+
+        if (!IsRejectionMenuMode(menuMode))
+        {
+            return false;
+        }
+
+        if (menuMode == MenuID.BetterRejectionMenu)
+        {
+            try
+            {
+                string? textToShow = Main.instance.RejectionMenuInfo?.TextToShow;
+                if (!string.IsNullOrWhiteSpace(textToShow))
+                {
+                    status = TextSanitizer.Clean(textToShow);
+                    return true;
+                }
+            }
+            catch
+            {
+                // Fall back to Main.statusText below.
+            }
+        }
+
+        status = TextSanitizer.Clean(Main.statusText ?? string.Empty);
+        return !string.IsNullOrWhiteSpace(status);
+    }
+
+    public static bool IsRejectionMenuMode(int menuMode)
+    {
+        return menuMode == MenuID.RejectedWorld ||
+            menuMode == MenuID.BetterRejectionMenu;
+    }
+
     public static bool TryGetDeletionPrompt(int menuMode, out string prompt)
     {
         prompt = string.Empty;
