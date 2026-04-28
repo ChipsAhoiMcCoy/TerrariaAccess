@@ -79,6 +79,7 @@ public sealed partial class InGameNarrationSystem
         private static FieldInfo? _mouseTextIsValidField;
         private static string? _capturedMouseText;
         private static uint _capturedMouseTextFrame;
+        private static bool _pendingGuideFocusRedirect;
         private static int _inventoryOpenGraceFrames;
         private const int InventoryOpenGracePeriod = 3;
         private static int _chestOpenGraceFrames;
@@ -269,9 +270,20 @@ public sealed partial class InGameNarrationSystem
             }
 
             bool usingGamepad = PlayerInput.UsingGamepadUI;
+            if (TryHandlePendingGuideFocusRedirect(usingGamepad))
+            {
+                return;
+            }
+
             int currentPoint = usingGamepad ? UILinkPointNavigator.CurrentPoint : -1;
+            if (TryRedirectEmptyGuideRecipeFocus(usingGamepad, currentPoint))
+            {
+                return;
+            }
+
             int craftingAvailableIndex = -1;
             bool selectingSpecial = usingGamepad && currentPoint >= 0 && IsSpecialInventoryPoint(currentPoint);
+            bool inGamepadGuideSlot = usingGamepad && Main.InGuideCraftMenu && currentPoint == GamepadGuideCraftingSlotPoint;
             bool inGamepadCraftingGrid = usingGamepad && TryGetGamepadCraftingAvailableIndex(currentPoint, out craftingAvailableIndex);
             if (!selectingSpecial)
             {
@@ -293,10 +305,21 @@ public sealed partial class InGameNarrationSystem
             // is set correctly for the CraftingNarrator's gate check
             bool inGamepadCraftingList = usingGamepad &&
                 currentPoint >= CraftingListLinkPointStart &&
-                currentPoint < CraftingListLinkPointEnd;
+                currentPoint < CraftingListLinkPointEnd &&
+                !inGamepadGuideSlot;
             if (inGamepadCraftingList)
             {
                 UiAreaNarrationContext.RecordArea(UiNarrationArea.Crafting);
+            }
+            else if (inGamepadGuideSlot)
+            {
+                UiAreaNarrationContext.RecordArea(UiNarrationArea.Guide);
+                PlayTickIfNew(
+                    "guide-crafting-slot",
+                    debugContext: BuildTickDebugContext("guide-crafting-slot", "guide-crafting-slot", null, null),
+                    forceImmediate: true);
+                ResetHoverSlotsAndTooltips();
+                return;
             }
 
             SlotFocus? focus = (selectingSpecial || inGamepadCraftingGrid || inGamepadCraftingList) ? null : _currentFocus;
@@ -677,7 +700,19 @@ public sealed partial class InGameNarrationSystem
             // Set the active area to Inventory to prevent crafting narrator from immediately
             // announcing recipes when the inventory first opens. This ensures focus stays
             // on the inventory until the user explicitly navigates to crafting.
-            UiAreaNarrationContext.RecordArea(UiNarrationArea.Inventory);
+            if (Main.InGuideCraftMenu)
+            {
+                UiAreaNarrationContext.RecordArea(UiNarrationArea.Guide);
+                QueueGuideFocusRedirect();
+            }
+            else if (Main.InReforgeMenu)
+            {
+                UiAreaNarrationContext.RecordArea(UiNarrationArea.Reforge);
+            }
+            else
+            {
+                UiAreaNarrationContext.RecordArea(UiNarrationArea.Inventory);
+            }
 
             // Set grace period to prevent mouse text from being announced before
             // the hover item is fully resolved (prevents duplicate announcements)
@@ -685,6 +720,62 @@ public sealed partial class InGameNarrationSystem
 
             // Notify other narrators (like CraftingNarrator) to reset their state
             InventoryOpened?.Invoke();
+        }
+
+        private static void QueueGuideFocusRedirect()
+        {
+            _pendingGuideFocusRedirect = true;
+        }
+
+        private bool TryHandlePendingGuideFocusRedirect(bool usingGamepad)
+        {
+            if (!_pendingGuideFocusRedirect)
+            {
+                return false;
+            }
+
+            if (!Main.InGuideCraftMenu)
+            {
+                _pendingGuideFocusRedirect = false;
+                return false;
+            }
+
+            if (!usingGamepad)
+            {
+                return true;
+            }
+
+            if (Main.mouseLeft || PlayerInput.Triggers.Current.MouseLeft)
+            {
+                return true;
+            }
+
+            _pendingGuideFocusRedirect = false;
+            UiAreaNarrationContext.RecordArea(UiNarrationArea.Guide);
+            if (UILinkPointNavigator.CurrentPoint != GamepadGuideCraftingSlotPoint)
+            {
+                UILinkPointNavigator.ChangePoint(GamepadGuideCraftingSlotPoint);
+            }
+
+            ResetHoverSlotsAndTooltips();
+            return true;
+        }
+
+        private bool TryRedirectEmptyGuideRecipeFocus(bool usingGamepad, int currentPoint)
+        {
+            if (!usingGamepad ||
+                !Main.InGuideCraftMenu ||
+                !Main.guideItem.IsAir ||
+                currentPoint <= GamepadGuideCraftingSlotPoint ||
+                currentPoint >= CraftingListLinkPointEnd)
+            {
+                return false;
+            }
+
+            UILinkPointNavigator.ChangePoint(GamepadGuideCraftingSlotPoint);
+            UiAreaNarrationContext.RecordArea(UiNarrationArea.Guide);
+            ResetHoverSlotsAndTooltips();
+            return true;
         }
 
         private static void OnInventoryJustClosed()
@@ -970,6 +1061,11 @@ public sealed partial class InGameNarrationSystem
             }
 
             int currentPoint = UILinkPointNavigator.CurrentPoint;
+            if (Main.InGuideCraftMenu && currentPoint == GamepadGuideCraftingSlotPoint)
+            {
+                return "Guide crafting slot";
+            }
+
             if (SlotNavigationHelper.TryResolveInventorySlot(currentPoint, out int inventorySlot, out int inventoryContext))
             {
                 return inventoryContext == ItemSlot.Context.InventoryItem ||
@@ -1161,6 +1257,11 @@ public sealed partial class InGameNarrationSystem
                 return "Crafting slot";
             }
 
+            if (context == ItemSlot.Context.GuideItem)
+            {
+                return "Guide crafting slot";
+            }
+
             if (context == ItemSlot.Context.PrefixItem)
             {
                 return "Reforge slot";
@@ -1171,6 +1272,7 @@ public sealed partial class InGameNarrationSystem
 
         private const int GamepadCraftingGridStart = 700;
         private const int GamepadCraftingListStart = 1500;
+        private const int GamepadGuideCraftingSlotPoint = GamepadCraftingListStart;
 
         private static bool TryGetGamepadCraftingAvailableIndex(int point, out int availableIndex)
         {

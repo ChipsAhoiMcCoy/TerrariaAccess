@@ -85,6 +85,11 @@ public sealed class NpcDialogueGamepadFocusSystem : ModSystem
             return false;
         }
 
+        if (Main.playerInventory || Main.npcShop != 0 || Main.InGuideCraftMenu || Main.InReforgeMenu)
+        {
+            return false;
+        }
+
         bool emulatedGamepadUiActive = GamepadEmulation.GamepadEmulationState.Enabled &&
                                        PlayerInput.CurrentInputMode == InputMode.XBoxGamepadUI;
         if (!emulatedGamepadUiActive && !HasActiveGamepadUiInput())

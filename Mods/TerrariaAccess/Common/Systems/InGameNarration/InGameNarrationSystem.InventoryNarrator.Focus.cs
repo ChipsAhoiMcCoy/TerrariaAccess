@@ -378,6 +378,10 @@ public sealed partial class InGameNarrationSystem
                         items = player.bank4.item;
                     }
                 }
+                else if (Main.InGuideCraftMenu && point == GamepadGuideCraftingSlotPoint)
+                {
+                    return new SlotFocus(null, Main.guideItem, ItemSlot.Context.GuideItem, -1);
+                }
                 else if (SlotNavigationHelper.TryResolveShopSlot(point, out int shopSlot))
                 {
                     slot = shopSlot;

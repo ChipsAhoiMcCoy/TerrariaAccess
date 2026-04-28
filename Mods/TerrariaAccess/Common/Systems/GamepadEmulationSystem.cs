@@ -484,16 +484,15 @@ public sealed class GamepadEmulationSystem : ModSystem
 
         Player? localPlayer = Main.LocalPlayer;
         bool dialogueUiActive = DialogueInputGuard.IsDialogueUiActive(localPlayer);
+        bool npcInventoryUiActive = IsNpcInventoryUiActive();
 
         // Inject housing-relevant triggers early so CheckHousingQueryOnMouseClick can see them.
         // Skip entirely when first letter navigation is active — keys are reserved for searching.
         // Skip when fancy UI is active (mod config, bestiary, etc.) — injecting MouseLeft here
         // causes clicks at the mouse cursor position instead of the focused element.
-        bool shopInventoryActive = Main.npcShop != 0;
-
         if (GamepadEmulationState.Enabled && Main.playerInventory && !Main.inFancyUI
             && !InputStateHelper.IsTextInputActive() && !FirstLetterNavigationManager.IsEnabled
-            && (!dialogueUiActive || shopInventoryActive))
+            && (!dialogueUiActive || npcInventoryUiActive))
         {
             VirtualTriggerService.InjectFromKeybind(GamepadEmulationKeybinds.InventorySelect, TriggerNames.MouseLeft);
         }
@@ -809,7 +808,7 @@ public sealed class GamepadEmulationSystem : ModSystem
         }
 
         bool shopInventoryActive = Main.npcShop != 0;
-        if (DialogueInputGuard.IsDialogueUiActive(player) && !shopInventoryActive)
+        if (DialogueInputGuard.IsDialogueUiActive(player) && !IsNpcInventoryUiActive())
         {
             if (IsPressed(GamepadEmulationKeybinds.InventorySelect) || IsPressed(GamepadEmulationKeybinds.InventoryQuickUse))
             {
@@ -961,6 +960,11 @@ public sealed class GamepadEmulationSystem : ModSystem
             return;
         }
 
+        if (Main.playerInventory || IsNpcInventoryUiActive())
+        {
+            return;
+        }
+
         bool textInputActive = InputStateHelper.IsTextInputActive();
         bool preserveUiDuringTextInput = InputStateHelper.ShouldPreserveGamepadUiDuringTextInput();
         if (textInputActive && !preserveUiDuringTextInput)
@@ -990,6 +994,13 @@ public sealed class GamepadEmulationSystem : ModSystem
         {
             DialogueInputGuard.LogStateIfChanged("GamepadEmulationSystem.ApplyDialogueVirtualTriggers", player, "synthetic confirm injected");
         }
+    }
+
+    private static bool IsNpcInventoryUiActive()
+    {
+        return Main.npcShop != 0 ||
+               Main.InGuideCraftMenu ||
+               Main.InReforgeMenu;
     }
 
     private static void ApplyMenuNavigationVirtualTriggers(bool uiModeActive)
