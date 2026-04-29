@@ -38,6 +38,32 @@ internal static class BuildModeNarrationCatalog
     }
 
     public static string CannotPlaceWalls() => "Build mode: could not place walls in the selected area.";
+    public static string PlacedWiring(int wireSegments, int actuators, int selectedPositions)
+    {
+        string placed = FormatWiringCounts(wireSegments, actuators);
+        return ShouldIncludeSelectionTotal(wireSegments + actuators, selectedPositions)
+            ? $"Build mode: placed {placed} across {selectedPositions} selected tiles."
+            : $"Build mode: placed {placed}.";
+    }
+
+    public static string CannotPlaceWiring() => "Build mode: could not place wiring in the selected area.";
+    public static string RemovedWiring(int wireSegments, int actuators, int selectedPositions)
+    {
+        string removed = FormatWiringCounts(wireSegments, actuators);
+        return ShouldIncludeSelectionTotal(wireSegments + actuators, selectedPositions)
+            ? $"Build mode: removed {removed} from {selectedPositions} selected tiles."
+            : $"Build mode: removed {removed}.";
+    }
+
+    public static string NoWiringToRemove() => "Build mode: no wiring to remove in the selected area.";
+    public static string ActuatedTiles(int count, int selectedPositions)
+    {
+        return ShouldIncludeSelectionTotal(count, selectedPositions)
+            ? $"Build mode: toggled actuators on {count} of {selectedPositions} selected tiles."
+            : $"Build mode: toggled actuators on {count} tiles.";
+    }
+
+    public static string NoActuatorsToToggle() => "Build mode: no actuators to toggle in the selected area.";
 
     // Housing announcements
     public static string HousingSuitable() => "Suitable housing.";
@@ -46,4 +72,17 @@ internal static class BuildModeNarrationCatalog
 
     private static bool ShouldIncludeSelectionTotal(int count, int selectedPositions) =>
         selectedPositions > 0 && selectedPositions != count;
+
+    private static string FormatWiringCounts(int wireSegments, int actuators)
+    {
+        string wireText = wireSegments == 1 ? "1 wire segment" : $"{wireSegments} wire segments";
+        string actuatorText = actuators == 1 ? "1 actuator" : $"{actuators} actuators";
+
+        if (wireSegments > 0 && actuators > 0)
+        {
+            return $"{wireText} and {actuatorText}";
+        }
+
+        return wireSegments > 0 ? wireText : actuatorText;
+    }
 }

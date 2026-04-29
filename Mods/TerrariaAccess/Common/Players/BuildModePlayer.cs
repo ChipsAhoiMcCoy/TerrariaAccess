@@ -11,6 +11,7 @@ using TerrariaAccess.Common.Systems.GamepadEmulation;
 using TerrariaAccess.Common.Utilities;
 using Terraria;
 using Terraria.DataStructures;
+using Terraria.GameContent.UI;
 using Terraria.GameInput;
 using Terraria.ID;
 using Terraria.ModLoader;
@@ -39,8 +40,14 @@ public sealed class BuildModePlayer : ModPlayer
     private int _wallsCleared;
     private int _tilesPlaced;
     private int _wallsPlaced;
+    private int _wireSegmentsPlaced;
+    private int _wireSegmentsRemoved;
+    private int _actuatorsPlaced;
+    private int _actuatorsRemoved;
+    private int _tilesActuated;
     private bool _actionCompletedAnnounced;
     private int _actionCooldown;
+    private WiresUI.Settings.MultiToolMode _activeWireToolMode;
     private int _autoToolRevertSlot = -1;
     private bool _wasUseHeld;
     private bool _wasGameplayUiOpen;
@@ -232,7 +239,7 @@ public sealed class BuildModePlayer : ModPlayer
 
         EnsureActiveAction(selection, action, ref held);
         SuppressVanillaUseWhileActing();
-        InGameNarrationSystem.HotbarNarrator.SetExternalSuppression(action is SelectionAction.PlaceTile or SelectionAction.PlaceWall);
+        InGameNarrationSystem.HotbarNarrator.SetExternalSuppression(action is SelectionAction.PlaceTile or SelectionAction.PlaceWall or SelectionAction.ApplyWiring or SelectionAction.RemoveWiring or SelectionAction.Actuate);
 
         bool acted = ProcessSelectionStep(selection, action, ref held);
         if (!acted && _selectionIterator.Completed && !_actionCompletedAnnounced)
@@ -306,8 +313,14 @@ public sealed class BuildModePlayer : ModPlayer
         _wallsCleared = 0;
         _tilesPlaced = 0;
         _wallsPlaced = 0;
+        _wireSegmentsPlaced = 0;
+        _wireSegmentsRemoved = 0;
+        _actuatorsPlaced = 0;
+        _actuatorsRemoved = 0;
+        _tilesActuated = 0;
         _actionCompletedAnnounced = false;
         _actionCooldown = 0;
+        _activeWireToolMode = 0;
         _autoToolRevertSlot = -1;
         _wasUseHeld = false;
         _hurtGraceTicks = 0;
@@ -331,15 +344,22 @@ public sealed class BuildModePlayer : ModPlayer
 
     private void EnsureActiveAction(Rectangle selection, SelectionAction action, ref Item held)
     {
-        if (!_selectionIterator.IsSameSelection(selection) || action != _activeAction || held.type != _activeItemType)
+        WiresUI.Settings.MultiToolMode wireToolMode = GetEffectiveWireToolMode(held);
+        if (!_selectionIterator.IsSameSelection(selection) || action != _activeAction || held.type != _activeItemType || wireToolMode != _activeWireToolMode)
         {
             _selectionIterator.Reset(selection);
             _activeAction = action;
             _activeItemType = held.type;
+            _activeWireToolMode = wireToolMode;
             _tilesCleared = 0;
             _wallsCleared = 0;
             _tilesPlaced = 0;
             _wallsPlaced = 0;
+            _wireSegmentsPlaced = 0;
+            _wireSegmentsRemoved = 0;
+            _actuatorsPlaced = 0;
+            _actuatorsRemoved = 0;
+            _tilesActuated = 0;
             _actionCompletedAnnounced = false;
             _actionCooldown = 0;
             RevertAutoToolIfNeeded();
@@ -365,6 +385,19 @@ public sealed class BuildModePlayer : ModPlayer
         if (held.createWall > WallID.None)
         {
             return SelectionAction.PlaceWall;
+        }
+
+        if (held.type == ItemID.ActuationRod)
+        {
+            return SelectionAction.Actuate;
+        }
+
+        WiresUI.Settings.MultiToolMode wireToolMode = GetEffectiveWireToolMode(held);
+        if (HasWiringTargets(wireToolMode))
+        {
+            return (wireToolMode & WiresUI.Settings.MultiToolMode.Cutter) != 0
+                ? SelectionAction.RemoveWiring
+                : SelectionAction.ApplyWiring;
         }
 
         return SelectionAction.None;
@@ -398,6 +431,9 @@ public sealed class BuildModePlayer : ModPlayer
             SelectionAction.Clear => HitForClear(x, y, ref held),
             SelectionAction.PlaceTile => TryPlaceSingleTile(x, y, ref held),
             SelectionAction.PlaceWall => TryPlaceSingleWall(x, y, ref held),
+            SelectionAction.ApplyWiring => TryApplyWiring(x, y, ref held),
+            SelectionAction.RemoveWiring => TryRemoveWiring(x, y, ref held),
+            SelectionAction.Actuate => TryActuateTile(x, y, ref held),
             _ => true
         };
     }
@@ -561,6 +597,208 @@ public sealed class BuildModePlayer : ModPlayer
         return true;
     }
 
+    private bool TryApplyWiring(int x, int y, ref Item held)
+    {
+        if (_actionCooldown > 0)
+        {
+            _actionCooldown--;
+            return false;
+        }
+
+        if (!Player.CanDoWireStuffHere(x, y))
+        {
+            return true;
+        }
+
+        WiresUI.Settings.MultiToolMode mode = GetEffectiveWireToolMode(held);
+        if (mode == 0 || (mode & WiresUI.Settings.MultiToolMode.Cutter) != 0)
+        {
+            return true;
+        }
+
+        bool changed = false;
+        Tile tile = Main.tile[x, y];
+
+        if ((mode & WiresUI.Settings.MultiToolMode.Red) != 0 && !tile.RedWire && HasWireForTool())
+        {
+            if (PlaceWireComponent(x, y, WorldGen.PlaceWire, 5, ref _wireSegmentsPlaced))
+            {
+                ConsumeWireForTool();
+                changed = true;
+            }
+
+            tile = Main.tile[x, y];
+        }
+
+        if ((mode & WiresUI.Settings.MultiToolMode.Green) != 0 && !tile.GreenWire && HasWireForTool())
+        {
+            if (PlaceWireComponent(x, y, WorldGen.PlaceWire3, 12, ref _wireSegmentsPlaced))
+            {
+                ConsumeWireForTool();
+                changed = true;
+            }
+
+            tile = Main.tile[x, y];
+        }
+
+        if ((mode & WiresUI.Settings.MultiToolMode.Blue) != 0 && !tile.BlueWire && HasWireForTool())
+        {
+            if (PlaceWireComponent(x, y, WorldGen.PlaceWire2, 10, ref _wireSegmentsPlaced))
+            {
+                ConsumeWireForTool();
+                changed = true;
+            }
+
+            tile = Main.tile[x, y];
+        }
+
+        if ((mode & WiresUI.Settings.MultiToolMode.Yellow) != 0 && !tile.YellowWire && HasWireForTool())
+        {
+            if (PlaceWireComponent(x, y, WorldGen.PlaceWire4, 16, ref _wireSegmentsPlaced))
+            {
+                ConsumeWireForTool();
+                changed = true;
+            }
+
+            tile = Main.tile[x, y];
+        }
+
+        if ((mode & WiresUI.Settings.MultiToolMode.Actuator) != 0 && !tile.HasActuator && HasActuatorForTool(held))
+        {
+            if (PlaceWireComponent(x, y, WorldGen.PlaceActuator, 8, ref _actuatorsPlaced))
+            {
+                ConsumeActuatorForTool(held, ref held);
+                changed = true;
+            }
+        }
+
+        _actionCooldown = changed ? GetAdjustedPlacementDelay(held, isWall: false) : 0;
+        return true;
+    }
+
+    private bool TryRemoveWiring(int x, int y, ref Item held)
+    {
+        if (_actionCooldown > 0)
+        {
+            _actionCooldown--;
+            return false;
+        }
+
+        if (!Player.CanDoWireStuffHere(x, y))
+        {
+            return true;
+        }
+
+        WiresUI.Settings.MultiToolMode mode = GetEffectiveWireToolMode(held);
+        if ((mode & WiresUI.Settings.MultiToolMode.Cutter) == 0)
+        {
+            return true;
+        }
+
+        bool changed = false;
+        Tile tile = Main.tile[x, y];
+
+        if ((mode & WiresUI.Settings.MultiToolMode.Red) != 0 && tile.RedWire)
+        {
+            changed |= RemoveWireComponent(x, y, WorldGen.KillWire, 6, ref _wireSegmentsRemoved);
+            tile = Main.tile[x, y];
+        }
+
+        if ((mode & WiresUI.Settings.MultiToolMode.Green) != 0 && tile.GreenWire)
+        {
+            changed |= RemoveWireComponent(x, y, WorldGen.KillWire3, 13, ref _wireSegmentsRemoved);
+            tile = Main.tile[x, y];
+        }
+
+        if ((mode & WiresUI.Settings.MultiToolMode.Blue) != 0 && tile.BlueWire)
+        {
+            changed |= RemoveWireComponent(x, y, WorldGen.KillWire2, 11, ref _wireSegmentsRemoved);
+            tile = Main.tile[x, y];
+        }
+
+        if ((mode & WiresUI.Settings.MultiToolMode.Yellow) != 0 && tile.YellowWire)
+        {
+            changed |= RemoveWireComponent(x, y, WorldGen.KillWire4, 17, ref _wireSegmentsRemoved);
+            tile = Main.tile[x, y];
+        }
+
+        if ((mode & WiresUI.Settings.MultiToolMode.Actuator) != 0 && tile.HasActuator)
+        {
+            changed |= RemoveWireComponent(x, y, WorldGen.KillActuator, 9, ref _actuatorsRemoved);
+        }
+
+        _actionCooldown = changed ? GetAdjustedPlacementDelay(held, isWall: false) : 0;
+        return true;
+    }
+
+    private bool TryActuateTile(int x, int y, ref Item held)
+    {
+        if (_actionCooldown > 0)
+        {
+            _actionCooldown--;
+            return false;
+        }
+
+        if (!Player.CanDoWireStuffHere(x, y))
+        {
+            return true;
+        }
+
+        Tile tile = Main.tile[x, y];
+        if (!tile.HasActuator)
+        {
+            return true;
+        }
+
+        bool wasActuated = tile.IsActuated;
+        if (!Wiring.Actuate(x, y) || Main.tile[x, y].IsActuated == wasActuated)
+        {
+            _actionCooldown = GetAdjustedPlacementDelay(held, isWall: false);
+            return true;
+        }
+
+        _tilesActuated++;
+        if (Main.netMode == NetmodeID.MultiplayerClient)
+        {
+            NetMessage.SendData(MessageID.TileManipulation, -1, -1, null, 19, x, y);
+        }
+
+        _actionCooldown = GetAdjustedPlacementDelay(held, isWall: false);
+        return true;
+    }
+
+    private bool PlaceWireComponent(int x, int y, Func<int, int, bool> place, int netAction, ref int counter)
+    {
+        if (!place(x, y))
+        {
+            return false;
+        }
+
+        counter++;
+        if (Main.netMode == NetmodeID.MultiplayerClient)
+        {
+            NetMessage.SendData(MessageID.TileManipulation, -1, -1, null, netAction, x, y);
+        }
+
+        return true;
+    }
+
+    private bool RemoveWireComponent(int x, int y, Func<int, int, bool> remove, int netAction, ref int counter)
+    {
+        if (!remove(x, y))
+        {
+            return false;
+        }
+
+        counter++;
+        if (Main.netMode == NetmodeID.MultiplayerClient)
+        {
+            NetMessage.SendData(MessageID.TileManipulation, -1, -1, null, netAction, x, y);
+        }
+
+        return true;
+    }
+
     private void AnnounceCompletion(SelectionAction action, Rectangle selection, Item held)
     {
         string itemName = TextSanitizer.Clean(held.AffixName());
@@ -601,6 +839,42 @@ public sealed class BuildModePlayer : ModPlayer
                 else
                 {
                     ScreenReaderService.Announce(BuildModeNarrationCatalog.CannotPlaceWalls());
+                }
+
+                break;
+
+            case SelectionAction.ApplyWiring:
+                if (_wireSegmentsPlaced > 0 || _actuatorsPlaced > 0)
+                {
+                    ScreenReaderService.Announce(BuildModeNarrationCatalog.PlacedWiring(_wireSegmentsPlaced, _actuatorsPlaced, selectedPositions));
+                }
+                else
+                {
+                    ScreenReaderService.Announce(BuildModeNarrationCatalog.CannotPlaceWiring());
+                }
+
+                break;
+
+            case SelectionAction.RemoveWiring:
+                if (_wireSegmentsRemoved > 0 || _actuatorsRemoved > 0)
+                {
+                    ScreenReaderService.Announce(BuildModeNarrationCatalog.RemovedWiring(_wireSegmentsRemoved, _actuatorsRemoved, selectedPositions));
+                }
+                else
+                {
+                    ScreenReaderService.Announce(BuildModeNarrationCatalog.NoWiringToRemove());
+                }
+
+                break;
+
+            case SelectionAction.Actuate:
+                if (_tilesActuated > 0)
+                {
+                    ScreenReaderService.Announce(BuildModeNarrationCatalog.ActuatedTiles(_tilesActuated, selectedPositions));
+                }
+                else
+                {
+                    ScreenReaderService.Announce(BuildModeNarrationCatalog.NoActuatorsToToggle());
                 }
 
                 break;
@@ -784,6 +1058,34 @@ public sealed class BuildModePlayer : ModPlayer
         return bestIndex;
     }
 
+    private bool HasWireForTool()
+    {
+        return Player.HasItem(ItemID.Wire);
+    }
+
+    private void ConsumeWireForTool()
+    {
+        Player.ConsumeItem(ItemID.Wire);
+    }
+
+    private bool HasActuatorForTool(Item held)
+    {
+        return held.type == ItemID.Actuator
+            ? held.stack > 0
+            : Player.HasItem(ItemID.Actuator);
+    }
+
+    private void ConsumeActuatorForTool(Item originalHeld, ref Item held)
+    {
+        if (originalHeld.type == ItemID.Actuator)
+        {
+            ConsumeHeldItem(ref held);
+            return;
+        }
+
+        Player.ConsumeItem(ItemID.Actuator);
+    }
+
     private void RevertAutoToolIfNeeded()
     {
         if (_autoToolRevertSlot < 0)
@@ -818,6 +1120,47 @@ public sealed class BuildModePlayer : ModPlayer
         }
 
         return true;
+    }
+
+    private static bool HasWiringTargets(WiresUI.Settings.MultiToolMode mode)
+    {
+        return (mode & (WiresUI.Settings.MultiToolMode.Red |
+            WiresUI.Settings.MultiToolMode.Green |
+            WiresUI.Settings.MultiToolMode.Blue |
+            WiresUI.Settings.MultiToolMode.Yellow |
+            WiresUI.Settings.MultiToolMode.Actuator)) != 0;
+    }
+
+    private static WiresUI.Settings.MultiToolMode GetEffectiveWireToolMode(Item held)
+    {
+        return held.type switch
+        {
+            ItemID.Wrench => WiresUI.Settings.MultiToolMode.Red,
+            ItemID.GreenWrench => WiresUI.Settings.MultiToolMode.Green,
+            ItemID.BlueWrench => WiresUI.Settings.MultiToolMode.Blue,
+            ItemID.YellowWrench => WiresUI.Settings.MultiToolMode.Yellow,
+            ItemID.Actuator => WiresUI.Settings.MultiToolMode.Actuator,
+            ItemID.WireCutter => WiresUI.Settings.MultiToolMode.Red |
+                WiresUI.Settings.MultiToolMode.Green |
+                WiresUI.Settings.MultiToolMode.Blue |
+                WiresUI.Settings.MultiToolMode.Yellow |
+                WiresUI.Settings.MultiToolMode.Actuator |
+                WiresUI.Settings.MultiToolMode.Cutter,
+            ItemID.MulticolorWrench => WiresUI.Settings.ToolMode &
+                (WiresUI.Settings.MultiToolMode.Red |
+                 WiresUI.Settings.MultiToolMode.Green |
+                 WiresUI.Settings.MultiToolMode.Blue |
+                 WiresUI.Settings.MultiToolMode.Yellow |
+                 WiresUI.Settings.MultiToolMode.Cutter),
+            ItemID.WireKite => WiresUI.Settings.ToolMode &
+                (WiresUI.Settings.MultiToolMode.Red |
+                 WiresUI.Settings.MultiToolMode.Green |
+                 WiresUI.Settings.MultiToolMode.Blue |
+                 WiresUI.Settings.MultiToolMode.Yellow |
+                 WiresUI.Settings.MultiToolMode.Actuator |
+                 WiresUI.Settings.MultiToolMode.Cutter),
+            _ => 0
+        };
     }
 
     private void SuppressVanillaUseWhileActing()
@@ -1041,7 +1384,10 @@ public sealed class BuildModePlayer : ModPlayer
         None,
         Clear,
         PlaceTile,
-        PlaceWall
+        PlaceWall,
+        ApplyWiring,
+        RemoveWiring,
+        Actuate
     }
 
     private struct SelectionIterator
