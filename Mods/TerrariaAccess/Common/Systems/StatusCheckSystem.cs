@@ -48,8 +48,8 @@ internal static class StatusCheckSystem
         new("Underground", "Underground", static player => player.ZoneDirtLayerHeight),
     };
 
-    // Status items in order: Health, Mana, Armor, Biome, Time, Buffs
-    private const int StatusItemCount = 6;
+    // Status items in order: Health, Mana, Armor, Set Bonus when active, Biome, Time, Buffs
+    private const int BaseStatusItemCount = 6;
 
     internal static void AnnounceStatus(Player player)
     {
@@ -58,18 +58,24 @@ internal static class StatusCheckSystem
 
         int currentFrame = (int)Main.GameUpdateCount;
         int framesSinceLastPress = currentFrame - _lastPressFrame;
+        int statusItemCount = GetStatusItemCount(player);
+        if (_cycleIndex >= statusItemCount)
+        {
+            _cycleIndex = 0;
+            ResetBuffSubCycle();
+        }
 
         if (framesSinceLastPress <= CycleCooldownFrames && _lastPressFrame > 0)
         {
             // Cycling mode: either advance the main cycle, or sub-step through individual buffs.
-            if (_cycleIndex == BuffsCycleIndex && _buffSnapshotSlots.Length > 0)
+            if (_cycleIndex == GetBuffsCycleIndex(player) && _buffSnapshotSlots.Length > 0)
             {
                 AdvanceBuffSubCycle(player);
             }
             else
             {
-                _cycleIndex = (_cycleIndex + 1) % StatusItemCount;
-                if (_cycleIndex == BuffsCycleIndex)
+                _cycleIndex = (_cycleIndex + 1) % statusItemCount;
+                if (_cycleIndex == GetBuffsCycleIndex(player))
                 {
                     EnterBuffSubCycle(player);
                 }
@@ -92,8 +98,6 @@ internal static class StatusCheckSystem
 
         _lastPressFrame = currentFrame;
     }
-
-    private const int BuffsCycleIndex = 5;
 
     private static void EnterBuffSubCycle(Player player)
     {
@@ -265,14 +269,36 @@ internal static class StatusCheckSystem
 
     private static string GetStatusItem(Player player, int index)
     {
+        bool hasSetBonus = HasSetBonus(player);
+        int biomeIndex = hasSetBonus ? 4 : 3;
+        int timeIndex = hasSetBonus ? 5 : 4;
+        int buffsIndex = GetBuffsCycleIndex(player);
+
+        if (hasSetBonus && index == 3)
+        {
+            return GetSetBonusString(player);
+        }
+
+        if (index == biomeIndex)
+        {
+            return GetBiomeString(player);
+        }
+
+        if (index == timeIndex)
+        {
+            return GetTimeString(player);
+        }
+
+        if (index == buffsIndex)
+        {
+            return GetBuffStringDetailed(player);
+        }
+
         return index switch
         {
             0 => GetHealthString(player),
             1 => GetManaString(player),
             2 => GetArmorString(player),
-            3 => GetBiomeString(player),
-            4 => GetTimeString(player),
-            5 => GetBuffStringDetailed(player),
             _ => string.Empty,
         };
     }
@@ -282,9 +308,15 @@ internal static class StatusCheckSystem
         string health = GetHealthString(player);
         string mana = GetManaString(player);
         string armor = GetArmorString(player);
+        string? setBonus = SetBonusNarrationFormatter.BuildStatusLine(player.setBonus);
         string biome = GetBiomeString(player);
         string time = GetTimeString(player);
         string buffs = GetBuffString(player);
+
+        if (!string.IsNullOrWhiteSpace(setBonus))
+        {
+            return $"{health}. {mana}. {armor}. {setBonus}. {biome}. {time}. {buffs}.";
+        }
 
         return $"{health}. {mana}. {armor}. {biome}. {time}. {buffs}.";
     }
@@ -308,6 +340,26 @@ internal static class StatusCheckSystem
     {
         int defense = Math.Max(0, player.statDefense);
         return $"Defense {defense}";
+    }
+
+    private static string GetSetBonusString(Player player)
+    {
+        return SetBonusNarrationFormatter.BuildStatusLine(player.setBonus) ?? string.Empty;
+    }
+
+    private static bool HasSetBonus(Player player)
+    {
+        return !string.IsNullOrWhiteSpace(SetBonusNarrationFormatter.NormalizeDescription(player.setBonus));
+    }
+
+    private static int GetStatusItemCount(Player player)
+    {
+        return HasSetBonus(player) ? BaseStatusItemCount + 1 : BaseStatusItemCount;
+    }
+
+    private static int GetBuffsCycleIndex(Player player)
+    {
+        return HasSetBonus(player) ? 6 : 5;
     }
 
     private static string GetBiomeString(Player player)

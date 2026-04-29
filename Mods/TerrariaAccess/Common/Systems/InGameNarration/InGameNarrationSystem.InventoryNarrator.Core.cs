@@ -475,6 +475,8 @@ public sealed partial class InGameNarrationSystem
             details = MergeDetails(details, sellDetails);
             string? reforgeDetails = BuildReforgePriceDetails(player, target.Item, target.Focus);
             details = MergeDetails(details, reforgeDetails);
+            string? setBonusDetails = BuildEquippedArmorSetBonusDetails(player, target.Focus, details);
+            details = MergeDetails(details, setBonusDetails);
 
             string combined = NarrationTextFormatter.CombineItemAnnouncement(message, details);
             int slotSignature = ComputeSlotSignature(target.Focus);
@@ -1493,6 +1495,33 @@ public sealed partial class InGameNarrationSystem
             cost /= 3;
 
             return Math.Max(1, cost);
+        }
+
+        private static string? BuildEquippedArmorSetBonusDetails(Player player, SlotFocus? focus, string? existingDetails)
+        {
+            if (player is null || !focus.HasValue)
+            {
+                return null;
+            }
+
+            SlotFocus value = focus.Value;
+            if (!ReferenceEquals(value.Items, player.armor) || value.Slot < 0 || value.Slot > 2)
+            {
+                return null;
+            }
+
+            if (Math.Abs(value.Context) != ItemSlot.Context.EquipArmor)
+            {
+                return null;
+            }
+
+            string? detail = SetBonusNarrationFormatter.BuildStatusLine(player.setBonus);
+            if (string.IsNullOrWhiteSpace(detail))
+            {
+                return null;
+            }
+
+            return SetBonusNarrationFormatter.ContainsDescription(existingDetails, player.setBonus) ? null : detail;
         }
 
         private static Item? TryResolveShopItem(ItemIdentity identity, SlotFocus? focus, Chest[] shops)

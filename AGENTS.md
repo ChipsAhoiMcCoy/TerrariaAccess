@@ -12,13 +12,13 @@ Terraria Access is a tModLoader mod that makes Terraria playable for blind and l
 
 ```powershell
 # Build and deploy to local tModLoader Mods folder
-pwsh -NoProfile -ExecutionPolicy Bypass -File Tools/build.ps1
+powershell -NoProfile -ExecutionPolicy Bypass -File Tools/build.ps1
 
 # Build only (no deployment)
-pwsh -NoProfile -ExecutionPolicy Bypass -File Tools/build.ps1 -SkipDeploy
+powershell -NoProfile -ExecutionPolicy Bypass -File Tools/build.ps1 -SkipDeploy
 
 # Build with narration lint (checks client.log for NVDA failures)
-pwsh -NoProfile -ExecutionPolicy Bypass -File Tools/build.ps1 -NarrationLint
+powershell -NoProfile -ExecutionPolicy Bypass -File Tools/build.ps1 -NarrationLint
 ```
 
 The build script invokes tModLoader's build system (`dotnet tModLoader.dll -build`), not MSBuild directly. Output is `TerrariaAccess.tmod`.
@@ -206,10 +206,10 @@ Automated tests exist for pure/helper logic and can run without Terraria or tMod
 .\Tools\dotnet\dotnet.exe test Tests\TerrariaAccess.Tests\TerrariaAccess.Tests.csproj
 ```
 
-If `pwsh` and `dotnet` are on PATH, the wrapper is also available:
+If `powershell` and `dotnet` are on PATH, the wrapper is also available:
 
 ```powershell
-pwsh -NoProfile -ExecutionPolicy Bypass -File Tools/test.ps1
+powershell -NoProfile -ExecutionPolicy Bypass -File Tools/test.ps1
 ```
 
 Manual testing is still required for full mod behavior and tModLoader integration. Manual testing requires:

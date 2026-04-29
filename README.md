@@ -49,7 +49,7 @@ If you prefer to install manually instead of using the installer:
 ## Building from Source
 
 ```bash
-pwsh -NoProfile -ExecutionPolicy Bypass -File Tools/build.ps1
+powershell -NoProfile -ExecutionPolicy Bypass -File Tools/build.ps1
 ```
 
 The script builds the mod and copies `TerrariaAccess.tmod` into your local tModLoader Mods folder. Pass `-SkipDeploy` to only produce the `.tmod` artifact.
