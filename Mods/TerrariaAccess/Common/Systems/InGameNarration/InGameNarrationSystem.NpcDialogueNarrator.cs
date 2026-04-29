@@ -35,6 +35,7 @@ public sealed partial class InGameNarrationSystem
     private sealed class NpcDialogueNarrator
     {
         private const uint ButtonAnnouncementCooldownFrames = 30; // ~0.5 seconds at 60fps
+        private const uint ButtonFocusLossGraceFrames = 4;
         private const string SuppressionKeyButton = "npc-dialogue:button";
         private const string CooldownKeyButton = "npc-dialogue:button-cooldown";
 
@@ -45,6 +46,10 @@ public sealed partial class InGameNarrationSystem
         private bool _lastCloseFocus;
         private bool _lastSecondaryFocus;
         private bool _lastHappinessFocus;
+        private uint _lastPrimaryFocusedFrame;
+        private uint _lastCloseFocusedFrame;
+        private uint _lastSecondaryFocusedFrame;
+        private uint _lastHappinessFocusedFrame;
         private string? _lastPrimaryLabel;
         private string? _lastCloseLabel;
         private string? _lastSecondaryLabel;
@@ -112,10 +117,10 @@ public sealed partial class InGameNarrationSystem
             var availableButtons = BuildAvailableButtonsList();
             int totalButtons = availableButtons.Count;
 
-            HandleButtonFocus(IsButtonFocused(ButtonType.Primary), ref _lastPrimaryFocus, ref _lastPrimaryLabel, _currentPrimaryButton, allowInterrupt, category, ButtonType.Primary, availableButtons, totalButtons);
-            HandleButtonFocus(IsButtonFocused(ButtonType.Close), ref _lastCloseFocus, ref _lastCloseLabel, _currentCloseButton, allowInterrupt, category, ButtonType.Close, availableButtons, totalButtons);
-            HandleButtonFocus(IsButtonFocused(ButtonType.Secondary), ref _lastSecondaryFocus, ref _lastSecondaryLabel, _currentSecondaryButton, allowInterrupt, category, ButtonType.Secondary, availableButtons, totalButtons);
-            HandleButtonFocus(IsButtonFocused(ButtonType.Happiness), ref _lastHappinessFocus, ref _lastHappinessLabel, _currentHappinessButton, allowInterrupt, category, ButtonType.Happiness, availableButtons, totalButtons);
+            HandleButtonFocus(IsButtonFocused(ButtonType.Primary), ref _lastPrimaryFocus, ref _lastPrimaryFocusedFrame, ref _lastPrimaryLabel, _currentPrimaryButton, allowInterrupt, category, ButtonType.Primary, availableButtons, totalButtons);
+            HandleButtonFocus(IsButtonFocused(ButtonType.Close), ref _lastCloseFocus, ref _lastCloseFocusedFrame, ref _lastCloseLabel, _currentCloseButton, allowInterrupt, category, ButtonType.Close, availableButtons, totalButtons);
+            HandleButtonFocus(IsButtonFocused(ButtonType.Secondary), ref _lastSecondaryFocus, ref _lastSecondaryFocusedFrame, ref _lastSecondaryLabel, _currentSecondaryButton, allowInterrupt, category, ButtonType.Secondary, availableButtons, totalButtons);
+            HandleButtonFocus(IsButtonFocused(ButtonType.Happiness), ref _lastHappinessFocus, ref _lastHappinessFocusedFrame, ref _lastHappinessLabel, _currentHappinessButton, allowInterrupt, category, ButtonType.Happiness, availableButtons, totalButtons);
         }
 
         private enum ButtonType
@@ -554,6 +559,7 @@ public sealed partial class InGameNarrationSystem
         private void HandleButtonFocus(
             bool isFocused,
             ref bool lastState,
+            ref uint lastFocusedFrame,
             ref string? lastLabel,
             string? label,
             bool allowInterrupt,
@@ -562,12 +568,19 @@ public sealed partial class InGameNarrationSystem
             List<ButtonType> availableButtons,
             int totalButtons)
         {
+            uint currentFrame = Main.GameUpdateCount;
             if (!isFocused)
             {
+                if (lastState && IsWithinFocusLossGrace(currentFrame, lastFocusedFrame))
+                {
+                    return;
+                }
+
                 lastState = false;
                 return;
             }
 
+            lastFocusedFrame = currentFrame;
             string? trimmedLabel = string.IsNullOrWhiteSpace(label) ? null : label.Trim();
             bool labelChangedWhileFocused = lastState &&
                 !string.Equals(lastLabel, trimmedLabel, StringComparison.Ordinal);
@@ -628,6 +641,13 @@ public sealed partial class InGameNarrationSystem
 
             lastState = true;
             lastLabel = trimmedLabel;
+        }
+
+        private static bool IsWithinFocusLossGrace(uint currentFrame, uint lastFocusedFrame)
+        {
+            return lastFocusedFrame != 0 &&
+                   currentFrame >= lastFocusedFrame &&
+                   currentFrame - lastFocusedFrame <= ButtonFocusLossGraceFrames;
         }
 
         private string? GetCurrentFocusedButtonInfo(bool updateCooldown = false)
@@ -718,6 +738,10 @@ public sealed partial class InGameNarrationSystem
             _lastCloseFocus = false;
             _lastSecondaryFocus = false;
             _lastHappinessFocus = false;
+            _lastPrimaryFocusedFrame = 0;
+            _lastCloseFocusedFrame = 0;
+            _lastSecondaryFocusedFrame = 0;
+            _lastHappinessFocusedFrame = 0;
             _lastPrimaryLabel = null;
             _lastCloseLabel = null;
             _lastSecondaryLabel = null;

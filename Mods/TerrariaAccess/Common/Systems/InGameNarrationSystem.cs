@@ -635,7 +635,7 @@ public sealed partial class InGameNarrationSystem : ModSystem
 
     private static void CaptureNpcChatButtons(On_Main.orig_DrawNPCChatButtons orig, int superColor, Color chatColor, int numLines, string focusText, string focusText3)
     {
-        string? primary = focusText;
+        string? primary = BuildNpcDialoguePrimaryButtonLabel(focusText);
         string? closeLabel = Lang.inter[52].Value;
         string? secondary = string.IsNullOrWhiteSpace(focusText3) ? null : focusText3;
 
@@ -663,6 +663,140 @@ public sealed partial class InGameNarrationSystem : ModSystem
             Main.npcChatFocus1,
             Main.npcChatFocus3,
             Main.npcChatFocus4);
+    }
+
+    private static string? BuildNpcDialoguePrimaryButtonLabel(string? rawLabel)
+    {
+        if (string.IsNullOrWhiteSpace(rawLabel) || !IsActiveNurseHealButton(rawLabel))
+        {
+            return rawLabel;
+        }
+
+        string healLabel = Lang.inter[54].Value;
+        if (TryExtractParenthesizedButtonDetail(rawLabel, healLabel, out string priceText))
+        {
+            return $"{healLabel} button, price {priceText}";
+        }
+
+        Player player = Main.LocalPlayer;
+        int npcIndex = player.talkNPC;
+        NPC nurse = Main.npc[npcIndex];
+        int healCost = CalculateNurseHealCost(player, nurse);
+        if (healCost <= 0)
+        {
+            return $"{healLabel} button";
+        }
+
+        string coinText = CoinFormatter.ValueToCoinString(healCost);
+        return string.IsNullOrWhiteSpace(coinText)
+            ? $"{healLabel} button"
+            : $"{healLabel} button, price {coinText}";
+    }
+
+    private static bool IsActiveNurseHealButton(string rawLabel)
+    {
+        Player? player = Main.LocalPlayer;
+        int npcIndex = player?.talkNPC ?? -1;
+        if (npcIndex < 0 || npcIndex >= Main.maxNPCs)
+        {
+            return false;
+        }
+
+        NPC npc = Main.npc[npcIndex];
+        if (!npc.active || npc.type != NPCID.Nurse)
+        {
+            return false;
+        }
+
+        string healLabel = Lang.inter[54].Value;
+        if (string.IsNullOrWhiteSpace(healLabel))
+        {
+            return false;
+        }
+
+        string cleanedLabel = TextSanitizer.Clean(rawLabel);
+        return cleanedLabel.Equals(healLabel, StringComparison.OrdinalIgnoreCase) ||
+               cleanedLabel.StartsWith(healLabel + " ", StringComparison.OrdinalIgnoreCase) ||
+               cleanedLabel.StartsWith(healLabel + "(", StringComparison.OrdinalIgnoreCase);
+    }
+
+    private static bool TryExtractParenthesizedButtonDetail(string rawLabel, string prefix, out string detail)
+    {
+        detail = string.Empty;
+        string cleanedLabel = TextSanitizer.Clean(rawLabel).Trim();
+        if (!cleanedLabel.StartsWith(prefix, StringComparison.OrdinalIgnoreCase))
+        {
+            return false;
+        }
+
+        int openParen = cleanedLabel.IndexOf('(', prefix.Length);
+        int closeParen = cleanedLabel.LastIndexOf(')');
+        if (openParen < 0 || closeParen <= openParen)
+        {
+            return false;
+        }
+
+        detail = cleanedLabel.Substring(openParen + 1, closeParen - openParen - 1).Trim();
+        return !string.IsNullOrWhiteSpace(detail);
+    }
+
+    private static int CalculateNurseHealCost(Player player, NPC nurse)
+    {
+        int price = player.statLifeMax2 - player.statLife;
+        for (int i = 0; i < Player.MaxBuffs; i++)
+        {
+            int buffType = player.buffType[i];
+            if (Main.debuff[buffType] &&
+                player.buffTime[i] > 60 &&
+                (buffType < 0 || !BuffID.Sets.NurseCannotRemoveDebuff[buffType]))
+            {
+                price += 100;
+            }
+        }
+
+        if (NPC.downedGolemBoss)
+        {
+            price *= 200;
+        }
+        else if (NPC.downedPlantBoss)
+        {
+            price *= 150;
+        }
+        else if (NPC.downedMechBossAny)
+        {
+            price *= 100;
+        }
+        else if (Main.hardMode)
+        {
+            price *= 60;
+        }
+        else if (NPC.downedBoss3 || NPC.downedQueenBee)
+        {
+            price *= 25;
+        }
+        else if (NPC.downedBoss2)
+        {
+            price *= 10;
+        }
+        else if (NPC.downedBoss1)
+        {
+            price *= 3;
+        }
+
+        if (Main.expertMode)
+        {
+            price *= 2;
+        }
+
+        price = (int)(price * player.currentShoppingSettings.PriceAdjustment);
+
+        int health = player.statLifeMax2 - player.statLife;
+        bool removeDebuffs = true;
+        string chat = Language.GetTextValue("tModLoader.DefaultNurseCantHealChat");
+        PlayerLoader.ModifyNurseHeal(player, nurse, ref health, ref removeDebuffs, ref chat);
+        PlayerLoader.ModifyNursePrice(player, nurse, health, removeDebuffs, ref price);
+
+        return Math.Max(price, 0);
     }
 
     private static void HandleChestRename(On_ChestUI.orig_RenameChest orig)
