@@ -32,8 +32,7 @@ public sealed class GamepadEmulationSystem : ModSystem
 
     // Debug logging for input state - enable via SRM_DEBUG_INPUT environment variable
     private static readonly bool InputDebugEnabled = !string.IsNullOrEmpty(Environment.GetEnvironmentVariable("SRM_DEBUG_INPUT"));
-    private static int _lastLoggedLinkPoint = -999;
-    private static InputMode _lastLoggedInputMode = (InputMode)(-1);
+    private static string? _lastLoggedInputDebugSignature;
 
     private static readonly string[] ControllerExclusiveBindingIds = {
         TriggerNames.LockOn,
@@ -626,35 +625,27 @@ public sealed class GamepadEmulationSystem : ModSystem
         }
 
         EnsureSmartCursorDesiredStateInitialized();
+        if (InputStateHelper.ShouldUseNativeGamepadWorldInput())
+        {
+            _smartCursorBindingWasPressed = false;
+            return;
+        }
+
         bool smartCursorPressed = IsSmartCursorBindingPressedRaw();
-        bool actualSmartCursorState = GetActualSmartCursorState();
-        if (_smartCursorDesiredSyncPending)
-        {
-            if (actualSmartCursorState == _smartCursorDesiredEnabled)
-            {
-                _smartCursorDesiredSyncPending = false;
-                _smartCursorDesiredSyncDeadline = 0;
-            }
-            else if (Main.GameUpdateCount >= _smartCursorDesiredSyncDeadline)
-            {
-                _smartCursorDesiredEnabled = actualSmartCursorState;
-                _smartCursorDesiredSyncPending = false;
-                _smartCursorDesiredSyncDeadline = 0;
-            }
-        }
-        else if (!smartCursorPressed && !DpadVirtualizationSystem.IsTemporarilySuppressingSmartCursor())
-        {
-            _smartCursorDesiredEnabled = actualSmartCursorState;
-        }
-
-        if (_smartCursorDesiredSyncPending && !DpadVirtualizationSystem.IsTemporarilySuppressingSmartCursor())
-        {
-            // Keep Terraria's transient wanted flags aligned with the requested mode
-            // until the committed SmartCursorIsUsed state catches up.
-            ApplySmartCursorWantedState(_smartCursorDesiredEnabled);
-        }
-
         ApplySmartCursorStateFromBinding(smartCursorPressed);
+        SuppressVanillaSmartCursorTriggerFromKeyboard(smartCursorPressed);
+
+        if (DpadVirtualizationSystem.IsTemporarilySuppressingSmartCursor())
+        {
+            return;
+        }
+
+        ApplySmartCursorWantedState(_smartCursorDesiredEnabled);
+        if (_smartCursorDesiredSyncPending && SmartCursorWantedStateMatchesDesired())
+        {
+            _smartCursorDesiredSyncPending = false;
+            _smartCursorDesiredSyncDeadline = 0;
+        }
     }
 
     private static void ApplySmartCursorStateFromBinding(bool smartCursorPressed)
@@ -708,9 +699,34 @@ public sealed class GamepadEmulationSystem : ModSystem
         Main.SmartCursorWanted_GamePad = enabled;
     }
 
+    private static bool SmartCursorWantedStateMatchesDesired()
+    {
+        return Main.SmartCursorWanted_Mouse == _smartCursorDesiredEnabled &&
+               Main.SmartCursorWanted_GamePad == _smartCursorDesiredEnabled;
+    }
+
+    private static void SuppressVanillaSmartCursorTriggerFromKeyboard(bool smartCursorPressed)
+    {
+        TriggersPack triggerPack = PlayerInput.Triggers;
+        bool latestInputWasKeyboard =
+            triggerPack.Current.LatestInputMode.TryGetValue(TriggerNames.SmartCursor, out InputMode mode) &&
+            (mode == InputMode.Keyboard || mode == InputMode.KeyboardUI);
+
+        if (!smartCursorPressed && !latestInputWasKeyboard)
+        {
+            return;
+        }
+
+        triggerPack.Current.KeyStatus[TriggerNames.SmartCursor] = false;
+        triggerPack.JustPressed.KeyStatus[TriggerNames.SmartCursor] = false;
+        triggerPack.JustReleased.KeyStatus[TriggerNames.SmartCursor] = false;
+    }
+
     internal static bool TryGetForcedSmartCursorState(out bool enabled)
     {
-        if (!GamepadEmulationState.Enabled || !_smartCursorDesiredInitialized)
+        if (!GamepadEmulationState.Enabled ||
+            !_smartCursorDesiredInitialized ||
+            InputStateHelper.ShouldUseNativeGamepadWorldInput())
         {
             enabled = false;
             return false;
@@ -1200,18 +1216,6 @@ public sealed class GamepadEmulationSystem : ModSystem
         int currentLinkPoint = UILinkPointNavigator.CurrentPoint;
         InputMode currentInputMode = PlayerInput.CurrentInputMode;
 
-        // Only log on state changes
-        bool linkPointChanged = currentLinkPoint != _lastLoggedLinkPoint;
-        bool inputModeChanged = currentInputMode != _lastLoggedInputMode;
-
-        if (!linkPointChanged && !inputModeChanged)
-        {
-            return;
-        }
-
-        _lastLoggedLinkPoint = currentLinkPoint;
-        _lastLoggedInputMode = currentInputMode;
-
         Player? player = Main.LocalPlayer;
         bool inventoryOpen = Main.playerInventory;
         bool usingGamepadUi = PlayerInput.UsingGamepadUI;
@@ -1227,6 +1231,27 @@ public sealed class GamepadEmulationSystem : ModSystem
         bool mouseLeftActive = pack.Current.MouseLeft;
         bool mouseRightActive = pack.Current.MouseRight;
         bool smartSelectActive = pack.Current.KeyStatus.TryGetValue(TriggerNames.SmartSelect, out bool ss) && ss;
+        bool smartCursorTriggerActive = pack.Current.KeyStatus.TryGetValue(TriggerNames.SmartCursor, out bool sc) && sc;
+        bool smartCursorPressedRaw = IsSmartCursorBindingPressedRaw();
+        bool smartCursorWantedMouse = Main.SmartCursorWanted_Mouse;
+        bool smartCursorWantedGamePad = Main.SmartCursorWanted_GamePad;
+        bool smartCursorEffective = GetActualSmartCursorState();
+        bool smartCursorDesiredInitialized = _smartCursorDesiredInitialized;
+        bool smartCursorDesired = _smartCursorDesiredEnabled;
+        bool smartCursorSyncPending = _smartCursorDesiredSyncPending;
+        uint smartCursorSyncDeadline = _smartCursorDesiredSyncDeadline;
+        bool smartCursorSuppressed = DpadVirtualizationSystem.IsTemporarilySuppressingSmartCursor();
+
+        string stateSignature =
+            $"{currentLinkPoint}|{currentInputMode}|{inventoryOpen}|{usingGamepadUi}|{emulationEnabled}|" +
+            $"{textInputActive}|{physicalGamepadConnected}|{nativeWorldGamepad}|{chestIndex}|" +
+            $"{firstLetterNavEnabled}|{mouseLeftActive}|{mouseRightActive}|{smartSelectActive}|" +
+            $"{smartCursorTriggerActive}|{smartCursorPressedRaw}|{smartCursorWantedMouse}|" +
+            $"{smartCursorWantedGamePad}|{smartCursorEffective}|{smartCursorDesiredInitialized}|" +
+            $"{smartCursorDesired}|{smartCursorSyncPending}|{smartCursorSyncDeadline}|" +
+            $"{smartCursorSuppressed}";
+
+        bool stateChanged = stateSignature != _lastLoggedInputDebugSignature;
 
         string message = $"[InputDebug] {context}: " +
             $"linkPoint={currentLinkPoint} " +
@@ -1241,9 +1266,23 @@ public sealed class GamepadEmulationSystem : ModSystem
             $"firstLetterNav={firstLetterNavEnabled} " +
             $"mouseL={mouseLeftActive} " +
             $"mouseR={mouseRightActive} " +
-            $"smartSelect={smartSelectActive}";
+            $"smartSelect={smartSelectActive} " +
+            $"smartCursorTrigger={smartCursorTriggerActive} " +
+            $"smartCursorRaw={smartCursorPressedRaw} " +
+            $"smartCursorWantedMouse={smartCursorWantedMouse} " +
+            $"smartCursorWantedGamePad={smartCursorWantedGamePad} " +
+            $"smartCursorEffective={smartCursorEffective} " +
+            $"smartCursorDesiredInit={smartCursorDesiredInitialized} " +
+            $"smartCursorDesired={smartCursorDesired} " +
+            $"smartCursorSyncPending={smartCursorSyncPending} " +
+            $"smartCursorSyncDeadline={smartCursorSyncDeadline} " +
+            $"smartCursorSuppressed={smartCursorSuppressed}";
 
-        global::TerrariaAccess.TerrariaAccess.Instance?.Logger.Info(message);
+        if (stateChanged)
+        {
+            _lastLoggedInputDebugSignature = stateSignature;
+            global::TerrariaAccess.TerrariaAccess.Instance?.Logger.Info(message);
+        }
     }
 
     /// <summary>

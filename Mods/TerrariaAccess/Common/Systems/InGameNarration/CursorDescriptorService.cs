@@ -732,6 +732,21 @@ internal sealed class CursorDescriptorService
                 style = unlockedStyle;
             }
         }
+        else if (tileType == TileID.ClosedDoor)
+        {
+            // Closed doors store styles in vertical 3-tile groups, wrapping to the
+            // next frameX page every 36 styles. Any door segment can be inspected.
+            style = (tile.TileFrameX / 54 * 36) + (tile.TileFrameY / 54);
+            return true;
+        }
+        else if (tileType == TileID.OpenDoor)
+        {
+            // WorldGen.OpenDoor preserves the closed-door style as:
+            //   frameY = style % 36 * 54 + segmentRow * 18
+            //   frameX = direction/page data, with one style page every 72 px.
+            style = (tile.TileFrameX / 72 * 36) + (tile.TileFrameY / 54);
+            return true;
+        }
         else
         {
             style = TileObjectData.GetTileStyle(tile);
