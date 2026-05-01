@@ -637,7 +637,7 @@ Mods: {
 			GamepadEmulationInventoryInteract.DisplayName: Gamepad Emulation Inventory Interact
 			GamepadEmulationSectionNext.DisplayName: Gamepad Emulation Section Next
 			GamepadEmulationSectionPrevious.DisplayName: Gamepad Emulation Section Previous
-			GamepadEmulationQuickUse.DisplayName: Gamepad Emulation Quick Use
+			GamepadEmulationQuickUse.DisplayName: Gamepad Emulation Inventory Quick Use
 			GamepadEmulationLockOn.DisplayName: Gamepad Emulation Lock On
 			GamepadEmulationRightStickUp.DisplayName: Gamepad Emulation Right Stick Up
 			GamepadEmulationRightStickDown.DisplayName: Gamepad Emulation Right Stick Down
@@ -676,7 +676,7 @@ Keybinds: {
 	GamepadEmulationInventoryInteract.DisplayName: Gamepad Emulation Inventory Interact
 	GamepadEmulationSectionNext.DisplayName: Gamepad Emulation Section Next
 	GamepadEmulationSectionPrevious.DisplayName: Gamepad Emulation Section Previous
-	GamepadEmulationQuickUse.DisplayName: Gamepad Emulation Quick Use
+	GamepadEmulationQuickUse.DisplayName: Gamepad Emulation Inventory Quick Use
 	GamepadEmulationLockOn.DisplayName: Gamepad Emulation Lock On
 	GamepadEmulationRightStickUp.DisplayName: Gamepad Emulation Right Stick Up
 	GamepadEmulationRightStickDown.DisplayName: Gamepad Emulation Right Stick Down
