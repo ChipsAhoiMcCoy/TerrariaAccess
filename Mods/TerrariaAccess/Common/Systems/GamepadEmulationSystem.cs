@@ -14,8 +14,10 @@ using TerrariaAccess.Common.Systems.InGameNarration;
 using TerrariaAccess.Common.Systems.ModBrowser;
 using TerrariaAccess.Common.Utilities;
 using Terraria;
+using Terraria.Audio;
 using Terraria.GameContent.UI.States;
 using Terraria.GameInput;
+using Terraria.ID;
 using Terraria.ModLoader;
 using Terraria.UI;
 using Terraria.UI.Gamepad;
@@ -618,7 +620,7 @@ public sealed class GamepadEmulationSystem : ModSystem
 
     private static void HandleSmartCursorBinding()
     {
-        if (InputStateHelper.IsTextInputActive() || DialogueInputGuard.IsDialogueUiActive())
+        if (InputStateHelper.IsTextInputActive() || DialogueInputGuard.IsDialogueUiActive() || IsSmartCursorReservedForUi())
         {
             _smartCursorBindingWasPressed = false;
             return;
@@ -646,6 +648,17 @@ public sealed class GamepadEmulationSystem : ModSystem
             _smartCursorDesiredSyncPending = false;
             _smartCursorDesiredSyncDeadline = 0;
         }
+    }
+
+    private static bool IsSmartCursorReservedForUi()
+    {
+        return Main.playerInventory ||
+               Main.npcShop != 0 ||
+               Main.InGuideCraftMenu ||
+               Main.InReforgeMenu ||
+               Main.CreativeMenu.Enabled ||
+               Main.ingameOptionsWindow ||
+               Main.inFancyUI;
     }
 
     private static void ApplySmartCursorStateFromBinding(bool smartCursorPressed)
@@ -856,6 +869,12 @@ public sealed class GamepadEmulationSystem : ModSystem
             return;
         }
 
+        if (TryHandleFocusedInventoryFavorite(player))
+        {
+            VirtualTriggerService.UpdateTrackingOnly();
+            return;
+        }
+
         VirtualTriggerService.InjectFromKeybind(GamepadEmulationKeybinds.InventorySelect, TriggerNames.MouseLeft);
         VirtualTriggerService.ApplyMouseLeftFromTrigger();
 
@@ -887,6 +906,50 @@ public sealed class GamepadEmulationSystem : ModSystem
         {
             VirtualTriggerService.ApplyMouseRightFromTrigger();
         }
+    }
+
+    private static bool TryHandleFocusedInventoryFavorite(Player player)
+    {
+        if (!PlayerInput.Triggers.JustPressed.SmartCursor ||
+            (Main.mouseItem is not null && !Main.mouseItem.IsAir))
+        {
+            return false;
+        }
+
+        int point = UILinkPointNavigator.CurrentPoint;
+        if (!SlotNavigationHelper.TryResolveInventorySlot(point, out int slot, out int context) ||
+            !CanFavoriteInventoryContext(context) ||
+            (uint)slot >= (uint)player.inventory.Length)
+        {
+            return false;
+        }
+
+        Item item = player.inventory[slot];
+        if (item.IsAir)
+        {
+            return false;
+        }
+
+        item.favorited = !item.favorited;
+        SoundEngine.PlaySound(SoundID.MenuTick);
+        ConsumeSmartCursorFavoriteTrigger();
+        return true;
+    }
+
+    private static bool CanFavoriteInventoryContext(int context)
+    {
+        return context == ItemSlot.Context.InventoryItem ||
+               context == ItemSlot.Context.InventoryCoin ||
+               context == ItemSlot.Context.InventoryAmmo;
+    }
+
+    private static void ConsumeSmartCursorFavoriteTrigger()
+    {
+        PlayerInput.Triggers.Current.KeyStatus[TriggerNames.SmartCursor] = false;
+        PlayerInput.Triggers.JustPressed.KeyStatus[TriggerNames.SmartCursor] = false;
+        PlayerInput.Triggers.JustReleased.KeyStatus[TriggerNames.SmartCursor] = false;
+        PlayerInput.LockGamepadButtons(TriggerNames.SmartCursor);
+        PlayerInput.SettingsForUI.TryRevertingToMouseMode();
     }
 
     private static void TryHandleShopQuickSellFallback(Player player)

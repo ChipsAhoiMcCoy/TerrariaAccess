@@ -4,6 +4,7 @@ using Microsoft.Xna.Framework;
 using Microsoft.Xna.Framework.Input;
 using Terraria;
 using Terraria.GameInput;
+using Terraria.ID;
 using Terraria.ModLoader;
 using Terraria.UI.Gamepad;
 
@@ -21,6 +22,9 @@ public sealed class NpcDialogueGamepadFocusSystem : ModSystem
     private const int SecondaryPointId = 2502;
     private const int HappinessPointId = 2503;
     private const float ThumbstickThreshold = 0.55f;
+    private static int _lastTalkNpcIndex = -1;
+    private static int _lastSignIndex = -1;
+    private static bool _initialNurseFocusApplied;
 
     public override void Load()
     {
@@ -40,11 +44,23 @@ public sealed class NpcDialogueGamepadFocusSystem : ModSystem
         }
 
         On_Main.DrawNPCChatButtons -= SyncGamepadDialogueFocus;
+        ResetDialogueSessionTracking();
     }
 
     public override void PostUpdateInput()
     {
-        if (Main.dedServ || !ShouldSyncFocus())
+        if (Main.dedServ)
+        {
+            return;
+        }
+
+        if (!DialogueInputGuard.IsDialogueUiActive())
+        {
+            ResetDialogueSessionTracking();
+            return;
+        }
+
+        if (!ShouldSyncFocus())
         {
             return;
         }
@@ -205,10 +221,55 @@ public sealed class NpcDialogueGamepadFocusSystem : ModSystem
         }
 
         int currentPoint = UILinkPointNavigator.CurrentPoint;
+        if (TryGetInitialNurseFocusPoint(focusText, activePoints, out int preferredPoint))
+        {
+            UILinkPointNavigator.ChangePoint(preferredPoint);
+            return;
+        }
+
         if (!activePoints.Contains(currentPoint))
         {
             UILinkPointNavigator.ChangePoint(activePoints[0]);
         }
+    }
+
+    private static bool TryGetInitialNurseFocusPoint(string focusText, List<int> activePoints, out int preferredPoint)
+    {
+        preferredPoint = PrimaryPointId;
+        Player player = Main.LocalPlayer;
+        int talkNpcIndex = player?.talkNPC ?? -1;
+        int signIndex = player?.sign ?? -1;
+        if (talkNpcIndex != _lastTalkNpcIndex || signIndex != _lastSignIndex)
+        {
+            _lastTalkNpcIndex = talkNpcIndex;
+            _lastSignIndex = signIndex;
+            _initialNurseFocusApplied = false;
+        }
+
+        if (_initialNurseFocusApplied ||
+            string.IsNullOrWhiteSpace(focusText) ||
+            !activePoints.Contains(PrimaryPointId) ||
+            talkNpcIndex < 0 ||
+            talkNpcIndex >= Main.maxNPCs)
+        {
+            return false;
+        }
+
+        NPC npc = Main.npc[talkNpcIndex];
+        if (!npc.active || npc.type != NPCID.Nurse)
+        {
+            return false;
+        }
+
+        _initialNurseFocusApplied = true;
+        return true;
+    }
+
+    private static void ResetDialogueSessionTracking()
+    {
+        _lastTalkNpcIndex = -1;
+        _lastSignIndex = -1;
+        _initialNurseFocusApplied = false;
     }
 
     private static void ApplyFocusState(string focusText, string focusText3)

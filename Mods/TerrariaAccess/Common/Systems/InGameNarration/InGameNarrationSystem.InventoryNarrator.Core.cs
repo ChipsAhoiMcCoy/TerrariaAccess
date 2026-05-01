@@ -1132,9 +1132,9 @@ public sealed partial class InGameNarrationSystem
                 return true;
             }
 
-            if (point >= 130 && point < 135)
+            if (point >= 180 && point < 185)
             {
-                int miscEquipSlot = point - 130;
+                int miscEquipSlot = point - 180;
                 if ((uint)miscEquipSlot >= (uint)player.miscEquips.Length)
                 {
                     return false;
@@ -1154,9 +1154,9 @@ public sealed partial class InGameNarrationSystem
                 return true;
             }
 
-            if (point >= 135 && point < 140)
+            if (point >= 185 && point < 190)
             {
-                int miscDyeSlot = point - 135;
+                int miscDyeSlot = point - 185;
                 if ((uint)miscDyeSlot >= (uint)player.miscDyes.Length)
                 {
                     return false;

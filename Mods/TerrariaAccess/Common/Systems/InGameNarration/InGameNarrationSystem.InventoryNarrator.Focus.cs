@@ -317,7 +317,8 @@ public sealed partial class InGameNarrationSystem
                 // 50-53: Coins (inventory[50-53])
                 // 54-57: Ammo (inventory[54-57])
                 // 400-439: Chest slots
-                // 500-505: Equipment and other special slots
+                // 100-129: Armor and armor dye slots
+                // 180-189: Misc equipment and misc dye slots
 
                 Item[]? items = null;
                 int slot = -1;

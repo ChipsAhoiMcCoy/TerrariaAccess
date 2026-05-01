@@ -98,6 +98,7 @@ public sealed partial class InGameNarrationSystem
                 int teamButton when teamButton >= 1551 && teamButton <= 1556 => Button(GetTeamButtonText(teamButton)),
                 1557 => DescribeDefenseCounter(),
                 1570 => FormatButtonLabel(LocalizationHelper.GetTextOrFallback("Mods.TerrariaAccess.InventorySpecial.AchievementAdvisor", "Achievement Advisor")),
+                int buffPoint when IsBuffLinkPoint(buffPoint) => DescribeBuffLinkPoint(buffPoint),
                 _ => null,
             };
 
@@ -177,6 +178,7 @@ public sealed partial class InGameNarrationSystem
                 >= 1551 and <= 1556 => true,
                 1557 => true,
                 1570 => true, // Achievement Advisor
+                >= 9000 and <= 9050 => UILinkPointNavigator.Shortcuts.BUFFS_DRAWN > point - 9000,
                 _ => false,
             };
         }
@@ -206,8 +208,71 @@ public sealed partial class InGameNarrationSystem
                 >= 1550 and <= 1557 => InventoryRegion.CharacterPanel,
                 // Achievement Advisor
                 1570 => InventoryRegion.CharacterPanel,
+                // Buff strip shown under the misc equipment page
+                >= 9000 and <= 9050 => InventoryRegion.CharacterPanel,
                 _ => InventoryRegion.None,
             };
+        }
+
+        private static bool IsBuffLinkPoint(int point)
+        {
+            int displayIndex = point - 9000;
+            return displayIndex >= 0 &&
+                displayIndex < UILinkPointNavigator.Shortcuts.BUFFS_DRAWN &&
+                TryGetBuffSlotForDisplayIndex(displayIndex, out _);
+        }
+
+        private static string? DescribeBuffLinkPoint(int point)
+        {
+            int displayIndex = point - 9000;
+            if (!TryGetBuffSlotForDisplayIndex(displayIndex, out int buffSlot))
+            {
+                return null;
+            }
+
+            Player player = Main.LocalPlayer;
+            int buffType = player.buffType[buffSlot];
+            if (buffType <= 0)
+            {
+                return null;
+            }
+
+            string name = Lang.GetBuffName(buffType);
+            if (string.IsNullOrWhiteSpace(name))
+            {
+                name = $"Buff {buffType}";
+            }
+
+            return $"Buff: {TextSanitizer.Clean(name)}";
+        }
+
+        private static bool TryGetBuffSlotForDisplayIndex(int displayIndex, out int buffSlot)
+        {
+            buffSlot = -1;
+            if (displayIndex < 0)
+            {
+                return false;
+            }
+
+            Player player = Main.LocalPlayer;
+            int display = 0;
+            for (int i = 0; i < player.buffType.Length; i++)
+            {
+                if (player.buffType[i] <= 0)
+                {
+                    continue;
+                }
+
+                if (display == displayIndex)
+                {
+                    buffSlot = i;
+                    return true;
+                }
+
+                display++;
+            }
+
+            return false;
         }
 
         private static bool IsJourneySpecialPoint(int point)

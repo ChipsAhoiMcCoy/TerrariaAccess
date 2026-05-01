@@ -40,6 +40,7 @@ internal static class DialogueInputGuard
         player.controlMount = false;
 
         TriggersPack pack = PlayerInput.Triggers;
+        SuppressRightMouseDialogueLeak(pack);
         pack.Current.Grapple = false;
         pack.JustPressed.Grapple = false;
         pack.Current.QuickMount = false;
@@ -57,6 +58,9 @@ internal static class DialogueInputGuard
 
         bool hadLeakState = triggersSet.Grapple ||
                             triggersSet.QuickMount ||
+                            triggersSet.MouseRight ||
+                            PlayerInput.Triggers.Current.MouseRight ||
+                            Main.mouseRight ||
                             PlayerInput.Triggers.Current.Grapple ||
                             PlayerInput.Triggers.Current.QuickMount ||
                             player.controlHook ||
@@ -77,6 +81,7 @@ internal static class DialogueInputGuard
         player.controlUseTile = false;
 
         TriggersPack pack = PlayerInput.Triggers;
+        SuppressRightMouseDialogueLeak(pack);
         pack.Current.Grapple = false;
         pack.JustPressed.Grapple = false;
         pack.Current.QuickMount = false;
@@ -123,6 +128,15 @@ internal static class DialogueInputGuard
                player.controlMount;
     }
 
+    private static void SuppressRightMouseDialogueLeak(TriggersPack pack)
+    {
+        Main.mouseRight = false;
+        Main.mouseRightRelease = false;
+        pack.Current.MouseRight = false;
+        pack.JustPressed.MouseRight = false;
+        pack.JustReleased.MouseRight = false;
+    }
+
     private static void LogCore(string context, Player player, string reason, bool dedupe)
     {
         string stateKey = BuildStateKey(player);
@@ -149,7 +163,9 @@ internal static class DialogueInputGuard
             player.sign,
             player.mouseInterface ? 1 : 0,
             Main.mouseLeft ? 1 : 0,
+            Main.mouseRight ? 1 : 0,
             pack.Current.MouseLeft ? 1 : 0,
+            pack.Current.MouseRight ? 1 : 0,
             pack.Current.Grapple ? 1 : 0,
             pack.Current.QuickMount ? 1 : 0,
             player.controlUseItem ? 1 : 0,
@@ -176,7 +192,9 @@ internal static class DialogueInputGuard
                $"sign={player.sign} " +
                $"mouseInterface={player.mouseInterface} " +
                $"mainMouseLeft={Main.mouseLeft} " +
+               $"mainMouseRight={Main.mouseRight} " +
                $"triggerMouseLeft={pack.Current.MouseLeft} " +
+               $"triggerMouseRight={pack.Current.MouseRight} " +
                $"triggerGrapple={pack.Current.Grapple} " +
                $"triggerQuickMount={pack.Current.QuickMount} " +
                $"controlUseItem={player.controlUseItem} " +
