@@ -1,4 +1,6 @@
 #nullable enable
+using System.Reflection;
+using Microsoft.Xna.Framework;
 using Microsoft.Xna.Framework.Input;
 using Terraria;
 using Terraria.Audio;
@@ -16,6 +18,10 @@ namespace TerrariaAccess.Common.Systems;
 /// </summary>
 public sealed class ChatOpenRecoverySystem : ModSystem
 {
+    private static readonly MethodInfo? HandleCommandMethod = typeof(CommandLoader).GetMethod(
+        "HandleCommand",
+        BindingFlags.Static | BindingFlags.NonPublic);
+
     private bool _enterWasPressed;
 
     public override void PostUpdateInput()
@@ -160,6 +166,11 @@ public sealed class ChatOpenRecoverySystem : ModSystem
             return;
         }
 
+        if (TryHandleSlashCommand(chatText))
+        {
+            return;
+        }
+
         ChatMessage message = ChatManager.Commands.CreateOutgoingMessage(chatText);
         if (Main.netMode == NetmodeID.MultiplayerClient)
         {
@@ -170,6 +181,52 @@ public sealed class ChatOpenRecoverySystem : ModSystem
         if (Main.netMode == NetmodeID.SinglePlayer)
         {
             ChatManager.Commands.ProcessIncomingMessage(message, Main.myPlayer);
+        }
+    }
+
+    private static bool TryHandleSlashCommand(string chatText)
+    {
+        if (chatText.Length == 0 || chatText[0] != '/')
+        {
+            return false;
+        }
+
+        if (HandleCommandMethod is null)
+        {
+            TerrariaAccess.Instance?.Logger.Warn("[ChatOpenRecovery] tModLoader command handler was not found; slash command will fall back to chat.");
+            return false;
+        }
+
+        try
+        {
+            return HandleCommandMethod.Invoke(null, new object[] { chatText, FallbackChatCommandCaller.Instance }) is true;
+        }
+        catch (TargetInvocationException ex)
+        {
+            TerrariaAccess.Instance?.Logger.Warn($"[ChatOpenRecovery] Slash command handler threw: {ex.InnerException ?? ex}");
+            return false;
+        }
+    }
+
+    private sealed class FallbackChatCommandCaller : CommandCaller
+    {
+        public static readonly FallbackChatCommandCaller Instance = new();
+
+        public CommandType CommandType => CommandType.Chat;
+
+        public Player Player => Main.player[Main.myPlayer];
+
+        public void Reply(string text, Color color = default)
+        {
+            if (color == default)
+            {
+                color = Color.White;
+            }
+
+            foreach (string line in text.Split('\n'))
+            {
+                Main.NewText(line, color.R, color.G, color.B);
+            }
         }
     }
 
