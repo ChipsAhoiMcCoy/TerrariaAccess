@@ -255,4 +255,4 @@ These files are intentionally ignored by git. When investigating decompiled Terr
 ## Mod Metadata
 
 - Version defined in `Mods/TerrariaAccess/build.txt`
-- Client-side only (`side = Client`)
+- Optional client/server sync (`side = NoSync`). The mod can run client-only for accessibility on ordinary servers, and servers may install it to enable multiplayer-aware features without forcing every client to download it.

@@ -21,8 +21,8 @@ public class TerrariaAccess : Mod
     {
         Instance = this;
 
-        // Safety guard: skip client-only initialization on dedicated servers
-        // (with side = Client this shouldn't happen, but guard defensively)
+        // Safety guard: skip client-only initialization on dedicated servers.
+        // side = NoSync lets servers install the mod for optional multiplayer support.
         if (Main.dedServ)
         {
             return;

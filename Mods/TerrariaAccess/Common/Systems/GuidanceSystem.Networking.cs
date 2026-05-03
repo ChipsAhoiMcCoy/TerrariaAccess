@@ -16,7 +16,7 @@ public sealed partial class GuidanceSystem
 
     internal static bool CanUseNetworkSync()
     {
-        return global::TerrariaAccess.TerrariaAccess.Instance is { Side: ModSide.Both or ModSide.Server };
+        return global::TerrariaAccess.TerrariaAccess.Instance?.IsNetSynced == true;
     }
 
     private enum GuidancePacketType : byte
