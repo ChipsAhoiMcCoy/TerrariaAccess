@@ -162,7 +162,7 @@ internal sealed class CursorDescriptorService
 
         try
         {
-            int baseOption = GetPlantStyleOption(tileType, tile);
+            int baseOption = GetMapLookupOption(tileType, tile);
             int lookup = MapHelper.TileToLookup(tileType, baseOption);
             name = Lang.GetMapObjectName(lookup);
 
@@ -1092,10 +1092,10 @@ internal sealed class CursorDescriptorService
     }
 
     /// <summary>
-    /// Gets the map legend option index for plant tiles that use frame-based variants.
-    /// This allows herbs and dye plants to display their specific names (e.g., "Daybloom" instead of generic "Herbs").
+    /// Gets the map legend option index for tiles that use frame-based variants.
+    /// This allows herbs, dye plants, and exposed gems to display their specific names.
     /// </summary>
-    private static int GetPlantStyleOption(int tileType, Tile tile)
+    private static int GetMapLookupOption(int tileType, Tile tile)
     {
         return tileType switch
         {
@@ -1103,6 +1103,8 @@ internal sealed class CursorDescriptorService
                 => Math.Clamp(tile.TileFrameX / 18, 0, 6),
             TileID.DyePlants
                 => tile.TileFrameX / 34,
+            TileID.ExposedGems
+                => Math.Clamp(tile.TileFrameX / 18, 0, 6),
             _ => 0
         };
     }

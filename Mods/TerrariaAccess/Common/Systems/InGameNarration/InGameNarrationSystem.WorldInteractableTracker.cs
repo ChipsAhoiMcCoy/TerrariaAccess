@@ -1015,6 +1015,7 @@ public sealed partial class InGameNarrationSystem
             TileID.Emerald,
             TileID.Ruby,
             TileID.Diamond,
+            TileID.ExposedGems,
             TileID.AmberStoneBlock
         };
 
@@ -1063,6 +1064,7 @@ public sealed partial class InGameNarrationSystem
                     }
 
                     int oreType = tile.TileType;
+                    OreGroupKey oreGroupKey = GetOreGroupKey(tile);
                     float bestDistanceSq = float.MaxValue;
                     Point bestAnchor = start;
 
@@ -1088,7 +1090,7 @@ public sealed partial class InGameNarrationSystem
                             }
 
                             Tile neighborTile = Main.tile[neighbor.X, neighbor.Y];
-                            if (!neighborTile.HasTile || neighborTile.TileType != oreType)
+                            if (!neighborTile.HasTile || !GetOreGroupKey(neighborTile).Equals(oreGroupKey))
                             {
                                 continue;
                             }
@@ -1099,7 +1101,7 @@ public sealed partial class InGameNarrationSystem
                     }
 
                     Vector2 worldPosition = new((bestAnchor.X + 0.5f) * 16f, (bestAnchor.Y + 0.5f) * 16f);
-                    int localId = HashCode.Combine(oreType, bestAnchor.X, bestAnchor.Y);
+                    int localId = HashCode.Combine(oreGroupKey.TileType, oreGroupKey.Style, bestAnchor.X, bestAnchor.Y);
                     string oreLabel = ResolveOreLabel(bestAnchor.X, bestAnchor.Y, oreType);
                     InteractableCueProfile profile = IsGem(oreType) ? InteractableCueProfile.Gem : InteractableCueProfile.Ore;
                     buffer.Add(new Candidate(new TrackedInteractableKey(SourceId, localId), worldPosition, profile, oreLabel));
@@ -1143,6 +1145,15 @@ public sealed partial class InGameNarrationSystem
 
         private static bool IsGem(int tileType) => Array.IndexOf(GemTileTypes, tileType) >= 0;
 
+        private static OreGroupKey GetOreGroupKey(Tile tile)
+        {
+            int style = tile.TileType == TileID.ExposedGems
+                ? Math.Clamp(tile.TileFrameX / 18, 0, 6)
+                : 0;
+
+            return new OreGroupKey(tile.TileType, style);
+        }
+
         private string ResolveOreLabel(int tileX, int tileY, int tileType)
         {
             if (CursorDescriptors.TryDescribe(tileX, tileY, out CursorDescriptorService.CursorDescriptor descriptor) && !string.IsNullOrWhiteSpace(descriptor.Name))
@@ -1172,6 +1183,8 @@ public sealed partial class InGameNarrationSystem
                 yield return new Point(point.X, point.Y + 1);
             }
         }
+
+        private readonly record struct OreGroupKey(int TileType, int Style);
     }
 
     private sealed class ItemInteractableSource : WorldInteractableSource
