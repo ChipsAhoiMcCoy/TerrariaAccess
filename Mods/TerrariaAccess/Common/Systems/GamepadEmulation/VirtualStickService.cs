@@ -75,7 +75,7 @@ internal static class VirtualStickService
 
         KeyboardState state = Main.keyState;
         bool smartCursorActive = GetEffectiveSmartCursorState();
-        bool inMenuContext = Main.gameMenu || InputStateHelper.IsFancyUiActive();
+        bool inMenuContext = Main.gameMenu || Main.ingameOptionsWindow || InputStateHelper.IsFancyUiActive();
 
         // Suppress WASD movement input when first letter navigation is active in inventory.
         // This prevents letter keys from being interpreted as both navigation AND item search.
@@ -125,7 +125,7 @@ internal static class VirtualStickService
 
         if (movementOverride || aimOverride || state.IsKeyDown(Keys.Space) || Main.mouseLeft || Main.mouseRight)
         {
-            bool inUiContext = Main.playerInventory || Main.gameMenu || InputStateHelper.IsFancyUiActive();
+            bool inUiContext = Main.playerInventory || Main.gameMenu || Main.ingameOptionsWindow || InputStateHelper.IsFancyUiActive();
             PlayerInput.SettingsForUI.SetCursorMode(inUiContext ? CursorMode.Gamepad : CursorMode.Mouse);
         }
     }
