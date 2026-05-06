@@ -14,7 +14,8 @@ namespace TerrariaAccess.Common.Systems.GamepadEmulation;
 
 /// <summary>
 /// Virtualizes the right stick keys as a D-pad for tile-by-tile cursor movement when Smart Cursor is off.
-/// Arrow keys are reserved for virtual analog cursor movement in unlocked cursor mode.
+/// Arrow keys are reserved for virtual analog cursor movement in unlocked cursor mode, and D-pad hotbar
+/// selection while Smart Cursor is on.
 /// </summary>
 public sealed class DpadVirtualizationSystem : ModSystem
 {
@@ -115,16 +116,16 @@ public sealed class DpadVirtualizationSystem : ModSystem
 
     private static void GetEffectiveDpadState(out bool up, out bool right, out bool down, out bool left)
     {
-        // OKLS is tile snap in unlocked cursor mode. Arrow keys are the
-        // complementary snap input while Smart Cursor is active.
+        // OKLS is tile snap in unlocked cursor mode. Arrow keys are handled
+        // separately as D-pad hotbar input while Smart Cursor is active.
         bool smartCursorActive = GetEffectiveSmartCursorState();
 
         if (smartCursorActive)
         {
-            up = IsPressed(GamepadEmulationKeybinds.ArrowUp);
-            right = IsPressed(GamepadEmulationKeybinds.ArrowRight);
-            down = IsPressed(GamepadEmulationKeybinds.ArrowDown);
-            left = IsPressed(GamepadEmulationKeybinds.ArrowLeft);
+            up = false;
+            right = false;
+            down = false;
+            left = false;
         }
         else
         {
@@ -307,7 +308,7 @@ public sealed class DpadVirtualizationSystem : ModSystem
         }
 
         GetEffectiveDpadState(out bool up, out bool right, out bool down, out bool left);
-        string source = smartCursorActive ? "ArrowKeys" : "OKLS";
+        string source = smartCursorActive ? "PhysicalDpad" : "OKLS";
         string message = $"[InputDebug] DpadNudge: source={source} context={InputContextResolver.Current} " +
             $"inputMode={PlayerInput.CurrentInputMode} smartCursor={smartCursorActive} " +
             $"keys=up:{up},right:{right},down:{down},left:{left} " +
@@ -447,11 +448,7 @@ public sealed class DpadVirtualizationSystem : ModSystem
 
         if (smartCursorActive)
         {
-            return IsPressed(GamepadEmulationKeybinds.ArrowUp)
-                || IsPressed(GamepadEmulationKeybinds.ArrowDown)
-                || IsPressed(GamepadEmulationKeybinds.ArrowLeft)
-                || IsPressed(GamepadEmulationKeybinds.ArrowRight)
-                || physicalDpadHeld;
+            return physicalDpadHeld;
         }
 
         return IsPressed(GamepadEmulationKeybinds.RightStickUp)

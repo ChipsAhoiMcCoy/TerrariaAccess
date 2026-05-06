@@ -537,6 +537,47 @@ public sealed class GamepadEmulationSystem : ModSystem
         {
             VirtualTriggerService.InjectFromKeybind(GamepadEmulationKeybinds.SmartSelect, TriggerNames.SmartSelect);
         }
+
+        ApplySmartCursorArrowDpadHotbar();
+    }
+
+    private static void ApplySmartCursorArrowDpadHotbar()
+    {
+        if (Main.playerInventory ||
+            InputContextResolver.Current != GamepadEmulationInputContext.WorldGameplay ||
+            !GetEffectiveSmartCursorState(ignoreTemporarySuppression: true))
+        {
+            return;
+        }
+
+        InjectArrowDpadHotbarTrigger(GamepadEmulationKeybinds.ArrowUp, TriggerNames.DpadRadial1, "up");
+        InjectArrowDpadHotbarTrigger(GamepadEmulationKeybinds.ArrowRight, TriggerNames.DpadRadial2, "right");
+        InjectArrowDpadHotbarTrigger(GamepadEmulationKeybinds.ArrowDown, TriggerNames.DpadRadial3, "down");
+        InjectArrowDpadHotbarTrigger(GamepadEmulationKeybinds.ArrowLeft, TriggerNames.DpadRadial4, "left");
+    }
+
+    private static void InjectArrowDpadHotbarTrigger(ModKeybind? keybind, string triggerName, string direction)
+    {
+        if (keybind is null || !VirtualTriggerService.IsKeybindPressed(keybind))
+        {
+            return;
+        }
+
+        VirtualTriggerService.InjectFromKeybind(keybind, triggerName);
+        LogSmartCursorArrowDpadHotbar(direction, triggerName);
+    }
+
+    private static void LogSmartCursorArrowDpadHotbar(string direction, string triggerName)
+    {
+        if (!InputDebugEnabled)
+        {
+            return;
+        }
+
+        string message = $"[InputDebug] SmartCursorArrowDpadHotbar: direction={direction} " +
+            $"trigger={triggerName} context={InputContextResolver.Current} " +
+            $"inputMode={PlayerInput.CurrentInputMode}";
+        global::TerrariaAccess.TerrariaAccess.Instance?.Logger.Info(message);
     }
 
     private static bool IsSmartCursorReservedForUi()
