@@ -68,22 +68,23 @@ internal static class VirtualStickService
     /// </summary>
     internal static void InjectFromKeyboard()
     {
-        if (!GamepadEmulationState.Enabled || InputStateHelper.IsTextInputActive())
+        GamepadEmulationInputContext context = InputContextResolver.Current;
+        if (context is GamepadEmulationInputContext.KeyboardTextInput
+            or GamepadEmulationInputContext.NativePhysicalGamepad
+            or GamepadEmulationInputContext.SuppressedByModalOrSpecialSystem)
         {
             return;
         }
 
         KeyboardState state = Main.keyState;
         bool smartCursorActive = GetEffectiveSmartCursorState();
-        bool inMenuContext = Main.gameMenu || Main.ingameOptionsWindow || InputStateHelper.IsFancyUiActive();
+        bool inMenuContext = context == GamepadEmulationInputContext.GamepadUi;
 
         // Suppress WASD movement input when first letter navigation is active in inventory.
         // This prevents letter keys from being interpreted as both navigation AND item search.
         bool suppressWasdMovement = Main.playerInventory && FirstLetterNavigationManager.IsEnabled;
         Vector2 movement = Vector2.Zero;
-        bool allowMovementStickOverride = inMenuContext;
-        bool movementOverride = allowMovementStickOverride &&
-            !suppressWasdMovement &&
+        bool movementOverride = !suppressWasdMovement &&
             TryReadStick(state, Keys.W, Keys.S, Keys.A, Keys.D, out movement);
 
         // When Smart Cursor is off, right stick keys (OKLS) are used for cursor nudge instead.
@@ -125,8 +126,9 @@ internal static class VirtualStickService
 
         if (movementOverride || aimOverride || state.IsKeyDown(Keys.Space) || Main.mouseLeft || Main.mouseRight)
         {
-            bool inUiContext = Main.playerInventory || Main.gameMenu || Main.ingameOptionsWindow || InputStateHelper.IsFancyUiActive();
-            PlayerInput.SettingsForUI.SetCursorMode(inUiContext ? CursorMode.Gamepad : CursorMode.Mouse);
+            bool gamepadCursorContext = context == GamepadEmulationInputContext.GamepadUi ||
+                context == GamepadEmulationInputContext.WorldGameplay;
+            PlayerInput.SettingsForUI.SetCursorMode(gamepadCursorContext ? CursorMode.Gamepad : CursorMode.Mouse);
         }
     }
 

@@ -29,10 +29,6 @@ public class TerrariaAccessConfig : ModConfig
 
     public override ConfigScope Mode => ConfigScope.ClientSide;
 
-    // Core feature toggle
-    [DefaultValue(true)]
-    public bool GamepadEmulationEnabled { get; set; } = true;
-
     // Narration
     [DefaultValue(false)]
     public bool AnnounceDamageNumbers { get; set; }

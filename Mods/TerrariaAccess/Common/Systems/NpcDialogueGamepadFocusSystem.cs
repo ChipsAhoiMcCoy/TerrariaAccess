@@ -106,8 +106,7 @@ public sealed class NpcDialogueGamepadFocusSystem : ModSystem
             return false;
         }
 
-        bool emulatedGamepadUiActive = GamepadEmulation.GamepadEmulationState.Enabled &&
-                                       PlayerInput.CurrentInputMode == InputMode.XBoxGamepadUI;
+        bool emulatedGamepadUiActive = PlayerInput.CurrentInputMode == InputMode.XBoxGamepadUI;
         if (!emulatedGamepadUiActive && !HasActiveGamepadUiInput())
         {
             return false;

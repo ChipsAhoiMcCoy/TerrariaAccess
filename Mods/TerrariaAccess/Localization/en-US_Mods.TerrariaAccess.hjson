@@ -79,11 +79,6 @@ Mods: {
 					Tooltip: Adjusts the volume of footstep sounds for other players in multiplayer.
 				}
 
-				GamepadEmulationEnabled: {
-					Label: Gamepad Emulation
-					Tooltip: When enabled, keyboard inputs are translated to gamepad inputs for UI navigation. Disable this if you are using a physical controller. Toggle with F6.
-				}
-
 				CavitySonarEnabled: {
 					Label: Cavity Sonar
 					Tooltip: When enabled, press the Cavity Sonar keybind to scan the area around you. A left-to-right sweep plays tones for empty spaces, revealing cave shapes and openings.
@@ -359,11 +354,6 @@ Mods: {
 			SelectedSuffix: Selected
 		}
 
-		GamepadEmulation: {
-			Enabled: Gamepad Emulation Enabled
-			Disabled: Gamepad Emulation Disabled
-		}
-
 		SearchMode: {
 			NavigationEnabled: Navigation mode. Use arrow keys to browse, Enter to select. Press Tab to search.
 			SearchEnabled: Search mode. Type to filter. Press Tab to return to navigation.
@@ -633,21 +623,21 @@ Mods: {
 			SpeechInterrupt.DisplayName: Toggle Speech Interrupt
 			BuildModeToggle.DisplayName: Cycle Build Mode
 			BuildModePlace.DisplayName: Set Build Point
-			GamepadEmulationInventorySelect.DisplayName: Gamepad Emulation Inventory Select
-			GamepadEmulationInventoryInteract.DisplayName: Gamepad Emulation Inventory Interact
-			GamepadEmulationSectionNext.DisplayName: Gamepad Emulation Section Next
-			GamepadEmulationSectionPrevious.DisplayName: Gamepad Emulation Section Previous
-			GamepadEmulationQuickUse.DisplayName: Gamepad Emulation Inventory Quick Use
-			GamepadEmulationLockOn.DisplayName: Gamepad Emulation Lock On
-			GamepadEmulationRightStickUp.DisplayName: Gamepad Emulation Right Stick Up
-			GamepadEmulationRightStickDown.DisplayName: Gamepad Emulation Right Stick Down
-			GamepadEmulationRightStickLeft.DisplayName: Gamepad Emulation Right Stick Left
-			GamepadEmulationRightStickRight.DisplayName: Gamepad Emulation Right Stick Right
-			GamepadEmulationSmartSelect.DisplayName: Gamepad Emulation Smart Select
-			GamepadEmulationArrowUp.DisplayName: Gamepad Emulation Arrow Up
-			GamepadEmulationArrowDown.DisplayName: Gamepad Emulation Arrow Down
-			GamepadEmulationArrowLeft.DisplayName: Gamepad Emulation Arrow Left
-			GamepadEmulationArrowRight.DisplayName: Gamepad Emulation Arrow Right
+			GamepadEmulationInventorySelect.DisplayName: Virtual Controller Inventory Select
+			GamepadEmulationInventoryInteract.DisplayName: Virtual Controller Inventory Interact
+			GamepadEmulationSectionNext.DisplayName: Virtual Controller Section Next
+			GamepadEmulationSectionPrevious.DisplayName: Virtual Controller Section Previous
+			GamepadEmulationQuickUse.DisplayName: Virtual Controller Inventory Quick Use
+			GamepadEmulationLockOn.DisplayName: Virtual Controller Lock On
+			GamepadEmulationRightStickUp.DisplayName: Virtual Controller Right Stick Up
+			GamepadEmulationRightStickDown.DisplayName: Virtual Controller Right Stick Down
+			GamepadEmulationRightStickLeft.DisplayName: Virtual Controller Right Stick Left
+			GamepadEmulationRightStickRight.DisplayName: Virtual Controller Right Stick Right
+			GamepadEmulationSmartSelect.DisplayName: Virtual Controller Smart Select
+			GamepadEmulationArrowUp.DisplayName: Virtual Controller Arrow Up
+			GamepadEmulationArrowDown.DisplayName: Virtual Controller Arrow Down
+			GamepadEmulationArrowLeft.DisplayName: Virtual Controller Arrow Left
+			GamepadEmulationArrowRight.DisplayName: Virtual Controller Arrow Right
 			StatusCheck.DisplayName: Status Checker
 			InfoAccessoryCheck.DisplayName: Info Accessory Checker
 			CavitySonarScan.DisplayName: Cavity Sonar Scan
@@ -672,21 +662,21 @@ Keybinds: {
 	GuidanceTeleport.DisplayName: Teleport to Guidance Target
 	BuildModeToggle.DisplayName: Cycle Build Mode
 	BuildModePlace.DisplayName: Set Build Point
-	GamepadEmulationInventorySelect.DisplayName: Gamepad Emulation Inventory Select
-	GamepadEmulationInventoryInteract.DisplayName: Gamepad Emulation Inventory Interact
-	GamepadEmulationSectionNext.DisplayName: Gamepad Emulation Section Next
-	GamepadEmulationSectionPrevious.DisplayName: Gamepad Emulation Section Previous
-	GamepadEmulationQuickUse.DisplayName: Gamepad Emulation Inventory Quick Use
-	GamepadEmulationLockOn.DisplayName: Gamepad Emulation Lock On
-	GamepadEmulationRightStickUp.DisplayName: Gamepad Emulation Right Stick Up
-	GamepadEmulationRightStickDown.DisplayName: Gamepad Emulation Right Stick Down
-	GamepadEmulationRightStickLeft.DisplayName: Gamepad Emulation Right Stick Left
-	GamepadEmulationRightStickRight.DisplayName: Gamepad Emulation Right Stick Right
-	GamepadEmulationSmartSelect.DisplayName: Gamepad Emulation Smart Select
-	GamepadEmulationArrowUp.DisplayName: Gamepad Emulation Arrow Up
-	GamepadEmulationArrowDown.DisplayName: Gamepad Emulation Arrow Down
-	GamepadEmulationArrowLeft.DisplayName: Gamepad Emulation Arrow Left
-	GamepadEmulationArrowRight.DisplayName: Gamepad Emulation Arrow Right
+	GamepadEmulationInventorySelect.DisplayName: Virtual Controller Inventory Select
+	GamepadEmulationInventoryInteract.DisplayName: Virtual Controller Inventory Interact
+	GamepadEmulationSectionNext.DisplayName: Virtual Controller Section Next
+	GamepadEmulationSectionPrevious.DisplayName: Virtual Controller Section Previous
+	GamepadEmulationQuickUse.DisplayName: Virtual Controller Inventory Quick Use
+	GamepadEmulationLockOn.DisplayName: Virtual Controller Lock On
+	GamepadEmulationRightStickUp.DisplayName: Virtual Controller Right Stick Up
+	GamepadEmulationRightStickDown.DisplayName: Virtual Controller Right Stick Down
+	GamepadEmulationRightStickLeft.DisplayName: Virtual Controller Right Stick Left
+	GamepadEmulationRightStickRight.DisplayName: Virtual Controller Right Stick Right
+	GamepadEmulationSmartSelect.DisplayName: Virtual Controller Smart Select
+	GamepadEmulationArrowUp.DisplayName: Virtual Controller Arrow Up
+	GamepadEmulationArrowDown.DisplayName: Virtual Controller Arrow Down
+	GamepadEmulationArrowLeft.DisplayName: Virtual Controller Arrow Left
+	GamepadEmulationArrowRight.DisplayName: Virtual Controller Arrow Right
 	StatusCheck.DisplayName: Status Checker
 	InfoAccessoryCheck.DisplayName: Info Accessory Checker
 	CavitySonarScan.DisplayName: Cavity Sonar Scan
@@ -759,11 +749,6 @@ Configs: {
 
 		MultiplayerFootstepVolume: {
 			Label: Multiplayer Footstep Volume
-			Tooltip: ""
-		}
-
-		GamepadEmulationEnabled: {
-			Label: Gamepad Emulation Enabled
 			Tooltip: ""
 		}
 

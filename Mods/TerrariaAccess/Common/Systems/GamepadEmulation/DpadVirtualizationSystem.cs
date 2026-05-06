@@ -19,6 +19,7 @@ namespace TerrariaAccess.Common.Systems.GamepadEmulation;
 public sealed class DpadVirtualizationSystem : ModSystem
 {
     private const int DefaultRepeatDelayFrames = 6;
+    private static readonly bool InputDebugEnabled = !string.IsNullOrEmpty(Environment.GetEnvironmentVariable("SRM_DEBUG_INPUT"));
 
     private static uint _lastDpadHeldFrame = uint.MaxValue;
     private static bool _temporarilySuppressedSmartCursor;
@@ -60,11 +61,6 @@ public sealed class DpadVirtualizationSystem : ModSystem
 
     private static bool ShouldProcess()
     {
-        if (!GamepadEmulationState.Enabled)
-        {
-            return false;
-        }
-
         if (Main.dedServ || Main.gameMenu || Main.drawingPlayerChat || Main.editSign || Main.editChest)
         {
             return false;
@@ -95,12 +91,7 @@ public sealed class DpadVirtualizationSystem : ModSystem
             return false;
         }
 
-        if (InputStateHelper.ShouldUseNativeGamepadWorldInput())
-        {
-            return false;
-        }
-
-        return true;
+        return InputContextResolver.Current == GamepadEmulationInputContext.WorldGameplay;
     }
 
     private Vector2 CollectDpadNudges()
@@ -124,16 +115,16 @@ public sealed class DpadVirtualizationSystem : ModSystem
 
     private static void GetEffectiveDpadState(out bool up, out bool right, out bool down, out bool left)
     {
-        // Keyboard D-pad virtualization is only active in unlocked cursor mode.
-        // In smart cursor mode, arrow keys intentionally do not move or snap the cursor.
+        // OKLS is tile snap in unlocked cursor mode. Arrow keys are the
+        // complementary snap input while Smart Cursor is active.
         bool smartCursorActive = GetEffectiveSmartCursorState();
 
         if (smartCursorActive)
         {
-            up = false;
-            right = false;
-            down = false;
-            left = false;
+            up = IsPressed(GamepadEmulationKeybinds.ArrowUp);
+            right = IsPressed(GamepadEmulationKeybinds.ArrowRight);
+            down = IsPressed(GamepadEmulationKeybinds.ArrowDown);
+            left = IsPressed(GamepadEmulationKeybinds.ArrowLeft);
         }
         else
         {
@@ -228,6 +219,7 @@ public sealed class DpadVirtualizationSystem : ModSystem
             return;
         }
 
+        LogDpadNudge(nudges, smartCursorActive, originTile, targetTile, newX, newY);
         RegisterDpadHeldFrame();
         ApplyCursorPosition(newX, newY);
     }
@@ -295,9 +287,54 @@ public sealed class DpadVirtualizationSystem : ModSystem
             ClampUnlockedCursorToGamepadReach(player, ref newX, ref newY);
         }
 
+        LogUnlockedArrowAnalog(stick, cursorDelta, newX, newY);
         ApplyAnalogCursorPosition(newX, newY);
         VirtualStickService.MarkAnalogStickActiveThisFrame();
         return true;
+    }
+
+    private static void LogDpadNudge(
+        Vector2 nudges,
+        bool smartCursorActive,
+        Point originTile,
+        Point targetTile,
+        int newX,
+        int newY)
+    {
+        if (!InputDebugEnabled)
+        {
+            return;
+        }
+
+        GetEffectiveDpadState(out bool up, out bool right, out bool down, out bool left);
+        string source = smartCursorActive ? "ArrowKeys" : "OKLS";
+        string message = $"[InputDebug] DpadNudge: source={source} context={InputContextResolver.Current} " +
+            $"inputMode={PlayerInput.CurrentInputMode} smartCursor={smartCursorActive} " +
+            $"keys=up:{up},right:{right},down:{down},left:{left} " +
+            $"nudge=({nudges.X:0.##},{nudges.Y:0.##}) " +
+            $"originTile=({originTile.X},{originTile.Y}) targetTile=({targetTile.X},{targetTile.Y}) " +
+            $"cursor=({Main.mouseX},{Main.mouseY})->({newX},{newY})";
+        global::TerrariaAccess.TerrariaAccess.Instance?.Logger.Info(message);
+    }
+
+    private static void LogUnlockedArrowAnalog(Vector2 stick, Vector2 cursorDelta, int newX, int newY)
+    {
+        if (!InputDebugEnabled)
+        {
+            return;
+        }
+
+        KeyboardState keyboard = Main.keyState;
+        bool up = IsPressed(GamepadEmulationKeybinds.ArrowUp) || keyboard.IsKeyDown(Keys.Up);
+        bool right = IsPressed(GamepadEmulationKeybinds.ArrowRight) || keyboard.IsKeyDown(Keys.Right);
+        bool down = IsPressed(GamepadEmulationKeybinds.ArrowDown) || keyboard.IsKeyDown(Keys.Down);
+        bool left = IsPressed(GamepadEmulationKeybinds.ArrowLeft) || keyboard.IsKeyDown(Keys.Left);
+        string message = $"[InputDebug] UnlockedArrowAnalog: source=ArrowKeys context={InputContextResolver.Current} " +
+            $"inputMode={PlayerInput.CurrentInputMode} smartCursor={GetEffectiveSmartCursorState()} " +
+            $"keys=up:{up},right:{right},down:{down},left:{left} " +
+            $"stick=({stick.X:0.##},{stick.Y:0.##}) delta=({cursorDelta.X:0.##},{cursorDelta.Y:0.##}) " +
+            $"cursor=({Main.mouseX},{Main.mouseY})->({newX},{newY})";
+        global::TerrariaAccess.TerrariaAccess.Instance?.Logger.Info(message);
     }
 
     private static Vector2 ResolveUnlockedCursorSpeed(Player player)
@@ -404,14 +441,17 @@ public sealed class DpadVirtualizationSystem : ModSystem
     /// </summary>
     internal static bool AreDpadKeysHeld()
     {
-        // Keyboard D-pad keys are only active in unlocked cursor mode.
         bool smartCursorActive = GetEffectiveSmartCursorState();
 
         bool physicalDpadHeld = !InputStateHelper.ShouldUseNativeGamepadWorldInput() && IsPhysicalGamepadDpadHeld();
 
         if (smartCursorActive)
         {
-            return physicalDpadHeld;
+            return IsPressed(GamepadEmulationKeybinds.ArrowUp)
+                || IsPressed(GamepadEmulationKeybinds.ArrowDown)
+                || IsPressed(GamepadEmulationKeybinds.ArrowLeft)
+                || IsPressed(GamepadEmulationKeybinds.ArrowRight)
+                || physicalDpadHeld;
         }
 
         return IsPressed(GamepadEmulationKeybinds.RightStickUp)

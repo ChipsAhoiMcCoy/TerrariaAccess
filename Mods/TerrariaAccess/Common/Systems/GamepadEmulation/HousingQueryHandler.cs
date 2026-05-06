@@ -68,7 +68,7 @@ internal sealed class HousingQueryHandler
         bool onNpcIcon = currentPoint > 600 && currentPoint <= 650;
         bool onNpcHousingTab = Main.EquipPage == 1;
 
-        if (!GamepadEmulationState.Enabled || !onNpcHousingTab)
+        if (!onNpcHousingTab)
         {
             ResetKeyTracking();
             _lastHousingQueryPoint = currentPoint;

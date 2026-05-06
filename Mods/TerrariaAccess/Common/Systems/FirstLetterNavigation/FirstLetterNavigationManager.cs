@@ -514,7 +514,6 @@ internal static class FirstLetterNavigationManager
     private static bool ShouldReserveLetterKeyForShopSmartSelect(Keys key)
     {
         return Main.npcShop != 0 &&
-               GamepadEmulationState.Enabled &&
                VirtualTriggerService.IsKeybindPressedRaw(GamepadEmulationKeybinds.SmartSelect) &&
                VirtualTriggerService.IsKeybindBoundToKey(GamepadEmulationKeybinds.SmartSelect, key);
     }
