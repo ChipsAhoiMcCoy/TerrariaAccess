@@ -11,6 +11,7 @@ using Terraria.GameInput;
 using Terraria.ID;
 using Terraria.ModLoader;
 using Terraria.UI;
+using Terraria.UI.Gamepad;
 
 namespace TerrariaAccess.Common.Systems;
 
@@ -21,9 +22,13 @@ namespace TerrariaAccess.Common.Systems;
 public sealed class CharacterCreationNameInputSystem : ModSystem
 {
     private const int MaxNameLength = 20;
+    private const int CharacterNameLinkPoint = 3020;
 
     private bool _isEditingName;
+    private bool _replaceExistingTextOnFirstInput;
     private bool _tabWasPressed;
+    private bool _tabHandledUntilRelease;
+    private int _lastFocusedLinkPoint = -1;
     private string _editingText = string.Empty;
     private string _originalText = string.Empty;
     private UIState? _editingState;
@@ -48,25 +53,41 @@ public sealed class CharacterCreationNameInputSystem : ModSystem
         {
             ResetState();
             _tabWasPressed = false;
+            _tabHandledUntilRelease = false;
+            _lastFocusedLinkPoint = -1;
             return;
         }
 
+        int focusedLinkPointBeforeInput = _lastFocusedLinkPoint;
         bool tabPressed = Main.keyState.IsKeyDown(Keys.Tab);
         bool tabJustPressed = tabPressed && !_tabWasPressed;
         _tabWasPressed = tabPressed;
+        if (!tabPressed)
+        {
+            _tabHandledUntilRelease = false;
+        }
+
+        bool tabStartedOnCharacterName = tabJustPressed &&
+            !_tabHandledUntilRelease &&
+            !_isEditingName &&
+            focusedLinkPointBeforeInput == CharacterNameLinkPoint;
+        bool tabSavePressed = tabJustPressed && !_tabHandledUntilRelease && _isEditingName;
 
         if (_isEditingName && !ReferenceEquals(state, _editingState))
         {
             CommitName(save: true, announce: false);
         }
 
-        if (tabJustPressed)
+        if (tabSavePressed || tabStartedOnCharacterName)
         {
+            _tabHandledUntilRelease = true;
+
             if (_isEditingName)
             {
+                BlockTabForCurrentFrame();
                 CommitName(save: true, announce: true);
             }
-            else
+            else if (tabStartedOnCharacterName)
             {
                 BeginNameEntry(state);
             }
@@ -78,6 +99,8 @@ public sealed class CharacterCreationNameInputSystem : ModSystem
         {
             UpdateNameEntry(state);
         }
+
+        _lastFocusedLinkPoint = UILinkPointNavigator.CurrentPoint;
     }
 
     private void BeginNameEntry(UIState state)
@@ -91,9 +114,12 @@ public sealed class CharacterCreationNameInputSystem : ModSystem
         _nameButton = nameButton;
         _originalText = GetCurrentName(player, nameButton);
         _editingText = _originalText;
+        _replaceExistingTextOnFirstInput = !string.IsNullOrEmpty(_editingText);
         _isEditingName = true;
         IsNameEntryActive = true;
 
+        UILinkPointNavigator.ChangePoint(CharacterNameLinkPoint);
+        _lastFocusedLinkPoint = CharacterNameLinkPoint;
         ConfigureTextInput(nameButton);
         BlockTabForCurrentFrame();
 
@@ -121,6 +147,11 @@ public sealed class CharacterCreationNameInputSystem : ModSystem
         Main.instance.HandleIME();
         string previousText = _editingText;
         string updatedText = Main.GetInputText(_editingText);
+        if (_replaceExistingTextOnFirstInput)
+        {
+            updatedText = ApplyFirstTextInputReplacement(previousText, updatedText);
+        }
+
         if (updatedText.Length > MaxNameLength)
         {
             updatedText = updatedText[..MaxNameLength];
@@ -146,6 +177,7 @@ public sealed class CharacterCreationNameInputSystem : ModSystem
 
         if (!string.Equals(updatedText, previousText, StringComparison.Ordinal))
         {
+            _replaceExistingTextOnFirstInput = false;
             _editingText = updatedText;
             SetName(player, nameButton, _editingText);
             SoundEngine.PlaySound(SoundID.MenuTick);
@@ -169,6 +201,7 @@ public sealed class CharacterCreationNameInputSystem : ModSystem
         ClearTextInput();
         _isEditingName = false;
         IsNameEntryActive = false;
+        _replaceExistingTextOnFirstInput = false;
         _editingState = null;
         _nameButton = null;
         _originalText = string.Empty;
@@ -240,6 +273,29 @@ public sealed class CharacterCreationNameInputSystem : ModSystem
         }
     }
 
+    private string ApplyFirstTextInputReplacement(string previousText, string updatedText)
+    {
+        if (Main.inputTextEnter || Main.inputTextEscape)
+        {
+            _replaceExistingTextOnFirstInput = false;
+            return updatedText;
+        }
+
+        if (updatedText.Length > previousText.Length &&
+            updatedText.StartsWith(previousText, StringComparison.Ordinal))
+        {
+            _replaceExistingTextOnFirstInput = false;
+            return updatedText[previousText.Length..];
+        }
+
+        if (!string.Equals(updatedText, previousText, StringComparison.Ordinal))
+        {
+            _replaceExistingTextOnFirstInput = false;
+        }
+
+        return updatedText;
+    }
+
     private static void SetName(Player player, UIElement nameButton, string name)
     {
         player.name = name;
@@ -296,6 +352,7 @@ public sealed class CharacterCreationNameInputSystem : ModSystem
         ClearTrigger(current, justPressed, TriggerNames.MenuDown);
         ClearTrigger(current, justPressed, TriggerNames.MenuLeft);
         ClearTrigger(current, justPressed, TriggerNames.MenuRight);
+        ClearTrigger(current, justPressed, TriggerNames.LockOn);
         ClearTrigger(current, justPressed, TriggerNames.MouseLeft);
         ClearTrigger(current, justPressed, TriggerNames.MouseRight);
 
@@ -317,6 +374,9 @@ public sealed class CharacterCreationNameInputSystem : ModSystem
         ClearTextInput();
         _isEditingName = false;
         IsNameEntryActive = false;
+        _replaceExistingTextOnFirstInput = false;
+        _tabHandledUntilRelease = false;
+        _lastFocusedLinkPoint = -1;
         _editingState = null;
         _nameButton = null;
         _editingText = string.Empty;

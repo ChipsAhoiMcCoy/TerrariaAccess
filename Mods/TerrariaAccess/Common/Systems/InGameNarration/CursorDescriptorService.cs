@@ -810,6 +810,16 @@ internal sealed class CursorDescriptorService
             return true;
         }
 
+        // Some directional furniture encodes orientation inside a style multiplier.
+        // TileObjectData.GetTileStyle already divides that out, so subtracting the
+        // alternate offset would turn valid styles into earlier items. The classic
+        // Toilet is TileID.Chairs style 1; normalizing its right-facing alternate
+        // would incorrectly announce it as style 0, Wooden Chair.
+        if (baseData.StyleMultiplier > 1)
+        {
+            return true;
+        }
+
         for (int alternateIndex = 1; alternateIndex <= MaxAlternatePlacementsToProbe; alternateIndex++)
         {
             TileObjectData? altData;

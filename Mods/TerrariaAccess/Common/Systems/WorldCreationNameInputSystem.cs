@@ -25,7 +25,10 @@ public sealed class WorldCreationNameInputSystem : ModSystem
     private const int MaxNameLength = 27;
 
     private bool _isEditingName;
+    private bool _replaceExistingTextOnFirstInput;
     private bool _tabWasPressed;
+    private bool _tabHandledUntilRelease;
+    private int _lastFocusedLinkPoint = -1;
     private string _editingText = string.Empty;
     private string _originalText = string.Empty;
     private UIState? _editingState;
@@ -50,25 +53,41 @@ public sealed class WorldCreationNameInputSystem : ModSystem
         {
             ResetState();
             _tabWasPressed = false;
+            _tabHandledUntilRelease = false;
+            _lastFocusedLinkPoint = -1;
             return;
         }
 
+        int focusedLinkPointBeforeInput = _lastFocusedLinkPoint;
         bool tabPressed = Main.keyState.IsKeyDown(Keys.Tab);
         bool tabJustPressed = tabPressed && !_tabWasPressed;
         _tabWasPressed = tabPressed;
+        if (!tabPressed)
+        {
+            _tabHandledUntilRelease = false;
+        }
+
+        bool tabStartedOnWorldName = tabJustPressed &&
+            !_tabHandledUntilRelease &&
+            !_isEditingName &&
+            focusedLinkPointBeforeInput == MenuUiSelectionTracker.WcLinkName;
+        bool tabSavePressed = tabJustPressed && !_tabHandledUntilRelease && _isEditingName;
 
         if (_isEditingName && !ReferenceEquals(state, _editingState))
         {
             CommitName(save: true, announce: false);
         }
 
-        if (tabJustPressed)
+        if (tabSavePressed || tabStartedOnWorldName)
         {
+            _tabHandledUntilRelease = true;
+
             if (_isEditingName)
             {
+                BlockTabForCurrentFrame();
                 CommitName(save: true, announce: true);
             }
-            else if (IsWorldNameFocused())
+            else if (tabStartedOnWorldName)
             {
                 BeginNameEntry(state);
             }
@@ -80,6 +99,8 @@ public sealed class WorldCreationNameInputSystem : ModSystem
         {
             UpdateNameEntry(state);
         }
+
+        _lastFocusedLinkPoint = UILinkPointNavigator.CurrentPoint;
     }
 
     private void BeginNameEntry(UIState state)
@@ -93,9 +114,12 @@ public sealed class WorldCreationNameInputSystem : ModSystem
         _nameButton = nameButton;
         _originalText = GetCurrentWorldName(state, nameButton);
         _editingText = _originalText;
+        _replaceExistingTextOnFirstInput = !string.IsNullOrEmpty(_editingText);
         _isEditingName = true;
         IsNameEntryActive = true;
 
+        UILinkPointNavigator.ChangePoint(MenuUiSelectionTracker.WcLinkName);
+        _lastFocusedLinkPoint = MenuUiSelectionTracker.WcLinkName;
         ConfigureTextInput(nameButton);
         BlockTabForCurrentFrame();
 
@@ -123,6 +147,11 @@ public sealed class WorldCreationNameInputSystem : ModSystem
         Main.instance.HandleIME();
         string previousText = _editingText;
         string updatedText = Main.GetInputText(_editingText);
+        if (_replaceExistingTextOnFirstInput)
+        {
+            updatedText = ApplyFirstTextInputReplacement(previousText, updatedText);
+        }
+
         if (updatedText.Length > MaxNameLength)
         {
             updatedText = updatedText[..MaxNameLength];
@@ -148,6 +177,7 @@ public sealed class WorldCreationNameInputSystem : ModSystem
 
         if (!string.Equals(updatedText, previousText, StringComparison.Ordinal))
         {
+            _replaceExistingTextOnFirstInput = false;
             _editingText = updatedText;
             SetWorldName(state, nameButton, _editingText);
             SoundEngine.PlaySound(SoundID.MenuTick);
@@ -171,6 +201,7 @@ public sealed class WorldCreationNameInputSystem : ModSystem
         ClearTextInput();
         _isEditingName = false;
         IsNameEntryActive = false;
+        _replaceExistingTextOnFirstInput = false;
         _editingState = null;
         _nameButton = null;
         _originalText = string.Empty;
@@ -222,9 +253,27 @@ public sealed class WorldCreationNameInputSystem : ModSystem
         }
     }
 
-    private static bool IsWorldNameFocused()
+    private string ApplyFirstTextInputReplacement(string previousText, string updatedText)
     {
-        return UILinkPointNavigator.CurrentPoint == MenuUiSelectionTracker.WcLinkName;
+        if (Main.inputTextEnter || Main.inputTextEscape)
+        {
+            _replaceExistingTextOnFirstInput = false;
+            return updatedText;
+        }
+
+        if (updatedText.Length > previousText.Length &&
+            updatedText.StartsWith(previousText, StringComparison.Ordinal))
+        {
+            _replaceExistingTextOnFirstInput = false;
+            return updatedText[previousText.Length..];
+        }
+
+        if (!string.Equals(updatedText, previousText, StringComparison.Ordinal))
+        {
+            _replaceExistingTextOnFirstInput = false;
+        }
+
+        return updatedText;
     }
 
     private static string GetCurrentWorldName(UIState state, UIElement nameButton)
@@ -331,6 +380,7 @@ public sealed class WorldCreationNameInputSystem : ModSystem
         ClearTrigger(current, justPressed, TriggerNames.MenuDown);
         ClearTrigger(current, justPressed, TriggerNames.MenuLeft);
         ClearTrigger(current, justPressed, TriggerNames.MenuRight);
+        ClearTrigger(current, justPressed, TriggerNames.LockOn);
         ClearTrigger(current, justPressed, TriggerNames.MouseLeft);
         ClearTrigger(current, justPressed, TriggerNames.MouseRight);
 
@@ -352,6 +402,9 @@ public sealed class WorldCreationNameInputSystem : ModSystem
         ClearTextInput();
         _isEditingName = false;
         IsNameEntryActive = false;
+        _replaceExistingTextOnFirstInput = false;
+        _tabHandledUntilRelease = false;
+        _lastFocusedLinkPoint = -1;
         _editingState = null;
         _nameButton = null;
         _editingText = string.Empty;
