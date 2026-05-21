@@ -651,6 +651,12 @@ public sealed class EventProgressNarrationSystem : ModSystem
         wave = 0;
         remainingPercent = 0;
 
+        if (Main.netMode == NetmodeID.MultiplayerClient &&
+            TryGetSyncedActiveEvent(out eventKind, out wave, out remainingPercent))
+        {
+            return true;
+        }
+
         int done;
         int max;
 
@@ -718,6 +724,49 @@ public sealed class EventProgressNarrationSystem : ModSystem
 
         remainingPercent = pct;
         return true;
+    }
+
+    private static bool TryGetSyncedActiveEvent(out int eventKind, out int wave, out int remainingPercent)
+    {
+        eventKind = Main.invasionProgressIcon;
+        wave = Main.invasionProgressWave;
+        remainingPercent = 0;
+
+        if (!IsSyncedEventActive(eventKind))
+        {
+            return false;
+        }
+
+        int max = Main.invasionProgressMax;
+        int done = Main.invasionProgress;
+        if (max <= 0 || done < 0)
+        {
+            return false;
+        }
+
+        if (done > max)
+        {
+            done = max;
+        }
+
+        double remainingFraction = 1.0 - ((double)done / max);
+        remainingPercent = Math.Clamp((int)Math.Round(remainingFraction * 100.0), 0, 100);
+        return true;
+    }
+
+    private static bool IsSyncedEventActive(int eventKind)
+    {
+        return eventKind switch
+        {
+            EventKindFrostMoon => Main.snowMoon,
+            EventKindPumpkinMoon => Main.pumpkinMoon,
+            EventKindOldOnesArmy => DD2Event.Ongoing,
+            EventKindGoblinArmy => Main.invasionType == eventKind - 3,
+            EventKindFrostLegion => Main.invasionType == eventKind - 3,
+            EventKindPirateInvasion => Main.invasionType == eventKind - 3,
+            EventKindMartianMadness => Main.invasionType == eventKind - 3,
+            _ => false,
+        };
     }
 
     private static bool TryGetMoonWaveProgress(int waveNumber, out int done, out int max)
