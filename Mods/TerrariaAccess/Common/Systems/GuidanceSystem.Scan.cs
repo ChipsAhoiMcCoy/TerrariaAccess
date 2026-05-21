@@ -1219,6 +1219,11 @@ public sealed partial class GuidanceSystem
 
     private static bool CustomTileStyleMatches(Tile tile, CustomGuidanceFilter filter)
     {
+        if (filter.TypeId == TileID.Crystals && IsRegularCrystalShardFilter(filter))
+        {
+            return IsRegularCrystalShardTile(tile);
+        }
+
         if (filter.StyleId < 0)
         {
             return true;
@@ -1231,6 +1236,20 @@ public sealed partial class GuidanceSystem
 
         return CursorDescriptorService.TryResolveTileStyle(tile, filter.TypeId, out int style) &&
                style == filter.StyleId;
+    }
+
+    private static bool IsRegularCrystalShardFilter(CustomGuidanceFilter filter)
+    {
+        return filter.StyleId is >= 0 and < 18 ||
+               LabelsMatch(filter.Label, Lang.GetItemNameValue(ItemID.CrystalShard));
+    }
+
+    private static bool IsRegularCrystalShardTile(Tile tile)
+    {
+        return tile.HasTile &&
+               tile.TileType == TileID.Crystals &&
+               tile.TileFrameX >= 0 &&
+               tile.TileFrameX < 18 * 18;
     }
 
     private static void AppendCustomProjectileMatches(int filterIndex, CustomGuidanceFilter filter, Vector2 origin)
