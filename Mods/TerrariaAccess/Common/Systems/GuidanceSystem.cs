@@ -26,6 +26,12 @@ public sealed partial class GuidanceSystem : ModSystem
     private const string SelectedCustomIndexKey = "screenReaderSelectedCustomTarget";
     private const string PersistentSelectionModeKey = "screenReaderPersistentGuidanceSelectionMode";
     private const string ExplorationModeKey = "screenReaderWaypointExplorationMode";
+    private const string MultiplayerWaypointListKey = "screenReaderMultiplayerWaypoints";
+    private const string MultiplayerCustomTargetListKey = "screenReaderMultiplayerCustomTargets";
+    private const string MultiplayerSelectedIndexKey = "screenReaderMultiplayerSelectedWaypoint";
+    private const string MultiplayerSelectedCustomIndexKey = "screenReaderMultiplayerSelectedCustomTarget";
+    private const string MultiplayerPersistentSelectionModeKey = "screenReaderMultiplayerPersistentGuidanceSelectionMode";
+    private const string MultiplayerExplorationModeKey = "screenReaderMultiplayerWaypointExplorationMode";
 
     internal const float ArrivalTileThreshold = 4f;
     private const int MaxPingDelayFrames = 54;
@@ -33,6 +39,30 @@ public sealed partial class GuidanceSystem : ModSystem
     private const float ProximityAnnouncementStepTiles = 10f;
     private const float ProximityAnnouncementToleranceTiles = 0.35f;
     private const float ExplorationSelectionMatchToleranceTiles = 6f;
+
+    private readonly record struct WaypointDataKeys(
+        string WaypointList,
+        string CustomTargetList,
+        string SelectedWaypoint,
+        string SelectedCustomTarget,
+        string PersistentSelectionMode,
+        string ExplorationMode);
+
+    private static readonly WaypointDataKeys LocalWorldWaypointDataKeys = new(
+        WaypointListKey,
+        CustomTargetListKey,
+        SelectedIndexKey,
+        SelectedCustomIndexKey,
+        PersistentSelectionModeKey,
+        ExplorationModeKey);
+
+    private static readonly WaypointDataKeys MultiplayerWorldWaypointDataKeys = new(
+        MultiplayerWaypointListKey,
+        MultiplayerCustomTargetListKey,
+        MultiplayerSelectedIndexKey,
+        MultiplayerSelectedCustomIndexKey,
+        MultiplayerPersistentSelectionModeKey,
+        MultiplayerExplorationModeKey);
 
     public override void Load()
     {
@@ -82,14 +112,14 @@ public sealed partial class GuidanceSystem : ModSystem
         }
 
         ResetTrackingState();
-        bool loaded = LoadWaypointData(tag, "world save", announceSelection: false);
+        bool loaded = LoadWaypointData(tag, "world save", announceSelection: false, ResolveWorldWaypointDataKeys());
         LogWaypoint($"LoadWorldData: Complete. HasData={loaded}, WaypointCount={Waypoints.Count}");
     }
 
     public override void SaveWorldData(TagCompound tag)
     {
         LogWaypoint($"SaveWorldData: NetMode={Main.netMode}, WaypointCount={Waypoints.Count}");
-        SaveWaypointData(tag, "world save");
+        SaveWaypointData(tag, "world save", normalizeRuntime: true, keys: ResolveWorldWaypointDataKeys());
     }
 
     public override void PostUpdateInput()
@@ -1723,7 +1753,19 @@ public sealed partial class GuidanceSystem : ModSystem
         return (sanitizedWaypoints, sanitizedCustomTargets, selectionMode, selectedWaypointIndex, selectedCustomIndex);
     }
 
+    private static WaypointDataKeys ResolveWorldWaypointDataKeys()
+    {
+        return Main.netMode == NetmodeID.Server
+            ? MultiplayerWorldWaypointDataKeys
+            : LocalWorldWaypointDataKeys;
+    }
+
     internal static bool SaveWaypointData(TagCompound tag, string source, bool normalizeRuntime = true)
+    {
+        return SaveWaypointData(tag, source, normalizeRuntime, LocalWorldWaypointDataKeys);
+    }
+
+    private static bool SaveWaypointData(TagCompound tag, string source, bool normalizeRuntime, WaypointDataKeys keys)
     {
         LogWaypoint($"SaveWaypointData: source=\"{source}\", WaypointCount={Waypoints.Count}, CustomTargetCount={CustomTargets.Count}, " +
                     $"SelectionMode={_selectionMode}, SelectedIndex={_selectedIndex}, SelectedCustomIndex={_selectedCustomIndex}, " +
@@ -1737,8 +1779,8 @@ public sealed partial class GuidanceSystem : ModSystem
                     $"SelectionMode={selectionMode}, SelectedWaypointIndex={selectedWaypointIndex}, SelectedCustomIndex={selectedCustomIndex}");
 
         bool hasData = false;
-        hasData |= SerializePersistentTargets(tag, WaypointListKey, waypoints);
-        hasData |= SerializeCustomFilters(tag, CustomTargetListKey, customTargets);
+        hasData |= SerializePersistentTargets(tag, keys.WaypointList, waypoints);
+        hasData |= SerializeCustomFilters(tag, keys.CustomTargetList, customTargets);
 
         SelectionMode persistentSelectionMode = selectionMode switch
         {
@@ -1748,42 +1790,42 @@ public sealed partial class GuidanceSystem : ModSystem
 
         if (persistentSelectionMode == SelectionMode.Waypoint && selectedWaypointIndex >= 0 && selectedWaypointIndex < waypoints.Count)
         {
-            tag[SelectedIndexKey] = selectedWaypointIndex;
+            tag[keys.SelectedWaypoint] = selectedWaypointIndex;
             hasData = true;
         }
         else
         {
-            tag.Remove(SelectedIndexKey);
+            tag.Remove(keys.SelectedWaypoint);
         }
 
         if (persistentSelectionMode == SelectionMode.Custom && selectedCustomIndex >= 0 && selectedCustomIndex < customTargets.Count)
         {
-            tag[SelectedCustomIndexKey] = selectedCustomIndex;
+            tag[keys.SelectedCustomTarget] = selectedCustomIndex;
             hasData = true;
         }
         else
         {
-            tag.Remove(SelectedCustomIndexKey);
+            tag.Remove(keys.SelectedCustomTarget);
         }
 
         if (persistentSelectionMode == SelectionMode.Exploration)
         {
-            tag[ExplorationModeKey] = true;
+            tag[keys.ExplorationMode] = true;
             hasData = true;
         }
         else
         {
-            tag.Remove(ExplorationModeKey);
+            tag.Remove(keys.ExplorationMode);
         }
 
         if (persistentSelectionMode != SelectionMode.None)
         {
-            tag[PersistentSelectionModeKey] = (int)persistentSelectionMode;
+            tag[keys.PersistentSelectionMode] = (int)persistentSelectionMode;
             hasData = true;
         }
         else
         {
-            tag.Remove(PersistentSelectionModeKey);
+            tag.Remove(keys.PersistentSelectionMode);
         }
 
         return hasData;
@@ -1791,39 +1833,44 @@ public sealed partial class GuidanceSystem : ModSystem
 
     internal static bool LoadWaypointData(TagCompound tag, string source, bool announceSelection)
     {
+        return LoadWaypointData(tag, source, announceSelection, LocalWorldWaypointDataKeys);
+    }
+
+    private static bool LoadWaypointData(TagCompound tag, string source, bool announceSelection, WaypointDataKeys keys)
+    {
         LogWaypoint($"LoadWaypointData: source=\"{source}\", AnnounceSelection={announceSelection}, " +
-                    $"HasWaypointList={tag.ContainsKey(WaypointListKey)}, HasCustomTargetList={tag.ContainsKey(CustomTargetListKey)}, " +
-                    $"HasSelectedIndex={tag.ContainsKey(SelectedIndexKey)}, HasSelectedCustomIndex={tag.ContainsKey(SelectedCustomIndexKey)}, " +
-                    $"HasSelectionMode={tag.ContainsKey(PersistentSelectionModeKey)}, HasExplorationMode={tag.ContainsKey(ExplorationModeKey)}");
+                    $"HasWaypointList={tag.ContainsKey(keys.WaypointList)}, HasCustomTargetList={tag.ContainsKey(keys.CustomTargetList)}, " +
+                    $"HasSelectedIndex={tag.ContainsKey(keys.SelectedWaypoint)}, HasSelectedCustomIndex={tag.ContainsKey(keys.SelectedCustomTarget)}, " +
+                    $"HasSelectionMode={tag.ContainsKey(keys.PersistentSelectionMode)}, HasExplorationMode={tag.ContainsKey(keys.ExplorationMode)}");
 
         ResetWaypointSelectionState();
 
-        LoadPersistentTargets(tag, WaypointListKey, Waypoints, source, "waypoint");
-        LoadCustomFilters(tag, CustomTargetListKey, CustomTargets, source);
+        LoadPersistentTargets(tag, keys.WaypointList, Waypoints, source, "waypoint");
+        LoadCustomFilters(tag, keys.CustomTargetList, CustomTargets, source);
 
-        if (tag.ContainsKey(SelectedIndexKey))
+        if (tag.ContainsKey(keys.SelectedWaypoint))
         {
-            int rawIndex = tag.GetInt(SelectedIndexKey);
+            int rawIndex = tag.GetInt(keys.SelectedWaypoint);
             _selectedIndex = Waypoints.Count > 0
                 ? Math.Clamp(rawIndex, 0, Waypoints.Count - 1)
                 : -1;
             LogWaypoint($"LoadWaypointData: SelectedWaypointIndex raw={rawIndex}, clamped={_selectedIndex}");
         }
 
-        if (tag.ContainsKey(SelectedCustomIndexKey))
+        if (tag.ContainsKey(keys.SelectedCustomTarget))
         {
-            int rawIndex = tag.GetInt(SelectedCustomIndexKey);
+            int rawIndex = tag.GetInt(keys.SelectedCustomTarget);
             _selectedCustomIndex = CustomTargets.Count > 0
                 ? Math.Clamp(rawIndex, 0, CustomTargets.Count - 1)
                 : -1;
             LogWaypoint($"LoadWaypointData: SelectedCustomIndex raw={rawIndex}, clamped={_selectedCustomIndex}");
         }
 
-        bool hasExplicitSelectionMode = tag.ContainsKey(PersistentSelectionModeKey);
+        bool hasExplicitSelectionMode = tag.ContainsKey(keys.PersistentSelectionMode);
         SelectionMode persistentSelectionMode = hasExplicitSelectionMode
-            ? (SelectionMode)tag.GetInt(PersistentSelectionModeKey)
+            ? (SelectionMode)tag.GetInt(keys.PersistentSelectionMode)
             : SelectionMode.None;
-        bool explorationMode = tag.ContainsKey(ExplorationModeKey) && tag.GetBool(ExplorationModeKey);
+        bool explorationMode = tag.ContainsKey(keys.ExplorationMode) && tag.GetBool(keys.ExplorationMode);
 
         if (!hasExplicitSelectionMode)
         {

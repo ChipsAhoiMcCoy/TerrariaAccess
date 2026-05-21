@@ -121,12 +121,6 @@ public sealed class GuidancePlayer : ModPlayer
             return;
         }
 
-        if (GuidanceSystem.CanUseNetworkSync())
-        {
-            Mod.Logger.Info("[Waypoint] CacheWaypointState: Skipped (network sync available, server handles state).");
-            return;
-        }
-
         string cacheKey = BuildWorldCacheKey();
         TagCompound serialized = new();
         bool hasData = GuidanceSystem.SaveWaypointData(serialized, "player cache", normalizeRuntime: false);

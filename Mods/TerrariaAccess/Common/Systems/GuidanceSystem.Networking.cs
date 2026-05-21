@@ -199,9 +199,9 @@ public sealed partial class GuidanceSystem
     {
         (List<Waypoint> waypoints,
             List<CustomGuidanceFilter> customTargets,
-            SelectionMode selectionMode,
-            int selectedWaypointIndex,
-            int selectedCustomIndex) = BuildSerializableWaypointState("network sync", normalizeRuntime: true);
+            _,
+            _,
+            _) = BuildSerializableWaypointState("network sync", normalizeRuntime: true);
 
         writer.Write(waypoints.Count);
         foreach (Waypoint waypoint in waypoints)
@@ -216,30 +216,36 @@ public sealed partial class GuidanceSystem
         {
             WriteCustomFilter(writer, customTarget);
         }
-
-        writer.Write((byte)selectionMode);
-        writer.Write(selectedWaypointIndex);
-        writer.Write(selectedCustomIndex);
     }
 
     private static void ReadWaypointState(BinaryReader reader, bool announceSelection)
     {
-        ResetWaypointSelectionState();
+        SelectionMode previousSelectionMode = _selectionMode;
+        int previousWaypointIndex = _selectedIndex;
+        int previousCustomIndex = _selectedCustomIndex;
+        Waypoint? previousWaypoint = previousSelectionMode == SelectionMode.Waypoint &&
+            previousWaypointIndex >= 0 && previousWaypointIndex < Waypoints.Count
+                ? Waypoints[previousWaypointIndex]
+                : null;
+        CustomGuidanceFilter? previousCustomTarget = previousSelectionMode == SelectionMode.Custom &&
+            previousCustomIndex >= 0 && previousCustomIndex < CustomTargets.Count
+                ? CustomTargets[previousCustomIndex]
+                : null;
 
         if (!TryReadWaypointCount(reader, out int waypointCount))
         {
             return;
         }
 
+        List<Waypoint> syncedWaypoints = new(waypointCount);
         for (int i = 0; i < waypointCount; i++)
         {
             if (!TryReadWaypoint(reader, i, "network sync", out Waypoint waypoint))
             {
-                ResetWaypointSelectionState();
                 return;
             }
 
-            Waypoints.Add(waypoint);
+            syncedWaypoints.Add(waypoint);
         }
 
         if (!TryReadWaypointCount(reader, out int customTargetCount))
@@ -247,30 +253,36 @@ public sealed partial class GuidanceSystem
             return;
         }
 
+        List<CustomGuidanceFilter> syncedCustomTargets = new(customTargetCount);
         for (int i = 0; i < customTargetCount; i++)
         {
             if (!TryReadCustomFilter(reader, i, "network sync custom target", out CustomGuidanceFilter customTarget))
             {
-                ResetWaypointSelectionState();
                 return;
             }
 
-            CustomTargets.Add(customTarget);
+            syncedCustomTargets.Add(customTarget);
         }
 
-        if (!TryReadWaypointSelection(reader, out SelectionMode selectionMode, out int selectedWaypointIndex, out int selectedCustomIndex))
-        {
-            return;
-        }
+        Waypoints.Clear();
+        Waypoints.AddRange(syncedWaypoints);
+        CustomTargets.Clear();
+        CustomTargets.AddRange(syncedCustomTargets);
+        RestoreLocalSelectionAfterSharedSync(
+            previousSelectionMode,
+            previousWaypointIndex,
+            previousWaypoint,
+            previousCustomIndex,
+            previousCustomTarget);
 
-        _selectionMode = selectionMode;
-        _selectedIndex = selectedWaypointIndex;
-        _selectedCustomIndex = selectedCustomIndex;
-        ClampSelectedWaypointIndex();
-        ClampSelectedCustomIndex();
-
-        ClearCategoryAnnouncement();
+        NearbyCustomMatches.Clear();
+        SweepOrder.Clear();
+        SweepScheduler.Reset();
         ResetProximityProgress();
+        _nextPingUpdateFrame = -1;
+        _arrivalAnnounced = false;
+        _lastTargetRefreshFrame = 0;
+        _lastTargetRefreshPlayerIndex = -1;
 
         if (!announceSelection)
         {
@@ -287,6 +299,102 @@ public sealed partial class GuidanceSystem
         {
             RescheduleGuidancePing(Main.LocalPlayer);
         }
+    }
+
+    private static void RestoreLocalSelectionAfterSharedSync(
+        SelectionMode previousSelectionMode,
+        int previousWaypointIndex,
+        Waypoint? previousWaypoint,
+        int previousCustomIndex,
+        CustomGuidanceFilter? previousCustomTarget)
+    {
+        _selectionMode = previousSelectionMode;
+
+        if (_selectionMode == SelectionMode.Waypoint)
+        {
+            if (Waypoints.Count == 0)
+            {
+                _selectionMode = SelectionMode.None;
+                _selectedIndex = -1;
+            }
+            else if (previousWaypoint.HasValue &&
+                     TryFindMatchingWaypoint(previousWaypoint.Value, out int matchedWaypointIndex))
+            {
+                _selectedIndex = matchedWaypointIndex;
+            }
+            else
+            {
+                _selectedIndex = Math.Clamp(previousWaypointIndex, 0, Waypoints.Count - 1);
+            }
+        }
+        else
+        {
+            _selectedIndex = Math.Clamp(previousWaypointIndex, -1, Waypoints.Count - 1);
+        }
+
+        if (_selectionMode == SelectionMode.Custom)
+        {
+            if (CustomTargets.Count == 0)
+            {
+                _selectionMode = SelectionMode.None;
+                _selectedCustomIndex = -1;
+            }
+            else if (previousCustomIndex < 0)
+            {
+                _selectedCustomIndex = -1;
+            }
+            else if (previousCustomTarget.HasValue &&
+                     TryFindMatchingCustomTarget(previousCustomTarget.Value, out int matchedCustomIndex))
+            {
+                _selectedCustomIndex = matchedCustomIndex;
+            }
+            else
+            {
+                _selectedCustomIndex = Math.Clamp(previousCustomIndex, 0, CustomTargets.Count - 1);
+            }
+        }
+        else
+        {
+            _selectedCustomIndex = Math.Clamp(previousCustomIndex, -1, CustomTargets.Count - 1);
+        }
+    }
+
+    private static bool TryFindMatchingWaypoint(Waypoint target, out int index)
+    {
+        for (int i = 0; i < Waypoints.Count; i++)
+        {
+            Waypoint candidate = Waypoints[i];
+            if (string.Equals(candidate.Name, target.Name, StringComparison.OrdinalIgnoreCase) &&
+                Math.Abs(candidate.WorldPosition.X - target.WorldPosition.X) < 0.5f &&
+                Math.Abs(candidate.WorldPosition.Y - target.WorldPosition.Y) < 0.5f)
+            {
+                index = i;
+                return true;
+            }
+        }
+
+        index = -1;
+        return false;
+    }
+
+    private static bool TryFindMatchingCustomTarget(CustomGuidanceFilter target, out int index)
+    {
+        for (int i = 0; i < CustomTargets.Count; i++)
+        {
+            CustomGuidanceFilter candidate = CustomTargets[i];
+            if (candidate.Kind == target.Kind &&
+                candidate.TypeId == target.TypeId &&
+                candidate.StyleId == target.StyleId &&
+                candidate.RequireLabelMatch == target.RequireLabelMatch &&
+                string.Equals(candidate.Label, target.Label, StringComparison.OrdinalIgnoreCase))
+            {
+                index = i;
+                return true;
+            }
+        }
+
+        index = -1;
+        return false;
     }
 
     private static void BroadcastWaypointSync(int toClient = -1, int ignoreClient = -1)
