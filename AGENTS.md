@@ -27,6 +27,18 @@ When done with a mod code or behavior task, build and deploy (without `-SkipDepl
 
 The default post-change workflow for mod behavior changes is: edit code, run relevant automated tests when available, then build and deploy. Launch tModLoader only when explicitly requested or when live manual testing is part of the task.
 
+## GitHub Workflow
+
+GitHub CLI is installed and should be used for GitHub authentication and push operations. Before pushing, prefer:
+
+```powershell
+gh auth status
+gh auth setup-git
+git push origin <branch>
+```
+
+If a normal `git push` opens a browser login or Git Credential Manager prompt, do not continue through the browser flow first. Run `gh auth status` to verify the signed-in account, then run `gh auth setup-git` so Git uses the GitHub CLI credential helper.
+
 ## Architecture
 
 ### Core Systems (Mods/TerrariaAccess/Common/)
