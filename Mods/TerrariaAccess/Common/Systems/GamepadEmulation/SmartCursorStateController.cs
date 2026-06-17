@@ -53,15 +53,9 @@ internal static class SmartCursorStateController
 
         EnsureInitialized();
 
-        if (context == GamepadEmulationInputContext.NativePhysicalGamepad)
-        {
-            _bindingWasPressed = false;
-            return;
-        }
-
         bool smartCursorPressed = IsSmartCursorBindingPressedRaw();
         ApplyStateFromBinding(smartCursorPressed);
-        SuppressVanillaSmartCursorTriggerFromKeyboard(smartCursorPressed);
+        SuppressVanillaSmartCursorTrigger(smartCursorPressed);
 
         if (DpadVirtualizationSystem.IsTemporarilySuppressingSmartCursor())
         {
@@ -159,14 +153,17 @@ internal static class SmartCursorStateController
         return IsVanillaTriggerPressedRaw("SmartCursor");
     }
 
-    private static void SuppressVanillaSmartCursorTriggerFromKeyboard(bool smartCursorPressed)
+    private static void SuppressVanillaSmartCursorTrigger(bool smartCursorPressed)
     {
         TriggersPack triggerPack = PlayerInput.Triggers;
-        bool latestInputWasKeyboard =
-            triggerPack.Current.LatestInputMode.TryGetValue(TriggerNames.SmartCursor, out InputMode mode) &&
-            (mode == InputMode.Keyboard || mode == InputMode.KeyboardUI);
+        bool latestInputWasHandled =
+            triggerPack.Current.LatestInputMode.TryGetValue(TriggerNames.SmartCursor, out InputMode currentMode) &&
+            IsHandledSmartCursorInputMode(currentMode);
+        bool releaseWasHandled =
+            triggerPack.JustReleased.LatestInputMode.TryGetValue(TriggerNames.SmartCursor, out InputMode releasedMode) &&
+            IsHandledSmartCursorInputMode(releasedMode);
 
-        if (!smartCursorPressed && !latestInputWasKeyboard)
+        if (!smartCursorPressed && !_bindingWasPressed && !latestInputWasHandled && !releaseWasHandled)
         {
             return;
         }
@@ -176,8 +173,22 @@ internal static class SmartCursorStateController
         triggerPack.JustReleased.KeyStatus[TriggerNames.SmartCursor] = false;
     }
 
+    private static bool IsHandledSmartCursorInputMode(InputMode mode)
+    {
+        return mode is InputMode.Keyboard
+            or InputMode.KeyboardUI
+            or InputMode.XBoxGamepad
+            or InputMode.XBoxGamepadUI;
+    }
+
     private static bool IsVanillaTriggerPressedRaw(string triggerName)
     {
+        if (PlayerInput.Triggers.Current.KeyStatus.TryGetValue(triggerName, out bool activeTrigger) &&
+            activeTrigger)
+        {
+            return true;
+        }
+
         PlayerInputProfile? profile = PlayerInput.CurrentProfile;
         if (profile is null)
         {

@@ -5,6 +5,7 @@ using Microsoft.Xna.Framework;
 using TerrariaAccess.Common.Systems.Guidance;
 using Terraria;
 using Terraria.ID;
+using Terraria.ObjectData;
 
 namespace TerrariaAccess.Common.Systems;
 
@@ -1183,38 +1184,101 @@ public sealed partial class GuidanceSystem
                     continue;
                 }
 
-                if (!InGameNarrationSystem.CursorDescriptors.TryDescribe(x, y, out CursorDescriptorService.CursorDescriptor descriptor) ||
-                    descriptor.IsAir ||
-                    descriptor.TileType != filter.TypeId ||
-                    !CustomTileStyleMatches(tile, filter) ||
-                    (filter.RequireLabelMatch && !LabelsMatch(descriptor.Name, filter.Label)))
+                if (!CanCustomTileFilterMatchRawTile(tile, filter) ||
+                    !CustomTileStyleMatches(tile, filter))
                 {
                     continue;
                 }
 
-                Vector2 worldPosition = ResolveCustomTileWorldPosition(x, y);
+                Point anchor = new(x, y);
+                int descriptorTileType = filter.TypeId;
+                if (filter.TypeId >= 0)
+                {
+                    anchor = ResolveCustomTileAnchor(x, y, tile);
+                    int anchorKey = HashCode.Combine(filterIndex, anchor.X, anchor.Y, filter.TypeId, filter.StyleId);
+                    if (!CustomEntryScratch.Add(anchorKey))
+                    {
+                        continue;
+                    }
+                }
+
+                if (filter.TypeId < 0 || filter.RequireLabelMatch)
+                {
+                    if (!InGameNarrationSystem.CursorDescriptors.TryDescribe(anchor.X, anchor.Y, out CursorDescriptorService.CursorDescriptor descriptor) ||
+                        descriptor.IsAir ||
+                        descriptor.TileType != filter.TypeId ||
+                        (filter.RequireLabelMatch && !LabelsMatch(descriptor.Name, filter.Label)))
+                    {
+                        continue;
+                    }
+
+                    descriptorTileType = descriptor.TileType;
+                }
+
+                Vector2 worldPosition = ResolveCustomTileWorldPosition(anchor.X, anchor.Y);
                 float distanceTiles = Vector2.Distance(worldPosition, origin) / 16f;
                 if (distanceTiles > ScanRangeTiles)
                 {
                     continue;
                 }
 
-                int positionKey = HashCode.Combine(
-                    filterIndex,
-                    (int)MathF.Round(worldPosition.X),
-                    (int)MathF.Round(worldPosition.Y),
-                    descriptor.TileType,
-                    filter.StyleId);
-                if (!CustomEntryScratch.Add(positionKey))
+                if (filter.TypeId < 0)
                 {
-                    continue;
+                    int positionKey = HashCode.Combine(
+                        filterIndex,
+                        (int)MathF.Round(worldPosition.X),
+                        (int)MathF.Round(worldPosition.Y),
+                        descriptorTileType,
+                        filter.StyleId);
+                    if (!CustomEntryScratch.Add(positionKey))
+                    {
+                        continue;
+                    }
                 }
 
-                Point anchor = new((int)MathF.Floor(worldPosition.X / 16f), (int)MathF.Floor(worldPosition.Y / 16f));
-                GuidanceEntry entry = GuidanceEntry.CreateInteractable(anchor, filter.Label, worldPosition, distanceTiles);
+                Point entryAnchor = new((int)MathF.Floor(worldPosition.X / 16f), (int)MathF.Floor(worldPosition.Y / 16f));
+                GuidanceEntry entry = GuidanceEntry.CreateInteractable(entryAnchor, filter.Label, worldPosition, distanceTiles);
                 NearbyCustomMatches.Add(new CustomGuidanceMatch(filterIndex, entry));
             }
         }
+    }
+
+    private static bool CanCustomTileFilterMatchRawTile(Tile tile, CustomGuidanceFilter filter)
+    {
+        if (filter.TypeId < 0)
+        {
+            return tile.HasTile || tile.WallType > 0 || tile.LiquidAmount > 0;
+        }
+
+        return tile.HasTile && tile.TileType == filter.TypeId;
+    }
+
+    private static Point ResolveCustomTileAnchor(int tileX, int tileY, Tile tile)
+    {
+        if (!tile.HasTile)
+        {
+            return new Point(tileX, tileY);
+        }
+
+        if (IsTrackableTreeTile(tile.TileType))
+        {
+            Vector2 treePosition = ResolveTreeTrackingWorldPosition(tileX, tileY);
+            return new Point(
+                (int)MathF.Floor(treePosition.X / 16f),
+                (int)MathF.Floor(treePosition.Y / 16f));
+        }
+
+        TileObjectData? tileData = TileObjectData.GetTileData(tile.TileType, 0);
+        if (tileData is null || tileData.Width <= 0 || tileData.Height <= 0 ||
+            tileData.CoordinateHeights is null || tileData.CoordinateHeights.Length == 0)
+        {
+            return new Point(tileX, tileY);
+        }
+
+        int tileWidth = tileData.CoordinateWidth + tileData.CoordinatePadding;
+        int subX = tileWidth > 0 ? (tile.TileFrameX % Math.Max(tileWidth * tileData.Width, 1)) / tileWidth : 0;
+        int subY = ResolveTileFrameRow(tileData, tile.TileFrameY);
+        return new Point(tileX - subX, tileY - subY);
     }
 
     private static bool CustomTileStyleMatches(Tile tile, CustomGuidanceFilter filter)
