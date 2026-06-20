@@ -17,7 +17,7 @@
 ; ============================================================================
 
 #define MyAppName "Terraria Access"
-#define MyAppVersion "0.1.10"
+#define MyAppVersion "1.0.0"
 #define MyAppPublisher "ChipsAhoiMcCoy"
 #define MyAppURL "https://github.com/ChipsAhoiMcCoy/TerrariaAccess"
 

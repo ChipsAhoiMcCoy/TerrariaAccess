@@ -1,6 +1,6 @@
-# Terraria Access 0.2.0 Release Notes
+# Terraria Access 1.0.0 Release Notes
 
-Terraria Access 0.2.0 expands coverage across Journey mode, guidance, combat, world events, text input, multiplayer behavior, and keyboard/gamepad emulation.
+Terraria Access 1.0.0 is the first stable release, with expanded coverage across Journey mode, guidance, combat, world events, text input, multiplayer behavior, and keyboard/gamepad emulation.
 
 ## Highlights
 
