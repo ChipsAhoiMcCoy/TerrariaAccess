@@ -18,6 +18,7 @@ internal sealed class ModConfigNarrationCoordinator
     private readonly AnnouncementGate _gate = new();
     private readonly ModConfigListHandler _listHandler;
     private readonly ModConfigEditHandler _editHandler;
+    private readonly ModConfigInputState _inputState = new();
 
     private UIState? _lastUiState;
     private bool _isListScreen;
@@ -127,6 +128,7 @@ internal sealed class ModConfigNarrationCoordinator
     {
         // Tick the announcement gate each frame
         _gate.Tick();
+        _inputState.Update();
 
         if (state is null)
         {
@@ -179,11 +181,11 @@ internal sealed class ModConfigNarrationCoordinator
         // Route to appropriate handler
         if (isListScreen)
         {
-            _listHandler.Process(state, justEntered, isMenuContext, menuEventSink);
+            _listHandler.Process(state, justEntered, _inputState.ActionJustPressed, isMenuContext, menuEventSink);
         }
         else
         {
-            _editHandler.Process(state, justEntered, isMenuContext, menuEventSink);
+            _editHandler.Process(state, justEntered, _inputState.ActionJustPressed, isMenuContext, menuEventSink);
         }
 
         return true;
@@ -198,6 +200,7 @@ internal sealed class ModConfigNarrationCoordinator
         _isListScreen = false;
         _isEditScreen = false;
         _gate.Reset();
+        _inputState.Reset();
         _listHandler.Reset();
         _editHandler.Reset();
         IsHandlingGamepadInput = false;

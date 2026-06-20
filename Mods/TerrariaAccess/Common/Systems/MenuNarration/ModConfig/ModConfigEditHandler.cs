@@ -41,6 +41,7 @@ internal sealed class ModConfigEditHandler
     public void Process(
         UIState state,
         bool justEntered,
+        bool actionJustPressed,
         bool isMenuContext,
         Action<string, bool, MenuNarrationEventKind>? menuEventSink)
     {
@@ -109,7 +110,7 @@ internal sealed class ModConfigEditHandler
 
         // Handle navigation
         HandleNavigation(isMenuContext, menuEventSink);
-        HandleAction(isMenuContext, menuEventSink);
+        HandleAction(actionJustPressed, isMenuContext, menuEventSink);
     }
 
     private void HandleNavigation(
@@ -244,6 +245,7 @@ internal sealed class ModConfigEditHandler
     }
 
     private void HandleAction(
+        bool actionJustPressed,
         bool isMenuContext,
         Action<string, bool, MenuNarrationEventKind>? menuEventSink)
     {
@@ -252,9 +254,7 @@ internal sealed class ModConfigEditHandler
             return;
         }
 
-        TriggersSet justPressed = PlayerInput.Triggers.JustPressed;
-
-        if (!justPressed.MouseLeft)
+        if (!actionJustPressed)
         {
             return;
         }

@@ -440,7 +440,7 @@ public sealed class GamepadEmulationSystem : ModSystem
         // Skip entirely when first letter navigation is active — keys are reserved for searching.
         // Skip when fancy UI is active (mod config, bestiary, etc.) — injecting MouseLeft here
         // causes clicks at the mouse cursor position instead of the focused element.
-        if (Main.playerInventory && !Main.inFancyUI
+        if (Main.playerInventory && !IsModConfigUiActive() && !InputContextResolver.IsFancyUiActive()
             && !InputStateHelper.IsTextInputActive() && !FirstLetterNavigationManager.IsEnabled
             && (!dialogueUiActive || npcInventoryUiActive))
         {
@@ -461,6 +461,7 @@ public sealed class GamepadEmulationSystem : ModSystem
         ApplyDialogueVirtualTriggers(inputContext == GamepadEmulationInputContext.GamepadUi);
         ApplyMenuNavigationVirtualTriggers(inputContext == GamepadEmulationInputContext.GamepadUi);
         ApplyMainMenuVirtualTriggers();
+        SuppressModConfigInventorySelectMouseActivation();
     }
 
     private static void ForceInputMode(GamepadEmulationInputContext context)
@@ -499,7 +500,7 @@ public sealed class GamepadEmulationSystem : ModSystem
 
     private static void ApplyGlobalVirtualTriggers()
     {
-        if (Main.gameMenu || Main.inFancyUI || InputStateHelper.IsTextInputActive() || DialogueInputGuard.IsDialogueUiActive())
+        if (Main.gameMenu || IsModConfigUiActive() || InputContextResolver.IsFancyUiActive() || InputStateHelper.IsTextInputActive() || DialogueInputGuard.IsDialogueUiActive())
         {
             return;
         }
@@ -633,7 +634,7 @@ public sealed class GamepadEmulationSystem : ModSystem
         // Skip MouseLeft/MouseRight injection when fancy UI is active (mod config, bestiary, etc.)
         // These UIs process clicks at the mouse cursor position, not the focused element,
         // so injecting MouseLeft causes the wrong element to be activated.
-        if (Main.inFancyUI)
+        if (IsModConfigUiActive() || InputContextResolver.IsFancyUiActive())
         {
             return;
         }
@@ -907,6 +908,21 @@ public sealed class GamepadEmulationSystem : ModSystem
         right |= leftStick.X > stickThreshold;
     }
 
+    private static void SuppressModConfigInventorySelectMouseActivation()
+    {
+        if (!IsModConfigUiActive() || !IsPressed(GamepadEmulationKeybinds.InventorySelect))
+        {
+            return;
+        }
+
+        PlayerInput.Triggers.Current.KeyStatus[TriggerNames.MouseLeft] = false;
+        PlayerInput.Triggers.JustPressed.KeyStatus[TriggerNames.MouseLeft] = false;
+        PlayerInput.Triggers.JustReleased.KeyStatus[TriggerNames.MouseLeft] = false;
+        Main.mouseLeft = false;
+        Main.mouseLeftRelease = false;
+        VirtualTriggerService.UpdateTrackingOnly();
+    }
+
     private static bool IsPressed(ModKeybind? keybind)
     {
         return VirtualTriggerService.IsKeybindPressed(keybind);
@@ -970,6 +986,8 @@ public sealed class GamepadEmulationSystem : ModSystem
         "Terraria.ModLoader.UI.UIModInfo",
         "Terraria.ModLoader.UI.UIModPacks",
         "Terraria.ModLoader.UI.UIModSources",
+        "Terraria.ModLoader.Config.UI.UIModConfigList",
+        "Terraria.ModLoader.Config.UI.UIModConfig",
         "Terraria.GameContent.UI.States.UIBestiaryTest",
     };
 

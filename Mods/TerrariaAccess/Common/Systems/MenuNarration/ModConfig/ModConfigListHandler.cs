@@ -43,11 +43,13 @@ internal sealed class ModConfigListHandler
     /// </summary>
     /// <param name="state">The UIModConfigList state.</param>
     /// <param name="justEntered">True if we just entered this screen.</param>
+    /// <param name="actionJustPressed">True when the current selection should be activated.</param>
     /// <param name="isMenuContext">True for menu context, false for in-game.</param>
     /// <param name="menuEventSink">Event sink for menu context.</param>
     public void Process(
         UIState state,
         bool justEntered,
+        bool actionJustPressed,
         bool isMenuContext,
         Action<string, bool, MenuNarrationEventKind>? menuEventSink)
     {
@@ -140,11 +142,11 @@ internal sealed class ModConfigListHandler
         }
 
         // Handle navigation input
-        HandleNavigation(state, isMenuContext, menuEventSink);
+        HandleNavigation(actionJustPressed, isMenuContext, menuEventSink);
     }
 
     private void HandleNavigation(
-        UIState state,
+        bool actionJustPressed,
         bool isMenuContext,
         Action<string, bool, MenuNarrationEventKind>? menuEventSink)
     {
@@ -194,7 +196,7 @@ internal sealed class ModConfigListHandler
             {
                 return;
             }
-            HandleConfigListSelect(justPressed, isMenuContext, menuEventSink);
+            HandleConfigListSelect(actionJustPressed, isMenuContext, menuEventSink);
         }
         else
         {
@@ -202,7 +204,7 @@ internal sealed class ModConfigListHandler
             {
                 return;
             }
-            HandleModListSelect(state, justPressed, isMenuContext, menuEventSink);
+            HandleModListSelect(actionJustPressed, isMenuContext, menuEventSink);
         }
     }
 
@@ -279,8 +281,7 @@ internal sealed class ModConfigListHandler
     }
 
     private void HandleModListSelect(
-        UIState state,
-        TriggersSet justPressed,
+        bool actionJustPressed,
         bool isMenuContext,
         Action<string, bool, MenuNarrationEventKind>? menuEventSink)
     {
@@ -289,7 +290,7 @@ internal sealed class ModConfigListHandler
             return;
         }
 
-        if (!justPressed.MouseLeft)
+        if (!actionJustPressed)
         {
             return;
         }
@@ -304,7 +305,7 @@ internal sealed class ModConfigListHandler
     }
 
     private void HandleConfigListSelect(
-        TriggersSet justPressed,
+        bool actionJustPressed,
         bool isMenuContext,
         Action<string, bool, MenuNarrationEventKind>? menuEventSink)
     {
@@ -313,7 +314,7 @@ internal sealed class ModConfigListHandler
             return;
         }
 
-        if (!justPressed.MouseLeft)
+        if (!actionJustPressed)
         {
             return;
         }
