@@ -76,10 +76,16 @@ public sealed partial class GuidanceSystem : ModSystem
 
     public override void Unload()
     {
+        _preservedInactiveWorldWaypointData = null;
         ResetTrackingState();
         NamingDialog.Close(LogWaypoint);
         CustomTargetDialog.Close(LogWaypoint);
         DisposeToneResources();
+    }
+
+    public override void OnWorldLoad()
+    {
+        _preservedInactiveWorldWaypointData = null;
     }
 
     public override void OnWorldUnload()
@@ -111,6 +117,7 @@ public sealed partial class GuidanceSystem : ModSystem
             return;
         }
 
+        CaptureInactiveWorldWaypointData(tag);
         ResetTrackingState();
         bool loaded = LoadWaypointData(tag, "world save", announceSelection: false, ResolveWorldWaypointDataKeys());
         LogWaypoint($"LoadWorldData: Complete. HasData={loaded}, WaypointCount={Waypoints.Count}");
@@ -120,6 +127,7 @@ public sealed partial class GuidanceSystem : ModSystem
     {
         LogWaypoint($"SaveWorldData: NetMode={Main.netMode}, WaypointCount={Waypoints.Count}");
         SaveWaypointData(tag, "world save", normalizeRuntime: true, keys: ResolveWorldWaypointDataKeys());
+        RestoreInactiveWorldWaypointData(tag);
     }
 
     public override void PostUpdateInput()
@@ -1758,6 +1766,54 @@ public sealed partial class GuidanceSystem : ModSystem
         return Main.netMode == NetmodeID.Server
             ? MultiplayerWorldWaypointDataKeys
             : LocalWorldWaypointDataKeys;
+    }
+
+    private static WaypointDataKeys ResolveInactiveWorldWaypointDataKeys()
+    {
+        return Main.netMode == NetmodeID.Server
+            ? LocalWorldWaypointDataKeys
+            : MultiplayerWorldWaypointDataKeys;
+    }
+
+    private static void CaptureInactiveWorldWaypointData(TagCompound tag)
+    {
+        _preservedInactiveWorldWaypointData = new TagCompound();
+        WaypointDataKeys inactiveKeys = ResolveInactiveWorldWaypointDataKeys();
+        CopyWaypointDataKeys(tag, _preservedInactiveWorldWaypointData, inactiveKeys);
+
+        LogWaypoint($"CaptureInactiveWorldWaypointData: NetMode={Main.netMode}, " +
+                    $"InactiveKeyCount={_preservedInactiveWorldWaypointData.Count}");
+    }
+
+    private static void RestoreInactiveWorldWaypointData(TagCompound tag)
+    {
+        if (_preservedInactiveWorldWaypointData is null || _preservedInactiveWorldWaypointData.Count == 0)
+        {
+            return;
+        }
+
+        WaypointDataKeys inactiveKeys = ResolveInactiveWorldWaypointDataKeys();
+        CopyWaypointDataKeys(_preservedInactiveWorldWaypointData, tag, inactiveKeys);
+        LogWaypoint($"RestoreInactiveWorldWaypointData: NetMode={Main.netMode}, " +
+                    $"RestoredKeyCount={_preservedInactiveWorldWaypointData.Count}");
+    }
+
+    private static void CopyWaypointDataKeys(TagCompound source, TagCompound destination, WaypointDataKeys keys)
+    {
+        CopyIfPresent(keys.WaypointList);
+        CopyIfPresent(keys.CustomTargetList);
+        CopyIfPresent(keys.SelectedWaypoint);
+        CopyIfPresent(keys.SelectedCustomTarget);
+        CopyIfPresent(keys.PersistentSelectionMode);
+        CopyIfPresent(keys.ExplorationMode);
+
+        void CopyIfPresent(string key)
+        {
+            if (source.ContainsKey(key))
+            {
+                destination[key] = source[key];
+            }
+        }
     }
 
     internal static bool SaveWaypointData(TagCompound tag, string source, bool normalizeRuntime = true)

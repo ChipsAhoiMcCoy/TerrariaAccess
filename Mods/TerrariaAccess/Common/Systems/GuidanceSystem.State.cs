@@ -3,6 +3,7 @@ using System.Collections.Generic;
 using Microsoft.Xna.Framework;
 using Microsoft.Xna.Framework.Audio;
 using TerrariaAccess.Common.Systems.Guidance;
+using Terraria.ModLoader.IO;
 
 namespace TerrariaAccess.Common.Systems;
 
@@ -60,6 +61,7 @@ public sealed partial class GuidanceSystem
     private static readonly List<Waypoint> Waypoints = new();
     private static readonly List<CustomGuidanceFilter> CustomTargets = new();
     private static readonly List<CustomGuidanceMatch> NearbyCustomMatches = new();
+    private static TagCompound? _preservedInactiveWorldWaypointData;
 
     internal static bool HasWaypointState => Waypoints.Count > 0 || CustomTargets.Count > 0 || _selectionMode != SelectionMode.None;
     internal static bool IsNamingActive => NamingDialog.IsActive || CustomTargetDialog.IsActive;

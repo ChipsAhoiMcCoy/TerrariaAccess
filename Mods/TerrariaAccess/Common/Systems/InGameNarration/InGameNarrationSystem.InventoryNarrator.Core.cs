@@ -1102,7 +1102,7 @@ public sealed partial class InGameNarrationSystem
 
             if (point >= 100 && point < 120)
             {
-                int armorSlot = point - 100;
+                int armorSlot = ResolveDisplayedEquipmentSlot(player, point - 100);
                 if ((uint)armorSlot >= (uint)player.armor.Length)
                 {
                     return false;
@@ -1122,7 +1122,7 @@ public sealed partial class InGameNarrationSystem
 
             if (point >= 120 && point < 130)
             {
-                int dyeSlot = point - 120;
+                int dyeSlot = ResolveDisplayedEquipmentSlot(player, point - 120);
                 if ((uint)dyeSlot >= (uint)player.dye.Length)
                 {
                     return false;
@@ -1167,6 +1167,13 @@ public sealed partial class InGameNarrationSystem
             }
 
             return false;
+        }
+
+        private static int ResolveDisplayedEquipmentSlot(Player player, int displayedSlot)
+        {
+            return displayedSlot % 10 == 8 && !player.CanDemonHeartAccessoryBeShown()
+                ? displayedSlot + 1
+                : displayedSlot;
         }
 
         private static bool IsPlayerInventoryItem(Player player, ItemIdentity identity)
