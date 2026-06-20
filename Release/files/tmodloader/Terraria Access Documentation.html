@@ -47,6 +47,19 @@
     </li>
   </ol>
 
+  <h2>Resources</h2>
+  <p>
+    Community videos can be a helpful companion to this written guide. Ilikeoiseaux has shared
+    a YouTube playlist showing Terraria Access in use:
+  </p>
+  <ul>
+    <li>
+      <a href="https://www.youtube.com/playlist?list=PL-YdS0ol4JN5teP2FK5-Y6GYqd9QMzcIp">
+        Terraria Access community video playlist by Ilikeoiseaux
+      </a>
+    </li>
+  </ul>
+
   <h2>Quick Start: Surviving Your First Night</h2>
   <p>
     This section will walk you through your first moments in Terraria, from spawning into the world
@@ -347,12 +360,12 @@
     then switch back to precise movement with the directional pad if needed.
   </p>
 
-  <h2>Gamepad Emulation Mode</h2>
+  <h2>Keyboard Gamepad Emulation</h2>
   <p>
-    Gamepad Emulation mode, developed primarily by community member Leos (also known as Khai),
-    allows players to navigate and interact with Terraria entirely through a keyboard,
-    providing an alternative to gamepad controls.
-    Press <strong>F6</strong> to enable or disable Gamepad Emulation mode.
+    Keyboard gamepad emulation, developed primarily by community member Leos (also known as Khai),
+    allows players to navigate and interact with Terraria through a keyboard by translating
+    keyboard input into the controller-style actions Terraria already understands. It is always
+    available; there is no separate on/off toggle.
   </p>
 
   <h3>Basic Movement and Actions</h3>
@@ -694,6 +707,14 @@
     </li>
   </ul>
 
+  <h3>Wiring with Build Mode</h3>
+  <p>
+    Build Mode also supports wiring workflows. When a wire item is selected, the same selection
+    system can place wire across a chosen line or area, making traps, switches, mechanisms, and
+    long wire runs much easier to build without precise mouse movement. The wire color menu and
+    wire cutter state are narrated so you can confirm which wire color or cutter mode is active.
+  </p>
+
   <h3>Terraforming with Build Mode</h3>
   <p>
     For large-scale flattening:
@@ -817,6 +838,13 @@
     objects, making it more responsive and predictable. Distant entries are filtered out to
     reduce noise.
   </p>
+  <p>
+    The exploration target list has expanded over time. Notable targets include statues, fossils,
+    Jungle Spores, Abigail's Flower, Nature's Gift, Enchanted Sword shrines, crystal shards,
+    amber gems, herb bloom stages, and fallen stars. Some of these appear in different guidance
+    categories depending on how Terraria represents them internally; for example, fallen stars
+    are tracked as dropped items.
+  </p>
 
   <h3>Exploration Mode</h3>
   <p>
@@ -856,6 +884,47 @@
     </li>
   </ul>
 
+  <h3>All Mode: Sweep vs Nearest Only</h3>
+  <p>
+    Some guidance categories can be focused on <strong>All</strong>. In this state, the mod can
+    either sweep through every detected target or only ping the nearest one. This behavior is
+    controlled by the <strong>Guidance All Mode</strong> mod setting:
+  </p>
+  <ul>
+    <li><strong>Sweep</strong>: plays a left-to-right sequence of pings for every tracked target.</li>
+    <li><strong>Nearest Only</strong>: plays one ping for the closest target in that category.</li>
+  </ul>
+  <p>
+    Nearest Only is useful when a category is noisy, such as dropped items, critters, plants, or
+    custom trackers. Sweep is useful when you want a wider picture of the nearby area.
+  </p>
+
+  <h3>Custom Guidance Trackers</h3>
+  <p>
+    Custom trackers let you save a target type by name or ID and revisit it later as a guidance
+    category. Cycle guidance categories until you reach <strong>Custom</strong>, then press the
+    same create key used for waypoints. Type a target and press <strong>Enter</strong> to save it.
+  </p>
+  <p>
+    You can type a plain name, or use a category prefix to resolve ambiguous names:
+  </p>
+  <ul>
+    <li><strong>tile: crystal shard</strong></li>
+    <li><strong>object: statue</strong></li>
+    <li><strong>item: fallen star</strong></li>
+    <li><strong>npc: merchant</strong></li>
+    <li><strong>enemy: demon eye</strong></li>
+    <li><strong>critter: bunny</strong></li>
+    <li><strong>projectile: fireball</strong></li>
+    <li><strong>player: player name</strong></li>
+  </ul>
+  <p>
+    Custom trackers are saved with the world. In multiplayer, custom trackers and waypoints use
+    multiplayer-specific saved data and can sync when the server has Terraria Access installed.
+    The Delete guidance key removes the focused waypoint or custom tracker. If a buff is focused
+    through the status checker, the same delete key cancels that buff instead.
+  </p>
+
   <h3>Light Detection & Visibility</h3>
   <p>
     The guidance system respects light levels to provide a more authentic experience
@@ -890,15 +959,16 @@
 
   <h3>Teleporting to Targets</h3>
   <p>
-    The guidance system supports teleporting to targeted NPCs or crafting stations
-    by pressing the <strong>Home</strong> key. This feature is optional and can feel
-    powerful; nothing in the mod requires using this teleport to function.
+    The guidance system supports teleporting to the currently focused guidance target with
+    <strong>Home</strong> by default. This can include NPCs, players, waypoints, crafting stations,
+    and other resolved guidance targets. This feature is optional and can feel powerful; nothing
+    in the mod requires using this teleport to function.
   </p>
 
   <h2>Player Information & Status Feedback</h2>
   <p>
     Terraria Access provides player status information through the mod. Press the
-    <strong>Select</strong> button on gamepad or <strong>Backspace</strong> on keyboard to hear
+    <strong>Back/View</strong> (Select) button on gamepad or <strong>Backspace</strong> on keyboard to hear
     your current status. Pressing the status button repeatedly cycles through different
     status categories:
   </p>
@@ -912,6 +982,44 @@
   </ul>
   <p>
     When cycling to the buffs category, all active buffs are read aloud.
+  </p>
+  <p>
+    Buffs can also be focused one at a time through the status checker. When a buff is focused,
+    pressing the guidance delete key cancels that buff instead of deleting a waypoint.
+  </p>
+
+  <h3>Info Accessory Checker</h3>
+  <p>
+    Terraria Access includes a separate info accessory checker for the information normally shown
+    by Terraria's informational accessories. Press the <strong>Apostrophe / Quote</strong> key
+    by default to read the active info displays that your character currently has access to,
+    including:
+  </p>
+  <ul>
+    <li>Watch time</li>
+    <li>Compass position</li>
+    <li>Depth meter and world layer</li>
+    <li>Radar enemy count</li>
+    <li>Tally counter kill count</li>
+    <li>Lifeform analyzer target</li>
+    <li>Stopwatch speed</li>
+    <li>DPS meter value</li>
+    <li>Metal detector target</li>
+    <li>Fishing power</li>
+    <li>Weather</li>
+    <li>Moon phase</li>
+  </ul>
+  <p>
+    The checker refreshes info accessory state on demand, so accessories in inventory can be read
+    even if vanilla Terraria has not rebuilt the visible info display yet.
+  </p>
+
+  <h3>Equipment, Minions, Death, and Respawn</h3>
+  <p>
+    Equipment narration includes armor set bonus announcements when a set bonus becomes available
+    or changes. Summon items announce minion slot usage so you know how many minion slots are in
+    use after summoning. Death and respawn narration announces the death state and respawn countdown
+    so you are not left waiting silently after dying.
   </p>
 
   <h2>Mod Configuration</h2>
@@ -939,6 +1047,12 @@
     <li>Wall collision sound toggle.</li>
     <li>Passage detection toggle.</li>
     <li>Heartbeat health indicator toggle.</li>
+    <li>Boss warning announcements.</li>
+    <li>Guidance All Mode: Sweep or Nearest Only.</li>
+    <li>Multiplayer footstep cues and multiplayer footstep volume.</li>
+    <li>Experimental spatial inventory audio.</li>
+    <li>Overhead traversal cues for ropes, platforms, and minecart tracks.</li>
+    <li>Damage number announcements.</li>
   </ul>
   <p>
     This gives you fine-grained control over your accessibility experience without
@@ -1037,9 +1151,35 @@
     </li>
     <li>
       You must use the <strong>right analog stick</strong> (or <strong>O, K, L, ;</strong> keys
-      in Gamepad Emulation mode) to scroll down further and reveal more options.
+      through keyboard gamepad emulation) to scroll down further and reveal more options.
     </li>
   </ul>
+
+  <h2>Journey Mode Accessibility</h2>
+  <p>
+    Terraria Access includes dedicated support for Journey mode menus. The Journey toggle,
+    research list, duplication/research flow, power categories, and power controls are narrated
+    when you navigate them. The mod also announces when the Journey menu is blocked, such as when
+    a chest is open or when the current character is not a Journey mode character.
+  </p>
+  <p>
+    Journey powers include toggle-style controls and slider-style controls. Terraria Access reads
+    the focused power, whether it is on or off, and slider values such as rain strength. The same
+    section navigation and virtual controller controls used elsewhere in the inventory are used
+    to move through Journey mode UI.
+  </p>
+
+  <h2>Accessible Text Input</h2>
+  <p>
+    Several Terraria text-entry screens now have dedicated input handling so typed text reaches
+    the intended field and is narrated reliably. This includes character names, world names,
+    signs, chat recovery, waypoint naming, and custom guidance tracker prompts.
+  </p>
+  <p>
+    Press <strong>Enter</strong> to confirm text prompts when the prompt expects confirmation.
+    Press <strong>Escape</strong> to cancel or leave the prompt when supported. Some text inputs
+    also support tab handling so focus does not unexpectedly escape the edit field while typing.
+  </p>
 
   <h2>Character Creation & Customization</h2>
 
@@ -1140,9 +1280,26 @@
     <li>Lunar Eclipses</li>
     <li>Goblin Invasions</li>
     <li>Pirate Invasions</li>
+    <li>Frost Legion</li>
+    <li>Martian Madness</li>
+    <li>Pumpkin Moon</li>
+    <li>Frost Moon</li>
+    <li>Old One's Army</li>
   </ul>
   <p>
     All of these world events are announced through the standard narration pipeline.
+    For progress-based events, Terraria Access can announce the current wave and percentage
+    remaining. It also announces progress thresholds as the event advances.
+  </p>
+  <p>
+    A dedicated event progress checker keybind reports the current active event on demand.
+    Press <strong>G</strong> by default to hear the current event status. If no supported event
+    is active, the mod says that no active event was found.
+  </p>
+  <p>
+    Lunar pillar support includes announcements when the celestial pillars become active,
+    when you focus a pillar, remaining shield percentage, when a pillar shield drops, when
+    a pillar is defeated, and the Moon Lord awakening countdown.
   </p>
   <p>
     Chat messages are automatically read aloud as they appear. Press <strong>Enter</strong>
@@ -1150,6 +1307,14 @@
     <strong>Page Up</strong> and <strong>Page Down</strong> to scroll through the chat history.
     This includes player messages, system announcements, and notifications about players
     joining and leaving in multiplayer.
+  </p>
+
+  <h3>Multiplayer Notes</h3>
+  <p>
+    Terraria Access can run client-only for accessibility on ordinary servers. If the server also
+    has Terraria Access installed, multiplayer-aware features such as guidance sync and chunk miner
+    sync can share state more accurately. Multiplayer footstep sounds are configurable separately
+    from local footstep sounds.
   </p>
 
   <h2>Combat</h2>
@@ -1192,6 +1357,20 @@
     how close enemies are and from which direction they are approaching.
   </p>
 
+  <h3>Boss Attack Warnings</h3>
+  <p>
+    Boss warnings announce selected boss attack windups, pressure states, and dangerous projectiles
+    with short dodge guidance. These warnings are designed to supplement normal combat audio,
+    especially during boss fights where visual telegraphs are important.
+  </p>
+  <p>
+    Coverage includes many major bosses and event bosses, including King Slime, Eye of Cthulhu,
+    Eater of Worlds, Brain of Cthulhu, Queen Bee, Skeletron, Wall of Flesh, the mechanical bosses,
+    Plantera, Golem, Pumpkin Moon and Frost Moon bosses, Martian Saucer, Flying Dutchman, lunar
+    pillars, Moon Lord, Duke Fishron, Empress of Light, Queen Slime, Deerclops, Lunatic Cultist,
+    Old One's Army bosses, and Blood Nautilus. Boss warnings can be disabled in the mod settings.
+  </p>
+
   <h3 id="targeting-enemies">Targeting & Enemies</h3>
   <p>
     To automatically target enemies:
@@ -1228,6 +1407,8 @@
     As you progress, you will obtain bows and guns that work very well with auto-targeting,
     making combat feel smooth and manageable. There is also a <strong>summoner</strong> class
     archetype that largely removes the need to aim at all, since minions attack automatically.
+    When summoning minions, Terraria Access announces minion slot usage so you know how many
+    minion slots are currently occupied.
   </p>
 
   <h2>Keybind Reference</h2>
@@ -1236,6 +1417,8 @@
     This section covers both Terraria's default controls and the additional keybinds added by Terraria Access.
     For complete details on Terraria's controls across all platforms, visit the
     <a href="https://terraria.fandom.com/wiki/Game_controls">Terraria Wiki Game Controls page</a>.
+    Key names below describe the current documented keyboard layout and may differ if you load
+    a custom input profile.
   </p>
 
   <h3>Default Keyboard Controls</h3>
@@ -1468,7 +1651,7 @@
     <tbody>
       <tr>
         <td>Announce player status</td>
-        <td>Select</td>
+        <td>Back / View (Select)</td>
         <td>Cycles through status categories: health, mana, defense, biome, time, and buffs.</td>
       </tr>
       <tr>
@@ -1496,8 +1679,8 @@
 
   <h3>Terraria Access Keyboard Controls</h3>
   <p>
-    The following keybinds are added or modified by Terraria Access for keyboard users
-    using Gamepad Emulation mode.
+    The following keybinds are added or modified by Terraria Access for keyboard users.
+    These keys provide controller-style navigation and actions through the keyboard.
   </p>
 
   <table border="1">
@@ -1511,11 +1694,6 @@
     </thead>
     <tbody>
       <tr>
-        <td>Toggle Gamepad Emulation</td>
-        <td>F6</td>
-        <td>Enables or disables Gamepad Emulation mode.</td>
-      </tr>
-      <tr>
         <td>Change guidance category</td>
         <td>Left / Right Brackets</td>
         <td>Cycles the guidance system's current category (ores, NPCs, crafting stations, dropped items, critters, plants, hostile mobs, etc.).</td>
@@ -1528,12 +1706,22 @@
       <tr>
         <td>Teleport to targeted object</td>
         <td>Home</td>
-        <td>Teleports to the currently targeted NPC or crafting station.</td>
+        <td>Teleports to the currently focused guidance target.</td>
       </tr>
       <tr>
         <td>Announce player status</td>
         <td>Backspace</td>
         <td>Cycles through status categories: health, mana, defense, biome, time, and buffs.</td>
+      </tr>
+      <tr>
+        <td>Announce info accessories</td>
+        <td>Apostrophe / Quote key</td>
+        <td>Reads active informational accessory displays such as compass, depth, weather, fishing power, and moon phase.</td>
+      </tr>
+      <tr>
+        <td>Announce event progress</td>
+        <td>G</td>
+        <td>Reports active invasion, moon event, lunar pillar, or Moon Lord countdown progress.</td>
       </tr>
       <tr>
         <td>Toggle build mode</td>
@@ -1593,7 +1781,7 @@
       <tr>
         <td>Virtual right stick (alternate)</td>
         <td>Arrow Keys</td>
-        <td>Move the virtual right analog stick when Gamepad Emulation mode is enabled. Provides an alternate way to aim around your character.</td>
+        <td>Move the virtual right analog stick. Provides an alternate way to aim around your character.</td>
       </tr>
       <tr>
         <td>Smart select</td>
@@ -1641,6 +1829,11 @@
         <td>Sweeps the area around your character and plays tones for empty spaces, revealing caves and tunnels.</td>
       </tr>
       <tr>
+        <td>Toggle speech interrupt</td>
+        <td>F2</td>
+        <td>Stops current speech when interruption is enabled, then toggles whether future announcements interrupt current speech.</td>
+      </tr>
+      <tr>
         <td>Toggle first-letter navigation</td>
         <td>Tab (in inventory)</td>
         <td>Enables or disables first-letter navigation mode. When enabled, press A–Z to jump to items starting with that letter.</td>
@@ -1648,7 +1841,12 @@
       <tr>
         <td>Create waypoint</td>
         <td>Backslash (\)</td>
-        <td>Opens a prompt to name and create a waypoint at your current position.</td>
+        <td>Opens a prompt to name and create a waypoint at your current position. When the Custom guidance category is focused, opens the custom tracker prompt instead.</td>
+      </tr>
+      <tr>
+        <td>Delete focused guidance target</td>
+        <td>Delete</td>
+        <td>Deletes the focused waypoint or custom tracker. If a buff is focused through status checking, cancels that buff.</td>
       </tr>
     </tbody>
   </table>
@@ -1657,7 +1855,7 @@
   <p>
     Remember that the Controls menu requires scrolling once you reach the bottom of the
     initially visible options. On gamepad, use the <strong>right analog stick</strong>.
-    On keyboard in Gamepad Emulation mode, use the <strong>O, K, L, ;</strong> keys.
+    On keyboard, use the emulated right-stick keys: <strong>O, K, L, ;</strong>.
     Without scrolling, additional options will not appear.
   </p>
 

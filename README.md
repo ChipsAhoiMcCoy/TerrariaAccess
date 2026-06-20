@@ -17,6 +17,21 @@ The mod uses the Tolk library for universal screen reader support:
 - ZoomText
 - SAPI (fallback)
 
+## Feature Coverage
+
+Terraria Access includes narration and audio support for:
+- Main menus, character creation, world creation, settings, mod config, Workshop, mod browser, achievements, bestiary, inventory, equipment, crafting, shops, chests, NPC dialogue, signs, chat, and Journey mode menus.
+- Keyboard gamepad emulation for controller-only UI flows, including inventory section navigation, smart select, quick use, D-pad cursor movement, shop selling, dialogue focus, and menu activation.
+- Guidance tracking for NPCs, players, waypoints, custom trackers, dropped items, critters, hostile mobs, ores, gems, crafting stations, chests, life crystals, statues, fossils, Jungle Spores, Abigail's Flower, Nature's Gift, Enchanted Sword shrines, crystal shards, amber gems, and other world targets.
+- Spatial audio for footsteps, enemy proximity, multiplayer footsteps, cursor position, UI slots, wall collision, edge detection, fall proximity, passage detection, overhead traversal cues, and cavity sonar.
+- Status and progression announcements for health, mana, defense, biome, time of day, active buffs, info accessories, armor set bonuses, minion slots, death/respawn, world events, invasion progress, moon events, lunar pillars, and boss attack warnings.
+- Build Mode for keyboard-driven tile placement, wall placement, terrain shaping, and wiring support.
+
+## Resources
+
+The bundled documentation includes written setup/play guidance and links to community video resources. Ilikeoiseaux has shared a Terraria Access video playlist here:
+https://www.youtube.com/playlist?list=PL-YdS0ol4JN5teP2FK5-Y6GYqd9QMzcIp
+
 ## Requirements
 
 - Terraria and tModLoader (Steam install)

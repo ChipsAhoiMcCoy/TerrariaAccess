@@ -14,6 +14,9 @@ Every menu, inventory screen, crafting interface, NPC dialogue, and chat message
 
 [b]Guidance System[/b]
 Track and navigate to NPCs, other players, dropped items, critters, interactable objects, and custom waypoints. Audio pings guide you toward your target with directional panning and pitch.
+- Saved custom trackers for typed item, NPC, object, and tile targets
+- Sweep or Nearest Only mode for "All" guidance categories
+- Expanded exploration targets including statues, fossils, Jungle Spores, Abigail's Flower, Nature's Gift, Enchanted Sword shrines, crystal shards, amber gems, herb bloom stages, and fallen stars
 
 [b]Inventory & UI[/b]
 - Full keyboard navigation of inventory, equipment, crafting, shops, and chests
@@ -21,22 +24,26 @@ Track and navigate to NPCs, other players, dropped items, critters, interactable
 - First-letter navigation to quickly find items
 - Spatial inventory audio positions slot sounds by row and column
 - Mod browser, mod config, achievements, and bestiary screens are all narrated
+- Journey mode powers, research, sliders, and toggles are narrated
+- Character/world naming, signs, chat, and custom tracker prompts support accessible text input
 
 [b]Combat & World[/b]
 - Damage number announcements
 - Health heartbeat that speeds up as HP drops
 - Lock-on target narration
-- World event announcements: blood moons, invasions, eclipses, weather, biome changes, and more
+- Boss attack warnings with brief dodge guidance for many boss patterns and dangerous projectiles
+- Armor set bonus, minion slot, info accessory, death, and respawn announcements
+- World event announcements: blood moons, invasions, eclipses, weather, biome changes, event progress, lunar pillars, and more
 
 [b]Building[/b]
 - Build mode for keyboard-driven tile placement without a mouse
 - Chunk miner automatically mines entire ore veins in one hit
-- Smart cursor tile narration and wire color menu access
+- Smart cursor tile narration, build mode wiring support, and wire color menu access
 
 [b]Multiplayer[/b]
 - Spatialized footstep sounds for other players
 - Player join/leave/death announcements
-- Multiplayer guidance sync
+- Optional multiplayer guidance and chunk miner sync
 
 All features are configurable in the mod settings. Volumes, toggle switches, and detection modes can be adjusted to your preference.
 
