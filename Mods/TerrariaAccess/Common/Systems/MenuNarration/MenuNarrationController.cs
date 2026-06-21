@@ -15,11 +15,6 @@ internal sealed class MenuNarrationController
 {
     private readonly MenuNarrationHandlerRegistry _registry;
 
-    // After a ModeChanged announcement (e.g. "Player selection"), subsequent events
-    // must not interrupt for this window so the screen reader finishes speaking.
-    private DateTime _lastModeChangeTime = DateTime.MinValue;
-    private static readonly TimeSpan ModeChangeProtectionWindow = TimeSpan.FromMilliseconds(800);
-
     internal MenuNarrationController()
     {
         _registry = new MenuNarrationHandlerRegistry();
@@ -27,6 +22,8 @@ internal sealed class MenuNarrationController
         // Register handlers in any order - they're sorted by priority automatically
         // Higher priority handlers are checked first
         _registry.RegisterHandler(new ModConfigHandler());        // Priority 100 - highest, catches mod config screens
+        _registry.RegisterHandler(new RejectionMenuHandler());    // Priority 95 - status/rejection dialogs override retained UI states
+        _registry.RegisterHandler(new DeletionConfirmationHandler()); // Priority 90 - deletion dialogs override retained UI states
         _registry.RegisterHandler(new WorldCreationHandler());    // Priority 70
         _registry.RegisterHandler(new WorldSelectionHandler());   // Priority 70 - world selection (UIWorldSelect, UIWorldList)
         _registry.RegisterHandler(new CharacterCreationHandler()); // Priority 70
@@ -49,12 +46,17 @@ internal sealed class MenuNarrationController
         if (!Main.gameMenu)
         {
             _registry.Reset();
-            _lastModeChangeTime = DateTime.MinValue;
             return;
         }
 
         MenuNarrationContext context = new(main, Main.MenuUI?.CurrentState, Main.menuMode, DateTime.UtcNow);
         IReadOnlyList<MenuNarrationEvent> events = _registry.Process(context);
+        if (ScreenReaderDiagnostics.IsTraceEnabled() && events.Count > 0)
+        {
+            TerrariaAccess.Instance?.Logger.Info(
+                $"[MenuTrace][Controller] mode={context.MenuMode} handler={_registry.ActiveHandler?.GetType().Name ?? "null"} eventCount={events.Count}");
+        }
+        bool queueNextAfterModeChange = false;
 
         foreach (MenuNarrationEvent narrationEvent in events)
         {
@@ -65,20 +67,41 @@ internal sealed class MenuNarrationController
 
             if (narrationEvent.Kind == MenuNarrationEventKind.ModeChanged)
             {
-                _lastModeChangeTime = context.Timestamp;
+                queueNextAfterModeChange = true;
+                TraceDispatch(context, narrationEvent, requestInterrupt: true, queueNextAfterModeChange);
                 ScreenReaderService.Announce(narrationEvent.Text, narrationEvent.Force);
             }
             else
             {
-                // Within the protection window after a mode change, don't interrupt
-                // so the screen reader finishes speaking the mode label (e.g. "Player
-                // selection") before any follow-up hover/focus announcements.
-                bool inProtection = context.Timestamp - _lastModeChangeTime < ModeChangeProtectionWindow;
+                bool requestInterrupt = narrationEvent.Kind != MenuNarrationEventKind.EntryFollowUp;
+                if (queueNextAfterModeChange)
+                {
+                    requestInterrupt = false;
+                    queueNextAfterModeChange = false;
+                }
+
+                TraceDispatch(context, narrationEvent, requestInterrupt, queueNextAfterModeChange);
                 ScreenReaderService.Announce(
                     narrationEvent.Text,
                     narrationEvent.Force,
-                    requestInterrupt: !inProtection);
+                    requestInterrupt: requestInterrupt);
             }
         }
+    }
+
+    private static void TraceDispatch(
+        MenuNarrationContext context,
+        MenuNarrationEvent narrationEvent,
+        bool requestInterrupt,
+        bool queueNextAfterModeChange)
+    {
+        if (!ScreenReaderDiagnostics.IsTraceEnabled())
+        {
+            return;
+        }
+
+        TerrariaAccess.Instance?.Logger.Info(
+            $"[MenuTrace][Dispatch] mode={context.MenuMode} kind={narrationEvent.Kind} force={narrationEvent.Force} " +
+            $"interrupt={requestInterrupt} queueNextAfterModeChange={queueNextAfterModeChange} text=\"{narrationEvent.Text}\"");
     }
 }

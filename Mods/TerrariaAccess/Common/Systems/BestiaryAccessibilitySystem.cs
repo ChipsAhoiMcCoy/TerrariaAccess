@@ -46,10 +46,10 @@ public sealed class BestiaryAccessibilitySystem : ModMenuAccessibilityBase
     #region Hook Delegates & Fields
 
     private delegate void DrawDelegate(UIState self, SpriteBatch spriteBatch);
-    private delegate void OnActivateDelegate(UIState self);
+    private delegate void OnOpenPageDelegate(UIState self);
 
     private static Hook? _drawHook;
-    private static Hook? _onActivateHook;
+    private static Hook? _onOpenPageHook;
 
     private static BestiaryAccessibilitySystem? _instance;
 
@@ -180,12 +180,12 @@ public sealed class BestiaryAccessibilitySystem : ModMenuAccessibilityBase
             _drawHook = new Hook(drawMethod, OnDraw);
         }
 
-        MethodInfo? onActivateMethod = bestiaryMenuType.GetMethod(
-            "OnActivate",
-            BindingFlags.Instance | BindingFlags.Public);
-        if (onActivateMethod is not null)
+        MethodInfo? onOpenPageMethod = bestiaryMenuType.GetMethod(
+            "OnOpenPage",
+            BindingFlags.Instance | BindingFlags.Public | BindingFlags.DeclaredOnly);
+        if (onOpenPageMethod is not null)
         {
-            _onActivateHook = new Hook(onActivateMethod, OnActivate);
+            _onOpenPageHook = new Hook(onOpenPageMethod, OnOpenPage);
         }
     }
 
@@ -200,8 +200,8 @@ public sealed class BestiaryAccessibilitySystem : ModMenuAccessibilityBase
 
         _drawHook?.Dispose();
         _drawHook = null;
-        _onActivateHook?.Dispose();
-        _onActivateHook = null;
+        _onOpenPageHook?.Dispose();
+        _onOpenPageHook = null;
 
         _navBindings.Clear();
         _actionBindings.Clear();
@@ -221,11 +221,11 @@ public sealed class BestiaryAccessibilitySystem : ModMenuAccessibilityBase
 
     #region Hooks
 
-    private static void OnActivate(OnActivateDelegate orig, UIState self)
+    private static void OnOpenPage(OnOpenPageDelegate orig, UIState self)
     {
         orig(self);
 
-        if (_instance is null)
+        if (_instance is null || self.GetType().FullName != BestiaryMenuTypeName)
         {
             return;
         }

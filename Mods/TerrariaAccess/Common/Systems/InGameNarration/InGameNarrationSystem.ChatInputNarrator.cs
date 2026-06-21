@@ -11,6 +11,11 @@ public sealed partial class InGameNarrationSystem
 {
     private sealed class ChatInputNarrator
     {
+        private static readonly bool DebugEnabled =
+            !string.IsNullOrEmpty(Environment.GetEnvironmentVariable("SRM_DEBUG_CHAT_INPUT")) ||
+            !string.IsNullOrEmpty(Environment.GetEnvironmentVariable("SRM_DEBUG_DIALOGUE_INPUT")) ||
+            !string.IsNullOrEmpty(Environment.GetEnvironmentVariable("SRM_DEBUG_INPUT"));
+
         private bool _chatActive;
         private bool _lastPageUp;
         private bool _lastPageDown;
@@ -18,6 +23,7 @@ public sealed partial class InGameNarrationSystem
         private int _historyCursor;
         private int _openedHistoryCount;
         private string? _openedLatestMessage;
+        private string? _lastDebugStateKey;
 
         public void Reset()
         {
@@ -34,10 +40,13 @@ public sealed partial class InGameNarrationSystem
         {
             ScreenReaderService.AnnouncementCategory category = context.Category ?? ScreenReaderService.AnnouncementCategory.Default;
 
+            LogStateIfChanged("Update", context.Runtime);
+
             if (!ShouldHandle(context.Runtime))
             {
                 if (_chatActive)
                 {
+                    LogStateForced("chat-closed", context.Runtime);
                     ScreenReaderService.Announce(BuildChatClosedAnnouncement(), category: category, force: true);
                 }
 
@@ -49,6 +58,7 @@ public sealed partial class InGameNarrationSystem
             {
                 _openedHistoryCount = ChatHistoryService.Count;
                 _openedLatestMessage = TryGetLatestHistoryMessage();
+                LogStateForced("chat-opened", context.Runtime);
                 ScreenReaderService.Announce(BuildChatOpenedAnnouncement(), category: category, force: true);
                 _hasHistoryCursor = false;
                 _historyCursor = ChatHistoryService.Count - 1;
@@ -109,6 +119,64 @@ public sealed partial class InGameNarrationSystem
             }
 
             return true;
+        }
+
+        private static string DetermineGateReason(RuntimeContextSnapshot runtime)
+        {
+            if (runtime.InMenu) return "runtimeInMenu";
+            if (Main.gameMenu) return "gameMenu";
+            if (Main.blockInput) return "blockInput";
+            if (Main.editSign) return "editSign";
+            if (Main.editChest) return "editChest";
+            if (!Main.drawingPlayerChat) return "!drawingPlayerChat";
+            return "allowed";
+        }
+
+        private void LogStateIfChanged(string context, RuntimeContextSnapshot runtime)
+        {
+            if (!DebugEnabled) return;
+
+            string gate = DetermineGateReason(runtime);
+            string chatText = Main.chatText ?? string.Empty;
+            int chatLen = chatText.Length;
+            string stateKey = string.Join("|",
+                gate,
+                Main.drawingPlayerChat ? 1 : 0,
+                _chatActive ? 1 : 0,
+                PlayerInput.CurrentInputMode,
+                PlayerInput.WritingText ? 1 : 0,
+                chatLen);
+
+            if (string.Equals(stateKey, _lastDebugStateKey, StringComparison.Ordinal)) return;
+
+            _lastDebugStateKey = stateKey;
+            EmitDebug(context, runtime, gate, chatText);
+        }
+
+        private void LogStateForced(string context, RuntimeContextSnapshot runtime)
+        {
+            if (!DebugEnabled) return;
+            string gate = DetermineGateReason(runtime);
+            string chatText = Main.chatText ?? string.Empty;
+            EmitDebug(context, runtime, gate, chatText);
+        }
+
+        private void EmitDebug(string context, RuntimeContextSnapshot runtime, string gate, string chatText)
+        {
+            global::TerrariaAccess.TerrariaAccess.Instance?.Logger.Info(
+                $"[ChatInputDebug] {context}: " +
+                $"gate={gate} " +
+                $"drawingPlayerChat={Main.drawingPlayerChat} " +
+                $"chatActive={_chatActive} " +
+                $"inputMode={PlayerInput.CurrentInputMode} " +
+                $"writingText={PlayerInput.WritingText} " +
+                $"blockInput={Main.blockInput} " +
+                $"gameMenu={Main.gameMenu} " +
+                $"editSign={Main.editSign} " +
+                $"editChest={Main.editChest} " +
+                $"runtimeInMenu={runtime.InMenu} " +
+                $"chatTextLen={chatText.Length} " +
+                $"frame={Main.GameUpdateCount}");
         }
 
         private void HandleHistoryNavigation(ScreenReaderService.AnnouncementCategory category)

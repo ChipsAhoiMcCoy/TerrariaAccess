@@ -1,6 +1,6 @@
-# CLAUDE.md
+# AGENTS.md
 
-This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
+This file provides guidance to Codex, Claude Code, and other coding agents when working with code in this repository.
 
 ## Project Overview
 
@@ -12,18 +12,20 @@ Terraria Access is a tModLoader mod that makes Terraria playable for blind and l
 
 ```powershell
 # Build and deploy to local tModLoader Mods folder
-pwsh -NoProfile -ExecutionPolicy Bypass -File Tools/build.ps1
+powershell -NoProfile -ExecutionPolicy Bypass -File Tools/build.ps1
 
 # Build only (no deployment)
-pwsh -NoProfile -ExecutionPolicy Bypass -File Tools/build.ps1 -SkipDeploy
+powershell -NoProfile -ExecutionPolicy Bypass -File Tools/build.ps1 -SkipDeploy
 
 # Build with narration lint (checks client.log for NVDA failures)
-pwsh -NoProfile -ExecutionPolicy Bypass -File Tools/build.ps1 -NarrationLint
+powershell -NoProfile -ExecutionPolicy Bypass -File Tools/build.ps1 -NarrationLint
 ```
 
 The build script invokes tModLoader's build system (`dotnet tModLoader.dll -build`), not MSBuild directly. Output is `TerrariaAccess.tmod`.
 
-When done with a task, build and deploy (without `-SkipDeploy`) so the mod is ready to test in tModLoader immediately.
+When done with a mod code or behavior task, build and deploy (without `-SkipDeploy`) so the mod is ready to test in tModLoader immediately. For docs-only, ignore-only, or local-notes-only changes, skip the build/deploy workflow unless explicitly requested.
+
+The default post-change workflow for mod behavior changes is: edit code, run relevant automated tests when available, then build and deploy. Launch tModLoader only when explicitly requested or when live manual testing is part of the task.
 
 ## Architecture
 
@@ -138,14 +140,14 @@ When done with a task, build and deploy (without `-SkipDeploy`) so the mod is re
 **Inheritance hierarchy:**
 ```
 ModMenuAccessibilityBase (abstract)
-├── ManageModsAccessibilitySystem      (LinkId: 3100)
-├── DownloadModsAccessibilitySystem    (LinkId: 3200)
-├── ModInfoAccessibilitySystem         (LinkId: 3300)
-├── ModPacksAccessibilitySystem        (LinkId: 3500)
-├── ModSourcesAccessibilitySystem      (LinkId: 3600)
-├── AchievementsAccessibilitySystem    (LinkId: 3700)
-├── BestiaryAccessibilitySystem        (LinkId: 3800)
-└── WorkshopHubAccessibilitySystem     (LinkId: 3000, hardcoded)
++-- ManageModsAccessibilitySystem      (LinkId: 3100)
++-- DownloadModsAccessibilitySystem    (LinkId: 3200)
++-- ModInfoAccessibilitySystem         (LinkId: 3300)
++-- ModPacksAccessibilitySystem        (LinkId: 3500)
++-- ModSourcesAccessibilitySystem      (LinkId: 3600)
++-- AchievementsAccessibilitySystem    (LinkId: 3700)
++-- BestiaryAccessibilitySystem        (LinkId: 3800)
+`-- WorkshopHubAccessibilitySystem     (LinkId: 3000, hardcoded)
 ```
 
 ### Guidance System Types (`Systems/Guidance/`)
@@ -198,10 +200,30 @@ Defined in multiple `*Keybinds.cs` files:
 
 ## Testing
 
-No automated test suite. Manual testing requires:
+Automated tests exist for pure/helper logic and can run without Terraria or tModLoader:
+
+```powershell
+.\Tools\dotnet\dotnet.exe test Tests\TerrariaAccess.Tests\TerrariaAccess.Tests.csproj
+```
+
+If `powershell` and `dotnet` are on PATH, the wrapper is also available:
+
+```powershell
+powershell -NoProfile -ExecutionPolicy Bypass -File Tools/test.ps1
+```
+
+Manual testing is still required for full mod behavior and tModLoader integration. Manual testing requires:
 1. Terraria + tModLoader installed
 2. A supported screen reader running (NVDA, JAWS, etc.)
 3. `Tolk.dll` in tModLoader directory
+
+The active tModLoader client log is usually at:
+
+```powershell
+C:\Program Files (x86)\Steam\steamapps\common\tModLoader\tModLoader-Logs\client.log
+```
+
+The Documents save folder may contain a `Logs.lnk` shortcut pointing to this directory, but recursive log searches under `Documents\My Games\Terraria\tModLoader` may not find `client.log` directly.
 
 Use `-NarrationLint` flag to scan client.log for Tolk communication failures after gameplay sessions.
 
@@ -217,12 +239,20 @@ C# LSP is configured for this project. Prefer using LSP operations over grep/sea
 
 When you need to reference Terraria or tModLoader internals, decompiled sources are available:
 
-- **tModLoader:** `C:\Program Files (x86)\Steam\steamapps\common\tModLoader\TModLoaderDecompiled\`
-- **Terraria:** `C:\Program Files (x86)\Steam\steamapps\common\Terraria\Decompilations\`
+- **tModLoader local repo copy:** `TModLoader Decompiled\`
+- **Terraria local repo copy:** `Terraria Decompiled\`
+- **tModLoader Steam install fallback:** `C:\Program Files (x86)\Steam\steamapps\common\tModLoader\TModLoaderDecompiled\`
+- **Terraria Steam install fallback:** `C:\Program Files (x86)\Steam\steamapps\common\Terraria\Decompilations\`
 
 Use these to understand Terraria's internal APIs, find hook points, or verify method signatures.
+
+Local navigation maps may also exist in `.codex-local/`:
+- `.codex-local/decompiled-terraria-map.md`
+- `.codex-local/decompiled-tmodloader-map.md`
+
+These files are intentionally ignored by git. When investigating decompiled Terraria or tModLoader code, check the relevant map first if it exists; it summarizes high-value entry points, folder purposes, accessibility-relevant areas, and useful `rg` search recipes so source searches can be narrower and faster.
 
 ## Mod Metadata
 
 - Version defined in `Mods/TerrariaAccess/build.txt`
-- Client-side only (`side = Client`)
+- Optional client/server sync (`side = NoSync`). The mod can run client-only for accessibility on ordinary servers, and servers may install it to enable multiplayer-aware features without forcing every client to download it.

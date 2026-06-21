@@ -18,16 +18,6 @@ internal sealed class MenuNarrationHandlerRegistry
     private int? _lastMenuMode;
     private UIState? _lastUiState;
 
-    // Global announcement tracking that survives handler transitions
-    private string? _lastGlobalAnnouncement;
-    private DateTime _lastGlobalAnnouncementTime = DateTime.MinValue;
-    private static readonly TimeSpan GlobalDeduplicationWindow = TimeSpan.FromMilliseconds(1200);
-
-    // Tracks consecutive frames where UIState is null during a handler transition.
-    // Prevents stale data announcements when Terraria swaps UIState objects over multiple frames.
-    private int _transientNullSkipCount;
-    private const int MaxTransientNullSkips = 30; // ~500ms at 60fps
-
     /// <summary>
     /// Creates a new registry with no handlers.
     /// Use RegisterHandler to add handlers.
@@ -97,33 +87,17 @@ internal sealed class MenuNarrationHandlerRegistry
         bool modeChanged = !_lastMenuMode.HasValue || _lastMenuMode.Value != context.MenuMode;
         bool uiStateChanged = !ReferenceEquals(_lastUiState, context.UiState);
 
-        // When UIState transitions from non-null to null and the handler would change
-        // to the FallbackHandler, skip frames until UIState recovers or a timeout expires.
-        // This is a transient state while Terraria swaps UIState objects (e.g.,
-        // UICharacterSelect -> null -> UIWorldSelect). Without this guard, the
-        // FallbackHandler picks up null-UIState frames and announces stale menu items.
-        // We only guard FallbackHandler transitions — specific handlers like
-        // TitleMenuHandler know their own menu mode and can be trusted immediately.
-        if (_lastUiState is not null && context.UiState is null && handlerChanged && handler is FallbackMenuHandler)
+        if (_lastUiState is not null &&
+            context.UiState is null &&
+            handlerChanged &&
+            handler is FallbackMenuHandler &&
+            _activeHandler is not null &&
+            _activeHandler is not FallbackMenuHandler)
         {
-            _transientNullSkipCount++;
-            if (_transientNullSkipCount <= MaxTransientNullSkips)
-            {
-                TerrariaAccess.Instance?.Logger.Debug(
-                    $"[MenuRegistry] Skipping transient null-UIState frame {_transientNullSkipCount} (previous handler={_activeHandler?.GetType().Name})");
-                _lastMenuMode = context.MenuMode;
-                // Don't update _lastUiState — keep previous non-null value so this
-                // guard keeps firing on subsequent null-UIState frames.
-                return Array.Empty<MenuNarrationEvent>();
-            }
-
             TerrariaAccess.Instance?.Logger.Debug(
-                $"[MenuRegistry] Transient null-UIState guard timed out after {_transientNullSkipCount} frames");
-            _transientNullSkipCount = 0;
-        }
-        else
-        {
-            _transientNullSkipCount = 0;
+                $"[MenuRegistry] Holding {_activeHandler.GetType().Name} through transient null UIState");
+            _lastMenuMode = context.MenuMode;
+            return Array.Empty<MenuNarrationEvent>();
         }
 
         if (handlerChanged)
@@ -144,68 +118,7 @@ internal sealed class MenuNarrationHandlerRegistry
         _lastMenuMode = context.MenuMode;
         _lastUiState = context.UiState;
 
-        var events = new List<MenuNarrationEvent>();
-        foreach (MenuNarrationEvent narrationEvent in handler.Update(context))
-        {
-            // Deduplicate against recent global announcements to prevent
-            // redundant speech during handler transitions (e.g., returning to main menu)
-            if (ShouldSuppress(narrationEvent, context.Timestamp))
-            {
-                TerrariaAccess.Instance?.Logger.Debug(
-                    $"[MenuRegistry] Suppressed duplicate: '{narrationEvent.Text}'");
-                continue;
-            }
-
-            events.Add(narrationEvent);
-
-            // Track this announcement globally
-            if (!string.IsNullOrWhiteSpace(narrationEvent.Text))
-            {
-                _lastGlobalAnnouncement = narrationEvent.Text;
-                _lastGlobalAnnouncementTime = context.Timestamp;
-            }
-        }
-
-        return events;
-    }
-
-    /// <summary>
-    /// Checks if an announcement should be suppressed as a duplicate of a recent global announcement.
-    /// </summary>
-    private bool ShouldSuppress(MenuNarrationEvent narrationEvent, DateTime timestamp)
-    {
-        // Don't suppress forced announcements (e.g., returning to the title menu)
-        if (narrationEvent.Force)
-        {
-            return false;
-        }
-
-        // Don't suppress sliders or special features
-        if (narrationEvent.Kind == MenuNarrationEventKind.Slider ||
-            narrationEvent.Kind == MenuNarrationEventKind.ModConfig)
-        {
-            return false;
-        }
-
-        // Check if this matches a recent global announcement
-        if (string.IsNullOrWhiteSpace(_lastGlobalAnnouncement) ||
-            string.IsNullOrWhiteSpace(narrationEvent.Text))
-        {
-            return false;
-        }
-
-        bool matchesRecent = string.Equals(
-            narrationEvent.Text,
-            _lastGlobalAnnouncement,
-            StringComparison.OrdinalIgnoreCase);
-
-        if (!matchesRecent)
-        {
-            return false;
-        }
-
-        bool withinWindow = timestamp - _lastGlobalAnnouncementTime < GlobalDeduplicationWindow;
-        return withinWindow;
+        return new List<MenuNarrationEvent>(handler.Update(context));
     }
 
     /// <summary>
@@ -217,9 +130,6 @@ internal sealed class MenuNarrationHandlerRegistry
         _activeHandler = null;
         _lastMenuMode = null;
         _lastUiState = null;
-        _lastGlobalAnnouncement = null;
-        _lastGlobalAnnouncementTime = DateTime.MinValue;
-        _transientNullSkipCount = 0;
     }
 
     /// <summary>

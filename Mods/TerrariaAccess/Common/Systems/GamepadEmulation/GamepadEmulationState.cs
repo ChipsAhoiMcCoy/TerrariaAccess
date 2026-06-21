@@ -1,39 +1,32 @@
 #nullable enable
+
 using System;
 
 namespace TerrariaAccess.Common.Systems.GamepadEmulation;
 
+/// <summary>
+/// Legacy compatibility surface for call sites that still ask whether keyboard
+/// gamepad emulation is available. The feature is intentionally always on.
+/// </summary>
 internal static class GamepadEmulationState
 {
-    internal static bool Enabled { get; private set; }
+    internal static bool Enabled => true;
 
-    /// <summary>
-    /// Fired when the state changes via user toggle. Not fired during initial load.
-    /// </summary>
-    internal static event Action<bool>? StateChanged;
+    internal static event Action<bool>? StateChanged
+    {
+        add { }
+        remove { }
+    }
 
     internal static void Toggle()
     {
-        SetEnabled(!Enabled);
     }
 
     internal static void SetEnabled(bool enabled)
     {
-        if (Enabled == enabled)
-        {
-            return;
-        }
-
-        Enabled = enabled;
-        StateChanged?.Invoke(enabled);
     }
 
-    /// <summary>
-    /// Sets the enabled state without firing the StateChanged event.
-    /// Used during initial load to restore saved state silently.
-    /// </summary>
     internal static void SetEnabledSilent(bool enabled)
     {
-        Enabled = enabled;
     }
 }

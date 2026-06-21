@@ -180,9 +180,84 @@ internal static partial class MenuNarrationCatalog
         }
     }
 
-    public static bool TryBuildDeletionAnnouncement(int menuMode, int focusIndex, out string combinedLabel)
+    private static string DescribeRejectionMenu(int index)
     {
-        combinedLabel = string.Empty;
+        return index switch
+        {
+            0 => TryGetRejectionStatusText(Main.menuMode, out string status) ? status : string.Empty,
+            1 => GetRejectionBackLabel(),
+            _ => string.Empty,
+        };
+    }
+
+    private static string GetRejectionBackLabel()
+    {
+        string label = LocalizationHelper.GetTextOrFallback("UI.Back", "Back");
+        if (!string.IsNullOrWhiteSpace(label))
+        {
+            return label;
+        }
+
+        label = TextSanitizer.Clean(Lang.menu[5].Value);
+        return string.IsNullOrWhiteSpace(label) ? "Back" : label;
+    }
+
+    public static bool TryGetRejectionStatusText(int menuMode, out string status)
+    {
+        status = string.Empty;
+
+        if (!IsRejectionMenuMode(menuMode))
+        {
+            return false;
+        }
+
+        if (menuMode == MenuID.BetterRejectionMenu)
+        {
+            try
+            {
+                string? textToShow = Main.instance.RejectionMenuInfo?.TextToShow;
+                if (!string.IsNullOrWhiteSpace(textToShow))
+                {
+                    status = TextSanitizer.Clean(textToShow);
+                    return true;
+                }
+            }
+            catch
+            {
+                // Fall back to Main.statusText below.
+            }
+        }
+
+        status = TextSanitizer.Clean(Main.statusText ?? string.Empty);
+        return !string.IsNullOrWhiteSpace(status);
+    }
+
+    public static bool IsRejectionMenuMode(int menuMode)
+    {
+        return menuMode == MenuID.RejectedWorld ||
+            menuMode == MenuID.BetterRejectionMenu;
+    }
+
+    public static bool TryGetDeletionPrompt(int menuMode, out string prompt)
+    {
+        prompt = string.Empty;
+        if (!IsDeletionMenuMode(menuMode))
+        {
+            return false;
+        }
+
+        prompt = DescribeMenuItem(menuMode, 0);
+        if (string.IsNullOrWhiteSpace(prompt))
+        {
+            return false;
+        }
+
+        return true;
+    }
+
+    public static bool TryGetDeletionResponseLabel(int menuMode, int focusIndex, out string responseLabel)
+    {
+        responseLabel = string.Empty;
 
         if (focusIndex is not (1 or 2))
         {
@@ -194,23 +269,11 @@ internal static partial class MenuNarrationCatalog
             return false;
         }
 
-        string prompt = DescribeMenuItem(menuMode, 0);
-        if (string.IsNullOrWhiteSpace(prompt))
-        {
-            return false;
-        }
-
-        string response = focusIndex == 1 ? GetDeletionConfirmLabel() : GetDeletionCancelLabel();
-        if (string.IsNullOrWhiteSpace(response))
-        {
-            return false;
-        }
-
-        combinedLabel = TextSanitizer.Clean($"{prompt} {response}".Trim());
-        return !string.IsNullOrWhiteSpace(combinedLabel);
+        responseLabel = focusIndex == 1 ? GetDeletionConfirmLabel() : GetDeletionCancelLabel();
+        return !string.IsNullOrWhiteSpace(responseLabel);
     }
 
-    private static bool IsDeletionMenuMode(int menuMode)
+    public static bool IsDeletionMenuMode(int menuMode)
     {
         return menuMode == MenuID.CharacterDeletion
             || menuMode == MenuID.CharacterDeletionConfirmation

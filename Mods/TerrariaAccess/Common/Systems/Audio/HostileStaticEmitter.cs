@@ -49,12 +49,6 @@ internal sealed class HostileStaticEmitter : AudioEmitterBase
             return;
         }
 
-        if (!LockOnHelper.CanUseLockonSystem())
-        {
-            Reset();
-            return;
-        }
-
         if (_ticksUntilNextScan <= 0)
         {
             _primaryCandidate = FindPrimaryCandidate(player);
@@ -110,7 +104,7 @@ internal sealed class HostileStaticEmitter : AudioEmitterBase
                 continue;
             }
 
-            if (LockOnHelper.CanUseLockonSystem() && !IsLockOnEligibleForSound(npc, listenerCenter))
+            if (!IsLockOnEligibleForSound(npc, listenerCenter))
             {
                 continue;
             }

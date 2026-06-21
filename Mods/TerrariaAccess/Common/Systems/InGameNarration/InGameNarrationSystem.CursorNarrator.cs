@@ -264,11 +264,13 @@ public sealed partial class InGameNarrationSystem
                 return;
             }
 
-            bool smartCursorActive = Main.SmartCursorIsUsed || Main.SmartCursorWanted;
+            bool smartCursorTemporarilySuppressed = DpadVirtualizationSystem.IsTemporarilySuppressingSmartCursor();
+            bool smartCursorActive = GamepadEmulationSystem.GetEffectiveSmartCursorState() && !smartCursorTemporarilySuppressed;
+            bool gamepadCursorActive = IsGamepadCursorActive();
             bool hasSmartInteract = Main.HasSmartInteractTarget;
-            bool canProvideCursorFeedback = !hasSmartInteract || PlayerInput.UsingGamepad;
+            bool canProvideCursorFeedback = !hasSmartInteract || gamepadCursorActive;
 
-            if (_lastSmartCursorActive && !smartCursorActive && canProvideCursorFeedback)
+            if (_lastSmartCursorActive && !smartCursorActive && canProvideCursorFeedback && !smartCursorTemporarilySuppressed)
             {
                 CenterCursorOnPlayer(player);
                 _justTransitionedToTileByTile = true;
@@ -340,7 +342,7 @@ public sealed partial class InGameNarrationSystem
             bool contentChanged = !tileChanged && currentSignature != _lastTileContentSignature;
             bool stateOnlyChanged = !tileChanged && !contentChanged && currentStateSignature != _lastTileStateSignature;
 
-            if (!PlayerInput.UsingGamepad && !DpadVirtualizationSystem.AreDpadKeysHeld() && !contentChanged && !stateOnlyChanged && !_justTransitionedToTileByTile)
+            if (!gamepadCursorActive && !DpadVirtualizationSystem.AreDpadKeysHeld() && !contentChanged && !stateOnlyChanged && !_justTransitionedToTileByTile)
             {
                 _wasHoveringPlayer = hoveringPlayer;
                 return;
@@ -464,7 +466,7 @@ public sealed partial class InGameNarrationSystem
                 return;
             }
 
-            if (!smartCursorActive && PlayerInput.UsingGamepad && !IsGamepadDpadPressed() &&
+            if (!smartCursorActive && gamepadCursorActive && !IsGamepadDpadPressed() &&
                 string.Equals(descriptor.Name, "Empty", StringComparison.OrdinalIgnoreCase) && !suppressedWall)
             {
                 _lastTileAnnouncementName = null;
@@ -473,12 +475,10 @@ public sealed partial class InGameNarrationSystem
             }
 
             int announcementKey = WorldGen.InWorld(tileX, tileY, 1)
-                ? CursorDescriptorService.ResolveAnnouncementKey(descriptor.TileType, Main.tile[tileX, tileY])
+                ? CursorDescriptorService.ResolveAnnouncementKey(descriptor.TileType, Main.tile[tileX, tileY], tileX, tileY)
                 : CursorDescriptorService.ResolveAnnouncementKey(descriptor.TileType);
 
-            // Skip repeat suppression when holding an axe so the player hears each tree announced
-            bool isHoldingAxe = (player?.HeldItem?.axe ?? 0) > 0;
-            bool suppressRepeats = !isHoldingAxe && (smartCursorActive || (PlayerInput.UsingGamepad && !IsGamepadDpadPressed()));
+            bool suppressRepeats = smartCursorActive || (gamepadCursorActive && !IsGamepadDpadPressed());
             if (suppressRepeats &&
                 string.Equals(descriptor.Name, _lastTileAnnouncementName, StringComparison.Ordinal) &&
                 announcementKey == _lastTileAnnouncementKey)
@@ -1073,11 +1073,6 @@ public sealed partial class InGameNarrationSystem
                     return true;
                 }
 
-                if (!PlayerInput.UsingGamepad)
-                {
-                    return false;
-                }
-
                 GamePadState state = GamePad.GetState(PlayerIndex.One);
                 if (!state.IsConnected)
                 {
@@ -1085,6 +1080,40 @@ public sealed partial class InGameNarrationSystem
                 }
 
                 return state.DPad.Up == ButtonState.Pressed ||
+                    state.DPad.Down == ButtonState.Pressed ||
+                    state.DPad.Left == ButtonState.Pressed ||
+                    state.DPad.Right == ButtonState.Pressed;
+            }
+            catch
+            {
+                return false;
+            }
+        }
+
+        private static bool IsGamepadCursorActive()
+        {
+            if (VirtualStickService.WasAnalogStickActiveThisFrame())
+            {
+                return true;
+            }
+
+            if (PlayerInput.UsingGamepad)
+            {
+                return true;
+            }
+
+            try
+            {
+                GamePadState state = GamePad.GetState(PlayerIndex.One);
+                if (!state.IsConnected)
+                {
+                    return false;
+                }
+
+                const float thumbstickThreshold = 0.2f;
+                return MathF.Abs(state.ThumbSticks.Right.X) >= thumbstickThreshold ||
+                    MathF.Abs(state.ThumbSticks.Right.Y) >= thumbstickThreshold ||
+                    state.DPad.Up == ButtonState.Pressed ||
                     state.DPad.Down == ButtonState.Pressed ||
                     state.DPad.Left == ButtonState.Pressed ||
                     state.DPad.Right == ButtonState.Pressed;

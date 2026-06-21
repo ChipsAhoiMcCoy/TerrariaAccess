@@ -12,6 +12,11 @@ Mods: {
 					Beeps.Label: Beeps
 				}
 
+				OverheadTraversalCuesEnabled: {
+					Label: Overhead Traversal Cues
+					Tooltip: When enabled, footsteps play a companion tone when you are directly underneath a nearby rope, platform, or minecart track that you can use.
+				}
+
 				CursorTileSounds: {
 					Label: Cursor Tile Sounds
 					Tooltip: When enabled, Smart Cursor emits a sound when it focuses a new tile. Disable to silence tile focus sounds.
@@ -32,6 +37,13 @@ Mods: {
 					Tooltip: Adjusts the volume of guidance system audio cues used for waypoints, NPCs, and other tracking targets.
 				}
 
+				GuidanceAllMode: {
+					Label: Guidance All Mode
+					Tooltip: Controls how pings play when a guidance category (such as Items, Critters, Plants, or Custom) is set to the All option. Sweep plays a ping for every tracked target in a left-to-right sweep. Nearest Only plays a single ping for the closest target each cycle.
+					Sweep.Label: Sweep
+					NearestOnly.Label: Nearest Only
+				}
+
 				InteractableCueVolume: {
 					Label: Interactable Cue Volume
 					Tooltip: Adjusts the volume of audio cues for nearby interactable objects like chests, doors, and crafting stations.
@@ -47,6 +59,11 @@ Mods: {
 					Tooltip: Announces the damage numbers you deal to hostile NPCs.
 				}
 
+				BossWarningsEnabled: {
+					Label: Boss Warnings
+					Tooltip: Announces selected boss attack windups and dangerous projectiles with brief dodge guidance.
+				}
+
 				SpatialInventoryAudio: {
 					Label: Experimental Spatial Inventory Audio
 					Tooltip: Experimental feature. When enabled, inventory navigation clicks use panning (left/right) and pitch (high/low) to indicate slot position.
@@ -60,11 +77,6 @@ Mods: {
 				MultiplayerFootstepVolume: {
 					Label: Multiplayer Footstep Volume
 					Tooltip: Adjusts the volume of footstep sounds for other players in multiplayer.
-				}
-
-				GamepadEmulationEnabled: {
-					Label: Gamepad Emulation
-					Tooltip: When enabled, keyboard inputs are translated to gamepad inputs for UI navigation. Disable this if you are using a physical controller. Toggle with F6.
 				}
 
 				CavitySonarEnabled: {
@@ -116,7 +128,15 @@ Mods: {
 			}
 		}
 
-		Combat.DamageAnnouncement: "{0} damage"
+		Combat: {
+			DamageAnnouncement: "{0} damage"
+			RespawnIn: Respawning in {0} {1}
+		}
+
+		Minions: {
+			SummonedSlotUsageSingular: "{0} of {1} minion slot used"
+			SummonedSlotUsagePlural: "{0} of {1} minion slots used"
+		}
 
 		HostMenu: {
 			LobbyLabel: Steam lobby
@@ -168,6 +188,7 @@ Mods: {
 			Water: Water
 			Lava: Lava
 			Honey: Honey
+			Shimmer: Shimmer
 		}
 
 		TileShapes: {
@@ -284,7 +305,8 @@ Mods: {
 		}
 
 		SmartCursor: {
-			Enabled: Smart cursor enabled
+			Enabled: Smart cursor
+			UnlockedCursor: Unlocked cursor
 			TileByTile: Tile by Tile
 		}
 
@@ -332,11 +354,6 @@ Mods: {
 			SelectedSuffix: Selected
 		}
 
-		GamepadEmulation: {
-			Enabled: Gamepad Emulation Enabled
-			Disabled: Gamepad Emulation Disabled
-		}
-
 		SearchMode: {
 			NavigationEnabled: Navigation mode. Use arrow keys to browse, Enter to select. Press Tab to search.
 			SearchEnabled: Search mode. Type to filter. Press Tab to return to navigation.
@@ -346,6 +363,11 @@ Mods: {
 			Enabled: First Letter Navigation Enabled. Press a letter to find items.
 			Disabled: First Letter Navigation Disabled
 			NoMatches: No items starting with {0}
+		}
+
+		SignInput: {
+			ButtonNavigationEnabled: Sign button navigation. Save selected. Use arrow keys to move between buttons. Press Tab to return to editing.
+			TextEditingEnabled: Sign text editing. Type the sign text. Press Tab to switch to the buttons.
 		}
 
 		WorldAnnouncements: {
@@ -421,6 +443,46 @@ Mods: {
 			}
 
 			InventorySpecial.LoadoutControls: Loadout controls
+
+			EventProgress: {
+				NoActiveEvent: No active events.
+				Status: "{0}. {1} percent remaining."
+				StatusWithWave: "{0} wave {1}. {2} percent remaining."
+				WaveChange: "{0} wave {1}. {2} percent remaining."
+				Remaining: "{0} percent remaining."
+
+				LunarPillars: {
+					Started: Celestial pillars active. Pillar shields are up.
+					ShieldStatus: "{0} pillar shield up. {1} percent remaining. Shield strength {2} of {3}."
+					ShieldRemaining: "{0} pillar shield {1} percent remaining."
+					ShieldDown: "{0} pillar shield down. Pillar is attackable."
+					Defeated: "{0} pillar defeated."
+					Summary: Celestial pillars active. {0}.
+					SummaryShielded: "{0} shield {1} percent"
+					SummaryAttackable: "{0} attackable"
+					SummaryDefeated: "{0} defeated"
+					NoActivePillars: no active pillars
+					MoonLordCountdown: Moon Lord awakening in {0} seconds.
+
+					Names: {
+						Solar: Solar
+						Vortex: Vortex
+						Nebula: Nebula
+						Stardust: Stardust
+					}
+				}
+
+				EventNames: {
+					GoblinArmy: Goblin Army
+					FrostLegion: Frost Legion
+					PirateInvasion: Pirate Invasion
+					MartianMadness: Martian Madness
+					PumpkinMoon: Pumpkin Moon
+					FrostMoon: Frost Moon
+					OldOnesArmy: Old One's Army
+					Unknown: Event
+				}
+			}
 		}
 
 		InventoryRegions: {
@@ -434,6 +496,97 @@ Mods: {
 			CraftingGrid: Crafting Grid
 			Storage: Storage
 			Shop: Shop
+			Creative: Journey
+		}
+
+		JourneyMode: {
+			Toggle: {
+				Opened: Journey menu opened
+				Closed: Journey menu closed
+				FocusOn: Journey toggle, currently on
+				FocusOff: Journey toggle, currently off
+				Blocked: Journey menu is currently blocked
+				NotJourneyMode: Journey menu is only available for Journey mode characters
+				BlockedByChest: Close the chest before opening the Journey menu
+			}
+
+			Panel: {
+				Duplication: Duplication
+				Research: Research
+				Opened: Panel opened
+				OpenedFormat: "{0} panel opened"
+				Closed: Panel closed
+				SwitchedToResearch: Switched to Research panel
+				SwitchedToDuplication: Switched to Duplication panel
+			}
+
+			Duplication: {
+				SearchFocus: Search field. Press Tab to search items
+				FilterFocusFormat: Category filter: {0}
+			}
+
+			Sacrifice: {
+				Empty: Sacrifice slot empty, place an item to see research progress
+				FocusEmpty: Sacrifice slot, empty
+				FullyResearched: Sacrifice slot: {0}, fully researched
+				ProgressFormat: Sacrifice slot: {0}, {1} of {2} to research
+				CannotResearch: Sacrifice slot: {0}, cannot be researched
+				ConfirmFocus: Research button, press to sacrifice and unlock infinite copies
+				Completed: Fully researched
+			}
+
+			Powers: {
+				Tab: {
+					InfiniteItems: Infinite Items
+					Research: Research
+					Time: Time
+					Weather: Weather
+					EnemyDifficulty: Enemy Difficulty
+					PersonalPowers: Personal Powers
+				}
+
+				FocusToggleFormat: "{0}, currently {1}"
+				FocusSliderFormat: "{0}, {1}"
+				FocusSliderLandingFormat: "{0} slider, {1}"
+				SliderValueFormat: Slider: {0}
+				FocusOneShotFormat: "{0}, press to activate"
+				ToggleOnFormat: "{0} on"
+				ToggleOffFormat: "{0} off"
+				SliderAnnouncementFormat: "{0}: {1}"
+				SliderOpenedFormat: "{0} slider opened. Navigate right to access it."
+				OneShotActivatedFormat: "{0} activated"
+			}
+
+			Power: {
+				Godmode: Godmode
+				FreezeTime: Freeze time
+				SetDawn: Set time to dawn
+				SetNoon: Set time to noon
+				SetDusk: Set time to dusk
+				SetMidnight: Set time to midnight
+				TimeRate: Time speed
+				FreezeWind: Freeze wind
+				WindStrength: Wind strength
+				FreezeRain: Freeze rain
+				RainStrength: Rain strength
+				SpawnRate: NPC spawn rate
+				Difficulty: Enemy difficulty
+				PlacementRange: Increased placement range
+				StopBiomeSpread: Stop biome spread
+				PersonalLight: Personal light
+				Unknown: Creative power
+			}
+
+			State: {
+				On: on
+				Off: off
+			}
+
+			SliderUnit: {
+				TimesFormat: "{0} times"
+				PercentFormat: "{0} percent"
+				SignedPercentFormat: "{0} percent"
+			}
 		}
 
 		InventorySpecial: {
@@ -461,7 +614,7 @@ Mods: {
 			WaypointNext.DisplayName: Next Waypoint
 			WaypointPrevious.DisplayName: Previous Waypoint
 			WaypointCreate.DisplayName: Create Waypoint
-			WaypointDelete.DisplayName: Waypoint Delete
+			WaypointDelete.DisplayName: Delete Focus
 			GuidanceCategoryNext.DisplayName: Next Guidance Category
 			GuidanceCategoryPrevious.DisplayName: Previous Guidance Category
 			GuidanceEntryNext.DisplayName: Next Guidance Entry
@@ -470,23 +623,25 @@ Mods: {
 			SpeechInterrupt.DisplayName: Toggle Speech Interrupt
 			BuildModeToggle.DisplayName: Cycle Build Mode
 			BuildModePlace.DisplayName: Set Build Point
-			GamepadEmulationInventorySelect.DisplayName: Gamepad Emulation Inventory Select
-			GamepadEmulationInventoryInteract.DisplayName: Gamepad Emulation Inventory Interact
-			GamepadEmulationSectionNext.DisplayName: Gamepad Emulation Section Next
-			GamepadEmulationSectionPrevious.DisplayName: Gamepad Emulation Section Previous
-			GamepadEmulationQuickUse.DisplayName: Gamepad Emulation Quick Use
-			GamepadEmulationLockOn.DisplayName: Gamepad Emulation Lock On
-			GamepadEmulationRightStickUp.DisplayName: Gamepad Emulation Right Stick Up
-			GamepadEmulationRightStickDown.DisplayName: Gamepad Emulation Right Stick Down
-			GamepadEmulationRightStickLeft.DisplayName: Gamepad Emulation Right Stick Left
-			GamepadEmulationRightStickRight.DisplayName: Gamepad Emulation Right Stick Right
-			GamepadEmulationSmartSelect.DisplayName: Gamepad Emulation Smart Select
-			GamepadEmulationArrowUp.DisplayName: Gamepad Emulation Arrow Up
-			GamepadEmulationArrowDown.DisplayName: Gamepad Emulation Arrow Down
-			GamepadEmulationArrowLeft.DisplayName: Gamepad Emulation Arrow Left
-			GamepadEmulationArrowRight.DisplayName: Gamepad Emulation Arrow Right
+			GamepadEmulationInventorySelect.DisplayName: Virtual Controller Inventory Select
+			GamepadEmulationInventoryInteract.DisplayName: Virtual Controller Inventory Interact
+			GamepadEmulationSectionNext.DisplayName: Virtual Controller Section Next
+			GamepadEmulationSectionPrevious.DisplayName: Virtual Controller Section Previous
+			GamepadEmulationQuickUse.DisplayName: Virtual Controller Inventory Quick Use
+			GamepadEmulationLockOn.DisplayName: Virtual Controller Lock On
+			GamepadEmulationRightStickUp.DisplayName: Virtual Controller Right Stick Up
+			GamepadEmulationRightStickDown.DisplayName: Virtual Controller Right Stick Down
+			GamepadEmulationRightStickLeft.DisplayName: Virtual Controller Right Stick Left
+			GamepadEmulationRightStickRight.DisplayName: Virtual Controller Right Stick Right
+			GamepadEmulationSmartSelect.DisplayName: Virtual Controller Smart Select
+			GamepadEmulationArrowUp.DisplayName: Virtual Controller Arrow Up
+			GamepadEmulationArrowDown.DisplayName: Virtual Controller Arrow Down
+			GamepadEmulationArrowLeft.DisplayName: Virtual Controller Arrow Left
+			GamepadEmulationArrowRight.DisplayName: Virtual Controller Arrow Right
 			StatusCheck.DisplayName: Status Checker
+			InfoAccessoryCheck.DisplayName: Info Accessory Checker
 			CavitySonarScan.DisplayName: Cavity Sonar Scan
+			EventProgressCheck.DisplayName: Event Progress Checker
 		}
 	}
 }
@@ -498,7 +653,7 @@ Keybinds: {
 	WaypointNext.DisplayName: Waypoint Next
 	WaypointPrevious.DisplayName: Waypoint Previous
 	WaypointCreate.DisplayName: Waypoint Create
-	WaypointDelete.DisplayName: Waypoint Delete
+	WaypointDelete.DisplayName: Delete Focus
 	SpeechInterrupt.DisplayName: Toggle Speech Interrupt
 	GuidanceCategoryNext.DisplayName: Next Guidance Category
 	GuidanceCategoryPrevious.DisplayName: Previous Guidance Category
@@ -507,23 +662,25 @@ Keybinds: {
 	GuidanceTeleport.DisplayName: Teleport to Guidance Target
 	BuildModeToggle.DisplayName: Cycle Build Mode
 	BuildModePlace.DisplayName: Set Build Point
-	GamepadEmulationInventorySelect.DisplayName: Gamepad Emulation Inventory Select
-	GamepadEmulationInventoryInteract.DisplayName: Gamepad Emulation Inventory Interact
-	GamepadEmulationSectionNext.DisplayName: Gamepad Emulation Section Next
-	GamepadEmulationSectionPrevious.DisplayName: Gamepad Emulation Section Previous
-	GamepadEmulationQuickUse.DisplayName: Gamepad Emulation Quick Use
-	GamepadEmulationLockOn.DisplayName: Gamepad Emulation Lock On
-	GamepadEmulationRightStickUp.DisplayName: Gamepad Emulation Right Stick Up
-	GamepadEmulationRightStickDown.DisplayName: Gamepad Emulation Right Stick Down
-	GamepadEmulationRightStickLeft.DisplayName: Gamepad Emulation Right Stick Left
-	GamepadEmulationRightStickRight.DisplayName: Gamepad Emulation Right Stick Right
-	GamepadEmulationSmartSelect.DisplayName: Gamepad Emulation Smart Select
-	GamepadEmulationArrowUp.DisplayName: Gamepad Emulation Arrow Up
-	GamepadEmulationArrowDown.DisplayName: Gamepad Emulation Arrow Down
-	GamepadEmulationArrowLeft.DisplayName: Gamepad Emulation Arrow Left
-	GamepadEmulationArrowRight.DisplayName: Gamepad Emulation Arrow Right
+	GamepadEmulationInventorySelect.DisplayName: Virtual Controller Inventory Select
+	GamepadEmulationInventoryInteract.DisplayName: Virtual Controller Inventory Interact
+	GamepadEmulationSectionNext.DisplayName: Virtual Controller Section Next
+	GamepadEmulationSectionPrevious.DisplayName: Virtual Controller Section Previous
+	GamepadEmulationQuickUse.DisplayName: Virtual Controller Inventory Quick Use
+	GamepadEmulationLockOn.DisplayName: Virtual Controller Lock On
+	GamepadEmulationRightStickUp.DisplayName: Virtual Controller Right Stick Up
+	GamepadEmulationRightStickDown.DisplayName: Virtual Controller Right Stick Down
+	GamepadEmulationRightStickLeft.DisplayName: Virtual Controller Right Stick Left
+	GamepadEmulationRightStickRight.DisplayName: Virtual Controller Right Stick Right
+	GamepadEmulationSmartSelect.DisplayName: Virtual Controller Smart Select
+	GamepadEmulationArrowUp.DisplayName: Virtual Controller Arrow Up
+	GamepadEmulationArrowDown.DisplayName: Virtual Controller Arrow Down
+	GamepadEmulationArrowLeft.DisplayName: Virtual Controller Arrow Left
+	GamepadEmulationArrowRight.DisplayName: Virtual Controller Arrow Right
 	StatusCheck.DisplayName: Status Checker
+	InfoAccessoryCheck.DisplayName: Info Accessory Checker
 	CavitySonarScan.DisplayName: Cavity Sonar Scan
+	EventProgressCheck.DisplayName: Event Progress Checker
 }
 
 Configs: {
@@ -555,6 +712,11 @@ Configs: {
 			Tooltip: ""
 		}
 
+		GuidanceAllMode: {
+			Label: Guidance All Mode
+			Tooltip: ""
+		}
+
 		InteractableCueVolume: {
 			Label: Interactable Cue Volume
 			Tooltip: ""
@@ -570,6 +732,11 @@ Configs: {
 			Tooltip: ""
 		}
 
+		BossWarningsEnabled: {
+			Label: Boss Warnings
+			Tooltip: ""
+		}
+
 		SpatialInventoryAudio: {
 			Label: Experimental Spatial Inventory Audio
 			Tooltip: ""
@@ -582,11 +749,6 @@ Configs: {
 
 		MultiplayerFootstepVolume: {
 			Label: Multiplayer Footstep Volume
-			Tooltip: ""
-		}
-
-		GamepadEmulationEnabled: {
-			Label: Gamepad Emulation Enabled
 			Tooltip: ""
 		}
 
@@ -649,6 +811,11 @@ Configs: {
 			Label: Fall Detection Volume
 			Tooltip: ""
 		}
+
+		OverheadTraversalCuesEnabled: {
+			Label: Overhead Traversal Cues Enabled
+			Tooltip: ""
+		}
 	}
 
 	EdgeDetectionMode: {
@@ -680,6 +847,20 @@ Configs: {
 
 		Beeps: {
 			Label: Beeps
+			Tooltip: ""
+		}
+	}
+
+	GuidanceAllMode: {
+		Tooltip: ""
+
+		Sweep: {
+			Label: Sweep
+			Tooltip: ""
+		}
+
+		NearestOnly: {
+			Label: Nearest Only
 			Tooltip: ""
 		}
 	}

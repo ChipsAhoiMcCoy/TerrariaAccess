@@ -12,14 +12,6 @@ namespace TerrariaAccess.Common.Systems.MenuNarration.ModConfig;
 internal sealed class AnnouncementGate
 {
     private string? _lastAnnouncement;
-    private int _suppressFrames;
-    private int _lastMouseX;
-    private int _lastMouseY;
-    private int _navigationSuppressionFrames;
-
-    // Minimum frames to suppress after navigation (prevents Terraria's mouse reset from triggering false movement)
-    private const int MinNavigationSuppressionFrames = 45; // ~750ms at 60fps
-    private const int MouseMoveThreshold = 50;
 
     /// <summary>
     /// The last announcement that was made through this gate.
@@ -29,14 +21,13 @@ internal sealed class AnnouncementGate
     /// <summary>
     /// Whether announcements are currently suppressed.
     /// </summary>
-    public bool IsSuppressed => _suppressFrames > 0 || _navigationSuppressionFrames > 0;
+    public bool IsSuppressed => false;
 
     /// <summary>
     /// Suppress announcements for the specified number of frames.
     /// </summary>
     public void SuppressForFrames(int frames)
     {
-        _suppressFrames = Math.Max(_suppressFrames, frames);
     }
 
     /// <summary>
@@ -45,9 +36,6 @@ internal sealed class AnnouncementGate
     /// </summary>
     public void SuppressAfterNavigation()
     {
-        _navigationSuppressionFrames = MinNavigationSuppressionFrames;
-        _lastMouseX = Main.mouseX;
-        _lastMouseY = Main.mouseY;
     }
 
     /// <summary>
@@ -55,28 +43,6 @@ internal sealed class AnnouncementGate
     /// </summary>
     public void Tick()
     {
-        if (_suppressFrames > 0)
-        {
-            _suppressFrames--;
-        }
-
-        if (_navigationSuppressionFrames > 0)
-        {
-            _navigationSuppressionFrames--;
-
-            // After minimum period, check for intentional mouse movement
-            if (_navigationSuppressionFrames == 0)
-            {
-                int deltaX = Math.Abs(Main.mouseX - _lastMouseX);
-                int deltaY = Math.Abs(Main.mouseY - _lastMouseY);
-
-                // If no significant movement, keep suppression active
-                if (deltaX <= MouseMoveThreshold && deltaY <= MouseMoveThreshold)
-                {
-                    _navigationSuppressionFrames = 1;
-                }
-            }
-        }
     }
 
     /// <summary>
@@ -94,13 +60,6 @@ internal sealed class AnnouncementGate
     {
         if (string.IsNullOrWhiteSpace(text))
         {
-            return false;
-        }
-
-        // Check suppression (force bypasses both suppression and deduplication)
-        if (!force && IsSuppressed)
-        {
-            TerrariaAccess.Instance?.Logger.Debug($"[AnnouncementGate] Suppressed: '{text}'");
             return false;
         }
 
@@ -132,7 +91,6 @@ internal sealed class AnnouncementGate
     /// </summary>
     public void ClearFrameSuppression()
     {
-        _suppressFrames = 0;
     }
 
     /// <summary>
@@ -149,7 +107,5 @@ internal sealed class AnnouncementGate
     public void Reset()
     {
         _lastAnnouncement = null;
-        _suppressFrames = 0;
-        _navigationSuppressionFrames = 0;
     }
 }

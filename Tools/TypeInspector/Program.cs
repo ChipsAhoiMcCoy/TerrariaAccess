@@ -25,7 +25,7 @@ AddAssemblies(baseDir);
 AddAssemblies(Path.Combine(baseDir, "Libraries"));
 AddAssemblies(Path.Combine(baseDir, "dotnet", "shared"));
 var context = new AssemblyLoadContext("TypeInspector", isCollectible: true);
-context.Resolving += (_, name) => lookup.TryGetValue(name.Name + ".dll", out string path) && File.Exists(path)
+context.Resolving += (_, name) => lookup.TryGetValue(name.Name + ".dll", out string? path) && path is not null && File.Exists(path)
     ? context.LoadFromAssemblyPath(path)
     : null;
 

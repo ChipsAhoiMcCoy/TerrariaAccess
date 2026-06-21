@@ -34,6 +34,10 @@ public sealed partial class InGameNarrationSystem
 {
     internal sealed class HotbarNarrator
     {
+        private static readonly bool HotbarDebugEnabled =
+            !string.IsNullOrEmpty(Environment.GetEnvironmentVariable("SRM_DEBUG_HOTBAR")) ||
+            !string.IsNullOrEmpty(Environment.GetEnvironmentVariable("SRM_DEBUG_INPUT"));
+
         private int _lastSelectedSlot = -1;
         private int _lastItemType = -1;
         private int _lastPrefix = -1;
@@ -41,24 +45,38 @@ public sealed partial class InGameNarrationSystem
         private static string? _lastAnnouncedDescription;
         private static string? _pendingAnnouncement;
         private static string? _pendingAnnouncementKey;
-        private static int _pendingAnnouncementTicks;
-        private const int PendingAnnouncementTimeoutTicks = 1;
+        private static uint _lastAnnouncementFrame;
         private static bool _externalSuppressed;
-        private static int _inventoryClosedGraceFrames;
-        private const int InventoryCloseGracePeriod = 2;
+        private static int _suppressedSelectedSlot = -1;
+        private static int _suppressedItemType = -1;
+        private static int _suppressedPrefix = -1;
+        private static int _suppressedStack = -1;
+        private static string? _lastDebugState;
 
         public void Update(Player player)
         {
-            TickPendingAnnouncement();
-
-            if (ShouldSuppressHotbarNarration(player))
+            string? suppressionReason = GetSuppressionReason(player);
+            if (suppressionReason is not null)
             {
+                LogHotbarDebug("suppressed", player, extra: suppressionReason);
                 Reset();
                 return;
             }
 
             int selectedSlot = player.selectedItem;
             Item held = player.HeldItem ?? new Item();
+
+            if (MatchesSuppressedSnapshot(selectedSlot, held))
+            {
+                _lastSelectedSlot = selectedSlot;
+                _lastItemType = held.type;
+                _lastPrefix = held.prefix;
+                _lastStack = held.stack;
+                _lastAnnouncedDescription = DescribeHeldItem(selectedSlot, held);
+                ClearSuppressedSnapshot();
+                LogHotbarDebug("suppressed-snapshot-match", player, selectedSlot, held, _lastAnnouncedDescription);
+                return;
+            }
 
             if (selectedSlot == _lastSelectedSlot &&
                 held.type == _lastItemType &&
@@ -78,6 +96,7 @@ public sealed partial class InGameNarrationSystem
             // Skip if this is the exact same announcement as last time (prevents duplicates)
             if (string.Equals(description, _lastAnnouncedDescription, StringComparison.Ordinal))
             {
+                LogHotbarDebug("duplicate-description-suppressed", player, selectedSlot, held, description);
                 return;
             }
 
@@ -85,16 +104,11 @@ public sealed partial class InGameNarrationSystem
             if (!string.IsNullOrWhiteSpace(description))
             {
                 _lastAnnouncedDescription = description;
-                bool smartCursorActive = Main.SmartCursorIsUsed || Main.SmartCursorWanted;
-                if (smartCursorActive)
-                {
-                    QueuePendingAnnouncement(description, key);
-                }
-                else
-                {
-                    NarrationInstrumentationContext.SetPendingKey(key);
-                    ScreenReaderService.Announce(description);
-                }
+                ClearPendingAnnouncement();
+                _lastAnnouncementFrame = Main.GameUpdateCount;
+                NarrationInstrumentationContext.SetPendingKey(key);
+                LogHotbarDebug("announce", player, selectedSlot, held, description, extra: key, dedupe: false);
+                ScreenReaderService.Announce(description);
             }
         }
 
@@ -111,28 +125,7 @@ public sealed partial class InGameNarrationSystem
 
         private static bool ShouldSuppressHotbarNarration(Player player)
         {
-            if (_externalSuppressed)
-            {
-                return true;
-            }
-
-            int selectedSlot = player.selectedItem;
-            if (selectedSlot < 0 || selectedSlot > 9)
-            {
-                return true;
-            }
-
-            // Suppress during grace period after inventory closes to prevent
-            // double-announcements during the transition
-            if (_inventoryClosedGraceFrames > 0)
-            {
-                _inventoryClosedGraceFrames--;
-                return true;
-            }
-
-            // Suppress when inventory is open for ALL input types (not just gamepad)
-            // This prevents HotbarNarrator from announcing simultaneously with InventoryNarrator
-            return InventoryNarrator.IsInventoryUiOpen(player);
+            return GetSuppressionReason(player) is not null;
         }
 
         private static string DescribeHeldItem(int slot, Item item)
@@ -146,35 +139,40 @@ public sealed partial class InGameNarrationSystem
             return $"{label}, slot {slot + 1}";
         }
 
-        private static void TickPendingAnnouncement()
-        {
-            if (_pendingAnnouncementTicks <= 0)
-            {
-                return;
-            }
-
-            _pendingAnnouncementTicks--;
-
-            if (_pendingAnnouncementTicks == 0 && _pendingAnnouncement is not null)
-            {
-                NarrationInstrumentationContext.SetPendingKey(_pendingAnnouncementKey);
-                ScreenReaderService.Announce(_pendingAnnouncement, force: true);
-                ClearPendingAnnouncement();
-            }
-        }
-
         private static void QueuePendingAnnouncement(string description, string key)
         {
             _pendingAnnouncement = description;
             _pendingAnnouncementKey = key;
-            _pendingAnnouncementTicks = PendingAnnouncementTimeoutTicks;
+        }
+
+        private static bool MatchesSuppressedSnapshot(int selectedSlot, Item held)
+        {
+            return selectedSlot == _suppressedSelectedSlot &&
+                held.type == _suppressedItemType &&
+                held.prefix == _suppressedPrefix &&
+                held.stack == _suppressedStack;
+        }
+
+        private static void CaptureSuppressedSnapshot(int selectedSlot, Item held)
+        {
+            _suppressedSelectedSlot = selectedSlot;
+            _suppressedItemType = held.type;
+            _suppressedPrefix = held.prefix;
+            _suppressedStack = held.stack;
+        }
+
+        private static void ClearSuppressedSnapshot()
+        {
+            _suppressedSelectedSlot = -1;
+            _suppressedItemType = -1;
+            _suppressedPrefix = -1;
+            _suppressedStack = -1;
         }
 
         private static void ClearPendingAnnouncement()
         {
             _pendingAnnouncement = null;
             _pendingAnnouncementKey = null;
-            _pendingAnnouncementTicks = 0;
         }
 
         internal static bool TryDequeuePendingAnnouncement(out string announcement, out string? key)
@@ -190,6 +188,16 @@ public sealed partial class InGameNarrationSystem
             key = _pendingAnnouncementKey;
             ClearPendingAnnouncement();
             return true;
+        }
+
+        internal static bool WasAnnouncementIssuedRecently(uint maxAgeFrames = 1)
+        {
+            if (_lastAnnouncementFrame == 0 || Main.GameUpdateCount < _lastAnnouncementFrame)
+            {
+                return false;
+            }
+
+            return Main.GameUpdateCount - _lastAnnouncementFrame <= maxAgeFrames;
         }
 
         internal static void SetExternalSuppression(bool suppressed)
@@ -215,20 +223,86 @@ public sealed partial class InGameNarrationSystem
 
         private static void OnInventoryOpened()
         {
-            // Clear last announced description so that when inventory closes,
-            // we announce the hotbar item fresh (prevents over-suppression)
-            _lastAnnouncedDescription = null;
+            ClearSuppressedSnapshot();
+            ClearPendingAnnouncement();
+            LogHotbarDebug("inventory-opened");
         }
 
         private static void OnInventoryClosed()
         {
-            // Apply grace period to prevent double-announcements when inventory closes
-            _inventoryClosedGraceFrames = InventoryCloseGracePeriod;
+            Player player = Main.LocalPlayer;
+            if (player is null)
+            {
+                return;
+            }
+
+            int selectedSlot = player.selectedItem;
+            Item held = player.HeldItem ?? new Item();
+            CaptureSuppressedSnapshot(selectedSlot, held);
+            _lastAnnouncedDescription = DescribeHeldItem(selectedSlot, held);
+            ClearPendingAnnouncement();
+            LogHotbarDebug("inventory-closed", player, selectedSlot, held, _lastAnnouncedDescription);
         }
 
         private static string BuildHotbarKey(int slot, Item item)
         {
             return $"hotbar:{slot + 1}:{item.type}:{item.prefix}:{item.stack}:{(item.favorited ? 1 : 0)}";
+        }
+
+        private static string? GetSuppressionReason(Player player)
+        {
+            if (_externalSuppressed)
+            {
+                return "external";
+            }
+
+            int selectedSlot = player.selectedItem;
+            if (selectedSlot < 0 || selectedSlot > 9)
+            {
+                return $"selected-slot-out-of-range:{selectedSlot}";
+            }
+
+            if (InventoryNarrator.IsInventoryUiOpen(player))
+            {
+                return "inventory-open";
+            }
+
+            return null;
+        }
+
+        private static void LogHotbarDebug(
+            string action,
+            Player? player = null,
+            int? selectedSlot = null,
+            Item? held = null,
+            string? description = null,
+            string? extra = null,
+            bool dedupe = true)
+        {
+            if (!HotbarDebugEnabled)
+            {
+                return;
+            }
+
+            Player? effectivePlayer = player ?? Main.LocalPlayer;
+            int slot = selectedSlot ?? effectivePlayer?.selectedItem ?? -1;
+            Item effectiveHeld = held ?? effectivePlayer?.HeldItem ?? new Item();
+            string itemName = effectiveHeld.IsAir
+                ? "Empty"
+                : NarrationTextFormatter.ComposeItemName(effectiveHeld);
+            string state = $"{action}|slot={slot}|type={effectiveHeld.type}|prefix={effectiveHeld.prefix}|stack={effectiveHeld.stack}|desc={description}|extra={extra}";
+            if (dedupe && string.Equals(state, _lastDebugState, StringComparison.Ordinal))
+            {
+                return;
+            }
+
+            _lastDebugState = state;
+            TerrariaAccess.Instance?.Logger.Info(
+                $"[HotbarDebug] action={action} frame={Main.GameUpdateCount} selectedSlot={slot} " +
+                $"item='{itemName}' type={effectiveHeld.type} prefix={effectiveHeld.prefix} stack={effectiveHeld.stack} " +
+                $"inventoryOpen={(effectivePlayer is not null && InventoryNarrator.IsInventoryUiOpen(effectivePlayer))} " +
+                $"usingGamepad={PlayerInput.UsingGamepadUI} inputMode={PlayerInput.CurrentInputMode} " +
+                $"description='{description ?? string.Empty}' extra='{extra ?? string.Empty}'");
         }
     }
 }

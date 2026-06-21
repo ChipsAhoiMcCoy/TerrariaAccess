@@ -17,23 +17,31 @@ public enum FallProximityMode
     Beeps
 }
 
+public enum GuidanceAllMode
+{
+    Sweep,
+    NearestOnly
+}
+
 public class TerrariaAccessConfig : ModConfig
 {
     public static TerrariaAccessConfig Instance { get; private set; } = null!;
 
     public override ConfigScope Mode => ConfigScope.ClientSide;
 
-    // Core feature toggle
-    [DefaultValue(true)]
-    public bool GamepadEmulationEnabled { get; set; } = true;
-
     // Narration
     [DefaultValue(false)]
     public bool AnnounceDamageNumbers { get; set; }
 
+    [DefaultValue(true)]
+    public bool BossWarningsEnabled { get; set; } = true;
+
     // Movement audio cues
     [DefaultValue(EdgeDetectionMode.Static)]
     public EdgeDetectionMode EdgeDetectionMode { get; set; } = EdgeDetectionMode.Static;
+
+    [DefaultValue(true)]
+    public bool OverheadTraversalCuesEnabled { get; set; } = true;
 
     // Multiplayer footsteps
     [DefaultValue(true)]
@@ -67,6 +75,9 @@ public class TerrariaAccessConfig : ModConfig
     [Range(0f, 1f)]
     [Slider]
     public float GuidanceVolume { get; set; } = 1f;
+
+    [DefaultValue(GuidanceAllMode.Sweep)]
+    public GuidanceAllMode GuidanceAllMode { get; set; } = GuidanceAllMode.Sweep;
 
     [DefaultValue(1f)]
     [Range(0f, 1f)]

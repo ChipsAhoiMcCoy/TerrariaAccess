@@ -154,6 +154,9 @@ internal static class ReflectionCache
         private static readonly Lazy<MethodInfo?> _updateUiForEnabledChange = new(() =>
             Type?.GetMethod("UpdateUIForEnabledChange", InstanceNonPublic));
 
+        private static readonly Lazy<MethodInfo?> _toggleEnabled = new(() =>
+            Type?.GetMethod("ToggleEnabled", InstanceNonPublic));
+
         internal static Type? Type => _type.Value;
         internal static FieldInfo? Mod => _mod.Value;
         internal static PropertyInfo? DisplayNameClean => _displayNameClean.Value;
@@ -167,6 +170,7 @@ internal static class ReflectionCache
         internal static FieldInfo? DialogText => _dialogText.Value;
         internal static MethodInfo? ShowMoreInfo => _showMoreInfo.Value;
         internal static MethodInfo? UpdateUiForEnabledChange => _updateUiForEnabledChange.Value;
+        internal static MethodInfo? ToggleEnabled => _toggleEnabled.Value;
     }
 
     #endregion
@@ -413,12 +417,116 @@ internal static class ReflectionCache
 
     #endregion
 
+    #region Character and World Select Menus
+
+    /// <summary>
+    /// Reflection handles for Terraria.GameContent.UI.States.UICharacterSelect.
+    /// </summary>
+    internal static class UICharacterSelect
+    {
+        private static readonly Lazy<Type?> _type = new(() =>
+            Type.GetType("Terraria.GameContent.UI.States.UICharacterSelect, tModLoader"));
+
+        private static readonly Lazy<FieldInfo?> _playerList = new(() =>
+            Type?.GetField("_playerList", InstanceNonPublic));
+
+        internal static Type? Type => _type.Value;
+        internal static FieldInfo? PlayerList => _playerList.Value;
+    }
+
+    /// <summary>
+    /// Reflection handles for Terraria.GameContent.UI.States.UICharacterCreation.
+    /// </summary>
+    internal static class UICharacterCreation
+    {
+        private static readonly Lazy<Type?> _type = new(() =>
+            Type.GetType("Terraria.GameContent.UI.States.UICharacterCreation, tModLoader")
+            ?? Type.GetType("Terraria.GameContent.UI.States.UICharacterCreation, Terraria"));
+
+        private static readonly Lazy<FieldInfo?> _player = new(() =>
+            Type?.GetField("_player", InstanceNonPublic));
+
+        private static readonly Lazy<FieldInfo?> _characterName = new(() =>
+            Type?.GetField("_charName", InstanceNonPublic));
+
+        internal static Type? Type => _type.Value;
+        internal static FieldInfo? Player => _player.Value;
+        internal static FieldInfo? CharacterName => _characterName.Value;
+    }
+
+    /// <summary>
+    /// Reflection handles for Terraria.GameContent.UI.States.UIWorldCreation.
+    /// </summary>
+    internal static class UIWorldCreation
+    {
+        private static readonly Lazy<Type?> _type = new(() =>
+            Type.GetType("Terraria.GameContent.UI.States.UIWorldCreation, tModLoader")
+            ?? Type.GetType("Terraria.GameContent.UI.States.UIWorldCreation, Terraria")
+            ?? typeof(Terraria.Main).Assembly.GetType("Terraria.GameContent.UI.States.UIWorldCreation")
+            ?? typeof(Terraria.UI.UIElement).Assembly.GetType("Terraria.GameContent.UI.States.UIWorldCreation"));
+
+        private static readonly Lazy<FieldInfo?> _worldName = new(() =>
+            Type?.GetField("_optionwWorldName", InstanceNonPublic));
+
+        private static readonly Lazy<FieldInfo?> _namePlate = new(() =>
+            Type?.GetField("_namePlate", InstanceNonPublic));
+
+        private static readonly Lazy<MethodInfo?> _updateInputFields = new(() =>
+            Type?.GetMethod("UpdateInputFields", InstanceNonPublic));
+
+        internal static Type? Type => _type.Value;
+        internal static FieldInfo? WorldName => _worldName.Value;
+        internal static FieldInfo? NamePlate => _namePlate.Value;
+        internal static MethodInfo? UpdateInputFields => _updateInputFields.Value;
+    }
+
+    /// <summary>
+    /// Reflection handles for Terraria.GameContent.UI.Elements.UICharacterNameButton.
+    /// </summary>
+    internal static class UICharacterNameButton
+    {
+        private static readonly Lazy<Type?> _type = new(() =>
+            Type.GetType("Terraria.GameContent.UI.Elements.UICharacterNameButton, tModLoader")
+            ?? Type.GetType("Terraria.GameContent.UI.Elements.UICharacterNameButton, Terraria"));
+
+        private static readonly Lazy<FieldInfo?> _actualContents = new(() =>
+            Type?.GetField("actualContents", InstanceNonPublic));
+
+        private static readonly Lazy<MethodInfo?> _setContents = new(() =>
+            Type?.GetMethod("SetContents", InstancePublic));
+
+        private static readonly Lazy<MethodInfo?> _trimDisplayIfOverElementDimensions = new(() =>
+            Type?.GetMethod("TrimDisplayIfOverElementDimensions", InstancePublic));
+
+        internal static Type? Type => _type.Value;
+        internal static FieldInfo? ActualContents => _actualContents.Value;
+        internal static MethodInfo? SetContents => _setContents.Value;
+        internal static MethodInfo? TrimDisplayIfOverElementDimensions => _trimDisplayIfOverElementDimensions.Value;
+    }
+
+    /// <summary>
+    /// Reflection handles for Terraria.GameContent.UI.States.UIWorldSelect.
+    /// </summary>
+    internal static class UIWorldSelect
+    {
+        private static readonly Lazy<Type?> _type = new(() =>
+            Type.GetType("Terraria.GameContent.UI.States.UIWorldSelect, tModLoader"));
+
+        private static readonly Lazy<FieldInfo?> _worldList = new(() =>
+            Type?.GetField("_worldList", InstanceNonPublic));
+
+        internal static Type? Type => _type.Value;
+        internal static FieldInfo? WorldList => _worldList.Value;
+    }
+
+    #endregion
+
     #region Mod and ModConfig (tModLoader Core Types)
 
     /// <summary>
     /// Reflection handles for Terraria.ModLoader.Mod (mod instance).
     /// </summary>
-    internal static class Mod
+    internal static class ModRef
     {
         private static readonly Lazy<Type?> _type = new(() =>
             Type.GetType("Terraria.ModLoader.Mod, tModLoader"));

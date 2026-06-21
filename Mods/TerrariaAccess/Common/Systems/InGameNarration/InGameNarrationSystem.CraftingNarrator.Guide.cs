@@ -15,6 +15,7 @@ public sealed partial class InGameNarrationSystem
         // Guide state tracking
         private RecipeIdentity _lastGuideIdentity;
         private int _lastGuideRecipeCount;
+        private bool _announcedEmptyGuideSlot;
 
         // Reforge state tracking
         private RecipeIdentity _lastReforgeIdentity;
@@ -60,6 +61,19 @@ public sealed partial class InGameNarrationSystem
             RecipeIdentity identity = RecipeIdentity.From(guideItem);
             int recipeCount = Math.Clamp(Main.numAvailableRecipes, 0, Main.availableRecipe.Length);
 
+            if (identity.Type <= 0 || guideItem.IsAir)
+            {
+                if (!_announcedEmptyGuideSlot)
+                {
+                    ScreenReaderService.Announce("Guide: place a material in the crafting slot to see recipes.", force: true);
+                    _announcedEmptyGuideSlot = true;
+                }
+
+                _lastGuideIdentity = default;
+                _lastGuideRecipeCount = recipeCount;
+                return;
+            }
+
             bool identityChanged = !_lastGuideIdentity.Equals(identity);
             bool recipeCountChanged = recipeCount != _lastGuideRecipeCount;
             if (!identityChanged && !recipeCountChanged)
@@ -69,11 +83,7 @@ public sealed partial class InGameNarrationSystem
 
             _lastGuideIdentity = identity;
             _lastGuideRecipeCount = recipeCount;
-
-            if (identity.Type <= 0)
-            {
-                return;
-            }
+            _announcedEmptyGuideSlot = false;
 
             string label = NarrationTextFormatter.ComposeItemLabel(guideItem, includeCountWhenSingular: true);
             string message = $"Guide: {label}";
@@ -91,6 +101,7 @@ public sealed partial class InGameNarrationSystem
         {
             _lastGuideIdentity = default;
             _lastGuideRecipeCount = 0;
+            _announcedEmptyGuideSlot = false;
         }
 
         /// <summary>

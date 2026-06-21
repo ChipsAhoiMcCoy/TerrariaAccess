@@ -14,6 +14,8 @@ namespace TerrariaAccess.Common.Systems.MenuNarration.Handlers;
 /// </summary>
 internal sealed class TitleMenuHandler : MenuHandlerBase
 {
+    private static readonly TimeSpan StartupFocusSettleWindow = TimeSpan.FromMilliseconds(1500);
+
     public override int Priority => 50;
 
     public override bool CanHandle(int menuMode, UIState? uiState)
@@ -142,18 +144,69 @@ internal sealed class TitleMenuHandler : MenuHandlerBase
 
     private bool TryHandleTitleMenuFocus(MenuNarrationContext context, DateTime timestamp, List<MenuNarrationEvent> events)
     {
-        // Wait for menu item scales to stabilize before announcing.
-        // This prevents announcing incorrect items (e.g., Settings) before the menu settles on Singleplayer.
-        if (timestamp - State.ModeEnteredAt < TimeSpan.FromMilliseconds(150))
+        return TryHandleFocus(context, ModeJustEntered, events);
+    }
+
+    protected override bool ShouldSuppressResolvedFocus(
+        MenuNarrationContext context,
+        MenuFocus focus,
+        string optionLabel,
+        string announcement)
+    {
+        if (State.SawHoverThisMode)
+        {
+            ClearStartupFocusSuppression();
+            return false;
+        }
+
+        if (context.Timestamp - State.ModeEnteredAt > StartupFocusSettleWindow)
+        {
+            ClearStartupFocusSuppression();
+            return false;
+        }
+
+        bool usesMenuIndexFocus =
+            focus.Source.Equals("Main.focusMenu", StringComparison.Ordinal) ||
+            focus.Source.Equals("Main.selectedMenu", StringComparison.Ordinal);
+        if (!usesMenuIndexFocus)
         {
             return false;
         }
 
-        return TryHandleFocus(context, ModeJustEntered, events);
+        // Vanilla lands on Single Player already. During startup, tML can churn through
+        // title-menu indices before the UI actually settles, which causes stray follow-up
+        // announcements like "Settings" after the correct initial "Single Player".
+        // Require one stable repeat for non-default indices during that startup window.
+        if (focus.Index == 0)
+        {
+            ClearStartupFocusSuppression();
+            return false;
+        }
+
+        bool sameAsPending =
+            State.PendingInitialFocus.HasValue &&
+            State.PendingInitialFocus.Value.Equals(focus) &&
+            string.Equals(State.PendingInitialFocusAnnouncement, announcement, StringComparison.OrdinalIgnoreCase);
+        if (sameAsPending)
+        {
+            ClearStartupFocusSuppression();
+            return false;
+        }
+
+        State.PendingInitialFocus = focus;
+        State.PendingInitialFocusAnnouncement = announcement;
+        TerrariaAccess.Instance?.Logger.Debug($"[TitleMenuHandler] Suppressing transient startup focus: {focus.Index} -> {optionLabel}");
+        return true;
     }
 
     protected override bool IsAllowedHover(int menuMode, string cleanedLabel)
     {
         return IsAllowedTitleHover(cleanedLabel);
+    }
+
+    private void ClearStartupFocusSuppression()
+    {
+        State.PendingInitialFocus = null;
+        State.PendingInitialFocusAnnouncement = null;
     }
 }

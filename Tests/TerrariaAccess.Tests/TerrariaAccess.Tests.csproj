@@ -36,15 +36,18 @@
     <Compile Include="..\..\Mods\TerrariaAccess\Common\Services\SoundLoudnessUtility.cs" Link="Sources\SoundLoudnessUtility.cs" />
     <Compile Include="..\..\Mods\TerrariaAccess\Common\Services\SynthesizedSoundFactory.cs" Link="Sources\SynthesizedSoundFactory.cs" />
     <Compile Include="..\..\Mods\TerrariaAccess\Common\Systems\Guidance\GuidanceEntry.cs" Link="Sources\GuidanceEntry.cs" />
+    <Compile Include="..\..\Mods\TerrariaAccess\Common\Systems\Guidance\GuidanceTeleportMath.cs" Link="Sources\GuidanceTeleportMath.cs" />
     <Compile Include="..\..\Mods\TerrariaAccess\Common\Systems\GamepadEmulation\GamepadEmulationState.cs" Link="Sources\GamepadEmulationState.cs" />
     <!-- Tier 2: Testable with interfaces or stubs -->
     <Compile Include="..\..\Mods\TerrariaAccess\Common\Abstractions\ITerrariaLocalization.cs" Link="Sources\ITerrariaLocalization.cs" />
     <Compile Include="..\..\Mods\TerrariaAccess\Common\Utilities\CoinFormatter.cs" Link="Sources\CoinFormatter.cs" />
     <Compile Include="..\..\Mods\TerrariaAccess\Common\Utilities\TextSanitizer.cs" Link="Sources\TextSanitizer.cs" />
     <Compile Include="..\..\Mods\TerrariaAccess\Common\Utilities\GlyphTagFormatter.cs" Link="Sources\GlyphTagFormatter.cs" />
+    <Compile Include="..\..\Mods\TerrariaAccess\Common\Utilities\SetBonusNarrationFormatter.cs" Link="Sources\SetBonusNarrationFormatter.cs" />
     <Compile Include="..\..\Mods\TerrariaAccess\Common\Utilities\ChatLineParser.cs" Link="Sources\ChatLineParser.cs" />
     <Compile Include="..\..\Mods\TerrariaAccess\Common\Utilities\NarrationStringCatalog.cs" Link="Sources\NarrationStringCatalog.cs" />
     <Compile Include="..\..\Mods\TerrariaAccess\Common\Utilities\SliderNarrationHelper.cs" Link="Sources\SliderNarrationHelper.cs" />
+    <Compile Include="..\..\Mods\TerrariaAccess\Common\Utilities\MinionSlotNarrationFormatter.cs" Link="Sources\MinionSlotNarrationFormatter.cs" />
   </ItemGroup>
 
 </Project>

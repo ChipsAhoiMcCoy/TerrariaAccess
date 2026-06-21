@@ -3,8 +3,8 @@
     Launches tModLoader with debug logging enabled for TerrariaAccess.
 
 .DESCRIPTION
-    Sets the SRM_DEBUG_INPUT environment variable and launches tModLoader.
-    This enables verbose logging for input state and inventory focus tracking.
+    Sets the SRM_DEBUG_INPUT and SRM_DEBUG_HOTBAR environment variables and launches tModLoader.
+    This enables verbose logging for input state, inventory focus tracking, and hotbar narration.
 
     Logs will be written to:
     C:\Users\<username>\Documents\My Games\Terraria\tModLoader\Logs\client.log
@@ -49,6 +49,7 @@ if (-not (Test-Path $dotnetPath)) {
 
 # Set debug environment variables
 $env:SRM_DEBUG_INPUT = "1"
+$env:SRM_DEBUG_HOTBAR = "1"
 
 Write-Host "========================================" -ForegroundColor Cyan
 Write-Host "TerrariaAccess Debug Launch" -ForegroundColor Cyan
@@ -57,6 +58,7 @@ Write-Host ""
 Write-Host "Debug logging ENABLED for:" -ForegroundColor Green
 Write-Host "  - Input state (mode, triggers, link points)"
 Write-Host "  - Inventory focus tracking"
+Write-Host "  - Hotbar narration and inventory-region crossover"
 Write-Host ""
 Write-Host "Logs will be written to:" -ForegroundColor Yellow
 Write-Host "  $env:USERPROFILE\Documents\My Games\Terraria\tModLoader\Logs\client.log"
@@ -64,6 +66,7 @@ Write-Host ""
 Write-Host "Look for lines starting with:" -ForegroundColor Yellow
 Write-Host "  [InputDebug] - Input mode and trigger state"
 Write-Host "  [FocusDebug] - Inventory focus tracking"
+Write-Host "  [HotbarDebug] - Hotbar narrator and inventory-side hotbar focus tracing"
 Write-Host ""
 Write-Host "Launching tModLoader..." -ForegroundColor Cyan
 Write-Host ""

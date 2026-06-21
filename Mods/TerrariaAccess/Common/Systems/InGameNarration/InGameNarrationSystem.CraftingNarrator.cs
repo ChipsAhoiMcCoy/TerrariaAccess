@@ -40,6 +40,7 @@ public sealed partial class InGameNarrationSystem
         private const int CraftingGridLinkPointEnd = 1500;
         private const int CraftingListLinkPointStart = 1500;
         private const int CraftingListLinkPointEnd = 2000;
+        private const int GuideCraftingSlotLinkPoint = CraftingListLinkPointStart;
 
         #endregion
 
@@ -93,6 +94,14 @@ public sealed partial class InGameNarrationSystem
             int currentPoint = PlayerInput.UsingGamepadUI ? UILinkPointNavigator.CurrentPoint : -1;
             bool isOnCraftingGrid = currentPoint >= CraftingGridLinkPointStart && currentPoint < CraftingGridLinkPointEnd;
             bool isOnCraftingList = currentPoint >= CraftingListLinkPointStart && currentPoint < CraftingListLinkPointEnd;
+            bool isOnGuideCraftingSlot = Main.InGuideCraftMenu && currentPoint == GuideCraftingSlotLinkPoint;
+
+            if (PlayerInput.UsingGamepadUI && isOnGuideCraftingSlot)
+            {
+                UiAreaNarrationContext.RecordArea(UiNarrationArea.Guide);
+                ResetFocus();
+                return;
+            }
 
             if (PlayerInput.UsingGamepadUI)
             {

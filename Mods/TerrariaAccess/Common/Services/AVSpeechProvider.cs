@@ -16,6 +16,7 @@ internal sealed class AvFoundationSpeechProvider : ISpeechProvider
     private delegate IntPtr AVSpeechSynthesizer_NewDelegate(int providerNumber);
     private delegate void AVSpeechSynthesizer_SpeakDelegate(IntPtr synthesizer, [MarshalAs(UnmanagedType.LPUTF8Str)] string text);
     private delegate void AVSpeechSynthesizer_StopSpeakingDelegate(IntPtr synthesizer);
+    private delegate bool AVSpeechSynthesizer_IsSpeakingDelegate(IntPtr synthesizer);
     private delegate void AVSpeechSynthesizer_ReleaseDelegate(IntPtr synthesizer);
     private delegate void AVSpeechSynthesizer_SetRateDelegate(IntPtr synthesizer, float rate);
     private delegate void AVSpeechSynthesizer_SetVolumeDelegate(IntPtr synthesizer, float volume);
@@ -32,6 +33,7 @@ internal sealed class AvFoundationSpeechProvider : ISpeechProvider
     private AVSpeechSynthesizer_NewDelegate? _synthesizerNew;
     private AVSpeechSynthesizer_SpeakDelegate? _synthesizerSpeak;
     private AVSpeechSynthesizer_StopSpeakingDelegate? _synthesizerStopSpeaking;
+    private AVSpeechSynthesizer_IsSpeakingDelegate? _synthesizerIsSpeaking;
     private AVSpeechSynthesizer_ReleaseDelegate? _synthesizerRelease;
     private AVSpeechSynthesizer_SetRateDelegate? _synthesizerSetRate;
     private AVSpeechSynthesizer_SetVolumeDelegate? _synthesizerSetVolume;
@@ -46,6 +48,31 @@ internal sealed class AvFoundationSpeechProvider : ISpeechProvider
     public bool IsAvailable => _available;
 
     public bool IsInitialized => _initialized;
+
+    public bool IsSpeaking
+    {
+        get
+        {
+            lock (_syncRoot)
+            {
+                if (!_available || _synthesizerIsSpeaking is null || _synthesizer == IntPtr.Zero)
+                {
+                    return false;
+                }
+
+                try
+                {
+                    return _synthesizerIsSpeaking(_synthesizer);
+                }
+                catch (Exception ex)
+                {
+                    _lastError = ex.Message;
+                    TerrariaAccess.Instance?.Logger.Debug($"[AVFoundation] IsSpeaking threw {ex.Message}. Treating provider as idle.");
+                    return false;
+                }
+            }
+        }
+    }
 
     public AvFoundationSpeechProvider(int providerNumber = 1)
     {
@@ -198,6 +225,7 @@ internal sealed class AvFoundationSpeechProvider : ISpeechProvider
             _synthesizerNew = null;
             _synthesizerSpeak = null;
             _synthesizerStopSpeaking = null;
+            _synthesizerIsSpeaking = null;
             _synthesizerRelease = null;
             _synthesizerSetRate = null;
             _synthesizerSetVolume = null;
@@ -278,6 +306,12 @@ internal sealed class AvFoundationSpeechProvider : ISpeechProvider
                     IntPtr speakPtr = NativeLibrary.GetExport(_libraryHandle, "AVSpeechSynthesizer_Speak");
                     IntPtr stopPtr = NativeLibrary.GetExport(_libraryHandle, "AVSpeechSynthesizer_StopSpeaking");
                     IntPtr releasePtr = NativeLibrary.GetExport(_libraryHandle, "AVSpeechSynthesizer_Release");
+                    
+                    // Load IsSpeaking function (optional, may not exist in older native libraries)
+                    if (NativeLibrary.TryGetExport(_libraryHandle, "AVSpeechSynthesizer_IsSpeaking", out IntPtr isSpeakingPtr))
+                    {
+                        _synthesizerIsSpeaking = GetDelegate<AVSpeechSynthesizer_IsSpeakingDelegate>(isSpeakingPtr);
+                    }
                     
                     // Load setter functions
                     if (NativeLibrary.TryGetExport(_libraryHandle, "AVSpeechSynthesizer_SetRate", out IntPtr setRatePtr))

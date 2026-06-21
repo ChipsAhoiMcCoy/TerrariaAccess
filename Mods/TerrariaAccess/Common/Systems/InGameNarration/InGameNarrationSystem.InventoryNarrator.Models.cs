@@ -98,6 +98,7 @@ public sealed partial class InGameNarrationSystem
             CraftingList,
             Storage,
             Shop,
+            Creative,
         }
 
         private readonly record struct NarrationCue(

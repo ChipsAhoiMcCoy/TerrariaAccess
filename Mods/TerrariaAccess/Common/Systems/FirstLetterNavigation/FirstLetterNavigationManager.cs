@@ -4,6 +4,8 @@ using System.Collections.Generic;
 using Microsoft.Xna.Framework;
 using Microsoft.Xna.Framework.Input;
 using TerrariaAccess.Common.Services;
+using TerrariaAccess.Common.Systems.GamepadEmulation;
+using TerrariaAccess.Common.Systems.ModBrowser;
 using TerrariaAccess.Common.Utilities;
 using Terraria;
 using Terraria.Audio;
@@ -74,6 +76,12 @@ internal static class FirstLetterNavigationManager
             return;
         }
 
+        if (SearchModeManager.IsRelevantMenu)
+        {
+            DisableForSearchMode();
+            return;
+        }
+
         // Skip when in text input mode
         if (Main.drawingPlayerChat || Main.editSign || Main.editChest)
         {
@@ -140,6 +148,11 @@ internal static class FirstLetterNavigationManager
 
             if (pressed && !wasPressed)
             {
+                if (ShouldReserveLetterKeyForShopSmartSelect(key))
+                {
+                    continue;
+                }
+
                 char letter = (char)('A' + i);
                 LogDebug($"Letter key '{letter}' just pressed, CurrentPoint before={UILinkPointNavigator.CurrentPoint}");
                 ProcessLetter(player, letter);
@@ -425,6 +438,12 @@ internal static class FirstLetterNavigationManager
             return;
         }
 
+        if (SearchModeManager.IsRelevantMenu)
+        {
+            DisableForSearchMode();
+            return;
+        }
+
         // Skip when in text input mode
         if (Main.drawingPlayerChat || Main.editSign || Main.editChest)
         {
@@ -492,6 +511,13 @@ internal static class FirstLetterNavigationManager
         PlayerInput.GamepadThumbstickLeft = Vector2.Zero;
     }
 
+    private static bool ShouldReserveLetterKeyForShopSmartSelect(Keys key)
+    {
+        return Main.npcShop != 0 &&
+               VirtualTriggerService.IsKeybindPressedRaw(GamepadEmulationKeybinds.SmartSelect) &&
+               VirtualTriggerService.IsKeybindBoundToKey(GamepadEmulationKeybinds.SmartSelect, key);
+    }
+
     /// <summary>
     /// Clears a trigger from both Current and JustPressed trigger sets.
     /// </summary>
@@ -499,6 +525,17 @@ internal static class FirstLetterNavigationManager
     {
         current.KeyStatus[triggerName] = false;
         justPressed.KeyStatus[triggerName] = false;
+    }
+
+    private static void DisableForSearchMode()
+    {
+        if (!_isEnabled)
+        {
+            return;
+        }
+
+        _isEnabled = false;
+        ClearMatches();
     }
 
     /// <summary>

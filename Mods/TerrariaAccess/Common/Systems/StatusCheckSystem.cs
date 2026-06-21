@@ -15,6 +15,13 @@ internal static class StatusCheckSystem
     private static int _lastPressFrame;
     private static int _cycleIndex;
 
+    // Sub-cycling state for stepping through individual buffs once _cycleIndex has reached the Buffs step.
+    // _buffSubIndex == -1 means we have not yet entered the sub-cycle (next press announces "N buffs").
+    // _focusedBuffSlot is the slot index (into player.buffType[]) that the cancel keybind should act on.
+    private static int _buffSubIndex = -1;
+    private static int[] _buffSnapshotSlots = Array.Empty<int>();
+    private static int _focusedBuffSlot = -1;
+
     private static readonly BiomeDefinition[] OrderedBiomes =
     {
         new("Underworld", "Underworld", static player => player.ZoneUnderworldHeight),
@@ -41,25 +48,50 @@ internal static class StatusCheckSystem
         new("Underground", "Underground", static player => player.ZoneDirtLayerHeight),
     };
 
-    // Status items in order: Health, Mana, Armor, Biome, Time, Buffs
-    private const int StatusItemCount = 6;
+    // Status items in order: Health, Mana, Armor, Set Bonus when active, Biome, Time, Buffs
+    private const int BaseStatusItemCount = 6;
 
     internal static void AnnounceStatus(Player player)
     {
+        // Keep inventory-held watches reflected in player.accWatch before building the time status.
+        player.RefreshInfoAccs();
+
         int currentFrame = (int)Main.GameUpdateCount;
         int framesSinceLastPress = currentFrame - _lastPressFrame;
+        int statusItemCount = GetStatusItemCount(player);
+        if (_cycleIndex >= statusItemCount)
+        {
+            _cycleIndex = 0;
+            ResetBuffSubCycle();
+        }
 
         if (framesSinceLastPress <= CycleCooldownFrames && _lastPressFrame > 0)
         {
-            // Cycling mode: announce just the next item
-            _cycleIndex = (_cycleIndex + 1) % StatusItemCount;
-            string singleItem = GetStatusItem(player, _cycleIndex);
-            ScreenReaderService.Announce(singleItem, force: true);
+            // Cycling mode: either advance the main cycle, or sub-step through individual buffs.
+            if (_cycleIndex == GetBuffsCycleIndex(player) && _buffSnapshotSlots.Length > 0)
+            {
+                AdvanceBuffSubCycle(player);
+            }
+            else
+            {
+                _cycleIndex = (_cycleIndex + 1) % statusItemCount;
+                if (_cycleIndex == GetBuffsCycleIndex(player))
+                {
+                    EnterBuffSubCycle(player);
+                }
+                else
+                {
+                    ResetBuffSubCycle();
+                    string singleItem = GetStatusItem(player, _cycleIndex);
+                    ScreenReaderService.Announce(singleItem, force: true);
+                }
+            }
         }
         else
         {
             // Full announcement mode: announce everything and reset cycle
             _cycleIndex = 0;
+            ResetBuffSubCycle();
             string message = BuildFullStatusMessage(player);
             ScreenReaderService.Announce(message, force: true);
         }
@@ -67,16 +99,206 @@ internal static class StatusCheckSystem
         _lastPressFrame = currentFrame;
     }
 
+    private static void EnterBuffSubCycle(Player player)
+    {
+        _buffSnapshotSlots = CaptureBuffSnapshot(player);
+        if (_buffSnapshotSlots.Length == 0)
+        {
+            _buffSubIndex = -1;
+            _focusedBuffSlot = -1;
+            ScreenReaderService.Announce("No buffs", force: true);
+            return;
+        }
+
+        _buffSubIndex = -1;
+        _focusedBuffSlot = -1;
+        int count = _buffSnapshotSlots.Length;
+        string countLabel = count == 1 ? "buff" : "buffs";
+        ScreenReaderService.Announce($"{count} {countLabel}", force: true);
+    }
+
+    private static void AdvanceBuffSubCycle(Player player)
+    {
+        int nextSubIndex = _buffSubIndex + 1;
+        if (nextSubIndex >= _buffSnapshotSlots.Length)
+        {
+            // Exhausted the snapshot — wrap back to Health and announce it.
+            _cycleIndex = 0;
+            ResetBuffSubCycle();
+            string singleItem = GetStatusItem(player, _cycleIndex);
+            ScreenReaderService.Announce(singleItem, force: true);
+            return;
+        }
+
+        _buffSubIndex = nextSubIndex;
+        AnnounceFocusedBuff(player);
+    }
+
+    private static void ResetBuffSubCycle()
+    {
+        _buffSubIndex = -1;
+        _focusedBuffSlot = -1;
+        _buffSnapshotSlots = Array.Empty<int>();
+    }
+
+    private static int[] CaptureBuffSnapshot(Player player)
+    {
+        List<int> slots = new();
+        for (int i = 0; i < Player.MaxBuffs; i++)
+        {
+            int buffType = player.buffType[i];
+            int buffTime = player.buffTime[i];
+            if (buffType > 0 && buffTime > 0 && buffType != BuffID.MonsterBanner)
+            {
+                slots.Add(i);
+            }
+        }
+        return slots.ToArray();
+    }
+
+    private static void AnnounceFocusedBuff(Player player)
+    {
+        int slot = _buffSnapshotSlots[_buffSubIndex];
+        int buffType = player.buffType[slot];
+        int buffTime = player.buffTime[slot];
+
+        // The snapshotted buff may have expired or shifted while the user was reading.
+        // Fall back to looking up by slot; if it no longer matches the captured buff, just announce by slot contents.
+        if (buffType <= 0 || buffTime <= 0)
+        {
+            _focusedBuffSlot = -1;
+            string position = $"Buff {_buffSubIndex + 1} of {_buffSnapshotSlots.Length}";
+            ScreenReaderService.Announce($"{position}: expired", force: true);
+            return;
+        }
+
+        _focusedBuffSlot = slot;
+
+        string name = Lang.GetBuffName(buffType);
+        if (string.IsNullOrEmpty(name))
+        {
+            name = $"Buff {buffType}";
+        }
+
+        string timeString = FormatBuffTime(buffTime);
+        string cancelNote = IsBuffCancellable(player, buffType) ? string.Empty : ", cannot cancel";
+
+        string prefix = $"Buff {_buffSubIndex + 1} of {_buffSnapshotSlots.Length}: {name}";
+        string announcement = string.IsNullOrEmpty(timeString)
+            ? $"{prefix}{cancelNote}"
+            : $"{prefix}, {timeString}{cancelNote}";
+
+        ScreenReaderService.Announce(announcement, force: true);
+    }
+
+    // Returns true when the Delete press was consumed by a focused buff (cancelled or reported as non-cancellable),
+    // false when no buff is currently focused. The caller uses the return value to decide whether to fall through
+    // to the waypoint-delete path.
+    internal static bool TryCancelFocusedBuff(Player player)
+    {
+        if (_focusedBuffSlot < 0 || _focusedBuffSlot >= Player.MaxBuffs)
+        {
+            return false;
+        }
+
+        int slot = _focusedBuffSlot;
+        int buffType = player.buffType[slot];
+        int buffTime = player.buffTime[slot];
+        if (buffType <= 0 || buffTime <= 0)
+        {
+            _focusedBuffSlot = -1;
+            return false;
+        }
+
+        string name = Lang.GetBuffName(buffType);
+        if (string.IsNullOrEmpty(name))
+        {
+            name = $"Buff {buffType}";
+        }
+
+        if (!IsBuffCancellable(player, buffType))
+        {
+            ScreenReaderService.Announce($"Cannot cancel {name}", force: true);
+            return true;
+        }
+
+        player.DelBuff(slot);
+        ScreenReaderService.Announce($"Cancelled {name}", force: true);
+
+        // Force a fresh status read on the next Backspace.
+        _cycleIndex = 0;
+        ResetBuffSubCycle();
+        _lastPressFrame = 0;
+        return true;
+    }
+
+    private static bool IsBuffCancellable(Player player, int buffType)
+    {
+        if (buffType <= 0)
+        {
+            return false;
+        }
+
+        if (Main.debuff[buffType])
+        {
+            return false;
+        }
+
+        // Hardcoded non-cancellable buffs — matches Main.TryRemovingBuff.
+        if (buffType == BuffID.LeafCrystal || buffType == BuffID.SoulDrain)
+        {
+            return false;
+        }
+
+        // Permanent/equipment buffs whose timer doesn't tick down — cancellation would be instantly re-applied.
+        if (buffType < BuffID.Sets.TimeLeftDoesNotDecrease.Length
+            && BuffID.Sets.TimeLeftDoesNotDecrease[buffType])
+        {
+            return false;
+        }
+
+        // Mount buffs: vanilla routes these to TryDismount rather than DelBuff. Keep the cancel key single-purpose
+        // and mark mount buffs as non-cancellable; the user can dismount via normal movement.
+        if (player.mount != null && player.mount.Active && player.mount.CheckBuff(buffType))
+        {
+            return false;
+        }
+
+        return true;
+    }
+
     private static string GetStatusItem(Player player, int index)
     {
+        bool hasSetBonus = HasSetBonus(player);
+        int biomeIndex = hasSetBonus ? 4 : 3;
+        int timeIndex = hasSetBonus ? 5 : 4;
+        int buffsIndex = GetBuffsCycleIndex(player);
+
+        if (hasSetBonus && index == 3)
+        {
+            return GetSetBonusString(player);
+        }
+
+        if (index == biomeIndex)
+        {
+            return GetBiomeString(player);
+        }
+
+        if (index == timeIndex)
+        {
+            return GetTimeString(player);
+        }
+
+        if (index == buffsIndex)
+        {
+            return GetBuffStringDetailed(player);
+        }
+
         return index switch
         {
             0 => GetHealthString(player),
             1 => GetManaString(player),
             2 => GetArmorString(player),
-            3 => GetBiomeString(player),
-            4 => GetTimeString(),
-            5 => GetBuffStringDetailed(player),
             _ => string.Empty,
         };
     }
@@ -86,9 +308,15 @@ internal static class StatusCheckSystem
         string health = GetHealthString(player);
         string mana = GetManaString(player);
         string armor = GetArmorString(player);
+        string? setBonus = SetBonusNarrationFormatter.BuildStatusLine(player.setBonus);
         string biome = GetBiomeString(player);
-        string time = GetTimeString();
+        string time = GetTimeString(player);
         string buffs = GetBuffString(player);
+
+        if (!string.IsNullOrWhiteSpace(setBonus))
+        {
+            return $"{health}. {mana}. {armor}. {setBonus}. {biome}. {time}. {buffs}.";
+        }
 
         return $"{health}. {mana}. {armor}. {biome}. {time}. {buffs}.";
     }
@@ -114,15 +342,47 @@ internal static class StatusCheckSystem
         return $"Defense {defense}";
     }
 
+    private static string GetSetBonusString(Player player)
+    {
+        return SetBonusNarrationFormatter.BuildStatusLine(player.setBonus) ?? string.Empty;
+    }
+
+    private static bool HasSetBonus(Player player)
+    {
+        return !string.IsNullOrWhiteSpace(SetBonusNarrationFormatter.NormalizeDescription(player.setBonus));
+    }
+
+    private static int GetStatusItemCount(Player player)
+    {
+        return HasSetBonus(player) ? BaseStatusItemCount + 1 : BaseStatusItemCount;
+    }
+
+    private static int GetBuffsCycleIndex(Player player)
+    {
+        return HasSetBonus(player) ? 6 : 5;
+    }
+
     private static string GetBiomeString(Player player)
     {
         string biomeName = DetermineBiomeName(player);
         return $"Biome: {biomeName}";
     }
 
-    private static string GetTimeString()
+    private static string GetTimeString(Player player)
     {
-        string timeDesc = DescribeTime();
+        string timeDesc = player.accWatch > 0
+            ? InfoAccessoryStatusSystem.BuildWatchValue(player)
+            : DescribeTime();
+
+        if (!Main.dayTime)
+        {
+            string moonPhase = InfoAccessoryStatusSystem.BuildMoonPhaseValue();
+            if (!string.IsNullOrWhiteSpace(moonPhase))
+            {
+                timeDesc = $"{timeDesc}, Moon phase: {moonPhase}";
+            }
+        }
+
         return $"Time: {timeDesc}";
     }
 
@@ -250,18 +510,35 @@ internal static class StatusCheckSystem
         double hours24 = (time / totalDay * 24.0) + 4.5;
         hours24 %= 24.0;
 
-        int hours = (int)hours24;
-        int minutes = (int)((hours24 - hours) * 60.0);
-
-        string period = hours >= 12 ? "PM" : "AM";
-        int displayHour = hours % 12;
-        if (displayHour == 0)
+        if (hours24 < 4.5)
         {
-            displayHour = 12;
+            return "Late night";
         }
-
-        string phase = Main.dayTime ? "Daytime" : "Night";
-        return $"{phase}, {displayHour}:{minutes:00} {period}";
+        if (hours24 < 7.0)
+        {
+            return "Dawn";
+        }
+        if (hours24 < 11.0)
+        {
+            return "Morning";
+        }
+        if (hours24 < 13.0)
+        {
+            return "Noon";
+        }
+        if (hours24 < 17.0)
+        {
+            return "Afternoon";
+        }
+        if (hours24 < 19.5)
+        {
+            return "Evening";
+        }
+        if (hours24 < 23.0)
+        {
+            return "Night";
+        }
+        return "Midnight";
     }
 
     private sealed record BiomeDefinition(string Key, string FallbackName, Func<Player, bool> Predicate);

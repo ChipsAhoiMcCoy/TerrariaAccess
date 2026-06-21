@@ -10,11 +10,14 @@ using MonoMod.RuntimeDetour;
 using TerrariaAccess.Common.Services;
 using TerrariaAccess.Common.Systems.FirstLetterNavigation;
 using TerrariaAccess.Common.Systems.GamepadEmulation;
+using TerrariaAccess.Common.Systems.InGameNarration;
 using TerrariaAccess.Common.Systems.ModBrowser;
 using TerrariaAccess.Common.Utilities;
 using Terraria;
+using Terraria.Audio;
 using Terraria.GameContent.UI.States;
 using Terraria.GameInput;
+using Terraria.ID;
 using Terraria.ModLoader;
 using Terraria.UI;
 using Terraria.UI.Gamepad;
@@ -31,8 +34,7 @@ public sealed class GamepadEmulationSystem : ModSystem
 
     // Debug logging for input state - enable via SRM_DEBUG_INPUT environment variable
     private static readonly bool InputDebugEnabled = !string.IsNullOrEmpty(Environment.GetEnvironmentVariable("SRM_DEBUG_INPUT"));
-    private static int _lastLoggedLinkPoint = -999;
-    private static InputMode _lastLoggedInputMode = (InputMode)(-1);
+    private static string? _lastLoggedInputDebugSignature;
 
     private static readonly string[] ControllerExclusiveBindingIds = {
         TriggerNames.LockOn,
@@ -53,10 +55,6 @@ public sealed class GamepadEmulationSystem : ModSystem
     private static Hook? _shiftInUseHook;
 
     private static HousingQueryHandler? _housingQueryHandler;
-    private static bool _smartCursorBindingWasPressed;
-    private static bool _smartCursorDesiredEnabled;
-    private static bool _smartCursorDesiredInitialized;
-
 
     public override void Load()
     {
@@ -75,11 +73,6 @@ public sealed class GamepadEmulationSystem : ModSystem
         _usingGamepadUiHook = TryCreateHook(EmulationReflectionCache.UsingGamepadUiGetter, OverrideUsingGamepadUi, "PlayerInput.UsingGamepadUI");
         _gamepadInputIlHook = TryCreateIlHook(EmulationReflectionCache.GamepadInput, InjectVirtualSticksIntoGamepadInput, "PlayerInput.GamePadInput");
         _shiftInUseHook = TryCreateHook(EmulationReflectionCache.ShiftInUseGetter, OverrideShiftInUse, "ItemSlot.ShiftInUse");
-
-        GamepadEmulationState.StateChanged += OnFeatureToggleStateChanged;
-        // Restore saved state silently (no announcement on load)
-        bool savedState = TerrariaAccessConfig.Instance?.GamepadEmulationEnabled ?? true;
-        GamepadEmulationState.SetEnabledSilent(savedState);
     }
 
     public override void Unload()
@@ -88,9 +81,6 @@ public sealed class GamepadEmulationSystem : ModSystem
         {
             return;
         }
-
-        GamepadEmulationState.StateChanged -= OnFeatureToggleStateChanged;
-        GamepadEmulationState.SetEnabled(false);
 
         _assembleBindPanelsHook?.Dispose();
         _assembleBindPanelsHook = null;
@@ -109,8 +99,7 @@ public sealed class GamepadEmulationSystem : ModSystem
 
         _housingQueryHandler = null;
         _mainMenuSelectWasPressed = false;
-        _smartCursorBindingWasPressed = false;
-        _smartCursorDesiredInitialized = false;
+        SmartCursorStateController.ClearSessionState();
         VirtualTriggerService.ResetState();
     }
 
@@ -259,29 +248,20 @@ public sealed class GamepadEmulationSystem : ModSystem
 
     private static bool ShouldExposeGamepadFlag(bool forceUi)
     {
-        if (!GamepadEmulationState.Enabled || InputStateHelper.IsTextInputActive())
+        GamepadEmulationInputContext context = InputContextResolver.Current;
+        if (context == GamepadEmulationInputContext.KeyboardTextInput)
         {
             return false;
         }
 
-        // Only report "using gamepad" in UI contexts where we intentionally emulate
-        // controller navigation. Keeping this true in-world causes other systems/mods
-        // to continuously force XBoxGamepad mode.
         if (forceUi)
         {
-            return InputStateHelper.NeedsGamepadUiMode();
+            return context == GamepadEmulationInputContext.GamepadUi;
         }
 
-        return InputStateHelper.NeedsGamepadUiMode() || IsLockOnContextActive();
-    }
-
-    private static bool IsLockOnContextActive()
-    {
-        bool lockOnEnabled = LockOnHelper.Enabled;
-        bool lockOnKeyPressed = GamepadEmulationKeybinds.LockOn is { } lockOnKeybind &&
-            (lockOnKeybind.Current || VirtualTriggerService.IsKeybindPressedRaw(lockOnKeybind));
-
-        return lockOnEnabled || lockOnKeyPressed;
+        return context is GamepadEmulationInputContext.GamepadUi
+            or GamepadEmulationInputContext.WorldGameplay
+            or GamepadEmulationInputContext.NativePhysicalGamepad;
     }
 
     private static void InjectVirtualSticksIntoGamepadInput(ILContext il)
@@ -325,12 +305,6 @@ public sealed class GamepadEmulationSystem : ModSystem
 
     private static bool OverrideShiftInUse(ShiftInUseGetter orig)
     {
-        // If gamepad emulation is not enabled, use original behavior
-        if (!GamepadEmulationState.Enabled)
-        {
-            return orig();
-        }
-
         // If text input is active, use original behavior (allow normal Shift for typing)
         if (InputStateHelper.IsTextInputActive())
         {
@@ -366,11 +340,6 @@ public sealed class GamepadEmulationSystem : ModSystem
     /// </summary>
     private static void SuppressShiftSmartSelect()
     {
-        if (!GamepadEmulationState.Enabled)
-        {
-            return;
-        }
-
         if (InputStateHelper.IsTextInputActive())
         {
             return;
@@ -384,7 +353,7 @@ public sealed class GamepadEmulationSystem : ModSystem
 
         // If our SmartSelect keybind (F key) is being pressed, allow the trigger
         if (GamepadEmulationKeybinds.SmartSelect is { } keybind &&
-            (keybind.Current || VirtualTriggerService.IsKeybindPressedRaw(keybind)))
+            VirtualTriggerService.IsKeybindPressed(keybind))
         {
             return;
         }
@@ -402,11 +371,6 @@ public sealed class GamepadEmulationSystem : ModSystem
     /// </summary>
     private static void SuppressAllShiftTriggers()
     {
-        if (!GamepadEmulationState.Enabled)
-        {
-            return;
-        }
-
         if (InputStateHelper.IsTextInputActive())
         {
             return;
@@ -422,7 +386,7 @@ public sealed class GamepadEmulationSystem : ModSystem
 
         // Suppress SmartSelect (unless our F keybind is pressed)
         bool allowSmartSelect = GamepadEmulationKeybinds.SmartSelect is { } keybind &&
-            (keybind.Current || VirtualTriggerService.IsKeybindPressedRaw(keybind));
+            VirtualTriggerService.IsKeybindPressed(keybind);
         if (!allowSmartSelect)
         {
             triggerPack.Current.KeyStatus[TriggerNames.SmartSelect] = false;
@@ -466,107 +430,77 @@ public sealed class GamepadEmulationSystem : ModSystem
         // This MUST happen before UILinkPointNavigator.Update() reads them.
         FirstLetterNavigationManager.SuppressNavigationTriggers();
 
-        HandleFeatureToggleHotkey();
         SuppressAllShiftTriggers();
+
+        Player? localPlayer = Main.LocalPlayer;
+        bool dialogueUiActive = DialogueInputGuard.IsDialogueUiActive(localPlayer);
+        bool npcInventoryUiActive = IsNpcInventoryUiActive();
 
         // Inject housing-relevant triggers early so CheckHousingQueryOnMouseClick can see them.
         // Skip entirely when first letter navigation is active — keys are reserved for searching.
         // Skip when fancy UI is active (mod config, bestiary, etc.) — injecting MouseLeft here
         // causes clicks at the mouse cursor position instead of the focused element.
-        if (GamepadEmulationState.Enabled && Main.playerInventory && !Main.inFancyUI
-            && !InputStateHelper.IsTextInputActive() && !FirstLetterNavigationManager.IsEnabled)
+        if (Main.playerInventory && !IsModConfigUiActive() && !InputContextResolver.IsFancyUiActive()
+            && !InputStateHelper.IsTextInputActive() && !FirstLetterNavigationManager.IsEnabled
+            && (!dialogueUiActive || npcInventoryUiActive))
         {
             VirtualTriggerService.InjectFromKeybind(GamepadEmulationKeybinds.InventorySelect, TriggerNames.MouseLeft);
+        }
+        else if (dialogueUiActive && localPlayer is not null && IsPressed(GamepadEmulationKeybinds.InventorySelect))
+        {
+            DialogueInputGuard.LogStateIfChanged("GamepadEmulationSystem.PostUpdateInput", localPlayer, "skipped early mouse-left injection");
         }
 
         _housingQueryHandler?.Update();
 
-        if (!GamepadEmulationState.Enabled)
-        {
-            _smartCursorBindingWasPressed = false;
-            _smartCursorDesiredInitialized = false;
-            return;
-        }
-
-        HandleSmartCursorBinding();
-
-        bool needsUiMode = InputStateHelper.NeedsGamepadUiMode();
-        ForceGamepadUiModeIfNeeded(needsUiMode);
+        GamepadEmulationInputContext inputContext = InputContextResolver.Current;
+        SmartCursorStateController.Update(inputContext, IsSmartCursorReservedForUi());
+        ForceInputMode(inputContext);
         ApplyGlobalVirtualTriggers();
-        ApplyInventoryVirtualTriggers(needsUiMode);
-        ApplyMenuNavigationVirtualTriggers(needsUiMode);
+        ApplyInventoryVirtualTriggers(inputContext == GamepadEmulationInputContext.GamepadUi);
+        ApplyDialogueVirtualTriggers(inputContext == GamepadEmulationInputContext.GamepadUi);
+        ApplyMenuNavigationVirtualTriggers(inputContext == GamepadEmulationInputContext.GamepadUi);
         ApplyMainMenuVirtualTriggers();
+        SuppressModConfigInventorySelectMouseActivation();
     }
 
-    public override void PreUpdatePlayers()
+    private static void ForceInputMode(GamepadEmulationInputContext context)
     {
-        if (Main.dedServ)
+        if (SignInputModeSystem.IsButtonNavigationActive)
         {
-            return;
-        }
-
-        if (!ShouldDriveSmartCursorState())
-        {
-            return;
-        }
-
-        EnsureSmartCursorDesiredStateInitialized();
-        ApplySmartCursorWantedState(_smartCursorDesiredEnabled);
-    }
-
-    public override void PostUpdateEverything()
-    {
-        if (Main.dedServ)
-        {
-            return;
-        }
-
-        if (!ShouldDriveSmartCursorState())
-        {
-            return;
-        }
-
-        EnsureSmartCursorDesiredStateInitialized();
-        ApplySmartCursorWantedState(_smartCursorDesiredEnabled);
-    }
-
-    private static void ForceGamepadUiModeIfNeeded(bool needsUiMode)
-    {
-        if (InputStateHelper.IsTextInputActive())
-        {
-            // Drop back to keyboard input while typing so chat/sign text boxes stay usable.
             PlayerInput.CurrentInputMode = InputMode.Keyboard;
+            PlayerInput.SettingsForUI.SetCursorMode(CursorMode.Mouse);
             return;
         }
 
-        if (needsUiMode)
+        if (context == GamepadEmulationInputContext.KeyboardTextInput)
+        {
+            PlayerInput.CurrentInputMode = InputMode.Keyboard;
+            PlayerInput.SettingsForUI.SetCursorMode(CursorMode.Mouse);
+            return;
+        }
+
+        if (context == GamepadEmulationInputContext.GamepadUi)
         {
             PlayerInput.CurrentInputMode = InputMode.XBoxGamepadUI;
             return;
         }
 
-        if (GamepadEmulationState.Enabled)
+        if (context == GamepadEmulationInputContext.NativePhysicalGamepad)
         {
-            if (IsLockOnContextActive())
-            {
-                // LockOn toggle path expects gamepad world mode in vanilla.
-                // Keep world gamepad mode only while lock-on context is active so TAB remains
-                // toggle-based instead of hold-to-aim.
-                PlayerInput.CurrentInputMode = InputMode.XBoxGamepad;
-                return;
-            }
+            return;
+        }
 
-            // Keep gameplay input mode as keyboard. Forcing XBoxGamepad in-world can cause
-            // SmartCursor to follow the GamePad wanted flag path, which some mod stacks
-            // may continuously set and effectively lock SmartCursor on.
-            PlayerInput.CurrentInputMode = InputMode.Keyboard;
-            PlayerInput.SettingsForUI.SetCursorMode(CursorMode.Mouse);
+        if (context == GamepadEmulationInputContext.WorldGameplay)
+        {
+            PlayerInput.CurrentInputMode = InputMode.XBoxGamepad;
+            return;
         }
     }
 
     private static void ApplyGlobalVirtualTriggers()
     {
-        if (!GamepadEmulationState.Enabled || Main.gameMenu || Main.inFancyUI || InputStateHelper.IsTextInputActive())
+        if (Main.gameMenu || IsModConfigUiActive() || InputContextResolver.IsFancyUiActive() || InputStateHelper.IsTextInputActive() || DialogueInputGuard.IsDialogueUiActive())
         {
             return;
         }
@@ -581,12 +515,21 @@ public sealed class GamepadEmulationSystem : ModSystem
         // 1. In inventory and first-letter navigation is active or Tab is pressed
         //    (Tab toggles first-letter nav, not targeting)
         // 2. In a searchable menu (bestiary, mod browser, etc.) where Tab toggles search mode
+        // 3. In sign dialogue, where Tab toggles between text entry and button navigation
         bool tabPressed = Main.keyState.IsKeyDown(Keys.Tab);
         bool skipLockOn = (Main.playerInventory && (FirstLetterNavigationManager.IsEnabled || tabPressed))
-            || SearchModeManager.IsRelevantMenu;
+            || SearchModeManager.IsRelevantMenu
+            || SignInputModeSystem.IsSignOpenForLocalPlayer;
         if (!skipLockOn)
         {
             VirtualTriggerService.InjectFromKeybind(GamepadEmulationKeybinds.LockOn, TriggerNames.LockOn);
+        }
+
+        if (!Main.playerInventory)
+        {
+            VirtualTriggerService.InjectFromKeyboardTrigger(TriggerNames.Jump, TriggerNames.Jump);
+            VirtualTriggerService.InjectFromKeybind(GamepadEmulationKeybinds.InventorySelect, TriggerNames.MouseLeft);
+            VirtualTriggerService.InjectFromKeybind(GamepadEmulationKeybinds.InventoryInteract, TriggerNames.MouseRight);
         }
 
         // SmartSelect: Inject the SmartSelect trigger for in-world auto-tool selection
@@ -596,179 +539,102 @@ public sealed class GamepadEmulationSystem : ModSystem
             VirtualTriggerService.InjectFromKeybind(GamepadEmulationKeybinds.SmartSelect, TriggerNames.SmartSelect);
         }
 
-        if (!Main.playerInventory)
-        {
-            VirtualTriggerService.InjectFromKeybind(GamepadEmulationKeybinds.InventoryQuickUse, TriggerNames.QuickMount);
-        }
+        ApplySmartCursorArrowDpadHotbar();
     }
 
-    private static void HandleSmartCursorBinding()
+    private static void ApplySmartCursorArrowDpadHotbar()
     {
-        if (InputStateHelper.IsTextInputActive())
-        {
-            _smartCursorBindingWasPressed = false;
-            return;
-        }
-
-        bool smartCursorPressed = IsSmartCursorBindingPressedRaw();
-
-        if (smartCursorPressed)
-        {
-            VirtualTriggerService.InjectFromState("SmartCursor", isHeld: true);
-        }
-
-        ApplySmartCursorStateFromBinding(smartCursorPressed);
-    }
-
-    private static void ApplySmartCursorStateFromBinding(bool smartCursorPressed)
-    {
-        EnsureSmartCursorDesiredStateInitialized();
-
-        // Toggle mode: one key press flips between enabled/disabled.
-        if (Main.cSmartCursorModeIsToggleAndNotHold)
-        {
-            if (smartCursorPressed && !_smartCursorBindingWasPressed)
-            {
-                _smartCursorDesiredEnabled = !_smartCursorDesiredEnabled;
-            }
-        }
-        else
-        {
-            // Hold mode: key down enables smart cursor, key up disables it.
-            _smartCursorDesiredEnabled = smartCursorPressed;
-        }
-
-        ApplySmartCursorWantedState(_smartCursorDesiredEnabled);
-        _smartCursorBindingWasPressed = smartCursorPressed;
-    }
-
-    private static void EnsureSmartCursorDesiredStateInitialized()
-    {
-        if (_smartCursorDesiredInitialized)
+        if (Main.playerInventory ||
+            InputContextResolver.Current != GamepadEmulationInputContext.WorldGameplay ||
+            !GetEffectiveSmartCursorState(ignoreTemporarySuppression: true))
         {
             return;
         }
 
-        _smartCursorDesiredEnabled = Main.SmartCursorIsUsed || Main.SmartCursorWanted;
-        _smartCursorDesiredInitialized = true;
+        InjectArrowDpadHotbarTrigger(GamepadEmulationKeybinds.ArrowUp, TriggerNames.DpadRadial1, "up");
+        InjectArrowDpadHotbarTrigger(GamepadEmulationKeybinds.ArrowRight, TriggerNames.DpadRadial2, "right");
+        InjectArrowDpadHotbarTrigger(GamepadEmulationKeybinds.ArrowDown, TriggerNames.DpadRadial3, "down");
+        InjectArrowDpadHotbarTrigger(GamepadEmulationKeybinds.ArrowLeft, TriggerNames.DpadRadial4, "left");
     }
 
-    private static bool IsSmartCursorBindingPressedRaw()
+    private static void InjectArrowDpadHotbarTrigger(ModKeybind? keybind, string triggerName, string direction)
     {
-        return IsVanillaTriggerPressedRaw("SmartCursor");
+        if (keybind is null || !VirtualTriggerService.IsKeybindPressed(keybind))
+        {
+            return;
+        }
+
+        VirtualTriggerService.InjectFromKeybind(keybind, triggerName);
+        LogSmartCursorArrowDpadHotbar(direction, triggerName);
     }
 
-    private static void ApplySmartCursorWantedState(bool enabled)
+    private static void LogSmartCursorArrowDpadHotbar(string direction, string triggerName)
     {
-        Main.SmartCursorWanted_Mouse = enabled;
-        Main.SmartCursorWanted_GamePad = enabled;
+        if (!InputDebugEnabled)
+        {
+            return;
+        }
+
+        string message = $"[InputDebug] SmartCursorArrowDpadHotbar: direction={direction} " +
+            $"trigger={triggerName} context={InputContextResolver.Current} " +
+            $"inputMode={PlayerInput.CurrentInputMode}";
+        global::TerrariaAccess.TerrariaAccess.Instance?.Logger.Info(message);
     }
 
-    private static bool ShouldDriveSmartCursorState()
+    private static bool IsSmartCursorReservedForUi()
     {
-        if (!GamepadEmulationState.Enabled)
-        {
-            return false;
-        }
+        return Main.playerInventory ||
+               Main.npcShop != 0 ||
+               Main.InGuideCraftMenu ||
+               Main.InReforgeMenu ||
+               Main.CreativeMenu.Enabled ||
+               Main.ingameOptionsWindow ||
+               Main.inFancyUI;
+    }
 
-        if (Main.gameMenu || InputStateHelper.IsTextInputActive())
-        {
-            return false;
-        }
-
-        Player? player = Main.LocalPlayer;
-        if (player is null || !player.active || player.dead || player.ghost)
-        {
-            return false;
-        }
-
-        return true;
+    internal static void ApplySmartCursorWantedState(bool enabled)
+    {
+        SmartCursorStateController.ApplyWantedState(enabled);
     }
 
     internal static bool TryGetForcedSmartCursorState(out bool enabled)
     {
-        if (!GamepadEmulationState.Enabled || !_smartCursorDesiredInitialized)
-        {
-            enabled = false;
-            return false;
-        }
-
-        enabled = _smartCursorDesiredEnabled;
-        return true;
+        return SmartCursorStateController.TryGetForcedState(out enabled);
     }
 
-    private static bool IsVanillaTriggerPressedRaw(string triggerName)
+    internal static bool GetEffectiveSmartCursorState(bool ignoreTemporarySuppression = false)
     {
-        PlayerInputProfile? profile = PlayerInput.CurrentProfile;
-        if (profile is null)
-        {
-            return false;
-        }
-
-        return IsVanillaTriggerPressedRaw(profile, InputMode.Keyboard, triggerName) ||
-               IsVanillaTriggerPressedRaw(profile, InputMode.KeyboardUI, triggerName);
-    }
-
-    private static bool IsVanillaTriggerPressedRaw(PlayerInputProfile profile, InputMode mode, string triggerName)
-    {
-        if (!profile.InputModes.TryGetValue(mode, out KeyConfiguration? config))
-        {
-            return false;
-        }
-
-        if (!config.KeyStatus.TryGetValue(triggerName, out List<string>? assignments) || assignments is null)
-        {
-            return false;
-        }
-
-        KeyboardState keyState = Main.keyState;
-        foreach (string assignment in assignments)
-        {
-            if (string.IsNullOrWhiteSpace(assignment))
-            {
-                continue;
-            }
-
-            if (TryIsMouseBindingPressed(assignment))
-            {
-                return true;
-            }
-
-            if (Enum.TryParse(assignment, ignoreCase: true, out Keys key) && keyState.IsKeyDown(key))
-            {
-                return true;
-            }
-        }
-
-        return false;
-    }
-
-    private static bool TryIsMouseBindingPressed(string assignment)
-    {
-        return assignment switch
-        {
-            "Mouse1" => Main.mouseLeft,
-            "Mouse2" => Main.mouseRight,
-            _ => false,
-        };
+        return SmartCursorStateController.GetEffectiveState();
     }
 
     private static void ApplyInventoryVirtualTriggers(bool inventoryUiActive)
     {
-        if (!inventoryUiActive || !GamepadEmulationState.Enabled || InputStateHelper.IsTextInputActive())
+        if (!inventoryUiActive || InputStateHelper.IsTextInputActive())
         {
             return;
         }
 
-        if (!Main.playerInventory)
+        Player player = Main.LocalPlayer;
+        if (player is null || !player.active || !Main.playerInventory)
         {
+            return;
+        }
+
+        bool shopInventoryActive = Main.npcShop != 0;
+        if (DialogueInputGuard.IsDialogueUiActive(player) && !IsNpcInventoryUiActive())
+        {
+            if (IsPressed(GamepadEmulationKeybinds.InventorySelect) || IsPressed(GamepadEmulationKeybinds.InventoryQuickUse))
+            {
+                DialogueInputGuard.LogStateIfChanged("GamepadEmulationSystem.ApplyInventoryVirtualTriggers", player, "suppressed inventory trigger injection during dialogue");
+            }
+
             return;
         }
 
         // Skip MouseLeft/MouseRight injection when fancy UI is active (mod config, bestiary, etc.)
         // These UIs process clicks at the mouse cursor position, not the focused element,
         // so injecting MouseLeft causes the wrong element to be activated.
-        if (Main.inFancyUI)
+        if (IsModConfigUiActive() || InputContextResolver.IsFancyUiActive())
         {
             return;
         }
@@ -778,6 +644,17 @@ public sealed class GamepadEmulationSystem : ModSystem
         // This blanket approach avoids whack-a-mole suppression of individual keybinds.
         if (FirstLetterNavigationManager.IsEnabled)
         {
+            if (shopInventoryActive)
+            {
+                VirtualTriggerService.InjectFromKeybind(GamepadEmulationKeybinds.SmartSelect, TriggerNames.SmartSelect);
+            }
+
+            VirtualTriggerService.UpdateTrackingOnly();
+            return;
+        }
+
+        if (TryHandleFocusedInventoryFavorite(player))
+        {
             VirtualTriggerService.UpdateTrackingOnly();
             return;
         }
@@ -786,10 +663,10 @@ public sealed class GamepadEmulationSystem : ModSystem
         VirtualTriggerService.ApplyMouseLeftFromTrigger();
 
         VirtualTriggerService.InjectFromKeybind(GamepadEmulationKeybinds.SmartSelect, TriggerNames.SmartSelect);
+        TryHandleShopQuickSellFallback(player);
 
         // Only inject MouseRight if no chest/container is open.
         // When a container is open, continued MouseRight injection can cause it to toggle closed.
-        Player player = Main.LocalPlayer;
         bool chestOpen = player is not null && (player.chest != -1 || player.tileEntityAnchor.InUse);
         if (!chestOpen)
         {
@@ -815,9 +692,185 @@ public sealed class GamepadEmulationSystem : ModSystem
         }
     }
 
+    private static bool TryHandleFocusedInventoryFavorite(Player player)
+    {
+        if (!PlayerInput.Triggers.JustPressed.SmartCursor ||
+            (Main.mouseItem is not null && !Main.mouseItem.IsAir))
+        {
+            return false;
+        }
+
+        int point = UILinkPointNavigator.CurrentPoint;
+        if (!SlotNavigationHelper.TryResolveInventorySlot(point, out int slot, out int context) ||
+            !CanFavoriteInventoryContext(context) ||
+            (uint)slot >= (uint)player.inventory.Length)
+        {
+            return false;
+        }
+
+        Item item = player.inventory[slot];
+        if (item.IsAir)
+        {
+            return false;
+        }
+
+        item.favorited = !item.favorited;
+        SoundEngine.PlaySound(SoundID.MenuTick);
+        ConsumeSmartCursorFavoriteTrigger();
+        return true;
+    }
+
+    private static bool CanFavoriteInventoryContext(int context)
+    {
+        return context == ItemSlot.Context.InventoryItem ||
+               context == ItemSlot.Context.InventoryCoin ||
+               context == ItemSlot.Context.InventoryAmmo;
+    }
+
+    private static void ConsumeSmartCursorFavoriteTrigger()
+    {
+        PlayerInput.Triggers.Current.KeyStatus[TriggerNames.SmartCursor] = false;
+        PlayerInput.Triggers.JustPressed.KeyStatus[TriggerNames.SmartCursor] = false;
+        PlayerInput.Triggers.JustReleased.KeyStatus[TriggerNames.SmartCursor] = false;
+        PlayerInput.LockGamepadButtons(TriggerNames.SmartCursor);
+        PlayerInput.SettingsForUI.TryRevertingToMouseMode();
+    }
+
+    private static void TryHandleShopQuickSellFallback(Player player)
+    {
+        if (Main.npcShop <= 0 ||
+            (Main.mouseItem is not null && !Main.mouseItem.IsAir) ||
+            !PlayerInput.Triggers.JustPressed.SmartSelect ||
+            !PlayerInput.UsingGamepadUI)
+        {
+            return;
+        }
+
+        Chest[]? shops = Main.instance?.shop;
+        if (shops is null || Main.npcShop >= shops.Length || shops[Main.npcShop] is null)
+        {
+            return;
+        }
+
+        int point = UILinkPointNavigator.CurrentPoint;
+        if (!SlotNavigationHelper.TryResolveInventorySlot(point, out int slot, out int context))
+        {
+            return;
+        }
+
+        if ((uint)slot >= (uint)player.inventory.Length)
+        {
+            return;
+        }
+
+        Item item = player.inventory[slot];
+        if (item.IsAir || item.favorited)
+        {
+            return;
+        }
+
+        string soldLabel = NarrationStringCatalog.ItemLabel(
+            TextSanitizer.Clean(item.Name),
+            item.stack,
+            favorited: false);
+        int originalType = item.type;
+        int originalStack = item.stack;
+
+        ItemSlot.SellOrTrash(player.inventory, context, slot);
+
+        Item remainingItem = player.inventory[slot];
+        bool sold = remainingItem.IsAir ||
+                    remainingItem.type != originalType ||
+                    remainingItem.stack < originalStack;
+        if (!sold || (Main.mouseItem is not null && !Main.mouseItem.IsAir))
+        {
+            return;
+        }
+
+        PlayerInput.Triggers.Current.KeyStatus[TriggerNames.SmartSelect] = false;
+        PlayerInput.Triggers.JustPressed.KeyStatus[TriggerNames.SmartSelect] = false;
+        PlayerInput.LockGamepadButtons(TriggerNames.SmartSelect);
+
+        ScreenReaderService.Announce($"Sold {soldLabel}", force: true);
+    }
+
+    private static void ApplyDialogueVirtualTriggers(bool uiModeActive)
+    {
+        if (SignInputModeSystem.IsButtonNavigationActive)
+        {
+            return;
+        }
+
+        if (!uiModeActive)
+        {
+            return;
+        }
+
+        if (PlayerInput.CurrentInputMode != InputMode.XBoxGamepadUI)
+        {
+            return;
+        }
+
+        Player player = Main.LocalPlayer;
+        if (player is null || !player.active)
+        {
+            return;
+        }
+
+        bool dialogueActive = player.talkNPC != -1 || player.sign != -1;
+        if (!dialogueActive)
+        {
+            return;
+        }
+
+        if (Main.playerInventory || IsNpcInventoryUiActive())
+        {
+            return;
+        }
+
+        bool textInputActive = InputStateHelper.IsTextInputActive();
+        bool preserveUiDuringTextInput = InputStateHelper.ShouldPreserveGamepadUiDuringTextInput();
+        if (textInputActive && !preserveUiDuringTextInput)
+        {
+            return;
+        }
+
+        DialogueInputGuard.ClaimUiInput(player, "GamepadEmulationSystem.ApplyDialogueVirtualTriggers");
+
+        GetVirtualMenuNavigationState(out bool up, out bool down, out bool left, out bool right);
+        VirtualTriggerService.InjectFromState(TriggerNames.MenuUp, up);
+        VirtualTriggerService.InjectFromState(TriggerNames.MenuDown, down);
+        VirtualTriggerService.InjectFromState(TriggerNames.MenuLeft, left);
+        VirtualTriggerService.InjectFromState(TriggerNames.MenuRight, right);
+
+        // Preserve keyboard text entry while a sign is being edited. The default confirm
+        // binding is a letter key, so injecting MouseLeft here would turn typed text into
+        // unintended button presses.
+        if (textInputActive)
+        {
+            return;
+        }
+
+        VirtualTriggerService.InjectFromKeybind(GamepadEmulationKeybinds.InventorySelect, TriggerNames.MouseLeft);
+        VirtualTriggerService.ApplyMouseLeftFromTrigger();
+        if (IsPressed(GamepadEmulationKeybinds.InventorySelect))
+        {
+            DialogueInputGuard.LogStateIfChanged("GamepadEmulationSystem.ApplyDialogueVirtualTriggers", player, "synthetic confirm injected");
+        }
+    }
+
+    private static bool IsNpcInventoryUiActive()
+    {
+        return Main.npcShop != 0 ||
+               Main.InGuideCraftMenu ||
+               Main.InReforgeMenu;
+    }
+
     private static void ApplyMenuNavigationVirtualTriggers(bool uiModeActive)
     {
-        if (!GamepadEmulationState.Enabled || !uiModeActive || InputStateHelper.IsTextInputActive())
+        bool textInputActive = InputStateHelper.IsTextInputActive();
+        bool preserveUiDuringTextInput = InputStateHelper.ShouldPreserveGamepadUiDuringTextInput();
+        if (!uiModeActive || (textInputActive && !preserveUiDuringTextInput))
         {
             return;
         }
@@ -832,21 +885,47 @@ public sealed class GamepadEmulationSystem : ModSystem
             return;
         }
 
+        GetVirtualMenuNavigationState(out bool up, out bool down, out bool left, out bool right);
+        VirtualTriggerService.InjectFromState(TriggerNames.MenuUp, up);
+        VirtualTriggerService.InjectFromState(TriggerNames.MenuDown, down);
+        VirtualTriggerService.InjectFromState(TriggerNames.MenuLeft, left);
+        VirtualTriggerService.InjectFromState(TriggerNames.MenuRight, right);
+    }
+
+    private static void GetVirtualMenuNavigationState(out bool up, out bool down, out bool left, out bool right)
+    {
         KeyboardState state = Main.keyState;
-        bool up = state.IsKeyDown(Keys.W);
-        bool down = state.IsKeyDown(Keys.S);
-        bool left = state.IsKeyDown(Keys.A);
-        bool right = state.IsKeyDown(Keys.D);
+        up = state.IsKeyDown(Keys.W) || IsPressed(GamepadEmulationKeybinds.ArrowUp);
+        down = state.IsKeyDown(Keys.S) || IsPressed(GamepadEmulationKeybinds.ArrowDown);
+        left = state.IsKeyDown(Keys.A) || IsPressed(GamepadEmulationKeybinds.ArrowLeft);
+        right = state.IsKeyDown(Keys.D) || IsPressed(GamepadEmulationKeybinds.ArrowRight);
 
         Vector2 leftStick = PlayerInput.GamepadThumbstickLeft;
         const float stickThreshold = 0.55f;
-        bool stickUp = leftStick.Y < -stickThreshold;
-        bool stickDown = leftStick.Y > stickThreshold;
+        up |= leftStick.Y < -stickThreshold;
+        down |= leftStick.Y > stickThreshold;
+        left |= leftStick.X < -stickThreshold;
+        right |= leftStick.X > stickThreshold;
+    }
 
-        VirtualTriggerService.InjectFromState(TriggerNames.MenuUp, up || stickUp);
-        VirtualTriggerService.InjectFromState(TriggerNames.MenuDown, down || stickDown);
-        VirtualTriggerService.InjectFromState(TriggerNames.MenuLeft, left);
-        VirtualTriggerService.InjectFromState(TriggerNames.MenuRight, right);
+    private static void SuppressModConfigInventorySelectMouseActivation()
+    {
+        if (!IsModConfigUiActive() || !IsPressed(GamepadEmulationKeybinds.InventorySelect))
+        {
+            return;
+        }
+
+        PlayerInput.Triggers.Current.KeyStatus[TriggerNames.MouseLeft] = false;
+        PlayerInput.Triggers.JustPressed.KeyStatus[TriggerNames.MouseLeft] = false;
+        PlayerInput.Triggers.JustReleased.KeyStatus[TriggerNames.MouseLeft] = false;
+        Main.mouseLeft = false;
+        Main.mouseLeftRelease = false;
+        VirtualTriggerService.UpdateTrackingOnly();
+    }
+
+    private static bool IsPressed(ModKeybind? keybind)
+    {
+        return VirtualTriggerService.IsKeybindPressed(keybind);
     }
 
     /// <summary>
@@ -857,7 +936,12 @@ public sealed class GamepadEmulationSystem : ModSystem
     /// </summary>
     private static void ApplyMainMenuVirtualTriggers()
     {
-        if (!GamepadEmulationState.Enabled || !Main.gameMenu || InputStateHelper.IsTextInputActive())
+        if (!Main.gameMenu || InputStateHelper.IsTextInputActive())
+        {
+            return;
+        }
+
+        if (HairStyleNavigationSystem.ShouldHandleHairStyleConfirm)
         {
             return;
         }
@@ -876,7 +960,7 @@ public sealed class GamepadEmulationSystem : ModSystem
             return;
         }
 
-        bool pressed = selectKeybind.Current || VirtualTriggerService.IsKeybindPressedRaw(selectKeybind);
+        bool pressed = IsPressed(selectKeybind);
         bool justPressed = pressed && !_mainMenuSelectWasPressed;
         _mainMenuSelectWasPressed = pressed;
 
@@ -902,6 +986,8 @@ public sealed class GamepadEmulationSystem : ModSystem
         "Terraria.ModLoader.UI.UIModInfo",
         "Terraria.ModLoader.UI.UIModPacks",
         "Terraria.ModLoader.UI.UIModSources",
+        "Terraria.ModLoader.Config.UI.UIModConfigList",
+        "Terraria.ModLoader.Config.UI.UIModConfig",
         "Terraria.GameContent.UI.States.UIBestiaryTest",
     };
 
@@ -939,43 +1025,6 @@ public sealed class GamepadEmulationSystem : ModSystem
 
     #endregion
 
-    #region Feature Toggle
-
-    private static void HandleFeatureToggleHotkey()
-    {
-        if (Main.keyState.IsKeyDown(Keys.F6) && !Main.oldKeyState.IsKeyDown(Keys.F6))
-        {
-            GamepadEmulationState.Toggle();
-        }
-    }
-
-    private static void OnFeatureToggleStateChanged(bool enabled)
-    {
-        if (!enabled)
-        {
-            PlayerInput.SettingsForUI.TryRevertingToMouseMode();
-            VirtualStickService.ResetState();
-            _smartCursorBindingWasPressed = false;
-            _smartCursorDesiredInitialized = false;
-        }
-
-        // Save the state to config for persistence
-        if (TerrariaAccessConfig.Instance is { } config)
-        {
-            config.GamepadEmulationEnabled = enabled;
-            config.SaveChanges(silent: true);
-        }
-
-        string key = enabled
-            ? "Mods.TerrariaAccess.GamepadEmulation.Enabled"
-            : "Mods.TerrariaAccess.GamepadEmulation.Disabled";
-        string fallback = enabled ? "Gamepad Emulation Enabled" : "Gamepad Emulation Disabled";
-        string announcement = LocalizationHelper.GetTextOrFallback(key, fallback);
-        ScreenReaderService.Announce(announcement, force: true);
-    }
-
-    #endregion
-
     #region Debug Logging
 
     /// <summary>
@@ -992,23 +1041,14 @@ public sealed class GamepadEmulationSystem : ModSystem
         int currentLinkPoint = UILinkPointNavigator.CurrentPoint;
         InputMode currentInputMode = PlayerInput.CurrentInputMode;
 
-        // Only log on state changes
-        bool linkPointChanged = currentLinkPoint != _lastLoggedLinkPoint;
-        bool inputModeChanged = currentInputMode != _lastLoggedInputMode;
-
-        if (!linkPointChanged && !inputModeChanged)
-        {
-            return;
-        }
-
-        _lastLoggedLinkPoint = currentLinkPoint;
-        _lastLoggedInputMode = currentInputMode;
-
         Player? player = Main.LocalPlayer;
         bool inventoryOpen = Main.playerInventory;
         bool usingGamepadUi = PlayerInput.UsingGamepadUI;
+        GamepadEmulationInputContext resolvedContext = InputContextResolver.Current;
         bool emulationEnabled = GamepadEmulationState.Enabled;
         bool textInputActive = InputStateHelper.IsTextInputActive();
+        bool physicalGamepadConnected = InputStateHelper.IsPhysicalGamepadConnected();
+        bool nativeWorldGamepad = InputStateHelper.ShouldUseNativeGamepadWorldInput();
         int chestIndex = player?.chest ?? -1;
         bool firstLetterNavEnabled = FirstLetterNavigation.FirstLetterNavigationManager.IsEnabled;
 
@@ -1016,22 +1056,62 @@ public sealed class GamepadEmulationSystem : ModSystem
         TriggersPack pack = PlayerInput.Triggers;
         bool mouseLeftActive = pack.Current.MouseLeft;
         bool mouseRightActive = pack.Current.MouseRight;
+        bool jumpActive = pack.Current.KeyStatus.TryGetValue(TriggerNames.Jump, out bool jump) && jump;
         bool smartSelectActive = pack.Current.KeyStatus.TryGetValue(TriggerNames.SmartSelect, out bool ss) && ss;
+        bool smartCursorTriggerActive = pack.Current.KeyStatus.TryGetValue(TriggerNames.SmartCursor, out bool sc) && sc;
+        bool smartCursorPressedRaw = SmartCursorStateController.IsSmartCursorBindingPressedRaw();
+        bool smartCursorWantedMouse = Main.SmartCursorWanted_Mouse;
+        bool smartCursorWantedGamePad = Main.SmartCursorWanted_GamePad;
+        bool smartCursorEffective = Main.SmartCursorIsUsed;
+        bool smartCursorDesiredInitialized = SmartCursorStateController.DesiredInitialized;
+        bool smartCursorDesired = SmartCursorStateController.DesiredEnabled;
+        bool smartCursorSyncPending = SmartCursorStateController.DesiredSyncPending;
+        uint smartCursorSyncDeadline = SmartCursorStateController.DesiredSyncDeadline;
+        bool smartCursorSuppressed = DpadVirtualizationSystem.IsTemporarilySuppressingSmartCursor();
+
+        string stateSignature =
+            $"{currentLinkPoint}|{currentInputMode}|{resolvedContext}|{inventoryOpen}|{usingGamepadUi}|{emulationEnabled}|" +
+            $"{textInputActive}|{physicalGamepadConnected}|{nativeWorldGamepad}|{chestIndex}|" +
+            $"{firstLetterNavEnabled}|{mouseLeftActive}|{mouseRightActive}|{jumpActive}|{smartSelectActive}|" +
+            $"{smartCursorTriggerActive}|{smartCursorPressedRaw}|{smartCursorWantedMouse}|" +
+            $"{smartCursorWantedGamePad}|{smartCursorEffective}|{smartCursorDesiredInitialized}|" +
+            $"{smartCursorDesired}|{smartCursorSyncPending}|{smartCursorSyncDeadline}|" +
+            $"{smartCursorSuppressed}";
+
+        bool stateChanged = stateSignature != _lastLoggedInputDebugSignature;
 
         string message = $"[InputDebug] {context}: " +
             $"linkPoint={currentLinkPoint} " +
             $"inputMode={currentInputMode} " +
+            $"context={resolvedContext} " +
             $"inventory={inventoryOpen} " +
             $"usingGamepadUi={usingGamepadUi} " +
             $"emulation={emulationEnabled} " +
             $"textInput={textInputActive} " +
+            $"physicalGamepad={physicalGamepadConnected} " +
+            $"nativeWorldGamepad={nativeWorldGamepad} " +
             $"chest={chestIndex} " +
             $"firstLetterNav={firstLetterNavEnabled} " +
             $"mouseL={mouseLeftActive} " +
             $"mouseR={mouseRightActive} " +
-            $"smartSelect={smartSelectActive}";
+            $"jump={jumpActive} " +
+            $"smartSelect={smartSelectActive} " +
+            $"smartCursorTrigger={smartCursorTriggerActive} " +
+            $"smartCursorRaw={smartCursorPressedRaw} " +
+            $"smartCursorWantedMouse={smartCursorWantedMouse} " +
+            $"smartCursorWantedGamePad={smartCursorWantedGamePad} " +
+            $"smartCursorEffective={smartCursorEffective} " +
+            $"smartCursorDesiredInit={smartCursorDesiredInitialized} " +
+            $"smartCursorDesired={smartCursorDesired} " +
+            $"smartCursorSyncPending={smartCursorSyncPending} " +
+            $"smartCursorSyncDeadline={smartCursorSyncDeadline} " +
+            $"smartCursorSuppressed={smartCursorSuppressed}";
 
-        global::TerrariaAccess.TerrariaAccess.Instance?.Logger.Info(message);
+        if (stateChanged)
+        {
+            _lastLoggedInputDebugSignature = stateSignature;
+            global::TerrariaAccess.TerrariaAccess.Instance?.Logger.Info(message);
+        }
     }
 
     /// <summary>

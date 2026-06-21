@@ -28,7 +28,6 @@ internal sealed class ModConfigEditHandler
     private int _currentElementIndex = -1;
     private List<UIElement>? _navigableElements;
     private int _configElementCount; // Excludes action buttons
-    private int _skipInputFrames;
     private UIElement? _lastHoveredElement;
 
     public ModConfigEditHandler(AnnouncementGate gate)
@@ -42,6 +41,7 @@ internal sealed class ModConfigEditHandler
     public void Process(
         UIState state,
         bool justEntered,
+        bool actionJustPressed,
         bool isMenuContext,
         Action<string, bool, MenuNarrationEventKind>? menuEventSink)
     {
@@ -50,7 +50,6 @@ internal sealed class ModConfigEditHandler
             _currentElementIndex = -1;
             _navigableElements = null;
             _configElementCount = 0;
-            _skipInputFrames = 5; // Skip initial frames
             _lastHoveredElement = null;
             _sliderState.Reset();
         }
@@ -109,16 +108,9 @@ internal sealed class ModConfigEditHandler
             TryHandleMouseHover(isMenuContext, menuEventSink);
         }
 
-        // Skip input during cooldown
-        if (_skipInputFrames > 0)
-        {
-            _skipInputFrames--;
-            return;
-        }
-
         // Handle navigation
         HandleNavigation(isMenuContext, menuEventSink);
-        HandleAction(isMenuContext, menuEventSink);
+        HandleAction(actionJustPressed, isMenuContext, menuEventSink);
     }
 
     private void HandleNavigation(
@@ -253,6 +245,7 @@ internal sealed class ModConfigEditHandler
     }
 
     private void HandleAction(
+        bool actionJustPressed,
         bool isMenuContext,
         Action<string, bool, MenuNarrationEventKind>? menuEventSink)
     {
@@ -261,9 +254,7 @@ internal sealed class ModConfigEditHandler
             return;
         }
 
-        TriggersSet justPressed = PlayerInput.Triggers.JustPressed;
-
-        if (!justPressed.MouseLeft)
+        if (!actionJustPressed)
         {
             return;
         }
@@ -274,7 +265,6 @@ internal sealed class ModConfigEditHandler
         if (ConfigSliderHandler.TryToggleBoolean(element))
         {
             AnnounceValueOnly(element, isMenuContext, menuEventSink);
-            _gate.SuppressForFrames(30);
             return;
         }
 
@@ -282,7 +272,6 @@ internal sealed class ModConfigEditHandler
         if (ConfigSliderHandler.TryCycleEnum(element))
         {
             AnnounceValueOnly(element, isMenuContext, menuEventSink);
-            _gate.SuppressForFrames(30);
             return;
         }
 
@@ -291,7 +280,6 @@ internal sealed class ModConfigEditHandler
         {
             SoundEngine.PlaySound(SoundID.MenuTick);
             AnnounceCurrentElement(isMenuContext, menuEventSink);
-            _gate.SuppressForFrames(30);
         }
     }
 
@@ -614,7 +602,6 @@ internal sealed class ModConfigEditHandler
         _currentElementIndex = -1;
         _navigableElements = null;
         _configElementCount = 0;
-        _skipInputFrames = 0;
         _lastHoveredElement = null;
         _sliderState.Reset();
     }
@@ -625,7 +612,6 @@ internal sealed class ModConfigEditHandler
 /// </summary>
 internal sealed class SliderRepeatState
 {
-    public const int RepeatDelay = 25;
     public const int RepeatRate = 3;
 
     private int _repeatDirection;
@@ -650,14 +636,7 @@ internal sealed class SliderRepeatState
         }
 
         _repeatTimer++;
-
-        if (_repeatTimer >= RepeatDelay)
-        {
-            int framesSinceDelay = _repeatTimer - RepeatDelay;
-            return framesSinceDelay % RepeatRate == 0;
-        }
-
-        return false;
+        return _repeatTimer % RepeatRate == 0;
     }
 
     public void TrackElement(int elementIndex, float value)

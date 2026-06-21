@@ -410,18 +410,20 @@ public abstract class ModMenuAccessibilityBase : ModSystem
 
             bool enterNow = kbState.IsKeyDown(Keys.Enter);
             bool spaceNow = kbState.IsKeyDown(Keys.Space);
+            bool enterHandledByNativeMouseLeft = IsNativeMouseLeftActivationKey(Keys.Enter);
+            bool spaceHandledByNativeMouseLeft = IsNativeMouseLeftActivationKey(Keys.Space);
 
             // Check gamepad emulation InventorySelect keybind (I key by default)
             bool inventorySelectNow = false;
             if (GamepadEmulation.GamepadEmulationKeybinds.InventorySelect is { } selectKeybind)
             {
-                inventorySelectNow = selectKeybind.Current
-                    || GamepadEmulation.VirtualTriggerService.IsKeybindPressedRaw(selectKeybind);
+                inventorySelectNow = GamepadEmulation.VirtualTriggerService.IsKeybindPressedRaw(selectKeybind);
             }
 
             if (!input.ActionPressed)
             {
-                if ((enterNow && !_keyEnterWasPressed) || (spaceNow && !_keySpaceWasPressed) ||
+                if ((enterNow && !_keyEnterWasPressed && !enterHandledByNativeMouseLeft) ||
+                    (spaceNow && !_keySpaceWasPressed && !spaceHandledByNativeMouseLeft) ||
                     (inventorySelectNow && !_keyInventorySelectWasPressed))
                 {
                     input.ActionPressed = true;
@@ -436,6 +438,26 @@ public abstract class ModMenuAccessibilityBase : ModSystem
         input.HasNavigation = input.Left || input.Right || input.Up || input.Down;
 
         CurrentInput = input;
+    }
+
+    private static bool IsNativeMouseLeftActivationKey(Keys key)
+    {
+        if (!PlayerInput.CurrentProfile.InputModes.TryGetValue(InputMode.KeyboardUI, out KeyConfiguration? configuration) ||
+            !configuration.KeyStatus.TryGetValue("MouseLeft", out List<string>? mouseLeftKeys))
+        {
+            return false;
+        }
+
+        string keyName = key.ToString();
+        foreach (string assignedKey in mouseLeftKeys)
+        {
+            if (string.Equals(assignedKey, keyName, StringComparison.OrdinalIgnoreCase))
+            {
+                return true;
+            }
+        }
+
+        return false;
     }
 
     protected void ResetInputState()

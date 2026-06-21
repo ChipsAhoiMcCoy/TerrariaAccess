@@ -115,8 +115,116 @@ internal abstract class MenuHandlerBase : IMenuHandler
         events.Add(new MenuNarrationEvent(cleaned, false, MenuNarrationEventKind.Hover));
         State.LastHoverAnnouncement = cleaned;
         State.LastHoverAnnouncedAt = context.Timestamp;
+        State.PendingHoverFocusSuppression = cleaned;
+        State.PendingInitialFocus = null;
+        State.PendingInitialFocusAnnouncement = null;
         State.SawHoverThisMode = true;
         return true;
+    }
+
+    /// <summary>
+    /// Tries to announce the first concrete list entry for UIState-based menus that
+    /// already have their item list populated on entry.
+    /// </summary>
+    protected bool TryAnnounceFirstListEntry(
+        MenuNarrationContext context,
+        FieldInfo? listField,
+        Func<UIElement, bool> isListEntry,
+        List<MenuNarrationEvent> events)
+    {
+        if (context.UiState is null || listField is null)
+        {
+            return false;
+        }
+
+        UIElement? listRoot;
+        try
+        {
+            listRoot = listField.GetValue(context.UiState) as UIElement;
+        }
+        catch
+        {
+            return false;
+        }
+
+        UIElement? entry = FindFirstMatchingElement(listRoot, isListEntry);
+        if (entry is null)
+        {
+            return false;
+        }
+
+        string label = TextSanitizer.Clean(MenuUiSelectionTracker.ResolveLabel(entry));
+        if (string.IsNullOrWhiteSpace(label) || !IsAllowedHover(context.MenuMode, label))
+        {
+            return false;
+        }
+
+        TerrariaAccess.Instance?.Logger.Info($"[MenuHandler] Immediate list entry -> {label}");
+        events.Add(new MenuNarrationEvent(label, true, MenuNarrationEventKind.Focus));
+        State.LastFocusAnnouncement = label;
+        State.LastFocusAnnouncedAt = context.Timestamp;
+        State.LastFocus = new MenuFocus(0, "UiListEntry");
+        State.AnnouncedFallback = false;
+        State.ForceNextFocus = false;
+        State.PendingInitialFocus = null;
+        State.PendingInitialFocusAnnouncement = null;
+        return true;
+    }
+
+    protected static bool TryGetFirstListEntry(
+        MenuNarrationContext context,
+        FieldInfo? listField,
+        Func<UIElement, bool> isListEntry,
+        out UIElement? entry)
+    {
+        entry = null;
+
+        if (context.UiState is null || listField is null)
+        {
+            return false;
+        }
+
+        UIElement? listRoot;
+        try
+        {
+            listRoot = listField.GetValue(context.UiState) as UIElement;
+        }
+        catch
+        {
+            return false;
+        }
+
+        entry = FindFirstMatchingElement(listRoot, isListEntry);
+        return entry is not null;
+    }
+
+    protected static bool TryGetAssignableField<T>(object source, out T? value)
+        where T : class
+    {
+        const BindingFlags flags = BindingFlags.Instance | BindingFlags.Public | BindingFlags.NonPublic;
+        foreach (FieldInfo field in source.GetType().GetFields(flags))
+        {
+            if (!typeof(T).IsAssignableFrom(field.FieldType))
+            {
+                continue;
+            }
+
+            try
+            {
+                if (field.GetValue(source) is T typed)
+                {
+                    value = typed;
+                    return true;
+                }
+            }
+            catch
+            {
+                // ignore reflection failures
+            }
+        }
+
+        value = null;
+        return false;
     }
 
     /// <summary>
@@ -149,7 +257,7 @@ internal abstract class MenuHandlerBase : IMenuHandler
         int currentMode = context.MenuMode;
         DateTime timestamp = context.Timestamp;
 
-        if (!FocusResolver.TryGetFocus(context.Main, out MenuFocus focus))
+        if (!TryResolveFocusAnnouncement(context, out MenuFocus focus, out string optionLabel, out string announcement))
         {
             if (State.FocusFailureCount++ < 5)
             {
@@ -160,17 +268,17 @@ internal abstract class MenuHandlerBase : IMenuHandler
 
         State.FocusFailureCount = 0;
 
-        // Wait for UI to stabilize after mode entry before announcing focus.
-        // Focus data (Main.focusMenu, menuItemScale) may be stale from the previous
-        // menu during the first few frames of a transition.
-        if (!State.SawHoverThisMode && timestamp - State.ModeEnteredAt < TimeSpan.FromMilliseconds(250))
+        if (ShouldSuppressResolvedFocus(context, focus, optionLabel, announcement))
         {
-            return false;
+            TraceFocus(context, $"suppressed source={focus.Source} index={focus.Index} label=\"{optionLabel}\" announcement=\"{announcement}\"");
+            return true;
         }
 
-        string optionLabel = MenuNarrationCatalog.DescribeMenuItem(currentMode, focus.Index);
-        bool hasDeletionAnnouncement = MenuNarrationCatalog.TryBuildDeletionAnnouncement(currentMode, focus.Index, out string combinedLabel);
-        string announcement = hasDeletionAnnouncement ? combinedLabel : optionLabel;
+        if (ShouldDelayUnconfirmedInitialFocus(focus, announcement))
+        {
+            TraceFocus(context, $"delayed source={focus.Source} index={focus.Index} announcement=\"{announcement}\" pending-repeat");
+            return false;
+        }
 
         bool focusChanged = !State.LastFocus.HasValue || State.LastFocus.Value.Index != focus.Index;
         bool announcementChanged = !focusChanged &&
@@ -183,15 +291,18 @@ internal abstract class MenuHandlerBase : IMenuHandler
 
         if (shouldAnnounce)
         {
-            bool matchesRecentHover = !string.IsNullOrWhiteSpace(State.LastHoverAnnouncement) &&
-                string.Equals(optionLabel, State.LastHoverAnnouncement, StringComparison.OrdinalIgnoreCase) &&
-                timestamp - State.LastHoverAnnouncedAt < TimeSpan.FromMilliseconds(900);
+            bool matchesRecentHover = !string.IsNullOrWhiteSpace(State.PendingHoverFocusSuppression) &&
+                string.Equals(optionLabel, State.PendingHoverFocusSuppression, StringComparison.OrdinalIgnoreCase);
             bool matchesLastFocus = !string.IsNullOrWhiteSpace(State.LastFocusAnnouncement) &&
                 string.Equals(announcement, State.LastFocusAnnouncement, StringComparison.OrdinalIgnoreCase);
-            bool repeatedRecently = matchesLastFocus && timestamp - State.LastFocusAnnouncedAt < TimeSpan.FromMilliseconds(900);
 
-            if (!force && !announcementChanged && (matchesRecentHover || repeatedRecently))
+            if (!force && !announcementChanged && (matchesRecentHover || matchesLastFocus))
             {
+                TraceFocus(
+                    context,
+                    $"suppressed-resolved source={focus.Source} index={focus.Index} label=\"{optionLabel}\" " +
+                    $"matchesRecentHover={matchesRecentHover} matchesLastFocus={matchesLastFocus}");
+                State.PendingHoverFocusSuppression = null;
                 State.ForceNextFocus = false;
                 State.LastFocus = focus;
                 return true;
@@ -201,10 +312,17 @@ internal abstract class MenuHandlerBase : IMenuHandler
             {
                 TerrariaAccess.Instance?.Logger.Info($"[MenuHandler] Focus {focus.Index} via {focus.Source} -> {optionLabel}");
                 bool forceSpeech = force || State.ForceNextFocus || announcementChanged;
-                events.Add(new MenuNarrationEvent(announcement, forceSpeech, MenuNarrationEventKind.Focus));
+                MenuNarrationEventKind eventKind = State.QueueNextFocusAsEntryFollowUp
+                    ? MenuNarrationEventKind.EntryFollowUp
+                    : MenuNarrationEventKind.Focus;
+                events.Add(new MenuNarrationEvent(announcement, forceSpeech, eventKind));
                 State.LastFocusAnnouncement = announcement;
                 State.LastFocusAnnouncedAt = timestamp;
+                State.PendingHoverFocusSuppression = null;
+                State.PendingInitialFocus = null;
+                State.PendingInitialFocusAnnouncement = null;
                 State.ForceNextFocus = false;
+                State.QueueNextFocusAsEntryFollowUp = false;
             }
             else
             {
@@ -215,11 +333,88 @@ internal abstract class MenuHandlerBase : IMenuHandler
         else if (State.LastFocus.HasValue && !State.LastFocus.Value.Source.Equals(focus.Source, StringComparison.Ordinal))
         {
             TerrariaAccess.Instance?.Logger.Debug($"[MenuHandler] Focus source switched to {focus.Source} for index {focus.Index}.");
+            TraceFocus(
+                context,
+                $"source-switch index={focus.Index} oldSource={State.LastFocus.Value.Source} newSource={focus.Source} " +
+                $"announcement=\"{announcement}\"");
+        }
+        else
+        {
+            TraceFocus(
+                context,
+                $"stable source={focus.Source} index={focus.Index} shouldAnnounce={shouldAnnounce} " +
+                $"focusChanged={focusChanged} announcementChanged={announcementChanged} announcement=\"{announcement}\"");
         }
 
         State.LastFocus = focus;
         State.AnnouncedFallback = false;
         return true;
+    }
+
+    protected virtual bool ShouldSuppressResolvedFocus(
+        MenuNarrationContext context,
+        MenuFocus focus,
+        string optionLabel,
+        string announcement)
+    {
+        return false;
+    }
+
+    protected bool TryAnnounceDeletionDialogEntry(MenuNarrationContext context, List<MenuNarrationEvent> events)
+    {
+        if (!MenuNarrationCatalog.IsDeletionMenuMode(context.MenuMode))
+        {
+            return false;
+        }
+
+        bool hasPrompt = MenuNarrationCatalog.TryGetDeletionPrompt(context.MenuMode, out string prompt) &&
+            !string.IsNullOrWhiteSpace(prompt);
+        bool hasFocus = TryResolveFocusAnnouncement(context, out MenuFocus focus, out _, out string announcement) &&
+            !string.IsNullOrWhiteSpace(announcement);
+
+        if (hasPrompt)
+        {
+            events.Add(new MenuNarrationEvent(prompt, true, MenuNarrationEventKind.ModeChanged));
+            State.LastModeAnnouncement = prompt;
+            State.LastModeAnnouncedAt = context.Timestamp;
+
+            if (hasFocus)
+            {
+                events.Add(new MenuNarrationEvent(announcement, true, MenuNarrationEventKind.EntryFollowUp));
+                State.LastFocusAnnouncement = announcement;
+                State.LastFocusAnnouncedAt = context.Timestamp;
+                State.LastFocus = focus;
+                State.QueueNextFocusAsEntryFollowUp = false;
+            }
+            else
+            {
+                State.QueueNextFocusAsEntryFollowUp = true;
+            }
+
+            State.PendingHoverFocusSuppression = null;
+            State.PendingInitialFocus = null;
+            State.PendingInitialFocusAnnouncement = null;
+            State.AnnouncedFallback = false;
+            State.ForceNextFocus = false;
+            return true;
+        }
+
+        if (hasFocus)
+        {
+            events.Add(new MenuNarrationEvent(announcement, true, MenuNarrationEventKind.EntryFollowUp));
+            State.LastFocusAnnouncement = announcement;
+            State.LastFocusAnnouncedAt = context.Timestamp;
+            State.LastFocus = focus;
+            State.PendingHoverFocusSuppression = null;
+            State.PendingInitialFocus = null;
+            State.PendingInitialFocusAnnouncement = null;
+            State.AnnouncedFallback = false;
+            State.ForceNextFocus = false;
+            State.QueueNextFocusAsEntryFollowUp = false;
+            return true;
+        }
+
+        return false;
     }
 
     /// <summary>
@@ -247,8 +442,7 @@ internal abstract class MenuHandlerBase : IMenuHandler
         }
 
         bool sameAsLastFocus = !string.IsNullOrWhiteSpace(State.LastFocusAnnouncement) &&
-            string.Equals(fallback, State.LastFocusAnnouncement, StringComparison.OrdinalIgnoreCase) &&
-            timestamp - State.LastFocusAnnouncedAt < TimeSpan.FromSeconds(1);
+            string.Equals(fallback, State.LastFocusAnnouncement, StringComparison.OrdinalIgnoreCase);
         if (sameAsLastFocus)
         {
             State.AnnouncedFallback = true;
@@ -260,8 +454,61 @@ internal abstract class MenuHandlerBase : IMenuHandler
         events.Add(new MenuNarrationEvent(fallback, true, MenuNarrationEventKind.Focus));
         State.LastFocusAnnouncement = fallback;
         State.LastFocusAnnouncedAt = timestamp;
+        State.PendingInitialFocus = null;
+        State.PendingInitialFocusAnnouncement = null;
         State.AnnouncedFallback = true;
         State.ForceNextFocus = true;
+    }
+
+    private bool ShouldDelayUnconfirmedInitialFocus(MenuFocus focus, string announcement)
+    {
+        if (State.SawHoverThisMode || State.LastFocus.HasValue || IsReliableInitialFocusSource(focus.Source))
+        {
+            if (ScreenReaderDiagnostics.IsTraceEnabled())
+            {
+                string reason = State.SawHoverThisMode
+                    ? "hover-seen"
+                    : State.LastFocus.HasValue
+                        ? "focus-already-known"
+                        : "reliable-source";
+                TerrariaAccess.Instance?.Logger.Info(
+                    $"[MenuTrace][FocusDelay] allow source={focus.Source} index={focus.Index} reason={reason} announcement=\"{announcement}\"");
+            }
+            State.PendingInitialFocus = null;
+            State.PendingInitialFocusAnnouncement = null;
+            return false;
+        }
+
+        bool sameAsPending = State.PendingInitialFocus.HasValue &&
+            State.PendingInitialFocus.Value.Equals(focus) &&
+            string.Equals(State.PendingInitialFocusAnnouncement, announcement, StringComparison.OrdinalIgnoreCase);
+        if (sameAsPending)
+        {
+            if (ScreenReaderDiagnostics.IsTraceEnabled())
+            {
+                TerrariaAccess.Instance?.Logger.Info(
+                    $"[MenuTrace][FocusDelay] confirm source={focus.Source} index={focus.Index} announcement=\"{announcement}\"");
+            }
+            State.PendingInitialFocus = null;
+            State.PendingInitialFocusAnnouncement = null;
+            return false;
+        }
+
+        if (ScreenReaderDiagnostics.IsTraceEnabled())
+        {
+            TerrariaAccess.Instance?.Logger.Info(
+                $"[MenuTrace][FocusDelay] hold source={focus.Source} index={focus.Index} announcement=\"{announcement}\"");
+        }
+        State.PendingInitialFocus = focus;
+        State.PendingInitialFocusAnnouncement = announcement;
+        return true;
+    }
+
+    private static bool IsReliableInitialFocusSource(string source)
+    {
+        return source.Equals("Main.focusMenu", StringComparison.Ordinal) ||
+            source.Equals("Main.selectedMenu", StringComparison.Ordinal) ||
+            source.Equals("PlayerMenuFallback", StringComparison.Ordinal);
     }
 
     /// <summary>
@@ -306,5 +553,83 @@ internal abstract class MenuHandlerBase : IMenuHandler
 
         return cleaned.Contains("back", StringComparison.OrdinalIgnoreCase) ||
             cleaned.Contains("close", StringComparison.OrdinalIgnoreCase);
+    }
+
+    protected static UIElement? FindFirstMatchingElement(UIElement? root, Func<UIElement, bool> predicate)
+    {
+        if (root is null)
+        {
+            return null;
+        }
+
+        if (predicate(root))
+        {
+            return root;
+        }
+
+        foreach (UIElement child in root.Children)
+        {
+            UIElement? match = FindFirstMatchingElement(child, predicate);
+            if (match is not null)
+            {
+                return match;
+            }
+        }
+
+        return null;
+    }
+
+    private bool TryResolveFocusAnnouncement(
+        MenuNarrationContext context,
+        out MenuFocus focus,
+        out string optionLabel,
+        out string announcement)
+    {
+        focus = default;
+        optionLabel = string.Empty;
+        announcement = string.Empty;
+
+        if (!FocusResolver.TryGetFocus(context.Main, out focus))
+        {
+            return false;
+        }
+
+        bool isDeletionMenu = MenuNarrationCatalog.IsDeletionMenuMode(context.MenuMode);
+        bool hasDeletionResponse = false;
+        string deletionResponse = string.Empty;
+
+        if (isDeletionMenu)
+        {
+            hasDeletionResponse = MenuNarrationCatalog.TryGetDeletionResponseLabel(context.MenuMode, focus.Index, out deletionResponse);
+            if (!hasDeletionResponse)
+            {
+                return false;
+            }
+        }
+
+        optionLabel = MenuNarrationCatalog.DescribeMenuItem(context.MenuMode, focus.Index);
+        if (hasDeletionResponse)
+        {
+            optionLabel = deletionResponse;
+        }
+
+        announcement = optionLabel;
+        TraceFocus(
+            context,
+            $"resolved source={focus.Source} index={focus.Index} option=\"{optionLabel}\" announcement=\"{announcement}\" " +
+            $"lastFocus={(State.LastFocus.HasValue ? $"{State.LastFocus.Value.Source}:{State.LastFocus.Value.Index}" : "<none>")} " +
+            $"lastAnnouncement=\"{State.LastFocusAnnouncement ?? "<none>"}\"");
+        return !string.IsNullOrWhiteSpace(announcement);
+    }
+
+    protected void TraceFocus(MenuNarrationContext context, string detail)
+    {
+        if (!ScreenReaderDiagnostics.IsTraceEnabled())
+        {
+            return;
+        }
+
+        TerrariaAccess.Instance?.Logger.Info(
+            $"[MenuTrace][{GetType().Name}] mode={context.MenuMode} detail={detail}");
     }
 }

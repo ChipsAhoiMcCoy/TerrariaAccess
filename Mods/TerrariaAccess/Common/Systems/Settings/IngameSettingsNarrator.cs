@@ -44,6 +44,9 @@ internal sealed class IngameSettingsNarrator : SettingsNarratorBase
     private int _lastRightHover = int.MinValue;
     private int _lastRightLock = int.MinValue;
     private bool _wasOptionFocused;
+    private bool _pendingCategoryReturnAnnouncement;
+    private int _pendingCategoryReturnIndex = int.MinValue;
+    private int _pendingCategoryReturnId = int.MinValue;
 
     // Slider handling
     private readonly SliderNarrator _sliderNarrator = new();
@@ -94,14 +97,35 @@ internal sealed class IngameSettingsNarrator : SettingsNarratorBase
 
         string? categoryLabel = GetCategoryLabelById(categoryId, selectedLeftIndex, leftHover);
 
-        // Handle returning to category list from options
+        // Handle returning to category list from options.
+        // Confirm the state on the following frame so brief focus dropouts do not
+        // re-announce the category when the user did not actually return to the list.
         bool noOptionFocused = rightHover < 0 && rightLock < 0;
         bool returnedToCategoryList = noOptionFocused && _wasOptionFocused && selectedLeftIndex >= 0;
         _wasOptionFocused = !noOptionFocused;
 
         if (returnedToCategoryList && !string.IsNullOrWhiteSpace(categoryLabel))
         {
-            ForceCategoryAnnouncement = true;
+            _pendingCategoryReturnAnnouncement = true;
+            _pendingCategoryReturnIndex = selectedLeftIndex;
+            _pendingCategoryReturnId = categoryId;
+        }
+        else if (_pendingCategoryReturnAnnouncement)
+        {
+            bool confirmedReturn = noOptionFocused &&
+                selectedLeftIndex >= 0 &&
+                selectedLeftIndex == _pendingCategoryReturnIndex &&
+                categoryId == _pendingCategoryReturnId &&
+                !categoryAndHoverOutOfSync;
+
+            if (confirmedReturn && !string.IsNullOrWhiteSpace(categoryLabel))
+            {
+                ForceCategoryAnnouncement = true;
+            }
+
+            _pendingCategoryReturnAnnouncement = false;
+            _pendingCategoryReturnIndex = int.MinValue;
+            _pendingCategoryReturnId = int.MinValue;
         }
 
         // Announce category changes
@@ -167,6 +191,9 @@ internal sealed class IngameSettingsNarrator : SettingsNarratorBase
         _lastRightHover = int.MinValue;
         _lastRightLock = int.MinValue;
         _wasOptionFocused = false;
+        _pendingCategoryReturnAnnouncement = false;
+        _pendingCategoryReturnIndex = int.MinValue;
+        _pendingCategoryReturnId = int.MinValue;
         _sliderNarrator.Reset();
     }
 

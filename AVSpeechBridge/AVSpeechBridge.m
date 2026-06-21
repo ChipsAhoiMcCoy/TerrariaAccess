@@ -239,6 +239,17 @@ void AVSpeechSynthesizer_StopSpeaking(void* synthesizerPtr) {
     }
 }
 
+bool AVSpeechSynthesizer_IsSpeaking(void* synthesizerPtr) {
+    if (synthesizerPtr == NULL) {
+        return false;
+    }
+    
+    @autoreleasepool {
+        AVSpeechSynthesizer *synthesizer = (__bridge AVSpeechSynthesizer*)synthesizerPtr;
+        return synthesizer.speaking;
+    }
+}
+
 void AVSpeechSynthesizer_Release(void* synthesizerPtr) {
     if (synthesizerPtr == NULL) {
         return;

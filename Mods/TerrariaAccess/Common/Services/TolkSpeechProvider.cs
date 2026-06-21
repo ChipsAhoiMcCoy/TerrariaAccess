@@ -4,7 +4,6 @@ using System.Collections.Generic;
 using System.Diagnostics;
 using System.IO;
 using System.Runtime.InteropServices;
-using System.Threading;
 using Terraria;
 
 namespace TerrariaAccess.Common.Services;
@@ -52,6 +51,7 @@ internal sealed class TolkSpeechProvider : ISpeechProvider
     private TolkHasSpeechDelegate? _hasSpeech;
     private TolkDetectScreenReaderDelegate? _detectScreenReader;
     private TolkSpeakDelegate? _speak;
+    private TolkIsSpeakingDelegate? _isSpeaking;
     private TolkSilenceDelegate? _silence;
     private TolkTrySAPIDelegate? _trySAPI;
 
@@ -60,6 +60,31 @@ internal sealed class TolkSpeechProvider : ISpeechProvider
     public bool IsAvailable => _available;
 
     public bool IsInitialized => _initialized;
+
+    public bool IsSpeaking
+    {
+        get
+        {
+            lock (_syncRoot)
+            {
+                if (!_available || _isSpeaking is null)
+                {
+                    return false;
+                }
+
+                try
+                {
+                    return _isSpeaking();
+                }
+                catch (Exception ex)
+                {
+                    _lastError = ex.Message;
+                    TerrariaAccess.Instance?.Logger.Debug($"[Tolk] IsSpeaking threw {ex.Message}. Treating provider as idle.");
+                    return false;
+                }
+            }
+        }
+    }
 
     public void Initialize()
     {
@@ -127,6 +152,7 @@ internal sealed class TolkSpeechProvider : ISpeechProvider
             _hasSpeech = null;
             _detectScreenReader = null;
             _speak = null;
+            _isSpeaking = null;
             _silence = null;
             _trySAPI = null;
             _lastMessage = null;
@@ -244,6 +270,10 @@ internal sealed class TolkSpeechProvider : ISpeechProvider
                     NativeLibrary.GetExport(handle, "Tolk_DetectScreenReader"));
                 _speak = Marshal.GetDelegateForFunctionPointer<TolkSpeakDelegate>(
                     NativeLibrary.GetExport(handle, "Tolk_Speak"));
+                if (NativeLibrary.TryGetExport(handle, "Tolk_IsSpeaking", out IntPtr isSpeakingPtr))
+                {
+                    _isSpeaking = Marshal.GetDelegateForFunctionPointer<TolkIsSpeakingDelegate>(isSpeakingPtr);
+                }
                 _silence = Marshal.GetDelegateForFunctionPointer<TolkSilenceDelegate>(
                     NativeLibrary.GetExport(handle, "Tolk_Silence"));
                 _trySAPI = Marshal.GetDelegateForFunctionPointer<TolkTrySAPIDelegate>(
@@ -256,6 +286,7 @@ internal sealed class TolkSpeechProvider : ISpeechProvider
 
                 bool hasNvdaDll = File.Exists(nvdaDll);
                 bool hasSapiDll = File.Exists(sapiDll);
+                Process[] nvdaProcesses = Array.Empty<Process>();
 
                 TerrariaAccess.Instance?.Logger.Info($"[Tolk] Companion DLLs in {tolkDir}:");
                 TerrariaAccess.Instance?.Logger.Info($"[Tolk]   nvdaControllerClient64.dll: {(hasNvdaDll ? "FOUND" : "MISSING")}");
@@ -265,13 +296,12 @@ internal sealed class TolkSpeechProvider : ISpeechProvider
                 int nvdaProcessCount = 0;
                 try
                 {
-                    Process[] nvdaProcesses = Process.GetProcessesByName("nvda");
+                    nvdaProcesses = Process.GetProcessesByName("nvda");
                     nvdaProcessCount = nvdaProcesses.Length;
                     TerrariaAccess.Instance?.Logger.Info($"[Tolk] NVDA process check: {nvdaProcessCount} instance(s) found");
                     foreach (var proc in nvdaProcesses)
                     {
                         TerrariaAccess.Instance?.Logger.Info($"[Tolk]   - PID {proc.Id}, Started: {proc.StartTime:HH:mm:ss}, SessionId: {proc.SessionId}");
-                        proc.Dispose();
                     }
 
                     // Log current process info for comparison
@@ -340,8 +370,9 @@ internal sealed class TolkSpeechProvider : ISpeechProvider
                 {
                     for (int retry = 1; retry <= 3; retry++)
                     {
-                        TerrariaAccess.Instance?.Logger.Info($"[Tolk] NVDA detected but not responding. Retry {retry}/3 after 500ms...");
-                        Thread.Sleep(500);
+                        bool readySignal = WaitForNvdaInputIdle(nvdaProcesses, 500);
+                        TerrariaAccess.Instance?.Logger.Info(
+                            $"[Tolk] NVDA detected but not responding. Retry {retry}/3 after readiness check (signaled={readySignal})...");
 
                         _unload();
                         _trySAPI(false);
@@ -402,6 +433,11 @@ internal sealed class TolkSpeechProvider : ISpeechProvider
                 }
                 finally
                 {
+                    foreach (Process proc in nvdaProcesses)
+                    {
+                        proc.Dispose();
+                    }
+
                     // Reset DLL directory to default to avoid affecting other code
                     if (dllDirWasSet)
                     {
@@ -442,9 +478,42 @@ internal sealed class TolkSpeechProvider : ISpeechProvider
         _hasSpeech = null;
         _detectScreenReader = null;
         _speak = null;
+        _isSpeaking = null;
         _silence = null;
         _trySAPI = null;
         _available = false;
+    }
+
+    private static bool WaitForNvdaInputIdle(Process[] nvdaProcesses, int timeoutMilliseconds)
+    {
+        foreach (Process process in nvdaProcesses)
+        {
+            try
+            {
+                if (process.HasExited)
+                {
+                    continue;
+                }
+
+                if (process.WaitForInputIdle(timeoutMilliseconds))
+                {
+                    return true;
+                }
+            }
+            catch (InvalidOperationException)
+            {
+                if (!process.HasExited)
+                {
+                    return true;
+                }
+            }
+            catch
+            {
+                // ignore readiness probe failures
+            }
+        }
+
+        return false;
     }
 
     private static IEnumerable<string> EnumerateCandidatePaths()

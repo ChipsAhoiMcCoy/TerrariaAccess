@@ -26,6 +26,15 @@ public sealed class GuidancePlayer : ModPlayer
         if (GuidanceSystem.IsNamingActive)
         {
             Player.controlInv = false;
+            SuppressGameplayControls();
+        }
+    }
+
+    public override void SetControls()
+    {
+        if (GuidanceSystem.IsNamingActive)
+        {
+            SuppressGameplayControls();
         }
     }
 
@@ -112,12 +121,6 @@ public sealed class GuidancePlayer : ModPlayer
             return;
         }
 
-        if (GuidanceSystem.CanUseNetworkSync())
-        {
-            Mod.Logger.Info("[Waypoint] CacheWaypointState: Skipped (network sync available, server handles state).");
-            return;
-        }
-
         string cacheKey = BuildWorldCacheKey();
         TagCompound serialized = new();
         bool hasData = GuidanceSystem.SaveWaypointData(serialized, "player cache", normalizeRuntime: false);
@@ -130,6 +133,32 @@ public sealed class GuidancePlayer : ModPlayer
 
         _waypointCache[cacheKey] = serialized;
         Mod.Logger.Info($"[Waypoint] CacheWaypointState: Saved to cache. TotalCacheEntries={_waypointCache.Count}");
+    }
+
+    private void SuppressGameplayControls()
+    {
+        Player.controlLeft = false;
+        Player.controlRight = false;
+        Player.controlUp = false;
+        Player.controlDown = false;
+        Player.controlJump = false;
+        Player.controlUseItem = false;
+        Player.controlUseTile = false;
+        Player.controlThrow = false;
+        Player.controlHook = false;
+        Player.controlMount = false;
+        Player.controlSmart = false;
+        Player.controlInv = false;
+        Player.controlQuickHeal = false;
+        Player.controlQuickMana = false;
+
+        Main.mouseLeft = false;
+        Main.mouseRight = false;
+        Main.mouseMiddle = false;
+        PlayerInput.Triggers.Current.KeyStatus[TriggerNames.MouseLeft] = false;
+        PlayerInput.Triggers.Current.KeyStatus[TriggerNames.MouseRight] = false;
+        PlayerInput.Triggers.JustPressed.KeyStatus[TriggerNames.MouseLeft] = false;
+        PlayerInput.Triggers.JustPressed.KeyStatus[TriggerNames.MouseRight] = false;
     }
 
     private static string BuildWorldCacheKey()

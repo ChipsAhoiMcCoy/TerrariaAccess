@@ -2,6 +2,7 @@
 using Microsoft.Xna.Framework;
 using Terraria;
 using Terraria.ModLoader;
+using TerrariaAccess.Common.Services;
 
 namespace TerrariaAccess.Common.Systems;
 
@@ -34,6 +35,7 @@ public sealed class MenuNarrationSystem : ModSystem
     private void HandleDrawMenu(On_Main.orig_DrawMenu orig, Main self, GameTime gameTime)
     {
         orig(self, gameTime);
+        ScreenReaderService.Pump();
         _controller?.Process(self);
     }
 }

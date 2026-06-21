@@ -20,11 +20,34 @@ internal sealed class CursorDescriptorService
 
     private static readonly int[] StyledTileTypes =
     {
+        TileID.Bottles,
+        TileID.Tables,
+        TileID.Chairs,
+        TileID.WorkBenches,
+        TileID.Candles,
+        TileID.Chandeliers,
+        TileID.HangingLanterns,
         TileID.Banners,
+        TileID.Beds,
+        TileID.Pianos,
+        TileID.Benches,
+        TileID.Bathtubs,
+        TileID.Lampposts,
+        TileID.Lamps,
+        TileID.Kegs,
+        TileID.ChineseLanterns,
+        TileID.CookingPots,
+        TileID.SkullLanterns,
+        TileID.Candelabras,
+        TileID.Bookcases,
+        TileID.Thrones,
+        TileID.Bowls,
+        TileID.GrandfatherClocks,
         TileID.Statues,
         TileID.AlphabetStatues,
         TileID.MushroomStatue,
         TileID.BoulderStatue,
+        TileID.Sinks,
         TileID.Painting2X3,
         TileID.Painting3X2,
         TileID.Painting3X3,
@@ -41,9 +64,21 @@ internal sealed class CursorDescriptorService
         TileID.TrapdoorOpen,
         TileID.TallGateClosed,
         TileID.TallGateOpen,
+        TileID.MusicBoxes,
         TileID.Containers,
         TileID.Containers2,
         TileID.Dressers,
+        TileID.AmmoBox,
+        TileID.BewitchingTable,
+        TileID.AlchemyTable,
+        TileID.Sundial,
+        TileID.SharpeningStation,
+        TileID.Fireplace,
+        TileID.Tables2,
+        TileID.PicnicTable,
+        TileID.Toilets,
+        TileID.FoodPlatter,
+        TileID.TeaKettle,
     };
 
     /// <summary>
@@ -162,12 +197,12 @@ internal sealed class CursorDescriptorService
 
         try
         {
-            int baseOption = GetPlantStyleOption(tileType, tile);
+            int baseOption = GetMapLookupOption(tileType, tile);
             int lookup = MapHelper.TileToLookup(tileType, baseOption);
             name = Lang.GetMapObjectName(lookup);
 
             // Append growth stage for herbs
-            string? growthStage = GetHerbGrowthStageLabel(tileType);
+            string? growthStage = GetHerbGrowthStageLabel(tileType, baseOption);
             if (!string.IsNullOrWhiteSpace(name) && growthStage != null)
             {
                 name = $"{name}, {growthStage}";
@@ -399,9 +434,29 @@ internal sealed class CursorDescriptorService
         return baseKey;
     }
 
+    internal static int ResolveAnnouncementKey(int tileType, Tile tile, int tileX, int tileY)
+    {
+        int baseKey = ResolveAnnouncementKey(tileType, tile);
+        if (!tile.HasTile || !IsTreeTile(tileType))
+        {
+            return baseKey;
+        }
+
+        (int anchorX, int anchorY) = ResolveTreeInstanceAnchor(tileX, tileY, tileType);
+        unchecked
+        {
+            return (baseKey * 397) ^ (anchorX * 31) ^ anchorY;
+        }
+    }
+
     internal static bool ShouldSuppressVariantNames(int announcementKey)
     {
         return announcementKey == TileID.Dirt;
+    }
+
+    internal static bool IsTreeTileType(int tileType)
+    {
+        return IsTreeTile(tileType);
     }
 
     private CursorDescriptor BuildDescriptor(int tileType, string? name)
@@ -675,8 +730,24 @@ internal sealed class CursorDescriptorService
     {
         name = null;
 
-        // Use frame-based style for tile types that use frame position for variant determination
-        int style;
+        if (!TryResolveTileStyle(tile, tileType, out int style))
+        {
+            return false;
+        }
+
+        if (TryLookupItemNameForStyle(tileType, style, out name))
+        {
+            return true;
+        }
+
+        return false;
+    }
+
+    internal static bool TryResolveTileStyle(Tile tile, int tileType, out int style)
+    {
+        style = -1;
+
+        // Use frame-based style for tile types that use frame position for variant determination.
         if (FrameXBasedStyleTileTypes.Contains(tileType))
         {
             style = tile.TileFrameX / 18;
@@ -687,10 +758,29 @@ internal sealed class CursorDescriptorService
         }
         else if (IsChestTile(tileType))
         {
-            // Chests are 2 tiles wide (36 pixels per style in frameX)
-            // Dressers are 3 tiles wide (54 pixels per style in frameX)
+            // Chests are 2 tiles wide (36 pixels per style in frameX).
+            // Dressers are 3 tiles wide (54 pixels per style in frameX).
             int frameWidth = tileType == TileID.Dressers ? 54 : 36;
             style = tile.TileFrameX / frameWidth;
+            if (TryGetUnlockedChestStyle(tileType, style, out int unlockedStyle))
+            {
+                style = unlockedStyle;
+            }
+        }
+        else if (tileType == TileID.ClosedDoor)
+        {
+            // Closed doors store styles in vertical 3-tile groups, wrapping to the
+            // next frameX page every 36 styles. Any door segment can be inspected.
+            style = (tile.TileFrameX / 54 * 36) + (tile.TileFrameY / 54);
+            return true;
+        }
+        else if (tileType == TileID.OpenDoor)
+        {
+            // WorldGen.OpenDoor preserves the closed-door style as:
+            //   frameY = style % 36 * 54 + segmentRow * 18
+            //   frameX = direction/page data, with one style page every 72 px.
+            style = (tile.TileFrameX / 72 * 36) + (tile.TileFrameY / 54);
+            return true;
         }
         else
         {
@@ -701,6 +791,79 @@ internal sealed class CursorDescriptorService
             }
         }
 
+        // TileObjectData.GetTileStyle returns the frame-derived style, which for
+        // alternate placements (e.g. a right-facing statue) equals placeStyle plus
+        // the alternate's Style offset. Normalize it back to the base item style
+        // when the adjusted style maps to a placed item.
+        TileObjectData? baseData;
+        try
+        {
+            baseData = TileObjectData.GetTileData(tileType, 0, 0);
+        }
+        catch
+        {
+            baseData = null;
+        }
+
+        if (baseData == null)
+        {
+            return true;
+        }
+
+        // Some directional furniture encodes orientation inside a style multiplier.
+        // TileObjectData.GetTileStyle already divides that out, so subtracting the
+        // alternate offset would turn valid styles into earlier items. The classic
+        // Toilet is TileID.Chairs style 1; normalizing its right-facing alternate
+        // would incorrectly announce it as style 0, Wooden Chair.
+        if (baseData.StyleMultiplier > 1)
+        {
+            return true;
+        }
+
+        for (int alternateIndex = 1; alternateIndex <= MaxAlternatePlacementsToProbe; alternateIndex++)
+        {
+            TileObjectData? altData;
+            try
+            {
+                altData = TileObjectData.GetTileData(tileType, 0, alternateIndex);
+            }
+            catch
+            {
+                break;
+            }
+
+            if (altData == null || ReferenceEquals(altData, baseData))
+            {
+                break;
+            }
+
+            int altOffset = altData.Style;
+            if (altOffset <= 0)
+            {
+                continue;
+            }
+
+            int adjustedStyle = style - altOffset;
+            if (adjustedStyle < 0)
+            {
+                continue;
+            }
+
+            if (TryLookupItemNameForStyle(tileType, adjustedStyle, out _))
+            {
+                style = adjustedStyle;
+                return true;
+            }
+        }
+
+        return true;
+    }
+
+    private const int MaxAlternatePlacementsToProbe = 8;
+
+    private static bool TryLookupItemNameForStyle(int tileType, int style, out string? name)
+    {
+        name = null;
         if (!TryResolveStyleItemType(tileType, style, out int itemType) || itemType <= ItemID.None)
         {
             return false;
@@ -847,6 +1010,7 @@ internal sealed class CursorDescriptorService
             LiquidID.Water => "Mods.TerrariaAccess.CursorLiquids.Water",
             LiquidID.Lava => "Mods.TerrariaAccess.CursorLiquids.Lava",
             LiquidID.Honey => "Mods.TerrariaAccess.CursorLiquids.Honey",
+            LiquidID.Shimmer => "Mods.TerrariaAccess.CursorLiquids.Shimmer",
             _ => null,
         };
 
@@ -860,6 +1024,7 @@ internal sealed class CursorDescriptorService
             LiquidID.Water => "Water",
             LiquidID.Lava => "Lava",
             LiquidID.Honey => "Honey",
+            LiquidID.Shimmer => "Shimmer",
             _ => string.Empty,
         };
 
@@ -972,10 +1137,10 @@ internal sealed class CursorDescriptorService
     }
 
     /// <summary>
-    /// Gets the map legend option index for plant tiles that use frame-based variants.
-    /// This allows herbs and dye plants to display their specific names (e.g., "Daybloom" instead of generic "Herbs").
+    /// Gets the map legend option index for tiles that use frame-based variants.
+    /// This allows herbs, dye plants, and exposed gems to display their specific names.
     /// </summary>
-    private static int GetPlantStyleOption(int tileType, Tile tile)
+    private static int GetMapLookupOption(int tileType, Tile tile)
     {
         return tileType switch
         {
@@ -983,6 +1148,8 @@ internal sealed class CursorDescriptorService
                 => Math.Clamp(tile.TileFrameX / 18, 0, 6),
             TileID.DyePlants
                 => tile.TileFrameX / 34,
+            TileID.ExposedGems
+                => Math.Clamp(tile.TileFrameX / 18, 0, 6),
             _ => 0
         };
     }
@@ -990,8 +1157,13 @@ internal sealed class CursorDescriptorService
     /// <summary>
     /// Gets the growth stage label for herb tiles.
     /// </summary>
-    private static string? GetHerbGrowthStageLabel(int tileType)
+    private static string? GetHerbGrowthStageLabel(int tileType, int herbStyle)
     {
+        if (tileType == TileID.MatureHerbs && WorldGen.IsHarvestableHerbWithSeed(tileType, herbStyle))
+        {
+            return GetLocalizedWithFallback("Mods.TerrariaAccess.HerbStages.Blooming", "blooming");
+        }
+
         return tileType switch
         {
             TileID.ImmatureHerbs => GetLocalizedWithFallback("Mods.TerrariaAccess.HerbStages.Immature", "immature"),
@@ -1020,6 +1192,63 @@ internal sealed class CursorDescriptorService
                tileType == TileID.TreeRuby ||
                tileType == TileID.TreeDiamond ||
                tileType == TileID.TreeAmber;
+    }
+
+    private static (int X, int Y) ResolveTreeInstanceAnchor(int tileX, int tileY, int treeTileType)
+    {
+        if (!WorldGen.InWorld(tileX, tileY, 1))
+        {
+            return (tileX, tileY);
+        }
+
+        int x = tileX;
+        int y = tileY;
+
+        if (treeTileType == TileID.PalmTree)
+        {
+            while (y < Main.maxTilesY - 50)
+            {
+                Tile t = Framing.GetTileSafely(x, y);
+                if (!t.HasTile || !IsTreeTile(t.TileType))
+                {
+                    break;
+                }
+
+                y++;
+            }
+
+            return (x, y);
+        }
+
+        Tile startTile = Framing.GetTileSafely(x, y);
+        int frameCol = startTile.TileFrameX / 22;
+        int frameRow = startTile.TileFrameY / 22;
+
+        if (frameCol == 3 && frameRow <= 2)
+            x++;
+        else if (frameCol == 4 && frameRow >= 3 && frameRow <= 5)
+            x--;
+        else if (frameCol == 1 && frameRow >= 6 && frameRow <= 8)
+            x--;
+        else if (frameCol == 2 && frameRow >= 6 && frameRow <= 8)
+            x++;
+        else if (frameCol == 2 && frameRow >= 9)
+            x++;
+        else if (frameCol == 3 && frameRow >= 9)
+            x--;
+
+        while (y < Main.maxTilesY - 50)
+        {
+            Tile t = Framing.GetTileSafely(x, y);
+            if (!t.HasTile || (!IsTreeTile(t.TileType) && !TileID.Sets.IsATreeTrunk[t.TileType]))
+            {
+                break;
+            }
+
+            y++;
+        }
+
+        return (x, y);
     }
 
     /// <summary>

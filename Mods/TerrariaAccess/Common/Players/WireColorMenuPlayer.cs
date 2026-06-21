@@ -41,11 +41,22 @@ public sealed class WireColorMenuPlayer : ModPlayer
 
         if (menu.IsOpen)
         {
-            // Handle navigation input directly from keyboard state
-            HandleNavigationInput(menu);
-
             // Block all player controls while menu is open
             SuppressAllPlayerControls();
+
+            // Handle navigation input directly from keyboard state. This can close
+            // the menu and restore Main.blockInput, so no full suppression should
+            // run after it when the menu has closed.
+            HandleNavigationInput(menu);
+            if (!menu.IsOpen)
+            {
+                if (_suppressUntilButtonRelease)
+                {
+                    SuppressInteractionControls();
+                }
+
+                return;
+            }
 
             // Check close conditions
             CheckCloseConditions(menu);
@@ -114,7 +125,7 @@ public sealed class WireColorMenuPlayer : ModPlayer
         // Check InventoryInteract keybind (P key by default)
         if (GamepadEmulationKeybinds.InventoryInteract is { } interactKeybind)
         {
-            if (interactKeybind.Current || VirtualTriggerService.IsKeybindPressedRaw(interactKeybind))
+            if (VirtualTriggerService.IsKeybindPressed(interactKeybind))
             {
                 return true;
             }
@@ -215,7 +226,7 @@ public sealed class WireColorMenuPlayer : ModPlayer
         bool inventorySelectPressed = false;
         if (GamepadEmulationKeybinds.InventorySelect is { } selectKeybind)
         {
-            inventorySelectPressed = selectKeybind.Current || VirtualTriggerService.IsKeybindPressedRaw(selectKeybind);
+            inventorySelectPressed = VirtualTriggerService.IsKeybindPressed(selectKeybind);
         }
         bool inventorySelectJustPressed = inventorySelectPressed && !_wasInventorySelectPressed;
         _wasInventorySelectPressed = inventorySelectPressed;
@@ -229,7 +240,7 @@ public sealed class WireColorMenuPlayer : ModPlayer
         bool inventoryInteractPressed = false;
         if (GamepadEmulationKeybinds.InventoryInteract is { } interactKeybind)
         {
-            inventoryInteractPressed = interactKeybind.Current || VirtualTriggerService.IsKeybindPressedRaw(interactKeybind);
+            inventoryInteractPressed = VirtualTriggerService.IsKeybindPressed(interactKeybind);
         }
         bool inventoryInteractJustPressed = inventoryInteractPressed && !_wasInventoryInteractPressed;
         _wasInventoryInteractPressed = inventoryInteractPressed;

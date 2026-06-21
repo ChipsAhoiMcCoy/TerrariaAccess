@@ -32,6 +32,8 @@ internal static class SlotNavigationHelper
     internal const int CraftingGridEnd = 1500;
     internal const int CraftingListStart = 1500;
     internal const int CraftingListEnd = 2000;
+    internal const int ShopStart = 2700;
+    internal const int ShopEnd = 2740;
 
     /// <summary>
     /// Determines if the current link point is within the inventory slot range.
@@ -66,6 +68,11 @@ internal static class SlotNavigationHelper
     internal static bool IsCraftingListLinkPoint(int point)
     {
         return point >= CraftingListStart && point < CraftingListEnd;
+    }
+
+    internal static bool IsShopLinkPoint(int point)
+    {
+        return point >= ShopStart && point < ShopEnd;
     }
 
     /// <summary>
@@ -133,6 +140,19 @@ internal static class SlotNavigationHelper
         if (point >= ChestStart && point < ChestEnd)
         {
             slot = point - ChestStart;
+            return true;
+        }
+
+        return false;
+    }
+
+    internal static bool TryResolveShopSlot(int point, out int slot)
+    {
+        slot = -1;
+
+        if (point >= ShopStart && point < ShopEnd)
+        {
+            slot = point - ShopStart;
             return true;
         }
 

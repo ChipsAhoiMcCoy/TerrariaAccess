@@ -5,6 +5,7 @@ using Microsoft.Xna.Framework;
 using TerrariaAccess.Common.Systems.Guidance;
 using Terraria;
 using Terraria.ID;
+using Terraria.ObjectData;
 
 namespace TerrariaAccess.Common.Systems;
 
@@ -68,14 +69,26 @@ public sealed partial class GuidanceSystem
     private static readonly HashSet<Point> PlantlifeAnchorScratch = new();
 
     private static readonly List<GuidanceEntry> NearbyHostileMobs = new();
+    private static readonly HashSet<int> CustomEntryScratch = new();
+
+    // Tile 703 is JunglePlantsEcho (Don't Dig Up seed); not named in tModLoader's TileID reference.
+    private const int JunglePlantsEchoTileId = 703;
 
     private static readonly int[] PlantlifeTileTypes =
     {
         TileID.MatureHerbs,
         TileID.BloomingHerbs,
         TileID.MushroomPlants,
-        TileID.DyePlants
+        TileID.DyePlants,
+        TileID.JunglePlants,
+        JunglePlantsEchoTileId,
+        TileID.AbigailsFlower
     };
+
+    // Jungle Plants tiles share one TileID across many frames (tall grass, vines,
+    // spore plants, etc.). Only frameX == 144 is the Jungle Spores variant — see
+    // Terraria WorldGen.KillTile drop logic for tile types 61 and 703.
+    private const int JungleSporeFrameX = 144;
 
     private static Dictionary<int, List<InteractableDefinition>> BuildInteractableDefinitionMap()
     {
@@ -693,13 +706,14 @@ public sealed partial class GuidanceSystem
 
     private static string ResolveDroppedItemDisplayName(Item item)
     {
-        string name = Lang.GetItemNameValue(item.type);
-        if (string.IsNullOrWhiteSpace(name))
-        {
-            name = "Item";
-        }
-
+        string name = ResolveDroppedItemBaseName(item);
         return item.stack > 1 ? $"{item.stack} {name}" : name;
+    }
+
+    private static string ResolveDroppedItemBaseName(Item item)
+    {
+        string name = Lang.GetItemNameValue(item.type);
+        return !string.IsNullOrWhiteSpace(name) ? name : "Item";
     }
 
     private static void RefreshCritterEntries(Player player)
@@ -815,6 +829,11 @@ public sealed partial class GuidanceSystem
                     continue;
                 }
 
+                if (!IsTrackablePlantlifeFrame(tile))
+                {
+                    continue;
+                }
+
                 Point anchor = new(x, y);
                 if (!PlantlifeAnchorScratch.Add(anchor))
                 {
@@ -859,14 +878,29 @@ public sealed partial class GuidanceSystem
         }
     }
 
+    private static bool IsTrackablePlantlifeFrame(Tile tile)
+    {
+        if (tile.TileType == TileID.JunglePlants || tile.TileType == JunglePlantsEchoTileId)
+        {
+            return tile.TileFrameX == JungleSporeFrameX;
+        }
+
+        return true;
+    }
+
     private static string ResolvePlantDisplayName(Tile tile)
     {
+        if (tile.TileType == TileID.JunglePlants || tile.TileType == JunglePlantsEchoTileId)
+        {
+            return "Jungle Spores";
+        }
+
         return tile.TileType switch
         {
             TileID.MushroomPlants => "Glowing Mushroom",
-            TileID.MatureHerbs => ResolveHerbName(tile, "Mature"),
-            TileID.BloomingHerbs => ResolveHerbName(tile, "Blooming"),
+            TileID.MatureHerbs or TileID.BloomingHerbs => ResolveHerbName(tile),
             TileID.DyePlants => ResolveDyePlantName(tile),
+            TileID.AbigailsFlower => "Abigail's Flower",
             _ => "Plant"
         };
     }
@@ -892,9 +926,12 @@ public sealed partial class GuidanceSystem
         };
     }
 
-    private static string ResolveHerbName(Tile tile, string prefix)
+    private static string ResolveHerbName(Tile tile)
     {
         int frameX = tile.TileFrameX / 18;
+        string prefix = WorldGen.IsHarvestableHerbWithSeed(tile.TileType, frameX)
+            ? "Blooming"
+            : "Mature";
         string herbName = frameX switch
         {
             0 => "Daybloom",
@@ -997,5 +1034,311 @@ public sealed partial class GuidanceSystem
     {
         string name = Lang.GetNPCNameValue(npc.type);
         return !string.IsNullOrWhiteSpace(name) ? name : "Enemy";
+    }
+
+    private static void RefreshCustomEntries(Player player)
+    {
+        NearbyCustomMatches.Clear();
+        CustomEntryScratch.Clear();
+
+        if (player is null || !player.active || CustomTargets.Count == 0)
+        {
+            _selectedCustomIndex = -1;
+            return;
+        }
+
+        Vector2 origin = player.Center;
+
+        for (int filterIndex = 0; filterIndex < CustomTargets.Count; filterIndex++)
+        {
+            CustomGuidanceFilter filter = CustomTargets[filterIndex];
+            switch (filter.Kind)
+            {
+                case CustomFilterKind.Tile:
+                    AppendCustomTileMatches(filterIndex, filter, origin);
+                    break;
+                case CustomFilterKind.Npc:
+                    foreach (GuidanceEntry entry in NearbyNpcs)
+                    {
+                        if (entry.Index < 0 || entry.Index >= Main.maxNPCs)
+                        {
+                            continue;
+                        }
+
+                        NPC npc = Main.npc[entry.Index];
+                        if (npc.active && npc.type == filter.TypeId)
+                        {
+                            NearbyCustomMatches.Add(new CustomGuidanceMatch(filterIndex, entry));
+                        }
+                    }
+                    break;
+                case CustomFilterKind.Player:
+                    foreach (GuidanceEntry entry in NearbyPlayers)
+                    {
+                        if (entry.Index < 0 || entry.Index >= Main.maxPlayers)
+                        {
+                            continue;
+                        }
+
+                        Player candidate = Main.player[entry.Index];
+                        if (candidate.active && string.Equals(SanitizeLabel(candidate.name), SanitizeLabel(filter.Label), StringComparison.OrdinalIgnoreCase))
+                        {
+                            NearbyCustomMatches.Add(new CustomGuidanceMatch(filterIndex, entry));
+                        }
+                    }
+                    break;
+                case CustomFilterKind.Projectile:
+                    AppendCustomProjectileMatches(filterIndex, filter, origin);
+                    break;
+                case CustomFilterKind.DroppedItem:
+                    foreach (GuidanceEntry entry in NearbyDroppedItems)
+                    {
+                        if (entry.Index < 0 || entry.Index >= Main.maxItems)
+                        {
+                            continue;
+                        }
+
+                        Item item = Main.item[entry.Index];
+                        if (item.active && item.type == filter.TypeId)
+                        {
+                            NearbyCustomMatches.Add(new CustomGuidanceMatch(filterIndex, entry));
+                        }
+                    }
+                    break;
+                case CustomFilterKind.Critter:
+                    foreach (GuidanceEntry entry in NearbyCritters)
+                    {
+                        if (entry.Index < 0 || entry.Index >= Main.maxNPCs)
+                        {
+                            continue;
+                        }
+
+                        NPC npc = Main.npc[entry.Index];
+                        if (npc.active && npc.type == filter.TypeId)
+                        {
+                            NearbyCustomMatches.Add(new CustomGuidanceMatch(filterIndex, entry));
+                        }
+                    }
+                    break;
+                case CustomFilterKind.Plantlife:
+                    foreach (GuidanceEntry entry in NearbyPlantlife)
+                    {
+                        if (LabelsMatch(entry.DisplayName, filter.Label))
+                        {
+                            NearbyCustomMatches.Add(new CustomGuidanceMatch(filterIndex, entry));
+                        }
+                    }
+                    break;
+                case CustomFilterKind.HostileMob:
+                    foreach (GuidanceEntry entry in NearbyHostileMobs)
+                    {
+                        if (entry.Index < 0 || entry.Index >= Main.maxNPCs)
+                        {
+                            continue;
+                        }
+
+                        NPC npc = Main.npc[entry.Index];
+                        if (npc.active && npc.type == filter.TypeId)
+                        {
+                            NearbyCustomMatches.Add(new CustomGuidanceMatch(filterIndex, entry));
+                        }
+                    }
+                    break;
+            }
+        }
+
+        NearbyCustomMatches.Sort(static (left, right) =>
+        {
+            int compareFilter = left.FilterIndex.CompareTo(right.FilterIndex);
+            if (compareFilter != 0)
+            {
+                return compareFilter;
+            }
+
+            return CompareGuidanceEntries(left.Entry, right.Entry);
+        });
+
+        if (_selectedCustomIndex >= CustomTargets.Count)
+        {
+            _selectedCustomIndex = CustomTargets.Count - 1;
+        }
+    }
+
+    private static void AppendCustomTileMatches(int filterIndex, CustomGuidanceFilter filter, Vector2 origin)
+    {
+        int scanRadius = (int)Math.Clamp(ScanRangeTiles + 8f, 4f, 240f);
+        int playerTileX = (int)(origin.X / 16f);
+        int playerTileY = (int)(origin.Y / 16f);
+        int minX = Math.Max(0, playerTileX - scanRadius);
+        int maxX = Math.Min(Main.maxTilesX - 1, playerTileX + scanRadius);
+        int minY = Math.Max(0, playerTileY - scanRadius);
+        int maxY = Math.Min(Main.maxTilesY - 1, playerTileY + scanRadius);
+
+        for (int x = minX; x <= maxX; x++)
+        {
+            for (int y = minY; y <= maxY; y++)
+            {
+                Tile tile = Main.tile[x, y];
+                if (!tile.HasTile && tile.WallType <= 0 && tile.LiquidAmount <= 0)
+                {
+                    continue;
+                }
+
+                if (!CanCustomTileFilterMatchRawTile(tile, filter) ||
+                    !CustomTileStyleMatches(tile, filter))
+                {
+                    continue;
+                }
+
+                Point anchor = new(x, y);
+                int descriptorTileType = filter.TypeId;
+                if (filter.TypeId >= 0)
+                {
+                    anchor = ResolveCustomTileAnchor(x, y, tile);
+                    int anchorKey = HashCode.Combine(filterIndex, anchor.X, anchor.Y, filter.TypeId, filter.StyleId);
+                    if (!CustomEntryScratch.Add(anchorKey))
+                    {
+                        continue;
+                    }
+                }
+
+                if (filter.TypeId < 0 || filter.RequireLabelMatch)
+                {
+                    if (!InGameNarrationSystem.CursorDescriptors.TryDescribe(anchor.X, anchor.Y, out CursorDescriptorService.CursorDescriptor descriptor) ||
+                        descriptor.IsAir ||
+                        descriptor.TileType != filter.TypeId ||
+                        (filter.RequireLabelMatch && !LabelsMatch(descriptor.Name, filter.Label)))
+                    {
+                        continue;
+                    }
+
+                    descriptorTileType = descriptor.TileType;
+                }
+
+                Vector2 worldPosition = ResolveCustomTileWorldPosition(anchor.X, anchor.Y);
+                float distanceTiles = Vector2.Distance(worldPosition, origin) / 16f;
+                if (distanceTiles > ScanRangeTiles)
+                {
+                    continue;
+                }
+
+                if (filter.TypeId < 0)
+                {
+                    int positionKey = HashCode.Combine(
+                        filterIndex,
+                        (int)MathF.Round(worldPosition.X),
+                        (int)MathF.Round(worldPosition.Y),
+                        descriptorTileType,
+                        filter.StyleId);
+                    if (!CustomEntryScratch.Add(positionKey))
+                    {
+                        continue;
+                    }
+                }
+
+                Point entryAnchor = new((int)MathF.Floor(worldPosition.X / 16f), (int)MathF.Floor(worldPosition.Y / 16f));
+                GuidanceEntry entry = GuidanceEntry.CreateInteractable(entryAnchor, filter.Label, worldPosition, distanceTiles);
+                NearbyCustomMatches.Add(new CustomGuidanceMatch(filterIndex, entry));
+            }
+        }
+    }
+
+    private static bool CanCustomTileFilterMatchRawTile(Tile tile, CustomGuidanceFilter filter)
+    {
+        if (filter.TypeId < 0)
+        {
+            return tile.HasTile || tile.WallType > 0 || tile.LiquidAmount > 0;
+        }
+
+        return tile.HasTile && tile.TileType == filter.TypeId;
+    }
+
+    private static Point ResolveCustomTileAnchor(int tileX, int tileY, Tile tile)
+    {
+        if (!tile.HasTile)
+        {
+            return new Point(tileX, tileY);
+        }
+
+        if (IsTrackableTreeTile(tile.TileType))
+        {
+            Vector2 treePosition = ResolveTreeTrackingWorldPosition(tileX, tileY);
+            return new Point(
+                (int)MathF.Floor(treePosition.X / 16f),
+                (int)MathF.Floor(treePosition.Y / 16f));
+        }
+
+        TileObjectData? tileData = TileObjectData.GetTileData(tile.TileType, 0);
+        if (tileData is null || tileData.Width <= 0 || tileData.Height <= 0 ||
+            tileData.CoordinateHeights is null || tileData.CoordinateHeights.Length == 0)
+        {
+            return new Point(tileX, tileY);
+        }
+
+        int tileWidth = tileData.CoordinateWidth + tileData.CoordinatePadding;
+        int subX = tileWidth > 0 ? (tile.TileFrameX % Math.Max(tileWidth * tileData.Width, 1)) / tileWidth : 0;
+        int subY = ResolveTileFrameRow(tileData, tile.TileFrameY);
+        return new Point(tileX - subX, tileY - subY);
+    }
+
+    private static bool CustomTileStyleMatches(Tile tile, CustomGuidanceFilter filter)
+    {
+        if (filter.TypeId == TileID.Crystals && IsRegularCrystalShardFilter(filter))
+        {
+            return IsRegularCrystalShardTile(tile);
+        }
+
+        if (filter.StyleId < 0)
+        {
+            return true;
+        }
+
+        if (!tile.HasTile)
+        {
+            return false;
+        }
+
+        return CursorDescriptorService.TryResolveTileStyle(tile, filter.TypeId, out int style) &&
+               style == filter.StyleId;
+    }
+
+    private static bool IsRegularCrystalShardFilter(CustomGuidanceFilter filter)
+    {
+        return filter.StyleId is >= 0 and < 18 ||
+               LabelsMatch(filter.Label, Lang.GetItemNameValue(ItemID.CrystalShard));
+    }
+
+    private static bool IsRegularCrystalShardTile(Tile tile)
+    {
+        return tile.HasTile &&
+               tile.TileType == TileID.Crystals &&
+               tile.TileFrameX >= 0 &&
+               tile.TileFrameX < 18 * 18;
+    }
+
+    private static void AppendCustomProjectileMatches(int filterIndex, CustomGuidanceFilter filter, Vector2 origin)
+    {
+        for (int i = 0; i < Main.maxProjectiles; i++)
+        {
+            Projectile projectile = Main.projectile[i];
+            if (!projectile.active || projectile.type != filter.TypeId || !IsWorldPositionApproximatelyOnScreen(projectile.Center))
+            {
+                continue;
+            }
+
+            float distanceTiles = Vector2.Distance(origin, projectile.Center) / 16f;
+            if (distanceTiles > ScanRangeTiles)
+            {
+                continue;
+            }
+
+            GuidanceEntry entry = GuidanceEntry.CreateInteractable(Point.Zero, filter.Label, projectile.Center, distanceTiles);
+            NearbyCustomMatches.Add(new CustomGuidanceMatch(filterIndex, entry));
+        }
+    }
+
+    private static bool LabelsMatch(string left, string right)
+    {
+        return string.Equals(SanitizeLabel(left), SanitizeLabel(right), StringComparison.OrdinalIgnoreCase);
     }
 }

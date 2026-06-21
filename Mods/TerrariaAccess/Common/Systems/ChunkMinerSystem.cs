@@ -13,6 +13,9 @@ namespace TerrariaAccess.Common.Systems;
 /// </summary>
 public class ChunkMinerSystem : ModSystem
 {
+    private const bool DefaultEnabled = true;
+    private const int DefaultMaxTiles = 100;
+
     // Queue of pending chunk mine operations
     private static readonly Queue<ChunkMineRequest> _pendingRequests = new();
 
@@ -67,14 +70,10 @@ public class ChunkMinerSystem : ModSystem
     /// </summary>
     public static void QueueChunkMine(int startX, int startY, int targetType)
     {
-        if (!TerrariaAccessConfig.Instance.ChunkMinerEnabled)
+        if (!IsEnabled)
             return;
 
         if (_processingQueuedTiles)
-            return;
-
-        // Only run chunk mining on server/singleplayer
-        if (Main.netMode == NetmodeID.MultiplayerClient)
             return;
 
         // Find all connected tiles using BFS
@@ -97,7 +96,7 @@ public class ChunkMinerSystem : ModSystem
     private static List<(int x, int y)> FindConnectedTiles(int startX, int startY, int targetType)
     {
         var result = new List<(int x, int y)>();
-        var maxTiles = TerrariaAccessConfig.Instance.ChunkMinerMaxTiles;
+        var maxTiles = MaxTiles;
         var visited = new HashSet<(int x, int y)>();
         var queue = new Queue<(int x, int y)>();
 
@@ -194,6 +193,12 @@ public class ChunkMinerSystem : ModSystem
                 if (!tile.HasTile || tile.TileType != request.TileType)
                     continue;
 
+                if (Main.netMode == NetmodeID.MultiplayerClient)
+                {
+                    NetMessage.SendData(MessageID.TileManipulation, -1, -1, null, 0, request.X, request.Y);
+                    continue;
+                }
+
                 // Let Terraria handle whether the tile can actually be removed.
                 WorldGen.KillTile(request.X, request.Y, fail: false, effectOnly: false, noItem: false);
 
@@ -215,6 +220,36 @@ public class ChunkMinerSystem : ModSystem
         _pendingRequests.Clear();
         _queuedTiles.Clear();
         _processingQueuedTiles = false;
+    }
+
+    internal static bool IsEnabled => TerrariaAccessConfig.Instance?.ChunkMinerEnabled ?? DefaultEnabled;
+
+    private static int MaxTiles => TerrariaAccessConfig.Instance?.ChunkMinerMaxTiles ?? DefaultMaxTiles;
+
+    /// <summary>
+    /// Multiplayer clients also receive tile-kill broadcasts for other players and server changes.
+    /// Only the local player's active mining target should start a client-side chunk mine.
+    /// </summary>
+    public static bool CanStartClientChunkMine(int x, int y)
+    {
+        if (Main.netMode != NetmodeID.MultiplayerClient)
+            return true;
+
+        if (Main.myPlayer < 0 || Main.myPlayer >= Main.maxPlayers)
+            return false;
+
+        Player player = Main.LocalPlayer;
+        if (!player.active || player.dead)
+            return false;
+
+        Item heldItem = player.HeldItem;
+        if (heldItem.pick <= 0)
+            return false;
+
+        if (!player.controlUseItem || player.itemAnimation <= 0)
+            return false;
+
+        return Player.tileTargetX == x && Player.tileTargetY == y;
     }
 
     private readonly struct ChunkMineRequest
@@ -244,13 +279,16 @@ public class ChunkMinerGlobalTile : GlobalTile
         // - Tile mining failed
         // - Effect only (just dust, no actual break)
         // - Not a chunk-mineable tile type
-        if (!TerrariaAccessConfig.Instance.ChunkMinerEnabled)
+        if (!ChunkMinerSystem.IsEnabled)
             return;
 
         if (fail || effectOnly)
             return;
 
         if (!ChunkMinerSystem.IsChunkMineableTile(type))
+            return;
+
+        if (!ChunkMinerSystem.CanStartClientChunkMine(i, j))
             return;
 
         // Queue connected tiles for mining (will be processed next frame)

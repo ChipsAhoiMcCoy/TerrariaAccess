@@ -17,6 +17,9 @@ internal static class UiTickSoundPlayer
     private const float TickFrequency = 1200f;
     private const float TickDuration = 0.04f;
     private const float TickGain = 0.45f;
+    private static readonly bool UiTickDebugEnabled =
+        !string.IsNullOrEmpty(Environment.GetEnvironmentVariable("SRM_DEBUG_UI_TICKS")) ||
+        !string.IsNullOrEmpty(Environment.GetEnvironmentVariable("SRM_DEBUG_INPUT"));
 
     private static readonly ToneEnvelope TickEnvelope = new(
         attackFraction: 0.05f,
@@ -49,7 +52,7 @@ internal static class UiTickSoundPlayer
         }
     }
 
-    public static void PlaySpatialTick(float pan, float pitch, float volume = 1f)
+    public static void PlaySpatialTick(float pan, float pitch, float volume = 1f, string? debugContext = null)
     {
         if (Main.dedServ || Main.soundVolume <= 0f)
         {
@@ -59,6 +62,7 @@ internal static class UiTickSoundPlayer
         bool spatialEnabled = TerrariaAccessConfig.Instance?.SpatialInventoryAudio ?? true;
         if (!spatialEnabled)
         {
+            LogTickDebug("vanilla-fallback", pan, pitch, volume, debugContext);
             SoundEngine.PlaySound(SoundID.MenuTick);
             return;
         }
@@ -68,6 +72,7 @@ internal static class UiTickSoundPlayer
             Initialize();
             if (_tickSound is null or { IsDisposed: true })
             {
+                LogTickDebug("synth-unavailable-fallback", pan, pitch, volume, debugContext);
                 SoundEngine.PlaySound(SoundID.MenuTick);
                 return;
             }
@@ -79,6 +84,7 @@ internal static class UiTickSoundPlayer
 
             if (ActiveInstances.Count >= MaxActiveInstances)
             {
+                LogTickDebug("dropped-max-instances", pan, pitch, volume, debugContext);
                 return;
             }
 
@@ -92,6 +98,7 @@ internal static class UiTickSoundPlayer
             {
                 instance.Play();
                 ActiveInstances.Add(instance);
+                LogTickDebug("play", instance.Pan, instance.Pitch, instance.Volume, debugContext);
             }
             catch (Exception inner)
             {
@@ -150,5 +157,20 @@ internal static class UiTickSoundPlayer
                 ActiveInstances.RemoveAt(i);
             }
         }
+    }
+
+    private static void LogTickDebug(string action, float pan, float pitch, float volume, string? debugContext)
+    {
+        if (!UiTickDebugEnabled)
+        {
+            return;
+        }
+
+        int linkPoint = Terraria.UI.Gamepad.UILinkPointNavigator.CurrentPoint;
+        bool usingGamepad = Terraria.GameInput.PlayerInput.UsingGamepadUI;
+        global::TerrariaAccess.TerrariaAccess.Instance?.Logger.Info(
+            $"[UiTickDebug] action={action} pan={pan:F3} pitch={pitch:F3} volume={volume:F3} " +
+            $"activeInstances={ActiveInstances.Count} linkPoint={linkPoint} usingGamepad={usingGamepad} " +
+            $"inputMode={Terraria.GameInput.PlayerInput.CurrentInputMode} context={debugContext ?? "<none>"}");
     }
 }

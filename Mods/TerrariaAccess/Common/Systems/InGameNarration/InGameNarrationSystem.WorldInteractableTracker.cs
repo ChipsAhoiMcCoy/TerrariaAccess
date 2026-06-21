@@ -149,20 +149,59 @@ public sealed partial class InGameNarrationSystem
                     widthTiles: 1,
                     heightTiles: 1,
                     profile: InteractableCueProfile.GelatinCrystal,
-                    tilePredicate: static tile => tile.TileFrameX >= 324)));
+                    tilePredicate: static tile => tile.TileFrameX >= 324),
+                new TileInteractableDefinition(
+                    tileTypes: new[] { (int)TileID.LargePiles },
+                    frameWidth: 54,
+                    frameHeight: 36,
+                    widthTiles: 3,
+                    heightTiles: 2,
+                    profile: InteractableCueProfile.EnchantedSword,
+                    tilePredicate: static tile => tile.TileFrameX == 810),
+                new TileInteractableDefinition(
+                    tileTypes: new[] { (int)TileID.LargePiles2 },
+                    frameWidth: 54,
+                    frameHeight: 36,
+                    widthTiles: 3,
+                    heightTiles: 2,
+                    profile: InteractableCueProfile.EnchantedSword,
+                    tilePredicate: static tile => tile.TileFrameX == 918),
+                // Nature's Gift plant — frameX == 162 on JunglePlants (61) and
+                // JunglePlantsEcho (703, Don't Dig Up seed; unnamed in tModLoader's
+                // TileID reference). See Terraria WorldGen.KillTile drop logic.
+                new TileInteractableDefinition(
+                    tileTypes: new[] { (int)TileID.JunglePlants, 703 },
+                    frameWidth: 18,
+                    frameHeight: 18,
+                    widthTiles: 1,
+                    heightTiles: 1,
+                    profile: InteractableCueProfile.NaturesGiftPlant,
+                    tilePredicate: static tile => tile.TileFrameX == 162)));
 
             RegisterSource(new OreInteractableSource(
                 scanRadiusTiles: 90f));
+
+            RegisterSource(new StatueInteractableSource(
+                scanRadiusTiles: 80f,
+                new TileInteractableDefinition(
+                    tileTypes: new[]
+                    {
+                        (int)TileID.Statues,
+                        (int)TileID.AlphabetStatues,
+                        (int)TileID.MushroomStatue,
+                        (int)TileID.BoulderStatue,
+                    },
+                    frameWidth: 36,
+                    frameHeight: 54,
+                    widthTiles: 2,
+                    heightTiles: 3,
+                    profile: InteractableCueProfile.Statue)));
 
             RegisterSource(new NpcInteractableSource(
                 scanRadiusTiles: 80f,
                 InteractableCueProfile.RescueNpc,
                 RescuableNpcTypes));
 
-            RegisterSource(new ItemInteractableSource(
-                scanRadiusTiles: 75f,
-                InteractableCueProfile.FallenStar,
-                ItemID.FallenStar));
         }
 
         public void Update(Player player, bool isEnabled)
@@ -288,6 +327,15 @@ public sealed partial class InGameNarrationSystem
                 _distanceScratch.Clear();
                 _distanceScratch.AddRange(unfiltered);
                 ExplorationTargetRegistry.SetSelectedTarget(null);
+            }
+
+            if (!focused
+                && (TerrariaAccessConfig.Instance?.GuidanceAllMode ?? GuidanceAllMode.Sweep) == GuidanceAllMode.NearestOnly
+                && _distanceScratch.Count > 1)
+            {
+                CandidateDistance nearest = _distanceScratch[0];
+                _distanceScratch.Clear();
+                _distanceScratch.Add(nearest);
             }
 
             _visibleThisFrame.Clear();
@@ -889,6 +937,73 @@ public sealed partial class InGameNarrationSystem
         }
     }
 
+    private sealed class StatueInteractableSource : TileInteractableSource
+    {
+        public StatueInteractableSource(float scanRadiusTiles, params TileInteractableDefinition[] definitions)
+            : base(scanRadiusTiles, definitions)
+        {
+        }
+
+        public override void Collect(Player player, List<Candidate> buffer)
+        {
+            if (Definitions.Count == 0)
+            {
+                return;
+            }
+
+            Vector2 playerCenter = player.Center;
+            int playerTileX = (int)(playerCenter.X / 16f);
+            int playerTileY = (int)(playerCenter.Y / 16f);
+            int scanRadius = (int)Math.Clamp(ScanRadiusTiles, 1f, 200f);
+
+            int minX = Math.Max(0, playerTileX - scanRadius);
+            int maxX = Math.Min(Main.maxTilesX - 1, playerTileX + scanRadius);
+            int minY = Math.Max(0, playerTileY - scanRadius);
+            int maxY = Math.Min(Main.maxTilesY - 1, playerTileY + scanRadius);
+
+            for (int x = minX; x <= maxX; x++)
+            {
+                for (int y = minY; y <= maxY; y++)
+                {
+                    Tile tile = Main.tile[x, y];
+                    if (!tile.HasTile)
+                    {
+                        continue;
+                    }
+
+                    foreach (TileInteractableDefinition definition in Definitions)
+                    {
+                        if (!definition.MatchesTile(tile))
+                        {
+                            continue;
+                        }
+
+                        if (!IsAnchorTile(tile, definition))
+                        {
+                            continue;
+                        }
+
+                        Point anchor = new(x, y);
+                        Vector2 worldPosition = definition.GetWorldCenter(anchor);
+                        int localId = HashCode.Combine(definition.DefinitionId, anchor.X, anchor.Y);
+                        string label = ResolveStatueLabel(anchor);
+                        buffer.Add(new Candidate(new TrackedInteractableKey(SourceId, localId), worldPosition, definition.Profile, label));
+                    }
+                }
+            }
+        }
+
+        private static string ResolveStatueLabel(Point anchor)
+        {
+            if (CursorDescriptors.TryDescribe(anchor.X, anchor.Y, out CursorDescriptorService.CursorDescriptor descriptor) && !string.IsNullOrWhiteSpace(descriptor.Name))
+            {
+                return descriptor.Name;
+            }
+
+            return "Statue";
+        }
+    }
+
     private sealed class OreInteractableSource : TileInteractableSource
     {
         private const int OreFrameSizePixels = 18;
@@ -900,7 +1015,16 @@ public sealed partial class InGameNarrationSystem
             TileID.Emerald,
             TileID.Ruby,
             TileID.Diamond,
+            TileID.ExposedGems,
             TileID.AmberStoneBlock
+        };
+
+        // Fossils aren't in TileID.Sets.Ore but function as ore-equivalent deposits
+        // in the Underground Desert (mined for Sturdy Fossil drops).
+        private static readonly int[] FossilTileTypes =
+        {
+            TileID.DesertFossil,
+            TileID.FossilOre
         };
 
         public OreInteractableSource(float scanRadiusTiles)
@@ -940,6 +1064,7 @@ public sealed partial class InGameNarrationSystem
                     }
 
                     int oreType = tile.TileType;
+                    OreGroupKey oreGroupKey = GetOreGroupKey(tile);
                     float bestDistanceSq = float.MaxValue;
                     Point bestAnchor = start;
 
@@ -965,7 +1090,7 @@ public sealed partial class InGameNarrationSystem
                             }
 
                             Tile neighborTile = Main.tile[neighbor.X, neighbor.Y];
-                            if (!neighborTile.HasTile || neighborTile.TileType != oreType)
+                            if (!neighborTile.HasTile || !GetOreGroupKey(neighborTile).Equals(oreGroupKey))
                             {
                                 continue;
                             }
@@ -976,7 +1101,7 @@ public sealed partial class InGameNarrationSystem
                     }
 
                     Vector2 worldPosition = new((bestAnchor.X + 0.5f) * 16f, (bestAnchor.Y + 0.5f) * 16f);
-                    int localId = HashCode.Combine(oreType, bestAnchor.X, bestAnchor.Y);
+                    int localId = HashCode.Combine(oreGroupKey.TileType, oreGroupKey.Style, bestAnchor.X, bestAnchor.Y);
                     string oreLabel = ResolveOreLabel(bestAnchor.X, bestAnchor.Y, oreType);
                     InteractableCueProfile profile = IsGem(oreType) ? InteractableCueProfile.Gem : InteractableCueProfile.Ore;
                     buffer.Add(new Candidate(new TrackedInteractableKey(SourceId, localId), worldPosition, profile, oreLabel));
@@ -990,6 +1115,7 @@ public sealed partial class InGameNarrationSystem
                 .Range(0, TileID.Sets.Ore.Length)
                 .Where(id => TileID.Sets.Ore[id])
                 .Concat(GemTileTypes)
+                .Concat(FossilTileTypes)
                 .Distinct()
                 .ToArray();
 
@@ -1009,10 +1135,24 @@ public sealed partial class InGameNarrationSystem
                 return true;
             }
 
-            return Array.IndexOf(GemTileTypes, tileType) >= 0;
+            if (Array.IndexOf(GemTileTypes, tileType) >= 0)
+            {
+                return true;
+            }
+
+            return Array.IndexOf(FossilTileTypes, tileType) >= 0;
         }
 
         private static bool IsGem(int tileType) => Array.IndexOf(GemTileTypes, tileType) >= 0;
+
+        private static OreGroupKey GetOreGroupKey(Tile tile)
+        {
+            int style = tile.TileType == TileID.ExposedGems
+                ? Math.Clamp(tile.TileFrameX / 18, 0, 6)
+                : 0;
+
+            return new OreGroupKey(tile.TileType, style);
+        }
 
         private string ResolveOreLabel(int tileX, int tileY, int tileType)
         {
@@ -1043,6 +1183,8 @@ public sealed partial class InGameNarrationSystem
                 yield return new Point(point.X, point.Y + 1);
             }
         }
+
+        private readonly record struct OreGroupKey(int TileType, int Style);
     }
 
     private sealed class ItemInteractableSource : WorldInteractableSource
@@ -1406,18 +1548,6 @@ public sealed partial class InGameNarrationSystem
             maxIntervalFrames: 48,
             arrivalLabel: "a rescue NPC");
 
-        public static InteractableCueProfile FallenStar { get; } = new(
-            id: "fallen-star",
-            fundamentalFrequency: 1180f,
-            partialMultipliers: new[] { 1.4f, 2f, 2.8f },
-            envelope: SynthesizedSoundFactory.ToneEnvelopes.WorldCue,
-            durationSeconds: 0.2f,
-            baseGain: 0.38f,
-            maxAudibleDistanceTiles: 95f,
-            minIntervalFrames: SweepIntervalFrames,
-            maxIntervalFrames: 46,
-            arrivalLabel: "a fallen star");
-
         public static InteractableCueProfile Ore { get; } = new(
             id: "ore",
             fundamentalFrequency: 460f,
@@ -1458,6 +1588,46 @@ public sealed partial class InGameNarrationSystem
             minIntervalFrames: SweepIntervalFrames,
             maxIntervalFrames: 54,
             arrivalLabel: "a Lihzahrd altar");
+
+        public static InteractableCueProfile EnchantedSword { get; } = new(
+            id: "enchanted-sword",
+            fundamentalFrequency: 820f,
+            partialMultipliers: new[] { 2f, 2.5f, 3.2f },
+            envelope: SynthesizedSoundFactory.ToneEnvelopes.WorldCue,
+            durationSeconds: 0.26f,
+            baseGain: 0.4f,
+            maxAudibleDistanceTiles: 90f,
+            minIntervalFrames: SweepIntervalFrames,
+            maxIntervalFrames: 52,
+            arrivalLabel: "an Enchanted Sword");
+
+        public static InteractableCueProfile NaturesGiftPlant { get; } = new(
+            id: "natures-gift-plant",
+            fundamentalFrequency: 700f,
+            partialMultipliers: new[] { 1.4f, 1.85f, 2.35f },
+            envelope: SynthesizedSoundFactory.ToneEnvelopes.WorldCue,
+            durationSeconds: 0.22f,
+            baseGain: 0.4f,
+            maxAudibleDistanceTiles: 85f,
+            minIntervalFrames: SweepIntervalFrames,
+            maxIntervalFrames: 52,
+            arrivalLabel: "a Nature's Gift plant");
+
+        // Stone-toned cue for decorative and functional statues.
+        // Individual statue names ("Angel Statue", "Heart Statue", etc.) are
+        // resolved at runtime via CursorDescriptors; this arrival label is
+        // only a fallback when the descriptor lookup fails.
+        public static InteractableCueProfile Statue { get; } = new(
+            id: "statue",
+            fundamentalFrequency: 580f,
+            partialMultipliers: new[] { 1.18f, 1.4f },
+            envelope: SynthesizedSoundFactory.ToneEnvelopes.WorldCue,
+            durationSeconds: 0.22f,
+            baseGain: 0.36f,
+            maxAudibleDistanceTiles: 80f,
+            minIntervalFrames: SweepIntervalFrames,
+            maxIntervalFrames: 54,
+            arrivalLabel: "a statue");
 
         /// <summary>
         /// Gelatin Crystal - shimmering pink crystal found in the Underground Hallow.

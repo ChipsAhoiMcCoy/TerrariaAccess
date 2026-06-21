@@ -1,5 +1,5 @@
 displayName = Terraria Access
 author = Accessibility Agents
-version = 0.1.10
+version = 1.0.0
 homepage = https://github.com/ChipsAhoiMcCoy/TerrariaAccess
-side = Client
+side = NoSync

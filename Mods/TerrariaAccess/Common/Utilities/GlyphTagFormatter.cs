@@ -293,7 +293,13 @@ internal static class GlyphTagFormatter
             }
         }
 
-        global::TerrariaAccess.TerrariaAccess.Instance?.Logger.Info($"[GlyphSnippet] {note} -> {name}");
+        var logger = global::TerrariaAccess.TerrariaAccess.Instance?.Logger;
+        if (logger is null)
+        {
+            return;
+        }
+
+        logger.Info($"[GlyphSnippet] {note} -> {name}");
     }
 
     private static void LogGlyphDebug(string raw, string sanitized, IEnumerable<TextSnippet> snippets)

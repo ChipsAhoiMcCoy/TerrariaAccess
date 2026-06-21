@@ -11,6 +11,7 @@ internal enum MenuNarrationEventKind
     WorldCreation = 5,
     ModConfig = 6,
     SpecialFeature = 7,
+    EntryFollowUp = 8,
 }
 
 internal readonly record struct MenuNarrationEvent(string Text, bool Force, MenuNarrationEventKind Kind = MenuNarrationEventKind.Unknown);

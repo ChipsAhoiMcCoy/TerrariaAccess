@@ -106,8 +106,7 @@ internal sealed class MultiplayerMenuHandler : MenuHandlerBase
 
         // Check if this is the same status we just announced
         if (!string.IsNullOrWhiteSpace(State.LastFocusAnnouncement) &&
-            string.Equals(status, State.LastFocusAnnouncement, StringComparison.OrdinalIgnoreCase) &&
-            context.Timestamp - State.LastFocusAnnouncedAt < TimeSpan.FromSeconds(2))
+            string.Equals(status, State.LastFocusAnnouncement, StringComparison.OrdinalIgnoreCase))
         {
             return;
         }

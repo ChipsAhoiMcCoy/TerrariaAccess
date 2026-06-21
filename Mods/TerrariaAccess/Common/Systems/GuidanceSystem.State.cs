@@ -3,6 +3,7 @@ using System.Collections.Generic;
 using Microsoft.Xna.Framework;
 using Microsoft.Xna.Framework.Audio;
 using TerrariaAccess.Common.Systems.Guidance;
+using Terraria.ModLoader.IO;
 
 namespace TerrariaAccess.Common.Systems;
 
@@ -10,10 +11,60 @@ public sealed partial class GuidanceSystem
 {
     private readonly record struct ProximityTargetKey(SelectionMode Mode, int Index);
 
-    private static readonly List<Waypoint> Waypoints = new();
+    private enum CustomFilterKind : byte
+    {
+        Tile,
+        Npc,
+        Player,
+        Projectile,
+        DroppedItem,
+        Critter,
+        Plantlife,
+        HostileMob
+    }
 
-    internal static bool HasWaypointState => Waypoints.Count > 0 || _selectionMode != SelectionMode.None;
-    internal static bool IsNamingActive => NamingDialog.IsActive;
+    private readonly struct CustomGuidanceFilter
+    {
+        public readonly CustomFilterKind Kind;
+        public readonly int TypeId;
+        public readonly int StyleId;
+        public readonly string Label;
+        public readonly bool RequireLabelMatch;
+
+        public CustomGuidanceFilter(
+            CustomFilterKind kind,
+            int typeId,
+            string label,
+            bool requireLabelMatch = true,
+            int styleId = -1)
+        {
+            Kind = kind;
+            TypeId = typeId;
+            StyleId = styleId;
+            Label = label;
+            RequireLabelMatch = requireLabelMatch;
+        }
+    }
+
+    private readonly struct CustomGuidanceMatch
+    {
+        public readonly int FilterIndex;
+        public readonly GuidanceEntry Entry;
+
+        public CustomGuidanceMatch(int filterIndex, GuidanceEntry entry)
+        {
+            FilterIndex = filterIndex;
+            Entry = entry;
+        }
+    }
+
+    private static readonly List<Waypoint> Waypoints = new();
+    private static readonly List<CustomGuidanceFilter> CustomTargets = new();
+    private static readonly List<CustomGuidanceMatch> NearbyCustomMatches = new();
+    private static TagCompound? _preservedInactiveWorldWaypointData;
+
+    internal static bool HasWaypointState => Waypoints.Count > 0 || CustomTargets.Count > 0 || _selectionMode != SelectionMode.None;
+    internal static bool IsNamingActive => NamingDialog.IsActive || CustomTargetDialog.IsActive;
 
     private enum SelectionMode
     {
@@ -23,6 +74,7 @@ public sealed partial class GuidanceSystem
         Npc,
         Player,
         Waypoint,
+        Custom,
         DroppedItem,
         Critter,
         Plantlife,
@@ -35,6 +87,7 @@ public sealed partial class GuidanceSystem
     private static int _selectedPlayerIndex = -1;
     private static int _selectedInteractableIndex = -1;
     private static int _selectedExplorationIndex = -1;
+    private static int _selectedCustomIndex = -1;
     private static int _selectedDroppedItemIndex = -1;
     private static int _selectedCritterIndex = -1;
     private static int _selectedPlantlifeIndex = -1;
@@ -69,6 +122,7 @@ public sealed partial class GuidanceSystem
     private static SoundEffect? _waypointTone;
     private static readonly List<SoundEffectInstance> ActiveWaypointInstances = new();
     private static readonly GuidanceNamingDialogController NamingDialog = new();
+    private static readonly GuidanceCustomTargetDialogController CustomTargetDialog = new();
     private static readonly bool LogGuidancePings = false;
     private static uint _lastTargetRefreshFrame;
     private static int _lastTargetRefreshPlayerIndex = -1;
@@ -90,6 +144,8 @@ public sealed partial class GuidanceSystem
     internal static void ResetTrackingState()
     {
         Waypoints.Clear();
+        CustomTargets.Clear();
+        NearbyCustomMatches.Clear();
         NearbyNpcs.Clear();
         NearbyPlayers.Clear();
         NearbyInteractables.Clear();
@@ -103,6 +159,7 @@ public sealed partial class GuidanceSystem
         _selectedPlayerIndex = -1;
         _selectedInteractableIndex = -1;
         _selectedExplorationIndex = -1;
+        _selectedCustomIndex = -1;
         _selectedDroppedItemIndex = -1;
         _selectedCritterIndex = -1;
         _selectedPlantlifeIndex = -1;

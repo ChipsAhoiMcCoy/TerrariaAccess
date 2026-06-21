@@ -166,6 +166,9 @@ public sealed partial class InGameNarrationSystem
         private int _menuOpenSettleFrames;
         private int _lastRawCategory = int.MinValue;
         private bool _wasOptionFocused;
+        private bool _pendingCategoryReturnAnnouncement;
+        private int _pendingCategoryReturnIndex = int.MinValue;
+        private int _pendingCategoryReturnId = int.MinValue;
 
         public void OnMenuOpened()
         {
@@ -217,14 +220,34 @@ public sealed partial class InGameNarrationSystem
 
             string? categoryLabel = GetCategoryLabelById(categoryId, selectedLeftIndex, leftHover);
             // Detect returning to category list from option editing.
-            // When user exits an options list back to the category list, re-announce the category.
+            // Confirm the return on the following frame so transient focus loss
+            // does not re-announce the same category.
             bool noOptionFocused = rightHover < 0 && rightLock < 0;
             bool returnedToCategoryList = noOptionFocused && _wasOptionFocused && selectedLeftIndex >= 0;
             _wasOptionFocused = !noOptionFocused;
 
             if (returnedToCategoryList && !string.IsNullOrWhiteSpace(categoryLabel))
             {
-                _forceCategoryAnnouncement = true;
+                _pendingCategoryReturnAnnouncement = true;
+                _pendingCategoryReturnIndex = selectedLeftIndex;
+                _pendingCategoryReturnId = categoryId;
+            }
+            else if (_pendingCategoryReturnAnnouncement)
+            {
+                bool confirmedReturn = noOptionFocused &&
+                    selectedLeftIndex >= 0 &&
+                    selectedLeftIndex == _pendingCategoryReturnIndex &&
+                    categoryId == _pendingCategoryReturnId &&
+                    !categoryAndHoverOutOfSync;
+
+                if (confirmedReturn && !string.IsNullOrWhiteSpace(categoryLabel))
+                {
+                    _forceCategoryAnnouncement = true;
+                }
+
+                _pendingCategoryReturnAnnouncement = false;
+                _pendingCategoryReturnIndex = int.MinValue;
+                _pendingCategoryReturnId = int.MinValue;
             }
 
             if (!string.IsNullOrWhiteSpace(categoryLabel))
@@ -1288,6 +1311,9 @@ public sealed partial class InGameNarrationSystem
             _menuOpenSettleFrames = 0;
             _lastRawCategory = int.MinValue;
             _wasOptionFocused = false;
+            _pendingCategoryReturnAnnouncement = false;
+            _pendingCategoryReturnIndex = int.MinValue;
+            _pendingCategoryReturnId = int.MinValue;
         }
 
         private void PlayTickIfNew(string key)

@@ -288,6 +288,7 @@ internal sealed partial class MenuUiSelectionTracker
             }
         }
 
+        value = TextSanitizer.Clean(value).TrimEnd(' ', '.');
         string label = LocalizationHelper.GetTextOrFallback("UI.WorldCreationName", "Name");
         if (enqueueCategoryAsPrefix)
         {
@@ -295,7 +296,7 @@ internal sealed partial class MenuUiSelectionTracker
             return value;
         }
 
-        return TextSanitizer.JoinWithComma(label, value);
+        return TextSanitizer.JoinWithComma(label, value, "Press Tab to begin typing");
     }
 
     private static string DescribeHairStyleOption(UIElement root, UIElement element, bool enqueueCategoryAsPrefix = false)

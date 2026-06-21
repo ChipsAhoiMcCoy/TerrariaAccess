@@ -30,6 +30,8 @@ internal static partial class MenuNarrationCatalog
         [MenuID.ServerIP] = "Server address",
         [MenuID.ServerPort] = "Server port",
         [MenuID.ServerPasswordRequested] = "Server password",
+        [MenuID.RejectedWorld] = "World selection message",
+        [MenuID.BetterRejectionMenu] = "Message",
         [17] = "Controls",
         [18] = "Credits",
         [26] = "Audio settings",
@@ -62,6 +64,8 @@ internal static partial class MenuNarrationCatalog
         [MenuID.ServerIP] = DescribeServerIpMenu,
         [MenuID.ServerPort] = DescribeServerPortMenu,
         [MenuID.ServerPasswordRequested] = DescribeServerPasswordMenu,
+        [MenuID.RejectedWorld] = DescribeRejectionMenu,
+        [MenuID.BetterRejectionMenu] = DescribeRejectionMenu,
         [MenuID.WorldDeletionConfirmation] = DescribeWorldDeletionConfirmation,
         [1212] = static index => DescribeLanguageMenu(index, includeBackOption: false),
         [1213] = static index => DescribeLanguageMenu(index, includeBackOption: true),
@@ -131,6 +135,12 @@ internal static partial class MenuNarrationCatalog
         if (typeName.Contains("UICharacterSelect", StringComparison.Ordinal))
         {
             label = "Player selection";
+            return true;
+        }
+
+        if (typeName.Contains("UICharacterCreation", StringComparison.Ordinal))
+        {
+            label = "Character creation";
             return true;
         }
 
@@ -297,6 +307,8 @@ internal static partial class MenuNarrationCatalog
     {
         // Some modes intentionally expose no menuItems (e.g., world loading screen = 10); skip Lang.menu fallback there.
         return menuMode is 1 or 2 or 10 or 14 or 888
+            or MenuID.RejectedWorld
+            or MenuID.BetterRejectionMenu
             or MenuID.ServerIP      // 13
             or MenuID.ServerPort    // 131
             or MenuID.ServerPasswordRequested;  // 31
@@ -356,7 +368,17 @@ internal static partial class MenuNarrationCatalog
         string[] items = GetMenuItemArray();
         if (items.Length == 0)
         {
-            TerrariaAccess.Instance?.Logger.Warn($"[MenuNarration] menuItems reflection returned empty for menu mode {menuMode}.");
+            if (ShouldWarnOnEmptyMenuItems(menuMode))
+            {
+                TerrariaAccess.Instance?.Logger.Warn($"[MenuNarration] menuItems reflection returned empty for menu mode {menuMode}.");
+            }
+            else
+            {
+                TerrariaAccess.Instance?.Logger.Debug($"[MenuNarration] menuItems reflection returned empty for menu mode {menuMode}; using mode-specific narration fallback.");
+            }
+
+            _lastSnapshotMode = menuMode;
+            _lastSnapshotAt = DateTime.UtcNow;
             return;
         }
 
@@ -372,6 +394,18 @@ internal static partial class MenuNarrationCatalog
 
         _lastSnapshotMode = menuMode;
         _lastSnapshotAt = DateTime.UtcNow;
+    }
+
+    private static bool ShouldWarnOnEmptyMenuItems(int menuMode)
+    {
+        return menuMode is not MenuID.Title
+            and not MenuID.CharacterSelect
+            and not MenuID.WorldSelect
+            and not 10
+            and not 14
+            and not 888
+            and not 889
+            && !ShouldDeferLangMenuFallback(menuMode);
     }
 
     private static string[] ConvertMenuItems(object raw)

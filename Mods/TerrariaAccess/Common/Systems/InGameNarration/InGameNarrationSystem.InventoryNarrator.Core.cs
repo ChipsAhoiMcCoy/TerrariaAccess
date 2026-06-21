@@ -11,7 +11,10 @@ using Microsoft.Xna.Framework;
 using Microsoft.Xna.Framework.Audio;
 using Microsoft.Xna.Framework.Graphics;
 using TerrariaAccess.Common.Services;
+using TerrariaAccess.Common.Systems.InGameNarration;
 using TerrariaAccess.Common.Systems.MenuNarration;
+using TerrariaAccess.Common.Systems.ModBrowser;
+using TerrariaAccess.Common.Systems.Journey;
 using TerrariaAccess.Common.Utilities;
 using Terraria;
 using Terraria.Audio;
@@ -42,8 +45,11 @@ public sealed partial class InGameNarrationSystem
         private static readonly FocusTracker _focusTracker = new();
         private SlotFocus? _currentFocus;
         private string? _lastFocusKey;
+        private string? _pendingGamepadFallbackFocusKey;
         private ItemIdentity _lastAnnouncedItemIdentity;
         private bool _wasInventoryOpen;
+        private bool _wasCreativeMenuOpen;
+        private bool _queueNextCreativeAnnouncementAsFollowUp;
         private int _lastChestIndex = -1;
         // Region tracking state moved to InventoryNarrator.Regions.cs
         private const UiNarrationArea InventoryNarrationAreas =
@@ -56,8 +62,15 @@ public sealed partial class InGameNarrationSystem
 
         private static readonly bool NarrationDebugEnabled = !string.IsNullOrEmpty(Environment.GetEnvironmentVariable("SRM_DEBUG_NARRATION"));
         private static readonly bool InputDebugEnabled = !string.IsNullOrEmpty(Environment.GetEnvironmentVariable("SRM_DEBUG_INPUT"));
+        private static readonly bool HotbarDebugEnabled =
+            !string.IsNullOrEmpty(Environment.GetEnvironmentVariable("SRM_DEBUG_HOTBAR")) ||
+            !string.IsNullOrEmpty(Environment.GetEnvironmentVariable("SRM_DEBUG_INPUT"));
+        private static readonly bool UiTickDebugEnabled =
+            !string.IsNullOrEmpty(Environment.GetEnvironmentVariable("SRM_DEBUG_UI_TICKS")) ||
+            !string.IsNullOrEmpty(Environment.GetEnvironmentVariable("SRM_DEBUG_INPUT"));
         private static int _lastLoggedFocusLinkPoint = -999;
         private static string? _lastLoggedFocusItemName;
+        private static string? _lastHotbarDebugState;
 
         private static readonly Lazy<FieldInfo?> MouseTextCacheField = new(() =>
             typeof(Main).GetField("_mouseTextCache", BindingFlags.Instance | BindingFlags.NonPublic));
@@ -66,6 +79,7 @@ public sealed partial class InGameNarrationSystem
         private static FieldInfo? _mouseTextIsValidField;
         private static string? _capturedMouseText;
         private static uint _capturedMouseTextFrame;
+        private static bool _pendingGuideFocusRedirect;
         private static int _inventoryOpenGraceFrames;
         private const int InventoryOpenGracePeriod = 3;
         private static int _chestOpenGraceFrames;
@@ -153,9 +167,23 @@ public sealed partial class InGameNarrationSystem
                     OnInventoryJustClosed();
                 }
                 _wasInventoryOpen = false;
+                _wasCreativeMenuOpen = false;
+                _queueNextCreativeAnnouncementAsFollowUp = false;
                 Reset();
                 return;
             }
+
+            bool isCreativeMenuOpen = Main.CreativeMenu.Enabled;
+            if (isCreativeMenuOpen && !_wasCreativeMenuOpen)
+            {
+                _queueNextCreativeAnnouncementAsFollowUp = true;
+            }
+            else if (!isCreativeMenuOpen)
+            {
+                _queueNextCreativeAnnouncementAsFollowUp = false;
+            }
+
+            _wasCreativeMenuOpen = isCreativeMenuOpen;
 
             // Detect inventory just opened - set focus to inventory area and notify other narrators
             if (!_wasInventoryOpen)
@@ -189,6 +217,14 @@ public sealed partial class InGameNarrationSystem
                 ClearSpecialLinkPointFocus();
             }
 
+            if (IsJourneyInfiniteItemsSearchActive())
+            {
+                ResetHoverSlotsAndTooltips();
+                SpecialSelectionRepeat.Clear();
+                _currentFocus = null;
+                return;
+            }
+
             SlotFocus? nextFocus = _focusTracker.Consume(usingGamepad);
 
             _currentFocus = nextFocus.HasValue && IsFocusValid(nextFocus.Value) ? nextFocus : null;
@@ -205,7 +241,8 @@ public sealed partial class InGameNarrationSystem
                    player.chest != -1 ||
                    Main.npcShop != 0 ||
                    Main.InGuideCraftMenu ||
-                   Main.InReforgeMenu;
+                   Main.InReforgeMenu ||
+                   Main.CreativeMenu.Enabled;
         }
 
         private void HandleMouseItem()
@@ -233,9 +270,20 @@ public sealed partial class InGameNarrationSystem
             }
 
             bool usingGamepad = PlayerInput.UsingGamepadUI;
+            if (TryHandlePendingGuideFocusRedirect(usingGamepad))
+            {
+                return;
+            }
+
             int currentPoint = usingGamepad ? UILinkPointNavigator.CurrentPoint : -1;
+            if (TryRedirectEmptyGuideRecipeFocus(usingGamepad, currentPoint))
+            {
+                return;
+            }
+
             int craftingAvailableIndex = -1;
             bool selectingSpecial = usingGamepad && currentPoint >= 0 && IsSpecialInventoryPoint(currentPoint);
+            bool inGamepadGuideSlot = usingGamepad && Main.InGuideCraftMenu && currentPoint == GamepadGuideCraftingSlotPoint;
             bool inGamepadCraftingGrid = usingGamepad && TryGetGamepadCraftingAvailableIndex(currentPoint, out craftingAvailableIndex);
             if (!selectingSpecial)
             {
@@ -257,10 +305,21 @@ public sealed partial class InGameNarrationSystem
             // is set correctly for the CraftingNarrator's gate check
             bool inGamepadCraftingList = usingGamepad &&
                 currentPoint >= CraftingListLinkPointStart &&
-                currentPoint < CraftingListLinkPointEnd;
+                currentPoint < CraftingListLinkPointEnd &&
+                !inGamepadGuideSlot;
             if (inGamepadCraftingList)
             {
                 UiAreaNarrationContext.RecordArea(UiNarrationArea.Crafting);
+            }
+            else if (inGamepadGuideSlot)
+            {
+                UiAreaNarrationContext.RecordArea(UiNarrationArea.Guide);
+                PlayTickIfNew(
+                    "guide-crafting-slot",
+                    debugContext: BuildTickDebugContext("guide-crafting-slot", "guide-crafting-slot", null, null),
+                    forceImmediate: true);
+                ResetHoverSlotsAndTooltips();
+                return;
             }
 
             SlotFocus? focus = (selectingSpecial || inGamepadCraftingGrid || inGamepadCraftingList) ? null : _currentFocus;
@@ -296,7 +355,10 @@ public sealed partial class InGameNarrationSystem
 
             HoverTarget target = new(hover, identity, location, rawTooltip, normalizedTooltip, focus, AllowMouseText: !usingGamepadFocus);
             string focusKey = BuildFocusKey(target, focus, inGamepadCraftingGrid ? craftingAvailableIndex : (int?)null);
-            PlayTickIfNew(focusKey, focus);
+            PlayTickIfNew(
+                focusKey,
+                focus,
+                BuildTickDebugContext("inventory", focusKey, focus, inGamepadCraftingGrid ? craftingAvailableIndex : (int?)null));
 
             if (target.HasItem)
             {
@@ -325,6 +387,13 @@ public sealed partial class InGameNarrationSystem
             }
 
             TryAnnounceTooltipFallback(target);
+        }
+
+        private static bool IsJourneyInfiniteItemsSearchActive()
+        {
+            return SearchModeManager.IsSearchModeActive &&
+                Main.CreativeMenu.Enabled &&
+                JourneyReflection.TryGetCurrentPowersCategoryOption() == 1;
         }
 
         private static Item ResolveHoverItem(bool usingGamepad, bool usingGamepadFocus, Item? focusedItem)
@@ -406,10 +475,17 @@ public sealed partial class InGameNarrationSystem
             details = MergeDetails(details, sellDetails);
             string? reforgeDetails = BuildReforgePriceDetails(player, target.Item, target.Focus);
             details = MergeDetails(details, reforgeDetails);
+            string? setBonusDetails = BuildEquippedArmorSetBonusDetails(player, target.Focus, details);
+            details = MergeDetails(details, setBonusDetails);
 
             string combined = NarrationTextFormatter.CombineItemAnnouncement(message, details);
             int slotSignature = ComputeSlotSignature(target.Focus);
-            if (TryAnnounceCue(NarrationCue.ForItem(target.Identity, combined, target.Location, target.NormalizedTooltip, details, slotSignature), focus: target.Focus, regionPrefix: regionPrefix))
+            bool announced = TryAnnounceCue(
+                NarrationCue.ForItem(target.Identity, combined, target.Location, target.NormalizedTooltip, details, slotSignature),
+                focus: target.Focus,
+                regionPrefix: regionPrefix);
+            LogHotbarInventoryDebug("hover-item", target, currentRegion, regionPrefix, combined, announced);
+            if (announced)
             {
                 _lastAnnouncedItemIdentity = target.Identity;
                 _narrationHistory.Reset(NarrationKind.EmptySlot);
@@ -493,7 +569,12 @@ public sealed partial class InGameNarrationSystem
             string message = $"Empty, {target.Location}";
 
             int slotSignature = ComputeSlotSignature(target.Focus);
-            if (TryAnnounceCue(NarrationCue.ForEmpty(message, target.Location, slotSignature), focus: target.Focus, regionPrefix: regionPrefix))
+            bool announced = TryAnnounceCue(
+                NarrationCue.ForEmpty(message, target.Location, slotSignature),
+                focus: target.Focus,
+                regionPrefix: regionPrefix);
+            LogHotbarInventoryDebug("empty-slot", target, currentRegion, regionPrefix, message, announced);
+            if (announced)
             {
                 _narrationHistory.Reset(NarrationKind.HoverItem);
                 _narrationHistory.Reset(NarrationKind.Tooltip);
@@ -606,8 +687,11 @@ public sealed partial class InGameNarrationSystem
             _inGameUiTracker.Reset();
             UiAreaNarrationContext.Clear();
             _lastFocusKey = null;
+            _pendingGamepadFallbackFocusKey = null;
             _lastAnnouncedItemIdentity = default;
             _inventoryOpenGraceFrames = 0;
+            _wasCreativeMenuOpen = false;
+            _queueNextCreativeAnnouncementAsFollowUp = false;
             _lastChestIndex = -1;
             _lastAnnouncedRegion = InventoryRegion.None;
             _lastAnnouncedStorageContainer = null;
@@ -618,7 +702,19 @@ public sealed partial class InGameNarrationSystem
             // Set the active area to Inventory to prevent crafting narrator from immediately
             // announcing recipes when the inventory first opens. This ensures focus stays
             // on the inventory until the user explicitly navigates to crafting.
-            UiAreaNarrationContext.RecordArea(UiNarrationArea.Inventory);
+            if (Main.InGuideCraftMenu)
+            {
+                UiAreaNarrationContext.RecordArea(UiNarrationArea.Guide);
+                QueueGuideFocusRedirect();
+            }
+            else if (Main.InReforgeMenu)
+            {
+                UiAreaNarrationContext.RecordArea(UiNarrationArea.Reforge);
+            }
+            else
+            {
+                UiAreaNarrationContext.RecordArea(UiNarrationArea.Inventory);
+            }
 
             // Set grace period to prevent mouse text from being announced before
             // the hover item is fully resolved (prevents duplicate announcements)
@@ -626,6 +722,62 @@ public sealed partial class InGameNarrationSystem
 
             // Notify other narrators (like CraftingNarrator) to reset their state
             InventoryOpened?.Invoke();
+        }
+
+        private static void QueueGuideFocusRedirect()
+        {
+            _pendingGuideFocusRedirect = true;
+        }
+
+        private bool TryHandlePendingGuideFocusRedirect(bool usingGamepad)
+        {
+            if (!_pendingGuideFocusRedirect)
+            {
+                return false;
+            }
+
+            if (!Main.InGuideCraftMenu)
+            {
+                _pendingGuideFocusRedirect = false;
+                return false;
+            }
+
+            if (!usingGamepad)
+            {
+                return true;
+            }
+
+            if (Main.mouseLeft || PlayerInput.Triggers.Current.MouseLeft)
+            {
+                return true;
+            }
+
+            _pendingGuideFocusRedirect = false;
+            UiAreaNarrationContext.RecordArea(UiNarrationArea.Guide);
+            if (UILinkPointNavigator.CurrentPoint != GamepadGuideCraftingSlotPoint)
+            {
+                UILinkPointNavigator.ChangePoint(GamepadGuideCraftingSlotPoint);
+            }
+
+            ResetHoverSlotsAndTooltips();
+            return true;
+        }
+
+        private bool TryRedirectEmptyGuideRecipeFocus(bool usingGamepad, int currentPoint)
+        {
+            if (!usingGamepad ||
+                !Main.InGuideCraftMenu ||
+                !Main.guideItem.IsAir ||
+                currentPoint <= GamepadGuideCraftingSlotPoint ||
+                currentPoint >= CraftingListLinkPointEnd)
+            {
+                return false;
+            }
+
+            UILinkPointNavigator.ChangePoint(GamepadGuideCraftingSlotPoint);
+            UiAreaNarrationContext.RecordArea(UiNarrationArea.Guide);
+            ResetHoverSlotsAndTooltips();
+            return true;
         }
 
         private static void OnInventoryJustClosed()
@@ -669,15 +821,33 @@ public sealed partial class InGameNarrationSystem
             return string.Empty;
         }
 
-        private void PlayTickIfNew(string key, SlotFocus? focus = null)
+        private void PlayTickIfNew(string key, SlotFocus? focus = null, string? debugContext = null, bool forceImmediate = false)
         {
-            if (string.IsNullOrWhiteSpace(key) || string.Equals(key, _lastFocusKey, StringComparison.Ordinal))
+            if (string.IsNullOrWhiteSpace(key))
             {
+                _pendingGamepadFallbackFocusKey = null;
                 return;
             }
 
+            if (string.Equals(key, _lastFocusKey, StringComparison.Ordinal))
+            {
+                _pendingGamepadFallbackFocusKey = null;
+                return;
+            }
+
+            if (!forceImmediate && PlayerInput.UsingGamepadUI && !focus.HasValue)
+            {
+                if (!string.Equals(key, _pendingGamepadFallbackFocusKey, StringComparison.Ordinal))
+                {
+                    _pendingGamepadFallbackFocusKey = key;
+                    LogUiTickDecision("defer-gamepad-fallback", key, focus, null, debugContext);
+                    return;
+                }
+            }
+
+            _pendingGamepadFallbackFocusKey = null;
             _lastFocusKey = key;
-            PlaySpatialInventoryTick(focus);
+            PlaySpatialInventoryTick(focus, debugContext);
         }
 
         private void PlayCraftingTickIfNew(string key, int craftingAvailableIndex)
@@ -687,17 +857,20 @@ public sealed partial class InGameNarrationSystem
                 return;
             }
 
+            _pendingGamepadFallbackFocusKey = null;
             _lastFocusKey = key;
-            PlaySpatialCraftingTick(craftingAvailableIndex);
+            PlaySpatialCraftingTick(
+                craftingAvailableIndex,
+                BuildTickDebugContext("crafting-grid", key, null, craftingAvailableIndex));
         }
 
-        private static void PlaySpatialCraftingTick(int craftingAvailableIndex)
+        private static void PlaySpatialCraftingTick(int craftingAvailableIndex, string? debugContext = null)
         {
             // First try: Get position directly from game's UILinkPointNavigator (most accurate)
             if (UiSlotSpatialAudio.TryGetCurrentLinkPointPosition(out var linkPointPos))
             {
                 var spatial = UiSlotSpatialAudio.ComputeSpatialParamsFromScreen(linkPointPos);
-                UiTickSoundPlayer.PlaySpatialTick(spatial.Pan, spatial.Pitch);
+                UiTickSoundPlayer.PlaySpatialTick(spatial.Pan, spatial.Pitch, debugContext: debugContext);
                 return;
             }
 
@@ -705,7 +878,7 @@ public sealed partial class InGameNarrationSystem
             if (UiSlotSpatialAudio.TryGetCursorPosition(out var cursorPos))
             {
                 var spatial = UiSlotSpatialAudio.ComputeSpatialParamsFromScreen(cursorPos);
-                UiTickSoundPlayer.PlaySpatialTick(spatial.Pan, spatial.Pitch);
+                UiTickSoundPlayer.PlaySpatialTick(spatial.Pan, spatial.Pitch, debugContext: debugContext);
                 return;
             }
 
@@ -713,15 +886,15 @@ public sealed partial class InGameNarrationSystem
             if (UiSlotSpatialAudio.TryGetCraftingGridScreenPosition(craftingAvailableIndex, out var screenPos))
             {
                 var spatial = UiSlotSpatialAudio.ComputeSpatialParamsFromScreen(screenPos);
-                UiTickSoundPlayer.PlaySpatialTick(spatial.Pan, spatial.Pitch);
+                UiTickSoundPlayer.PlaySpatialTick(spatial.Pan, spatial.Pitch, debugContext: debugContext);
                 return;
             }
 
             // No position available, play centered tick
-            UiTickSoundPlayer.PlaySpatialTick(0f, 0f);
+            UiTickSoundPlayer.PlaySpatialTick(0f, 0f, debugContext: debugContext);
         }
 
-        private static void PlaySpatialInventoryTick(SlotFocus? focus)
+        private static void PlaySpatialInventoryTick(SlotFocus? focus, string? debugContext = null)
         {
             // Try to get the best available screen position:
             // 1) UILinkPointNavigator position (most accurate, directly from game)
@@ -733,7 +906,7 @@ public sealed partial class InGameNarrationSystem
             if (UiSlotSpatialAudio.TryGetBestScreenPosition(context, slot, out var screenPos))
             {
                 var spatial = UiSlotSpatialAudio.ComputeSpatialParamsFromScreen(screenPos);
-                UiTickSoundPlayer.PlaySpatialTick(spatial.Pan, spatial.Pitch);
+                UiTickSoundPlayer.PlaySpatialTick(spatial.Pan, spatial.Pitch, debugContext: debugContext);
                 return;
             }
 
@@ -744,13 +917,34 @@ public sealed partial class InGameNarrationSystem
                 if (UiSlotSpatialAudio.TryGetSlotPosition(value.Context, value.Slot, out var position))
                 {
                     var fallbackSpatial = UiSlotSpatialAudio.ComputeSpatialParams(position);
-                    UiTickSoundPlayer.PlaySpatialTick(fallbackSpatial.Pan, fallbackSpatial.Pitch);
+                    UiTickSoundPlayer.PlaySpatialTick(fallbackSpatial.Pan, fallbackSpatial.Pitch, debugContext: debugContext);
                     return;
                 }
             }
 
             // No position available, play centered tick
-            UiTickSoundPlayer.PlaySpatialTick(0f, 0f);
+            UiTickSoundPlayer.PlaySpatialTick(0f, 0f, debugContext: debugContext);
+        }
+
+        private static string BuildTickDebugContext(string source, string key, SlotFocus? focus, int? craftingAvailableIndex)
+        {
+            int currentPoint = UILinkPointNavigator.CurrentPoint;
+            int context = focus?.Context ?? -1;
+            int slot = focus?.Slot ?? -1;
+            string craft = craftingAvailableIndex.HasValue ? craftingAvailableIndex.Value.ToString(CultureInfo.InvariantCulture) : "none";
+            return $"source={source} key={key} linkPoint={currentPoint} context={context} slot={slot} craftingIndex={craft}";
+        }
+
+        private static void LogUiTickDecision(string action, string key, SlotFocus? focus, int? craftingAvailableIndex, string? debugContext)
+        {
+            if (!UiTickDebugEnabled)
+            {
+                return;
+            }
+
+            global::TerrariaAccess.TerrariaAccess.Instance?.Logger.Info(
+                $"[UiTickDebug] action={action} {BuildTickDebugContext("decision", key, focus, craftingAvailableIndex)} " +
+                $"inputMode={PlayerInput.CurrentInputMode} usingGamepad={PlayerInput.UsingGamepadUI} extra={debugContext ?? "<none>"}");
         }
 
         public void ForceReset()
@@ -767,6 +961,11 @@ public sealed partial class InGameNarrationSystem
                 {
                     return focused;
                 }
+            }
+
+            if (identity.IsAir)
+            {
+                return TryDescribeGamepadEmptyLocation();
             }
 
             if (TryMatch(player.inventory, identity, out int inventoryIndex))
@@ -854,6 +1053,127 @@ public sealed partial class InGameNarrationSystem
             }
 
             return string.Empty;
+        }
+
+        private static string TryDescribeGamepadEmptyLocation()
+        {
+            if (!PlayerInput.UsingGamepadUI)
+            {
+                return string.Empty;
+            }
+
+            int currentPoint = UILinkPointNavigator.CurrentPoint;
+            if (Main.InGuideCraftMenu && currentPoint == GamepadGuideCraftingSlotPoint)
+            {
+                return "Guide crafting slot";
+            }
+
+            if (SlotNavigationHelper.TryResolveInventorySlot(currentPoint, out int inventorySlot, out int inventoryContext))
+            {
+                return inventoryContext == ItemSlot.Context.InventoryItem ||
+                    inventoryContext == ItemSlot.Context.InventoryCoin ||
+                    inventoryContext == ItemSlot.Context.InventoryAmmo
+                    ? SlotContextFormatter.DescribeInventorySlot(inventorySlot)
+                    : string.Empty;
+            }
+
+            if (SlotNavigationHelper.TryResolveChestSlot(currentPoint, out int chestSlot))
+            {
+                return $"Slot {chestSlot + 1}";
+            }
+
+            Player? player = Main.LocalPlayer;
+            if (player is not null && TryResolveEquipmentFocusDirectly(player, currentPoint, out SlotFocus equipmentFocus))
+            {
+                return DescribeFocusedSlot(player, equipmentFocus);
+            }
+
+            return string.Empty;
+        }
+
+        private static bool TryResolveEquipmentFocusDirectly(Player player, int point, out SlotFocus focus)
+        {
+            focus = default;
+
+            if (player is null || point < 100)
+            {
+                return false;
+            }
+
+            if (point >= 100 && point < 120)
+            {
+                int armorSlot = ResolveDisplayedEquipmentSlot(player, point - 100);
+                if ((uint)armorSlot >= (uint)player.armor.Length)
+                {
+                    return false;
+                }
+
+                int armorContext = armorSlot switch
+                {
+                    <= 2 => ItemSlot.Context.EquipArmor,
+                    <= 9 => ItemSlot.Context.EquipAccessory,
+                    <= 12 => ItemSlot.Context.EquipArmorVanity,
+                    _ => ItemSlot.Context.EquipAccessoryVanity,
+                };
+
+                focus = new SlotFocus(player.armor, null, armorContext, armorSlot);
+                return true;
+            }
+
+            if (point >= 120 && point < 130)
+            {
+                int dyeSlot = ResolveDisplayedEquipmentSlot(player, point - 120);
+                if ((uint)dyeSlot >= (uint)player.dye.Length)
+                {
+                    return false;
+                }
+
+                focus = new SlotFocus(player.dye, null, ItemSlot.Context.EquipDye, dyeSlot);
+                return true;
+            }
+
+            if (point >= 180 && point < 185)
+            {
+                int miscEquipSlot = point - 180;
+                if ((uint)miscEquipSlot >= (uint)player.miscEquips.Length)
+                {
+                    return false;
+                }
+
+                int miscContext = miscEquipSlot switch
+                {
+                    0 => ItemSlot.Context.EquipPet,
+                    1 => ItemSlot.Context.EquipLight,
+                    2 => ItemSlot.Context.EquipMinecart,
+                    3 => ItemSlot.Context.EquipMount,
+                    4 => ItemSlot.Context.EquipGrapple,
+                    _ => ItemSlot.Context.EquipPet,
+                };
+
+                focus = new SlotFocus(player.miscEquips, null, miscContext, miscEquipSlot);
+                return true;
+            }
+
+            if (point >= 185 && point < 190)
+            {
+                int miscDyeSlot = point - 185;
+                if ((uint)miscDyeSlot >= (uint)player.miscDyes.Length)
+                {
+                    return false;
+                }
+
+                focus = new SlotFocus(player.miscDyes, null, ItemSlot.Context.EquipMiscDye, miscDyeSlot);
+                return true;
+            }
+
+            return false;
+        }
+
+        private static int ResolveDisplayedEquipmentSlot(Player player, int displayedSlot)
+        {
+            return displayedSlot % 10 == 8 && !player.CanDemonHeartAccessoryBeShown()
+                ? displayedSlot + 1
+                : displayedSlot;
         }
 
         private static bool IsPlayerInventoryItem(Player player, ItemIdentity identity)
@@ -946,6 +1266,11 @@ public sealed partial class InGameNarrationSystem
                 return "Crafting slot";
             }
 
+            if (context == ItemSlot.Context.GuideItem)
+            {
+                return "Guide crafting slot";
+            }
+
             if (context == ItemSlot.Context.PrefixItem)
             {
                 return "Reforge slot";
@@ -956,6 +1281,7 @@ public sealed partial class InGameNarrationSystem
 
         private const int GamepadCraftingGridStart = 700;
         private const int GamepadCraftingListStart = 1500;
+        private const int GamepadGuideCraftingSlotPoint = GamepadCraftingListStart;
 
         private static bool TryGetGamepadCraftingAvailableIndex(int point, out int availableIndex)
         {
@@ -1176,6 +1502,33 @@ public sealed partial class InGameNarrationSystem
             cost /= 3;
 
             return Math.Max(1, cost);
+        }
+
+        private static string? BuildEquippedArmorSetBonusDetails(Player player, SlotFocus? focus, string? existingDetails)
+        {
+            if (player is null || !focus.HasValue)
+            {
+                return null;
+            }
+
+            SlotFocus value = focus.Value;
+            if (!ReferenceEquals(value.Items, player.armor) || value.Slot < 0 || value.Slot > 2)
+            {
+                return null;
+            }
+
+            if (Math.Abs(value.Context) != ItemSlot.Context.EquipArmor)
+            {
+                return null;
+            }
+
+            string? detail = SetBonusNarrationFormatter.BuildStatusLine(player.setBonus);
+            if (string.IsNullOrWhiteSpace(detail))
+            {
+                return null;
+            }
+
+            return SetBonusNarrationFormatter.ContainsDescription(existingDetails, player.setBonus) ? null : detail;
         }
 
         private static Item? TryResolveShopItem(ItemIdentity identity, SlotFocus? focus, Chest[] shops)
@@ -1453,12 +1806,49 @@ public sealed partial class InGameNarrationSystem
 
             NarrationInstrumentationContext.SetPendingKey(BuildInstrumentationKey(cue));
 
-            // Prepend region prefix only when actually announcing (after deduplication check)
+            bool creativeMenuFollowUp = ConsumeCreativeMenuFollowUp(allowedAreas, focus, regionPrefix);
+            bool suppressRegionPrefix = creativeMenuFollowUp && string.Equals(
+                regionPrefix,
+                GetRegionDisplayName(InventoryRegion.Creative),
+                StringComparison.OrdinalIgnoreCase);
+
+            // Prepend region prefix only when actually announcing (after deduplication check).
+            // The first Journey focus follows "Journey menu opened", so repeating the Journey
+            // region there reads as "Journey opened Journey ...".
             string message = string.IsNullOrWhiteSpace(regionPrefix)
+                || suppressRegionPrefix
                 ? cue.Message
                 : $"{regionPrefix}. {cue.Message}";
 
-            ScreenReaderService.Announce(message, force);
+            bool requestInterrupt = !creativeMenuFollowUp;
+            ScreenReaderService.Announce(message, force, requestInterrupt: requestInterrupt);
+            return true;
+        }
+
+        private bool ConsumeCreativeMenuFollowUp(
+            UiNarrationArea allowedAreas,
+            SlotFocus? focus,
+            string? regionPrefix)
+        {
+            if (!_queueNextCreativeAnnouncementAsFollowUp || !Main.CreativeMenu.Enabled)
+            {
+                return false;
+            }
+
+            bool allowsCreative = (allowedAreas & UiNarrationArea.Creative) != 0;
+            bool focusIsCreative = focus.HasValue &&
+                ItemSlotContextFacts.ResolveArea(focus.Value.Context) == UiNarrationArea.Creative;
+            bool prefixIsCreative = string.Equals(
+                regionPrefix,
+                GetRegionDisplayName(InventoryRegion.Creative),
+                StringComparison.OrdinalIgnoreCase);
+
+            if (!allowsCreative && !focusIsCreative && !prefixIsCreative)
+            {
+                return false;
+            }
+
+            _queueNextCreativeAnnouncementAsFollowUp = false;
             return true;
         }
 
@@ -1569,6 +1959,50 @@ public sealed partial class InGameNarrationSystem
                 $"inputMode={inputMode}";
 
             global::TerrariaAccess.TerrariaAccess.Instance?.Logger.Info(message);
+        }
+
+        private static void LogHotbarInventoryDebug(
+            string action,
+            HoverTarget target,
+            InventoryRegion region,
+            string? regionPrefix,
+            string message,
+            bool announced)
+        {
+            if (!HotbarDebugEnabled || !ShouldLogHotbarInventoryDebug(region))
+            {
+                return;
+            }
+
+            int linkPoint = PlayerInput.UsingGamepadUI ? UILinkPointNavigator.CurrentPoint : -1;
+            int focusContext = target.Focus?.Context ?? -1;
+            int focusSlot = target.Focus?.Slot ?? -1;
+            string itemName = target.Identity.IsAir
+                ? "Empty"
+                : NarrationTextFormatter.ComposeItemName(target.Item);
+            string activeArea = UiAreaNarrationContext.ActiveArea.ToString();
+            string state = $"{action}|region={region}|linkPoint={linkPoint}|context={focusContext}|slot={focusSlot}|item={itemName}|message={message}|announced={announced}";
+            if (string.Equals(state, _lastHotbarDebugState, StringComparison.Ordinal))
+            {
+                return;
+            }
+
+            _lastHotbarDebugState = state;
+            TerrariaAccess.Instance?.Logger.Info(
+                $"[HotbarDebug][Inventory] action={action} frame={Main.GameUpdateCount} announced={announced} " +
+                $"region={region} regionPrefix='{regionPrefix ?? string.Empty}' activeArea={activeArea} " +
+                $"linkPoint={linkPoint} focusContext={focusContext} focusSlot={focusSlot} " +
+                $"location='{target.Location}' item='{itemName}' message='{message}'");
+        }
+
+        private static bool ShouldLogHotbarInventoryDebug(InventoryRegion region)
+        {
+            return region is InventoryRegion.Hotbar or
+                InventoryRegion.Inventory or
+                InventoryRegion.Coins or
+                InventoryRegion.Ammo or
+                InventoryRegion.CharacterPanel or
+                InventoryRegion.InventoryExtras;
         }
 
     }

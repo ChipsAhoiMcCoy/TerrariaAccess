@@ -28,6 +28,11 @@ internal sealed class MenuNarrationState
     internal float LastParallax = -1f;
     internal int LastCategoryId = -1;
     internal bool WasOnAudioMenuBackButton;
+    internal string? PendingHoverFocusSuppression;
+    internal MenuFocus? PendingInitialFocus;
+    internal string? PendingInitialFocusAnnouncement;
+    internal string? SuppressedEntryHoverAnnouncement;
+    internal bool QueueNextFocusAsEntryFollowUp;
 
     internal void ResetForMode(int mode)
     {
@@ -40,6 +45,11 @@ internal sealed class MenuNarrationState
         LastHoverAnnouncedAt = DateTime.MinValue;
         SawHoverThisMode = false;
         ModeEnteredAt = DateTime.UtcNow;
+        PendingHoverFocusSuppression = null;
+        PendingInitialFocus = null;
+        PendingInitialFocusAnnouncement = null;
+        SuppressedEntryHoverAnnouncement = null;
+        QueueNextFocusAsEntryFollowUp = false;
         ResetSliderTracking();
     }
 
@@ -52,6 +62,11 @@ internal sealed class MenuNarrationState
         LastFocusAnnouncedAt = DateTime.MinValue;
         LastModeAnnouncement = null;
         LastModeAnnouncedAt = DateTime.MinValue;
+        PendingHoverFocusSuppression = null;
+        PendingInitialFocus = null;
+        PendingInitialFocusAnnouncement = null;
+        SuppressedEntryHoverAnnouncement = null;
+        QueueNextFocusAsEntryFollowUp = false;
     }
 
     internal void ResetSliderTracking()

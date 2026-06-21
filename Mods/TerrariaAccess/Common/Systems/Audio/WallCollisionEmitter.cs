@@ -60,17 +60,7 @@ internal sealed class WallCollisionEmitter : AudioEmitterBase
             return;
         }
 
-        // Get foot tile position and check one tile ahead at body height
-        Point footTile = GetFootTile(player);
-        int checkX = footTile.X + moveDirection;
-
-        if (checkX < 0 || checkX >= Main.maxTilesX)
-        {
-            Reset();
-            return;
-        }
-
-        if (!IsPathBlockedAtBodyHeight(checkX, footTile.Y))
+        if (!IsPressingIntoSolidWall(player, moveDirection))
         {
             Reset();
             return;
@@ -109,27 +99,11 @@ internal sealed class WallCollisionEmitter : AudioEmitterBase
         FootstepToneProvider.Play(TapFrequency, BaseVolume * configVolume, useTriangleWave: true, pan);
     }
 
-    private static Point GetFootTile(Player player)
+    private static bool IsPressingIntoSolidWall(Player player, int moveDirection)
     {
         Rectangle hitbox = player.Hitbox;
-        int tileX = Math.Clamp(hitbox.Center.X / 16, 0, Main.maxTilesX - 1);
-        int tileY = Math.Clamp(hitbox.Bottom / 16, 0, Main.maxTilesY - 1);
-        return new Point(tileX, tileY);
-    }
-
-    private static bool IsSolidWall(int tileX, int tileY)
-    {
-        Tile tile = Framing.GetTileSafely(tileX, tileY);
-        if (!tile.HasTile || tile.IsActuated)
-        {
-            return false;
-        }
-
-        return Main.tileSolid[tile.TileType] && !Main.tileSolidTop[tile.TileType];
-    }
-
-    private static bool IsPathBlockedAtBodyHeight(int tileX, int footTileY)
-    {
-        return IsSolidWall(tileX, footTileY - 1) || IsSolidWall(tileX, footTileY - 2);
+        Vector2 probePosition = new(hitbox.X + moveDirection * 2f, hitbox.Y + 2f);
+        int probeHeight = Math.Max(1, hitbox.Height - 4);
+        return Collision.SolidCollision(probePosition, hitbox.Width, probeHeight);
     }
 }

@@ -23,7 +23,43 @@ internal static class VirtualStickService
     /// </summary>
     internal static bool WasAnalogStickActiveThisFrame()
     {
-        return _lastAnalogStickFrame == Main.GameUpdateCount;
+        uint elapsedFrames = Main.GameUpdateCount - _lastAnalogStickFrame;
+        return elapsedFrames <= 1;
+    }
+
+    internal static bool AreUnlockedCursorArrowKeysHeld()
+    {
+        return IsKeybindPressed(GamepadEmulationKeybinds.ArrowUp)
+            || IsKeybindPressed(GamepadEmulationKeybinds.ArrowDown)
+            || IsKeybindPressed(GamepadEmulationKeybinds.ArrowLeft)
+            || IsKeybindPressed(GamepadEmulationKeybinds.ArrowRight)
+            || Main.keyState.IsKeyDown(Keys.Up)
+            || Main.keyState.IsKeyDown(Keys.Down)
+            || Main.keyState.IsKeyDown(Keys.Left)
+            || Main.keyState.IsKeyDown(Keys.Right);
+    }
+
+    internal static bool TryReadUnlockedCursorArrowStick(out Vector2 result)
+    {
+        KeyboardState state = Main.keyState;
+        bool hasInput = TryReadStick(
+            GamepadEmulationKeybinds.ArrowUp,
+            GamepadEmulationKeybinds.ArrowDown,
+            GamepadEmulationKeybinds.ArrowLeft,
+            GamepadEmulationKeybinds.ArrowRight,
+            out result);
+
+        if (!hasInput)
+        {
+            hasInput = TryReadStick(state, Keys.Up, Keys.Down, Keys.Left, Keys.Right, out result);
+        }
+
+        return hasInput;
+    }
+
+    internal static void MarkAnalogStickActiveThisFrame()
+    {
+        _lastAnalogStickFrame = Main.GameUpdateCount;
     }
 
     /// <summary>
@@ -32,12 +68,17 @@ internal static class VirtualStickService
     /// </summary>
     internal static void InjectFromKeyboard()
     {
-        if (!GamepadEmulationState.Enabled || InputStateHelper.IsTextInputActive())
+        GamepadEmulationInputContext context = InputContextResolver.Current;
+        if (context is GamepadEmulationInputContext.KeyboardTextInput
+            or GamepadEmulationInputContext.NativePhysicalGamepad
+            or GamepadEmulationInputContext.SuppressedByModalOrSpecialSystem)
         {
             return;
         }
 
         KeyboardState state = Main.keyState;
+        bool smartCursorActive = GetEffectiveSmartCursorState();
+        bool inMenuContext = context == GamepadEmulationInputContext.GamepadUi;
 
         // Suppress WASD movement input when first letter navigation is active in inventory.
         // This prevents letter keys from being interpreted as both navigation AND item search.
@@ -47,10 +88,8 @@ internal static class VirtualStickService
             TryReadStick(state, Keys.W, Keys.S, Keys.A, Keys.D, out movement);
 
         // When Smart Cursor is off, right stick keys (OKLS) are used for cursor nudge instead.
-        // Arrow keys behave inversely: analog stick when Smart Cursor is off, D-pad when on.
+        // Arrow keys act as virtual analog only in unlocked cursor mode.
         // In menu contexts, OKLS should always act as right stick for scrolling.
-        bool smartCursorActive = GetEffectiveSmartCursorState();
-        bool inMenuContext = Main.gameMenu || InputStateHelper.IsFancyUiActive();
         // Suppress right stick letter keys (O, K, L) when first letter navigation is active,
         // so those keys are reserved for item searching instead of injecting stick input.
         bool suppressRightStickLetterKeys = Main.playerInventory && FirstLetterNavigationManager.IsEnabled;
@@ -66,16 +105,6 @@ internal static class VirtualStickService
                 GamepadEmulationKeybinds.RightStickRight,
                 out aim);
         }
-        else
-        {
-            // Arrow keys act as analog stick when Smart Cursor is off (gameplay only)
-            aimOverride = TryReadStick(
-                GamepadEmulationKeybinds.ArrowUp,
-                GamepadEmulationKeybinds.ArrowDown,
-                GamepadEmulationKeybinds.ArrowLeft,
-                GamepadEmulationKeybinds.ArrowRight,
-                out aim);
-        }
 
         if (movementOverride)
         {
@@ -87,17 +116,19 @@ internal static class VirtualStickService
 
         if (aimOverride)
         {
-            _lastAnalogStickFrame = Main.GameUpdateCount;
+            MarkAnalogStickActiveThisFrame();
             ApplyStickInversion(ref aim,
                 PlayerInput.CurrentProfile?.RightThumbstickInvertX == true,
                 PlayerInput.CurrentProfile?.RightThumbstickInvertY == true);
             PlayerInput.GamepadThumbstickRight = aim;
+            MirrorJourneySliderInputToLeftStick(aim);
         }
 
         if (movementOverride || aimOverride || state.IsKeyDown(Keys.Space) || Main.mouseLeft || Main.mouseRight)
         {
-            bool inUiContext = Main.playerInventory || Main.gameMenu || InputStateHelper.IsFancyUiActive();
-            PlayerInput.SettingsForUI.SetCursorMode(inUiContext ? CursorMode.Gamepad : CursorMode.Mouse);
+            bool gamepadCursorContext = context == GamepadEmulationInputContext.GamepadUi ||
+                context == GamepadEmulationInputContext.WorldGameplay;
+            PlayerInput.SettingsForUI.SetCursorMode(gamepadCursorContext ? CursorMode.Gamepad : CursorMode.Mouse);
         }
     }
 
@@ -184,19 +215,7 @@ internal static class VirtualStickService
     /// </summary>
     private static bool IsKeybindPressed(ModKeybind? keybind)
     {
-        if (keybind is null)
-        {
-            return false;
-        }
-
-        // First try the normal keybind check (works in gameplay)
-        if (VirtualTriggerService.IsKeybindCurrentlyPressed(keybind))
-        {
-            return true;
-        }
-
-        // Fall back to raw keyboard state reading (works in menus)
-        return VirtualTriggerService.IsKeybindPressedRaw(keybind);
+        return VirtualTriggerService.IsKeybindPressed(keybind);
     }
 
     /// <summary>
@@ -215,27 +234,30 @@ internal static class VirtualStickService
         }
     }
 
+    private static void MirrorJourneySliderInputToLeftStick(Vector2 aim)
+    {
+        if (!Main.CreativeMenu.Enabled || Math.Abs(aim.Y) <= 0f)
+        {
+            return;
+        }
+
+        Vector2 leftStick = PlayerInput.GamepadThumbstickLeft;
+        leftStick.Y = aim.Y;
+        PlayerInput.GamepadThumbstickLeft = leftStick;
+    }
+
     /// <summary>
     /// Resets the virtual stick state when the feature is disabled.
     /// </summary>
     internal static void ResetState()
     {
+        _lastAnalogStickFrame = uint.MaxValue;
         PlayerInput.GamepadThumbstickLeft = Vector2.Zero;
         PlayerInput.GamepadThumbstickRight = Vector2.Zero;
     }
 
     private static bool GetEffectiveSmartCursorState()
     {
-        bool smartCursorActive;
-        if (GamepadEmulationSystem.TryGetForcedSmartCursorState(out bool forcedState))
-        {
-            smartCursorActive = forcedState;
-        }
-        else
-        {
-            smartCursorActive = Main.SmartCursorIsUsed || Main.SmartCursorWanted;
-        }
-
-        return smartCursorActive;
+        return GamepadEmulationSystem.GetEffectiveSmartCursorState(ignoreTemporarySuppression: true);
     }
 }
