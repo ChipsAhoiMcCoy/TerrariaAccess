@@ -337,8 +337,24 @@ public static class ScreenReaderService
 
     private static SpeechService BuildService()
     {
-        var provider = new TolkSpeechProvider();
-        var controller = new SpeechController(provider);
+        ISpeechProvider primary;
+        ISpeechProvider? world = null;
+
+        if (OperatingSystem.IsMacOS())
+        {
+            primary = new AvFoundationSpeechProvider(1);
+            world = new AvFoundationSpeechProvider(2);
+        }
+        else
+        {
+            primary = new TolkSpeechProvider();
+        }
+
+        var controller = new SpeechController(primary, world);
+        controller.SetCategoryWindow(AnnouncementCategory.World, TimeSpan.FromSeconds(2));
+        controller.SetCategoryWindow(AnnouncementCategory.Tile, TimeSpan.FromMilliseconds(150));
+        controller.SetCategoryWindow(AnnouncementCategory.Wall, TimeSpan.FromMilliseconds(150));
+        controller.SetCategoryWindow(AnnouncementCategory.Pickup, TimeSpan.FromMilliseconds(150));
         return new SpeechService(controller);
     }
 }
