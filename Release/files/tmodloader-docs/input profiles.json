@@ -606,7 +606,6 @@
       "TerrariaAccess/InfoAccessoryCheck": ["OemQuotes"],
       "TerrariaAccess/BuildModeToggle": ["Z"],
       "TerrariaAccess/BuildModePlace": ["X"],
-      "TerrariaAccess/CavitySonarScan": ["OemTilde"],
       "TerrariaAccess/EventProgressCheck": ["G"]
     },
     "Gamepad": 

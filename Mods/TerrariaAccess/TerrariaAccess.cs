@@ -5,7 +5,6 @@ using TerrariaAccess.Common.Services;
 using TerrariaAccess.Common.Systems;
 using TerrariaAccess.Common.Systems.BuildMode;
 using TerrariaAccess.Common.Systems.Guidance;
-using TerrariaAccess.Common.Systems.Audio;
 using TerrariaAccess.Common.Systems.GamepadEmulation;
 using TerrariaAccess.Common.Utilities;
 using Terraria;
@@ -38,7 +37,6 @@ public class TerrariaAccess : Mod
         SpeechInterruptKeybinds.EnsureInitialized(this);
         StatusCheckKeybinds.EnsureInitialized(this);
         BuildModeKeybinds.EnsureInitialized(this);
-        CavitySonarKeybinds.EnsureInitialized(this);
         EventProgressKeybinds.EnsureInitialized(this);
     }
 
@@ -49,7 +47,6 @@ public class TerrariaAccess : Mod
         BuildModeKeybinds.Unload();
         StatusCheckKeybinds.Unload();
         SpeechInterruptKeybinds.Unload();
-        CavitySonarKeybinds.Unload();
         GuidanceKeybinds.Unload();
         UiSoundCuePlayer.Dispose();
         WorldAnnouncementService.Unload();

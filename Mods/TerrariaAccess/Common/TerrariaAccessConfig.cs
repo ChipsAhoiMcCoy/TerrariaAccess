@@ -89,15 +89,6 @@ public class TerrariaAccessConfig : ModConfig
     [DefaultValue(true)]
     public bool PassageDetectionEnabled { get; set; } = true;
 
-    // Terrain sonification
-    [DefaultValue(true)]
-    public bool CavitySonarEnabled { get; set; } = true;
-
-    [DefaultValue(1f)]
-    [Range(0f, 1f)]
-    [Slider]
-    public float CavitySonarVolume { get; set; } = 1f;
-
     // Health heartbeat
     [DefaultValue(true)]
     public bool HeartbeatEnabled { get; set; } = true;

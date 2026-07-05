@@ -74,16 +74,6 @@ Mods: {
 					Tooltip: Adjusts the volume of footstep sounds for other players in multiplayer.
 				}
 
-				CavitySonarEnabled: {
-					Label: Cavity Sonar
-					Tooltip: When enabled, press the Cavity Sonar keybind to scan the area around you. A left-to-right sweep plays tones for empty spaces, revealing cave shapes and openings.
-				}
-
-				CavitySonarVolume: {
-					Label: Cavity Sonar Volume
-					Tooltip: Adjusts the volume of the cavity sonar sweep tones.
-				}
-
 				ChunkMinerEnabled: {
 					Label: Chunk Miner
 					Tooltip: When enabled, mining an ore or gem will automatically mine all connected tiles of the same type in the vein. Great for quickly harvesting resource deposits.
@@ -635,7 +625,6 @@ Mods: {
 			GamepadEmulationArrowRight.DisplayName: Virtual Controller Arrow Right
 			StatusCheck.DisplayName: Status Checker
 			InfoAccessoryCheck.DisplayName: Info Accessory Checker
-			CavitySonarScan.DisplayName: Cavity Sonar Scan
 			EventProgressCheck.DisplayName: Event Progress Checker
 		}
 	}
@@ -674,7 +663,6 @@ Keybinds: {
 	GamepadEmulationArrowRight.DisplayName: Virtual Controller Arrow Right
 	StatusCheck.DisplayName: Status Checker
 	InfoAccessoryCheck.DisplayName: Info Accessory Checker
-	CavitySonarScan.DisplayName: Cavity Sonar Scan
 	EventProgressCheck.DisplayName: Event Progress Checker
 }
 
@@ -739,16 +727,6 @@ Configs: {
 
 		MultiplayerFootstepVolume: {
 			Label: Multiplayer Footstep Volume
-			Tooltip: ""
-		}
-
-		CavitySonarEnabled: {
-			Label: Cavity Sonar
-			Tooltip: ""
-		}
-
-		CavitySonarVolume: {
-			Label: Cavity Sonar Volume
 			Tooltip: ""
 		}
 

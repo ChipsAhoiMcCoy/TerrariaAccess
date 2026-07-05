@@ -10,7 +10,6 @@ Every menu, inventory screen, crafting interface, NPC dialogue, and chat message
 - Wall collision taps tell you which side is blocked
 - Enemy proximity audio cues with interaural timing for precise left/right position
 - Passage detection chirps alert you to side tunnels while falling
-- Cavity sonar scans the area around you, sweeping left to right to reveal cave shapes
 
 [b]Guidance System[/b]
 Track and navigate to NPCs, other players, dropped items, critters, interactable objects, and custom waypoints. Audio pings guide you toward your target with interaural timing, distance volume, and pitch.
