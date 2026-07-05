@@ -3,7 +3,6 @@ using System.Reflection;
 using Microsoft.Xna.Framework;
 using Microsoft.Xna.Framework.Input;
 using Terraria;
-using Terraria.Audio;
 using Terraria.Chat;
 using Terraria.GameInput;
 using Terraria.ID;
@@ -78,7 +77,7 @@ public sealed class ChatOpenRecoverySystem : ModSystem
         Main.chatText = string.Empty;
         Main.ClosePlayerChat();
         Main.chatRelease = false;
-        SoundEngine.PlaySound(SoundID.MenuClose);
+        global::TerrariaAccess.Common.Services.UiSoundCuePlayer.PlayClose();
         TerrariaAccess.Instance?.Logger.Info("[ChatOpenRecovery] Closed gameplay chat from Enter fallback.");
         return true;
     }
@@ -97,7 +96,7 @@ public sealed class ChatOpenRecoverySystem : ModSystem
 
         PlayerInput.CurrentInputMode = InputMode.Keyboard;
         PlayerInput.SettingsForUI.SetCursorMode(CursorMode.Mouse);
-        SoundEngine.PlaySound(SoundID.MenuOpen);
+        global::TerrariaAccess.Common.Services.UiSoundCuePlayer.PlayOpen();
         Main.OpenPlayerChat();
         Main.chatText = string.Empty;
         Main.chatRelease = false;

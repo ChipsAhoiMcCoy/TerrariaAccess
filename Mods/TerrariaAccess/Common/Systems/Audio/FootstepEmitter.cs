@@ -41,7 +41,8 @@ internal sealed class FootstepEmitter : AudioEmitterBase
     private const float EdgeStaticMinVolume = 0.05f;  // Minimum volume when far from edge
     private SoundEffectInstance? _edgeStaticInstance;
     private float _lastEdgeStaticVolume;
-    private float _lastEdgeStaticPan;
+    private float _lastEdgeStaticNormalizedScreenX;
+    private float _lastEdgeStaticPitch;
 
     // Overhead traversal cue configuration
     private const int MaxPlatformCueHeightTiles = 4;
@@ -170,7 +171,7 @@ internal sealed class FootstepEmitter : AudioEmitterBase
     {
         ComputeStepAudio(player, onPlatform, elevationDelta, out float frequency, out float loudness);
         float configVolume = TerrariaAccessConfig.Instance?.FootstepVolume ?? 1f;
-        FootstepToneProvider.Play(frequency, loudness * configVolume, useTriangleWave: onHarmfulTile);
+        FootstepToneProvider.PlayCentered(frequency, loudness * configVolume, useTriangleWave: onHarmfulTile);
     }
 
     private void ResetState()
@@ -395,7 +396,7 @@ internal sealed class FootstepEmitter : AudioEmitterBase
             ? MathHelper.Lerp(360f, 430f, normalized)
             : MathHelper.Lerp(190f, 220f, normalized);
 
-        // Shift pitch when elevation changes: up = higher pitch, down = lower pitch.
+        // Shift the local step tone frequency when tile elevation changes: up = higher, down = lower.
         // 20 Hz per tile, capped at 3 tiles (60 Hz max shift).
         if (elevationDelta != 0)
         {
@@ -403,8 +404,7 @@ internal sealed class FootstepEmitter : AudioEmitterBase
             frequency += ElevationPitchShiftHz * clampedDelta;
         }
 
-        float baseVolume = 0.45f;
-        loudness = SoundLoudnessUtility.ApplyDistanceFalloff(baseVolume, distanceTiles: 0f, referenceTiles: 1f);
+        loudness = 0.45f;
     }
 
     private void MaybePlayOverheadTraversalCue(Player player, Point footTile)
@@ -450,13 +450,13 @@ internal sealed class FootstepEmitter : AudioEmitterBase
     {
         ComputeOverheadCueAudio(cue, out float frequency, out float loudness, out bool useTriangleWave);
 
-        SpatialAudioPanner.SpatialAudioSample sample = SpatialAudioPanner.Compute(
+        SpatializedSoundEngine.SpatialAudioSample sample = SpatializedSoundEngine.Compute(
             player.Center,
             cue.WorldPosition,
             loudness);
 
         float configVolume = TerrariaAccessConfig.Instance?.FootstepVolume ?? 1f;
-        FootstepToneProvider.Play(frequency, sample.Volume * configVolume, useTriangleWave, sample.Pan);
+        FootstepToneProvider.PlaySpatial(sample, frequency, configVolume, useTriangleWave);
     }
 
     private static void ComputeOverheadCueAudio(OverheadTraversalCue cue, out float frequency, out float loudness, out bool useTriangleWave)
@@ -650,9 +650,11 @@ internal sealed class FootstepEmitter : AudioEmitterBase
         }
 
         ComputeHarmfulToneAudio(player, out float frequency, out float loudness);
+        float configVolume = TerrariaAccessConfig.Instance?.FootstepVolume ?? 1f;
+        float finalVolume = MathHelper.Clamp(loudness * configVolume, 0f, 1f);
         if (_harmfulLoopInstance is null || _harmfulLoopInstance.IsDisposed || _harmfulLoopInstance.State == SoundState.Stopped)
         {
-            _harmfulLoopInstance = FootstepToneProvider.PlayLoopingTriangle(frequency, loudness);
+            _harmfulLoopInstance = FootstepToneProvider.PlayLoopingTriangleCentered(frequency, finalVolume);
             _lastHarmfulFrequency = frequency;
             return;
         }
@@ -660,13 +662,14 @@ internal sealed class FootstepEmitter : AudioEmitterBase
         if (Math.Abs(frequency - _lastHarmfulFrequency) > 1f)
         {
             StopHarmfulTone();
-            _harmfulLoopInstance = FootstepToneProvider.PlayLoopingTriangle(frequency, loudness);
+            _harmfulLoopInstance = FootstepToneProvider.PlayLoopingTriangleCentered(frequency, finalVolume);
             _lastHarmfulFrequency = frequency;
             return;
         }
 
-        float configVolume = TerrariaAccessConfig.Instance?.FootstepVolume ?? 1f;
-        _harmfulLoopInstance.Volume = MathHelper.Clamp(loudness * configVolume, 0f, 1f) * Main.soundVolume * AudioVolumeDefaults.WorldCueVolumeScale;
+        SpatializedSoundEngine.SetWorldCueVolume(
+            _harmfulLoopInstance,
+            finalVolume);
     }
 
     private static void ComputeHarmfulToneAudio(Player player, out float frequency, out float loudness)
@@ -675,8 +678,7 @@ internal sealed class FootstepEmitter : AudioEmitterBase
         float horizontalSpeed = Math.Abs(player.velocity.X);
         float normalized = MathHelper.Clamp((verticalSpeed + horizontalSpeed) / 8f, 0f, 1f);
         frequency = MathHelper.Lerp(520f, 640f, normalized);
-        float baseVolume = 0.22f;
-        loudness = SoundLoudnessUtility.ApplyDistanceFalloff(baseVolume, distanceTiles: 0f, referenceTiles: 1f);
+        loudness = 0.22f;
     }
 
     private void StopHarmfulTone()
@@ -725,14 +727,14 @@ internal sealed class FootstepEmitter : AudioEmitterBase
             _edgeBeepTimer = 0;
 
             // Compute spatial audio with distance-based volume falloff
-            SpatialAudioPanner.SpatialAudioSample sample = SpatialAudioPanner.Compute(
+            SpatializedSoundEngine.SpatialAudioSample sample = SpatializedSoundEngine.Compute(
                 player.Center,
                 nearestEdge.WorldPosition,
                 EdgeBeepVolume);
 
-            // Play a beep (pure sine wave) with spatial pan and volume
+            // Play a beep (pure sine wave) with screen-space ITD and distance volume.
             float configVolume = TerrariaAccessConfig.Instance?.FootstepVolume ?? 1f;
-            FootstepToneProvider.Play(EdgeBeepFrequency, sample.Volume * configVolume, useTriangleWave: false, sample.Pan);
+            FootstepToneProvider.PlaySpatial(sample, EdgeBeepFrequency, configVolume, useTriangleWave: false);
         }
     }
 
@@ -777,31 +779,39 @@ internal sealed class FootstepEmitter : AudioEmitterBase
         volumeScale = volumeScale * volumeScale; // Quadratic curve for more dramatic near-edge effect
         float targetVolume = MathHelper.Lerp(EdgeStaticMinVolume, EdgeStaticMaxVolume, volumeScale);
 
-        // Calculate pan based on edge position
-        SpatialAudioPanner.SpatialAudioSample sample = SpatialAudioPanner.Compute(
+        // Calculate screen-space position based on edge position.
+        SpatializedSoundEngine.SpatialAudioSample sample = SpatializedSoundEngine.Compute(
             player.Center,
             nearestEdge.WorldPosition,
             targetVolume);
 
         float configVolume = TerrariaAccessConfig.Instance?.FootstepVolume ?? 1f;
-        float finalVolume = sample.Volume * configVolume;
+        float finalVolume = sample.ScaleVolume(configVolume);
 
-        // Start or update the white noise instance
         if (_edgeStaticInstance is null || _edgeStaticInstance.IsDisposed || _edgeStaticInstance.State == SoundState.Stopped)
         {
-            _edgeStaticInstance = FootstepToneProvider.PlayLoopingWhiteNoise(finalVolume, sample.Pan);
+            _edgeStaticInstance = FootstepToneProvider.PlayLoopingWhiteNoiseSpatial(sample, configVolume);
             _lastEdgeStaticVolume = finalVolume;
-            _lastEdgeStaticPan = sample.Pan;
+            _lastEdgeStaticNormalizedScreenX = sample.NormalizedScreenX;
+            _lastEdgeStaticPitch = sample.Pitch;
         }
         else
         {
-            // Update volume and pan if changed significantly
-            if (Math.Abs(finalVolume - _lastEdgeStaticVolume) > 0.01f || Math.Abs(sample.Pan - _lastEdgeStaticPan) > 0.05f)
+            if (Math.Abs(sample.NormalizedScreenX - _lastEdgeStaticNormalizedScreenX) > 0.05f ||
+                Math.Abs(sample.Pitch - _lastEdgeStaticPitch) > 0.05f)
             {
-                _edgeStaticInstance.Volume = MathHelper.Clamp(finalVolume, 0f, 1f) * Main.soundVolume * AudioVolumeDefaults.WorldCueVolumeScale;
-                _edgeStaticInstance.Pan = MathHelper.Clamp(sample.Pan, -1f, 1f);
+                StopEdgeStatic();
+                _edgeStaticInstance = FootstepToneProvider.PlayLoopingWhiteNoiseSpatial(sample, configVolume);
                 _lastEdgeStaticVolume = finalVolume;
-                _lastEdgeStaticPan = sample.Pan;
+                _lastEdgeStaticNormalizedScreenX = sample.NormalizedScreenX;
+                _lastEdgeStaticPitch = sample.Pitch;
+            }
+            else if (Math.Abs(finalVolume - _lastEdgeStaticVolume) > 0.01f)
+            {
+                SpatializedSoundEngine.SetWorldCueVolume(
+                    _edgeStaticInstance,
+                    MathHelper.Clamp(finalVolume, 0f, 1f));
+                _lastEdgeStaticVolume = finalVolume;
             }
         }
     }
@@ -816,6 +826,7 @@ internal sealed class FootstepEmitter : AudioEmitterBase
         FootstepToneProvider.StopInstance(_edgeStaticInstance);
         _edgeStaticInstance = null;
         _lastEdgeStaticVolume = 0f;
-        _lastEdgeStaticPan = 0f;
+        _lastEdgeStaticNormalizedScreenX = 0f;
+        _lastEdgeStaticPitch = 0f;
     }
 }

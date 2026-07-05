@@ -10,7 +10,6 @@ using TerrariaAccess.Common.Services;
 using TerrariaAccess.Common.Systems.ModMenuAccessibility;
 using TerrariaAccess.Common.Utilities;
 using Terraria;
-using Terraria.Audio;
 using Terraria.GameContent.UI.Elements;
 using Terraria.ID;
 using Terraria.GameInput;
@@ -828,14 +827,14 @@ public sealed class ManageModsAccessibilitySystem : ModMenuAccessibilityBase
         }
 
         Mod.Logger.Info($"[ManageMods] Clicking: {binding.Label}");
-        SoundEngine.PlaySound(SoundID.MenuTick);
+        global::TerrariaAccess.Common.Services.UiSoundCuePlayer.PlayTick();
 
         try
         {
             CalculatedStyle dims = element.GetDimensions();
             Vector2 center = new(dims.X + dims.Width / 2f, dims.Y + dims.Height / 2f);
             var clickEvent = new UIMouseEvent(element, center);
-            element.LeftClick(clickEvent);
+            global::TerrariaAccess.Common.Services.ProgrammaticUiClickInvoker.LeftClick(element, clickEvent);
 
             Main.mouseLeft = false;
             Main.mouseLeftRelease = false;
@@ -860,7 +859,7 @@ public sealed class ManageModsAccessibilitySystem : ModMenuAccessibilityBase
         }
 
         Mod.Logger.Info($"[ManageMods] Clicking mod button: {binding.Label} (type: {buttonElement.GetType().Name})");
-        SoundEngine.PlaySound(SoundID.MenuTick);
+        global::TerrariaAccess.Common.Services.UiSoundCuePlayer.PlayTick();
 
         try
         {
@@ -909,7 +908,7 @@ public sealed class ManageModsAccessibilitySystem : ModMenuAccessibilityBase
 
             // Fallback: use LeftClick for other buttons (Config, etc.)
             Mod.Logger.Info($"[ManageMods] Using LeftClick fallback for button: {binding.Label}");
-            buttonElement.LeftClick(clickEvent);
+            global::TerrariaAccess.Common.Services.ProgrammaticUiClickInvoker.LeftClick(buttonElement, clickEvent);
         }
         catch (Exception ex)
         {
@@ -1195,7 +1194,7 @@ public sealed class ManageModsAccessibilitySystem : ModMenuAccessibilityBase
                     ? $"{modName}, {closestModIndex + 1} of {items.Count}"
                     : $"{modName}, {modStatus}, {closestModIndex + 1} of {items.Count}";
 
-                SoundEngine.PlaySound(SoundID.MenuTick);
+                global::TerrariaAccess.Common.Services.UiSoundCuePlayer.PlayTick();
                 ScreenReaderService.Announce(announcement, force: true);
 
                 CurrentFocusIndex = closestModIndex;
@@ -1445,14 +1444,14 @@ public sealed class ManageModsAccessibilitySystem : ModMenuAccessibilityBase
         }
 
         Mod.Logger.Info($"[ManageMods] Dialog: Clicking {binding.Label}");
-        SoundEngine.PlaySound(SoundID.MenuTick);
+        global::TerrariaAccess.Common.Services.UiSoundCuePlayer.PlayTick();
 
         try
         {
             CalculatedStyle dims = button.GetDimensions();
             Vector2 center = new(dims.X + dims.Width / 2f, dims.Y + dims.Height / 2f);
             var clickEvent = new UIMouseEvent(button, center);
-            button.LeftClick(clickEvent);
+            global::TerrariaAccess.Common.Services.ProgrammaticUiClickInvoker.LeftClick(button, clickEvent);
 
             Main.mouseLeft = false;
             Main.mouseLeftRelease = false;
@@ -1476,7 +1475,7 @@ public sealed class ManageModsAccessibilitySystem : ModMenuAccessibilityBase
             string buttonLabel = TextSanitizer.Clean(binding.Label);
 
             _lastDialogAnnouncedIndex = _dialogFocusIndex;
-            SoundEngine.PlaySound(SoundID.MenuTick);
+            global::TerrariaAccess.Common.Services.UiSoundCuePlayer.PlayTick();
 
             // The dialog text was enqueued as a prefix and will be automatically
             // prepended by the speech controller to the first announcement

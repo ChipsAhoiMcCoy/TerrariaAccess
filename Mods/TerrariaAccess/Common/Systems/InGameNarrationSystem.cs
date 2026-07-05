@@ -6,7 +6,6 @@ using System.Linq;
 using System.Reflection;
 using System.Text;
 using Microsoft.Xna.Framework;
-using Microsoft.Xna.Framework.Audio;
 using Microsoft.Xna.Framework.Graphics;
 using TerrariaAccess.Common.Services;
 using TerrariaAccess.Common.Systems.FirstLetterNavigation;
@@ -15,7 +14,6 @@ using TerrariaAccess.Common.Systems.MenuNarration;
 using TerrariaAccess.Common.Systems.MenuNarration.ModConfig;
 using TerrariaAccess.Common.Utilities;
 using Terraria;
-using Terraria.Audio;
 using Terraria.GameContent;
 using Terraria.GameContent.UI.Chat;
 using Terraria.GameContent.UI.BigProgressBar;
@@ -42,17 +40,12 @@ public sealed partial class InGameNarrationSystem : ModSystem
     private readonly SmartCursorNarrator _smartCursorNarrator;
     private readonly CraftingNarrator _craftingNarrator;
     private readonly CursorNarrator _cursorNarrator;
-    private readonly HostileStaticAudioEmitter _hostileStaticAudioEmitter;
     private readonly WorldInteractableTracker _worldInteractableTracker;
     private readonly InventoryNarrator _inventoryNarrator;
     private readonly NpcDialogueNarrator _npcDialogueNarrator;
     private readonly IngameSettingsNarrator _ingameSettingsNarrator;
     private readonly Settings.ControlsMenuNarrator _controlsMenuNarrator;
     private readonly ModConfigNarrationCoordinator _modConfigCoordinator;
-    private readonly FootstepAudioEmitter _footstepAudioEmitter;
-    private readonly ClimbAudioEmitter _climbAudioEmitter;
-    private readonly BiomeAnnouncementEmitter _biomeAnnouncementEmitter;
-    private readonly MultiplayerFootstepAudioEmitter _multiplayerFootstepAudioEmitter;
     private readonly WorldPositionalAudioService _worldPositionalAudioService;
     private readonly LockOnNarrator _lockOnNarrator;
     private readonly ChatInputNarrator _chatInputNarrator;
@@ -140,23 +133,13 @@ public sealed partial class InGameNarrationSystem : ModSystem
         _smartCursorNarrator = new SmartCursorNarrator(_cursorDescriptorService);
         _craftingNarrator = new CraftingNarrator();
         _cursorNarrator = new CursorNarrator(_cursorDescriptorService);
-        _hostileStaticAudioEmitter = new HostileStaticAudioEmitter();
         _worldInteractableTracker = new WorldInteractableTracker();
         _inventoryNarrator = new InventoryNarrator();
         _npcDialogueNarrator = new NpcDialogueNarrator();
         _ingameSettingsNarrator = new IngameSettingsNarrator();
         _controlsMenuNarrator = new Settings.ControlsMenuNarrator();
         _modConfigCoordinator = new ModConfigNarrationCoordinator();
-        _footstepAudioEmitter = new FootstepAudioEmitter();
-        _climbAudioEmitter = new ClimbAudioEmitter();
-        _biomeAnnouncementEmitter = new BiomeAnnouncementEmitter();
-        _multiplayerFootstepAudioEmitter = new MultiplayerFootstepAudioEmitter();
-        _worldPositionalAudioService = new WorldPositionalAudioService(
-            _hostileStaticAudioEmitter,
-            _footstepAudioEmitter,
-            _climbAudioEmitter,
-            _biomeAnnouncementEmitter,
-            _multiplayerFootstepAudioEmitter);
+        _worldPositionalAudioService = new WorldPositionalAudioService();
         _lockOnNarrator = new LockOnNarrator();
         _chatInputNarrator = new ChatInputNarrator();
         _wireColorMenuNarrator = new WireColorMenuNarrator();
@@ -393,7 +376,7 @@ public sealed partial class InGameNarrationSystem : ModSystem
         ResetPerWorldResources();
         CursorNarrator.DisposeStaticResources();
         _worldPositionalAudioService.ResetStaticResources();
-        WorldInteractableTracker.DisposeStaticResources();
+        _worldInteractableTracker.DisposeStaticResources();
     }
 
     private void ResetPerWorldResources()
@@ -853,7 +836,7 @@ public sealed partial class InGameNarrationSystem : ModSystem
         // Play tick sound and announce the eviction if we have a valid NPC name
         if (!string.IsNullOrWhiteSpace(npcName))
         {
-            SoundEngine.PlaySound(SoundID.MenuTick);
+            global::TerrariaAccess.Common.Services.UiSoundCuePlayer.PlayTick();
             string announcement = $"{npcName} has been evicted";
             ScreenReaderService.Announce(announcement, force: true);
         }

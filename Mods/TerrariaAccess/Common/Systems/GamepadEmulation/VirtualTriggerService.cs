@@ -249,12 +249,14 @@ internal static class VirtualTriggerService
 
         if (justPressed)
         {
+            global::TerrariaAccess.Common.Services.NativeSoundSuppression.RequestItemSlotClickSuppression();
             // Set the mouse flags so ItemSlot.RightClick can process the action
             Main.mouseRight = true;
             Main.mouseRightRelease = true;
         }
         else if (triggerActive)
         {
+            global::TerrariaAccess.Common.Services.NativeSoundSuppression.RequestItemSlotClickSuppression();
             // Continue holding mouseRight for held actions (like stack splitting)
             Main.mouseRight = true;
         }
@@ -283,12 +285,14 @@ internal static class VirtualTriggerService
 
         if (justPressed)
         {
+            global::TerrariaAccess.Common.Services.NativeSoundSuppression.RequestItemSlotClickSuppression();
             // Set the mouse flags so ItemSlot.LeftClick can process the action
             Main.mouseLeft = true;
             Main.mouseLeftRelease = true;
         }
         else if (triggerActive)
         {
+            global::TerrariaAccess.Common.Services.NativeSoundSuppression.RequestItemSlotClickSuppression();
             // Continue holding mouseLeft for held actions
             Main.mouseLeft = true;
         }

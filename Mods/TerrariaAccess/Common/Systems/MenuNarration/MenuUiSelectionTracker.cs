@@ -5,7 +5,6 @@ using System.Linq;
 using System.Reflection;
 using System.Text;
 using Terraria;
-using Terraria.Audio;
 using Terraria.GameInput;
 using Terraria.ID;
 using Terraria.IO;
@@ -1336,7 +1335,7 @@ internal sealed partial class MenuUiSelectionTracker
         if (!ReferenceEquals(element, _lastAchievementListItem))
         {
             _lastAchievementListItem = element;
-            SoundEngine.PlaySound(SoundID.MenuTick);
+            global::TerrariaAccess.Common.Services.UiSoundCuePlayer.PlayTick();
         }
 
         const BindingFlags flags = BindingFlags.Instance | BindingFlags.NonPublic | BindingFlags.Public;
@@ -1548,7 +1547,7 @@ internal sealed partial class MenuUiSelectionTracker
         if (!ReferenceEquals(element, _lastAchievementCategoryButton))
         {
             _lastAchievementCategoryButton = element;
-            SoundEngine.PlaySound(SoundID.MenuTick);
+            global::TerrariaAccess.Common.Services.UiSoundCuePlayer.PlayTick();
         }
 
         // Get category name based on index

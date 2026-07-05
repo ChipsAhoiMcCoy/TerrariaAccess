@@ -52,6 +52,7 @@ public class TerrariaAccess : Mod
         SpeechInterruptKeybinds.Unload();
         CavitySonarKeybinds.Unload();
         GuidanceKeybinds.Unload();
+        UiSoundCuePlayer.Dispose();
         UiTickSoundPlayer.Dispose();
         WorldAnnouncementService.Unload();
         ScreenReaderService.Unload();

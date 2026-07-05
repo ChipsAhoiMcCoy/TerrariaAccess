@@ -8,12 +8,12 @@ Every menu, inventory screen, crafting interface, NPC dialogue, and chat message
 - Edge detection warns you about drop-offs with directional static or beeps
 - Fall detection plays proximity tones as you approach the ground
 - Wall collision taps tell you which side is blocked
-- Enemy proximity audio cues with stereo panning
+- Enemy proximity audio cues with interaural timing for precise left/right position
 - Passage detection chirps alert you to side tunnels while falling
 - Cavity sonar scans the area around you, sweeping left to right to reveal cave shapes
 
 [b]Guidance System[/b]
-Track and navigate to NPCs, other players, dropped items, critters, interactable objects, and custom waypoints. Audio pings guide you toward your target with directional panning and pitch.
+Track and navigate to NPCs, other players, dropped items, critters, interactable objects, and custom waypoints. Audio pings guide you toward your target with interaural timing, distance volume, and pitch.
 - Saved custom trackers for typed item, NPC, object, and tile targets
 - Sweep or Nearest Only mode for "All" guidance categories
 - Expanded exploration targets including statues, fossils, Jungle Spores, Abigail's Flower, Nature's Gift, Enchanted Sword shrines, crystal shards, amber gems, herb bloom stages, and fallen stars
@@ -22,7 +22,7 @@ Track and navigate to NPCs, other players, dropped items, critters, interactable
 - Full keyboard navigation of inventory, equipment, crafting, shops, and chests
 - Gamepad emulation lets keyboard users access controller-only UI features
 - First-letter navigation to quickly find items
-- Spatial inventory audio positions slot sounds by row and column
+- Spatial inventory audio positions slot sounds by visible screen column and row
 - Mod browser, mod config, achievements, and bestiary screens are all narrated
 - Journey mode powers, research, sliders, and toggles are narrated
 - Character/world naming, signs, chat, and custom tracker prompts support accessible text input

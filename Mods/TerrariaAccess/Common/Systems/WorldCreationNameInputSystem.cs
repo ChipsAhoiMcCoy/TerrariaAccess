@@ -4,7 +4,6 @@ using System.Diagnostics.CodeAnalysis;
 using Microsoft.Xna.Framework;
 using Microsoft.Xna.Framework.Input;
 using Terraria;
-using Terraria.Audio;
 using Terraria.GameInput;
 using Terraria.ID;
 using Terraria.ModLoader;
@@ -123,7 +122,7 @@ public sealed class WorldCreationNameInputSystem : ModSystem
         ConfigureTextInput(nameButton);
         BlockTabForCurrentFrame();
 
-        SoundEngine.PlaySound(SoundID.MenuOpen);
+        global::TerrariaAccess.Common.Services.UiSoundCuePlayer.PlayOpen();
         ScreenReaderService.Announce(
             LocalizationHelper.GetTextOrFallback(
                 "Mods.TerrariaAccess.WorldCreationNameInput.TextEditingEnabled",
@@ -180,7 +179,7 @@ public sealed class WorldCreationNameInputSystem : ModSystem
             _replaceExistingTextOnFirstInput = false;
             _editingText = updatedText;
             SetWorldName(state, nameButton, _editingText);
-            SoundEngine.PlaySound(SoundID.MenuTick);
+            global::TerrariaAccess.Common.Services.UiSoundCuePlayer.PlayTick();
         }
     }
 
@@ -213,7 +212,7 @@ public sealed class WorldCreationNameInputSystem : ModSystem
             return;
         }
 
-        SoundEngine.PlaySound(save ? SoundID.MenuClose : SoundID.MenuTick);
+        global::TerrariaAccess.Common.Services.UiSoundCuePlayer.PlayCloseOrTick(save);
         string fallback = save
             ? $"World name saved. {announcedName}."
             : $"World name edit canceled. {announcedName}.";

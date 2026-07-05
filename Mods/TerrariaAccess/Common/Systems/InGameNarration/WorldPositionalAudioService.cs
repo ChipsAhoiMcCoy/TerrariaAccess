@@ -8,22 +8,14 @@ namespace TerrariaAccess.Common.Systems;
 public sealed partial class InGameNarrationSystem
 {
     /// <summary>
-    /// Thin wrapper that delegates to the standalone WorldAudioCoordinator.
-    /// This maintains backward compatibility while using the refactored Audio system.
+    /// Owns the standalone world-audio coordinator used by in-game narration scheduling.
     /// </summary>
     private sealed class WorldPositionalAudioService
     {
         private readonly WorldAudioCoordinator _coordinator;
 
-        public WorldPositionalAudioService(
-            HostileStaticAudioEmitter hostileStaticAudioEmitter,
-            FootstepAudioEmitter footstepAudioEmitter,
-            ClimbAudioEmitter climbAudioEmitter,
-            BiomeAnnouncementEmitter biomeAnnouncementEmitter,
-            MultiplayerFootstepAudioEmitter multiplayerFootstepAudioEmitter)
+        public WorldPositionalAudioService()
         {
-            // Create a new coordinator - the wrapper emitters are now thin delegates,
-            // so the coordinator creates its own standalone emitter instances
             _coordinator = new WorldAudioCoordinator();
         }
 

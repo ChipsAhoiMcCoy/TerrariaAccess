@@ -32,10 +32,15 @@
   -->
   <ItemGroup>
     <!-- Tier 1: Pure functions with no external dependencies -->
-    <Compile Include="..\..\Mods\TerrariaAccess\Common\Services\SpatialAudioPanner.cs" Link="Sources\SpatialAudioPanner.cs" />
-    <Compile Include="..\..\Mods\TerrariaAccess\Common\Services\SoundLoudnessUtility.cs" Link="Sources\SoundLoudnessUtility.cs" />
+    <Compile Include="..\..\Mods\TerrariaAccess\Common\Services\SpatialAudioPositioner.cs" Link="Sources\SpatialAudioPositioner.cs" />
+    <Compile Include="..\..\Mods\TerrariaAccess\Common\Services\SpatializedSoundEngine.cs" Link="Sources\SpatializedSoundEngine.cs" />
+    <Compile Include="..\..\Mods\TerrariaAccess\Common\Services\SpatializedSoundPlayer.cs" Link="Sources\SpatializedSoundPlayer.cs" />
+    <Compile Include="..\..\Mods\TerrariaAccess\Common\Services\NativeSoundSuppression.cs" Link="Sources\NativeSoundSuppression.cs" />
+    <Compile Include="..\..\Mods\TerrariaAccess\Common\Services\SpatializedSoundCache.cs" Link="Sources\SpatializedSoundCache.cs" />
     <Compile Include="..\..\Mods\TerrariaAccess\Common\Services\SynthesizedSoundFactory.cs" Link="Sources\SynthesizedSoundFactory.cs" />
+    <Compile Include="..\..\Mods\TerrariaAccess\Common\Systems\AudioVolumeDefaults.cs" Link="Sources\AudioVolumeDefaults.cs" />
     <Compile Include="..\..\Mods\TerrariaAccess\Common\Systems\Guidance\GuidanceEntry.cs" Link="Sources\GuidanceEntry.cs" />
+    <Compile Include="..\..\Mods\TerrariaAccess\Common\Systems\Guidance\GuidancePingCadence.cs" Link="Sources\GuidancePingCadence.cs" />
     <Compile Include="..\..\Mods\TerrariaAccess\Common\Systems\Guidance\GuidanceTeleportMath.cs" Link="Sources\GuidanceTeleportMath.cs" />
     <Compile Include="..\..\Mods\TerrariaAccess\Common\Systems\GamepadEmulation\GamepadEmulationState.cs" Link="Sources\GamepadEmulationState.cs" />
     <!-- Tier 2: Testable with interfaces or stubs -->

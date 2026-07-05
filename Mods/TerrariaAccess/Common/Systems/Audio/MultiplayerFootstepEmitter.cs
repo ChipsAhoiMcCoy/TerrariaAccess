@@ -11,7 +11,7 @@ namespace TerrariaAccess.Common.Systems.Audio;
 
 /// <summary>
 /// Emits spatialized footstep sounds for other players in multiplayer.
-/// Tracks each remote player's movement and plays tones with pan/pitch
+/// Tracks each remote player's movement and plays tones with screen-space ITD/pitch
 /// based on their position relative to the local player.
 /// </summary>
 internal sealed class MultiplayerFootstepEmitter : AudioEmitterBase
@@ -215,7 +215,7 @@ internal sealed class MultiplayerFootstepEmitter : AudioEmitterBase
     private static void PlaySpatialStep(Player localPlayer, Player remotePlayer, bool onPlatform)
     {
         // Calculate spatial audio properties using Terraria-aligned system
-        SpatialAudioPanner.SpatialAudioSample sample = SpatialAudioPanner.Compute(
+        SpatializedSoundEngine.SpatialAudioSample sample = SpatializedSoundEngine.Compute(
             localPlayer.Center,
             remotePlayer.Center,
             BaseVolume);
@@ -224,17 +224,12 @@ internal sealed class MultiplayerFootstepEmitter : AudioEmitterBase
         float horizontalSpeed = Math.Abs(remotePlayer.velocity.X);
         float normalized = MathHelper.Clamp(horizontalSpeed / 6f, 0f, 1f);
 
-        // Apply pitch shift based on vertical position relative to local player
-        // Higher pitch = above, lower pitch = below
         float baseFrequency = onPlatform
             ? MathHelper.Lerp(360f, 430f, normalized)
             : MathHelper.Lerp(190f, 220f, normalized);
 
-        // Apply vertical pitch shift (sample.Pitch is positive when target is above)
-        float pitchMultiplier = 1f + (sample.Pitch * 0.3f);
-        float frequency = baseFrequency * pitchMultiplier;
-
+        // FootstepToneProvider applies the sample's elevation pitch at playback.
         float configVolume = TerrariaAccessConfig.Instance?.MultiplayerFootstepVolume ?? 1f;
-        FootstepToneProvider.Play(frequency, sample.Volume * configVolume, useTriangleWave: false, sample.Pan);
+        FootstepToneProvider.PlaySpatial(sample, baseFrequency, configVolume, useTriangleWave: false);
     }
 }

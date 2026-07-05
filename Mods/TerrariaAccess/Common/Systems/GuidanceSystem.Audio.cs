@@ -13,7 +13,7 @@ namespace TerrariaAccess.Common.Systems;
 
 public sealed partial class GuidanceSystem
 {
-    // Hostile tracking constants - match HostileStaticAudioEmitter
+    // Hostile tracking constants - match HostileStaticEmitter
     private const float HostileStandardRangeTiles = 52f;
     private const float HostileBossRangeTiles = 160f;
     private const int HostileMinIntervalFrames = 7;
@@ -22,11 +22,11 @@ public sealed partial class GuidanceSystem
     private const float HostileToneGain = 0.45f;
     private static readonly float[] HostileTonePartials = { 1.24f, 1.5f };
     private static readonly ToneEnvelope HostileToneEnvelope = new(attackFraction: 0.12f, releaseFraction: 0.55f, applyHannWindow: true);
-    private static SoundEffect? _hostileTone;
+    private static readonly SpatializedSoundCache _hostileToneCache = new();
 
     /// <summary>
     /// Returns true when the guidance system is actively tracking hostile mobs,
-    /// which should suppress the normal HostileStaticAudioEmitter.
+    /// which should suppress the normal HostileStaticEmitter.
     /// </summary>
     internal static bool IsHostileMobTrackingActive =>
         _selectionMode == SelectionMode.HostileMob && NearbyHostileMobs.Count > 0;
@@ -75,7 +75,8 @@ public sealed partial class GuidanceSystem
 
     private static void EmitPing(Player player, Vector2 worldPosition)
     {
-        if (Main.dedServ || Main.soundVolume <= 0f)
+        float configVolume = TerrariaAccessConfig.Instance?.GuidanceVolume ?? 1f;
+        if (!SpatializedSoundEngine.CanPlay(configVolume))
         {
             return;
         }
@@ -84,32 +85,26 @@ public sealed partial class GuidanceSystem
         {
             CleanupFinishedWaypointInstances();
 
-            SpatialAudioPanner.SpatialAudioSample sample = SpatialAudioPanner.Compute(
+            SpatializedSoundEngine.SpatialAudioSample sample = SpatializedSoundEngine.Compute(
                 player.Center,
                 worldPosition,
-                Main.soundVolume);
-            if (sample.Volume <= 0f)
+                1f);
+            float distanceTiles = Vector2.Distance(player.Center, worldPosition) / 16f;
+            float distanceVolumeScale = ComputeGuidancePingVolumeScale(distanceTiles);
+            float localVolumeScale = configVolume * distanceVolumeScale;
+            if (!sample.IsAudible(localVolumeScale))
             {
                 return;
             }
 
-            SoundEffect tone = EnsureWaypointTone();
-            SoundEffectInstance instance = tone.CreateInstance();
-            instance.IsLooped = false;
-            instance.Pan = sample.Pan;
-            instance.Pitch = sample.Pitch;
-            float configVolume = TerrariaAccessConfig.Instance?.GuidanceVolume ?? 1f;
-            instance.Volume = MathHelper.Clamp(sample.Volume * configVolume * AudioVolumeDefaults.WorldCueVolumeScale, 0f, 1f);
-
-            try
+            SoundEffect tone = EnsureWaypointTone(sample.NormalizedScreenX);
+            SoundEffectInstance? instance = SpatializedSoundEngine.PlayWorldCue(
+                tone,
+                sample,
+                localVolumeScale);
+            if (instance is not null)
             {
-                instance.Play();
                 ActiveWaypointInstances.Add(instance);
-            }
-            catch (Exception inner)
-            {
-                instance.Dispose();
-                global::TerrariaAccess.TerrariaAccess.Instance?.Logger.Debug($"[WaypointPing] Play failed: {inner.Message}");
             }
         }
         catch (Exception ex)
@@ -118,25 +113,19 @@ public sealed partial class GuidanceSystem
         }
     }
 
-    private static SoundEffect EnsureWaypointTone()
+    private static SoundEffect EnsureWaypointTone(float normalizedScreenX)
     {
-        if (_waypointTone is { IsDisposed: false })
-        {
-            return _waypointTone;
-        }
-
-        _waypointTone?.Dispose();
-        _waypointTone = CreateWaypointTone();
-        return _waypointTone;
+        return _waypointToneCache.GetOrCreate(normalizedScreenX, CreateWaypointTone);
     }
 
-    private static SoundEffect CreateWaypointTone()
+    private static SoundEffect CreateWaypointTone(float normalizedScreenX)
     {
-        return SynthesizedSoundFactory.CreateSineTone(
+        return SpatializedSoundEngine.CreateSpatialSineTone(
             frequency: 720f,
             durationSeconds: 0.13f,
-            envelope: SynthesizedSoundFactory.ToneEnvelopes.WaypointPulse,
-            gain: 0.45f);
+            envelope: SpatializedSoundEngine.ToneEnvelopes.WaypointPulse,
+            gain: 0.45f,
+            normalizedScreenX: normalizedScreenX);
     }
 
     private static void EmitHostileMobSelectionPing(Player player)
@@ -156,7 +145,8 @@ public sealed partial class GuidanceSystem
 
     private static void EmitHostilePing(Player player, Vector2 worldPosition)
     {
-        if (Main.dedServ || Main.soundVolume <= 0f)
+        float configVolume = TerrariaAccessConfig.Instance?.EnemySoundVolume ?? 1f;
+        if (!SpatializedSoundEngine.CanPlay(configVolume))
         {
             return;
         }
@@ -165,32 +155,23 @@ public sealed partial class GuidanceSystem
         {
             CleanupFinishedWaypointInstances();
 
-            SpatialAudioPanner.SpatialAudioSample sample = SpatialAudioPanner.Compute(
+            SpatializedSoundEngine.SpatialAudioSample sample = SpatializedSoundEngine.Compute(
                 player.Center,
                 worldPosition,
-                Main.soundVolume);
-            if (sample.Volume <= 0f)
+                1f);
+            if (!sample.IsAudible(configVolume))
             {
                 return;
             }
 
-            SoundEffect tone = EnsureHostileTone();
-            SoundEffectInstance instance = tone.CreateInstance();
-            instance.IsLooped = false;
-            instance.Pan = sample.Pan;
-            instance.Pitch = sample.Pitch;
-            float configVolume = TerrariaAccessConfig.Instance?.EnemySoundVolume ?? 1f;
-            instance.Volume = MathHelper.Clamp(sample.Volume * configVolume * AudioVolumeDefaults.WorldCueVolumeScale, 0f, 1f);
-
-            try
+            SoundEffect tone = EnsureHostileTone(sample.NormalizedScreenX);
+            SoundEffectInstance? instance = SpatializedSoundEngine.PlayWorldCue(
+                tone,
+                sample,
+                configVolume);
+            if (instance is not null)
             {
-                instance.Play();
                 ActiveWaypointInstances.Add(instance);
-            }
-            catch (Exception inner)
-            {
-                instance.Dispose();
-                global::TerrariaAccess.TerrariaAccess.Instance?.Logger.Debug($"[HostilePing] Play failed: {inner.Message}");
             }
         }
         catch (Exception ex)
@@ -199,76 +180,30 @@ public sealed partial class GuidanceSystem
         }
     }
 
-    private static SoundEffect EnsureHostileTone()
+    private static SoundEffect EnsureHostileTone(float normalizedScreenX)
     {
-        if (_hostileTone is { IsDisposed: false })
-        {
-            return _hostileTone;
-        }
-
-        _hostileTone?.Dispose();
-        _hostileTone = SynthesizedSoundFactory.CreateAdditiveTone(
+        return _hostileToneCache.GetOrCreate(normalizedScreenX, quantizedNormalizedScreenX =>
+            SpatializedSoundEngine.CreateSpatialAdditiveTone(
             fundamentalFrequency: 360f,
             partialMultipliers: HostileTonePartials,
             envelope: HostileToneEnvelope,
             durationSeconds: HostileToneDurationSeconds,
             outputGain: HostileToneGain,
-            partialFalloff: 0.75f);
-        return _hostileTone;
+            normalizedScreenX: quantizedNormalizedScreenX,
+            partialFalloff: 0.75f));
     }
 
     private static void CleanupFinishedWaypointInstances()
     {
-        for (int i = ActiveWaypointInstances.Count - 1; i >= 0; i--)
-        {
-            SoundEffectInstance instance = ActiveWaypointInstances[i];
-            if (instance.IsDisposed || instance.State == SoundState.Stopped)
-            {
-                instance.Dispose();
-                ActiveWaypointInstances.RemoveAt(i);
-            }
-        }
+        SpatializedSoundEngine.CleanupStopped(ActiveWaypointInstances);
     }
 
     private static void DisposeToneResources()
     {
-        foreach (SoundEffectInstance instance in ActiveWaypointInstances)
-        {
-            try
-            {
-                if (!instance.IsDisposed)
-                {
-                    instance.Stop();
-                }
-            }
-            catch
-            {
-            }
+        SpatializedSoundEngine.StopAndDisposeAll(ActiveWaypointInstances);
 
-            instance.Dispose();
-        }
-
-        ActiveWaypointInstances.Clear();
-
-        if (_waypointTone is not null)
-        {
-            if (!_waypointTone.IsDisposed)
-            {
-                _waypointTone.Dispose();
-            }
-
-            _waypointTone = null;
-        }
-
-        if (_hostileTone is not null)
-        {
-            if (!_hostileTone.IsDisposed)
-            {
-                _hostileTone.Dispose();
-            }
-
-            _hostileTone = null;
-        }
+        _waypointToneCache.Dispose();
+        _hostileToneCache.Dispose();
     }
 
     private static int ComputeNextPingFrame(Player player, Vector2 targetPosition)
@@ -290,13 +225,32 @@ public sealed partial class GuidanceSystem
             return -1;
         }
 
-        // For hostile mob tracking, use the same interval calculation as HostileStaticAudioEmitter
+        // For hostile mob tracking, use the same interval calculation as HostileStaticEmitter
         if (_selectionMode == SelectionMode.HostileMob)
         {
             return ComputeHostilePingDelayFrames(player, distanceTiles);
         }
 
-        return MaxPingDelayFrames;
+        return ComputeGuidancePingDelayFrames(distanceTiles);
+    }
+
+    private static int ComputeGuidancePingDelayFrames(float distanceTiles)
+    {
+        return GuidancePingCadence.ComputeDistanceDelayFrames(
+            distanceTiles,
+            ArrivalTileThreshold,
+            MinGuidancePingDelayFrames,
+            MaxPingDelayFrames,
+            GuidancePingCadenceRangeTiles);
+    }
+
+    private static float ComputeGuidancePingVolumeScale(float distanceTiles)
+    {
+        return GuidancePingCadence.ComputeDistanceVolumeScale(
+            distanceTiles,
+            ArrivalTileThreshold,
+            GuidancePingCadenceRangeTiles,
+            MinGuidancePingVolumeScale);
     }
 
     private static int ComputeHostilePingDelayFrames(Player player, float distanceTiles)

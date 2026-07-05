@@ -6,7 +6,6 @@ using System.Linq;
 using System.Reflection;
 using System.Text;
 using Microsoft.Xna.Framework;
-using Microsoft.Xna.Framework.Audio;
 using Microsoft.Xna.Framework.Graphics;
 using TerrariaAccess.Common.Services;
 using TerrariaAccess.Common.Systems.InGame;
@@ -16,7 +15,6 @@ using Terraria;
 
 // Alias to the new instance-based tracker accessed via static property
 using IngameOptionsLabelTracker = TerrariaAccess.Common.Systems.InGame.IngameOptionsLabelTracker;
-using Terraria.Audio;
 using Terraria.GameContent;
 using Terraria.GameContent.UI.BigProgressBar;
 using Terraria.GameContent.Events;
@@ -1332,7 +1330,7 @@ public sealed partial class InGameNarrationSystem
 
             _lastTickKey = key;
             _lastTickFrame = frame;
-            SoundEngine.PlaySound(SoundID.MenuTick);
+            global::TerrariaAccess.Common.Services.UiSoundCuePlayer.PlayTick();
         }
     }
 }

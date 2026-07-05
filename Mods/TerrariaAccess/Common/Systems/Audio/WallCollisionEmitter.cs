@@ -1,6 +1,7 @@
 #nullable enable
 using System;
 using Microsoft.Xna.Framework;
+using TerrariaAccess.Common.Services;
 using Terraria;
 using Terraria.ID;
 using static TerrariaAccess.Common.Systems.InGameNarrationSystem;
@@ -9,7 +10,7 @@ namespace TerrariaAccess.Common.Systems.Audio;
 
 /// <summary>
 /// Plays a repeating tap sound when the player holds a movement key into a solid wall,
-/// providing immediate feedback that they are blocked. The tap is panned slightly toward
+/// providing immediate feedback that they are blocked. The tap is spatialized slightly toward
 /// the wall so the player can tell which side it is on.
 /// </summary>
 internal sealed class WallCollisionEmitter : AudioEmitterBase
@@ -18,7 +19,6 @@ internal sealed class WallCollisionEmitter : AudioEmitterBase
     private const int TapIntervalFrames = 8; // ~7.5 taps/sec at 60 fps
     private const float TapFrequency = 300f; // Low, muffled-sounding tap
     private const float BaseVolume = 0.35f;
-    private const float WallPanOffset = 0.3f; // Pan slightly toward the wall
 
     private int _tapTimer;
     private bool _wasBlocked;
@@ -72,7 +72,7 @@ internal sealed class WallCollisionEmitter : AudioEmitterBase
         {
             _tapTimer = 0;
             _wasBlocked = true;
-            PlayWallTap(moveDirection);
+            PlayWallTap(player, moveDirection);
         }
     }
 
@@ -82,12 +82,7 @@ internal sealed class WallCollisionEmitter : AudioEmitterBase
         _wasBlocked = false;
     }
 
-    public static void DisposeStaticResources()
-    {
-        // No static resources; uses FootstepToneProvider
-    }
-
-    private static void PlayWallTap(int direction)
+    private static void PlayWallTap(Player player, int direction)
     {
         float configVolume = TerrariaAccessConfig.Instance?.WallCollisionVolume ?? 1f;
         if (configVolume <= 0f)
@@ -95,8 +90,13 @@ internal sealed class WallCollisionEmitter : AudioEmitterBase
             return;
         }
 
-        float pan = direction * WallPanOffset;
-        FootstepToneProvider.Play(TapFrequency, BaseVolume * configVolume, useTriangleWave: true, pan);
+        Vector2 wallContactWorld = player.Center + new Vector2(direction * (player.width * 0.5f + 8f), 0f);
+        SpatializedSoundEngine.SpatialAudioSample sample = SpatializedSoundEngine.Compute(
+            player.Center,
+            wallContactWorld,
+            BaseVolume);
+
+        FootstepToneProvider.PlaySpatial(sample, TapFrequency, configVolume, useTriangleWave: true);
     }
 
     private static bool IsPressingIntoSolidWall(Player player, int moveDirection)

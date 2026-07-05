@@ -10,7 +10,6 @@ using TerrariaAccess.Common.Services;
 using TerrariaAccess.Common.Systems.ModMenuAccessibility;
 using TerrariaAccess.Common.Utilities;
 using Terraria;
-using Terraria.Audio;
 using Terraria.GameContent.UI.Elements;
 using Terraria.ID;
 using Terraria.GameInput;
@@ -829,12 +828,12 @@ public sealed class DownloadModsAccessibilitySystem : ModMenuAccessibilityBase
             if (binding.Element is UIElement element)
             {
                 Mod.Logger.Info($"[DownloadMods] Clicking: {binding.Label}");
-                SoundEngine.PlaySound(SoundID.MenuTick);
+                global::TerrariaAccess.Common.Services.UiSoundCuePlayer.PlayTick();
 
                 try
                 {
                     var clickEvent = new UIMouseEvent(element, Main.MouseScreen);
-                    element.LeftClick(clickEvent);
+                    global::TerrariaAccess.Common.Services.ProgrammaticUiClickInvoker.LeftClick(element, clickEvent);
                 }
                 catch (Exception ex)
                 {
@@ -992,7 +991,7 @@ public sealed class DownloadModsAccessibilitySystem : ModMenuAccessibilityBase
                         ? $"{modName}, {closestModIndex + 1} of {receivedItems.Count}"
                         : $"{modName}, {modStatus}, {closestModIndex + 1} of {receivedItems.Count}";
 
-                    SoundEngine.PlaySound(SoundID.MenuTick);
+                    global::TerrariaAccess.Common.Services.UiSoundCuePlayer.PlayTick();
                     ScreenReaderService.Announce(announcement, force: true);
 
                     CurrentFocusIndex = closestModIndex;

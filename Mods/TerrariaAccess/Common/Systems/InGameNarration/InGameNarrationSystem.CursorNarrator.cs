@@ -16,7 +16,6 @@ using TerrariaAccess.Common.Systems.MenuNarration;
 using TerrariaAccess.Common.Utilities;
 using AnnouncementCategory = TerrariaAccess.Common.Services.ScreenReaderService.AnnouncementCategory;
 using Terraria;
-using Terraria.Audio;
 using Terraria.GameContent;
 using Terraria.GameContent.UI.BigProgressBar;
 using Terraria.GameContent.Events;
@@ -38,8 +37,6 @@ public sealed partial class InGameNarrationSystem
 {
     private sealed class CursorNarrator
     {
-        private const float CursorLoudnessReferenceTiles = 90f;
-
         private readonly CursorDescriptorService _descriptorService;
         private int _lastTileX = int.MinValue;
         private int _lastTileY = int.MinValue;
@@ -49,7 +46,11 @@ public sealed partial class InGameNarrationSystem
         private PlayerBodyPart? _lastHoveredBodyPart;
         private int _originTileX = int.MinValue;
         private int _originTileY = int.MinValue;
-        private static readonly List<(SoundEffect effect, SoundEffectInstance instance)> ActiveSounds = new();
+        private const int MaxActiveCursorSounds = 8;
+        private const int CursorToneCacheFrequencyStepHz = 10;
+        private const float CursorCueFrequencyHz = 440f;
+        private static readonly List<SoundEffectInstance> ActiveSounds = new();
+        private static readonly SpatializedSoundCache<int> CursorToneCache = new();
         private string? _lastTileAnnouncementName;
         private int _lastTileAnnouncementKey = int.MinValue;
         private TileContentSignature _lastTileContentSignature;
@@ -951,107 +952,62 @@ public sealed partial class InGameNarrationSystem
             }
 
             CleanupFinishedInstances();
-
-            // Calculate frequency based on screen position:
-            // - Top of screen: 1000 Hz
-            // - Middle of screen: 440 Hz
-            // - Bottom of screen: 200 Hz
-            // This automatically adapts to any resolution or zoom level
-            Vector2 screenPos = tileCenterWorld - Main.screenPosition;
-            float normalizedScreenY = MathHelper.Clamp(screenPos.Y / Main.screenHeight, 0f, 1f);
-            float frequency;
-            if (normalizedScreenY <= 0.5f)
+            if (ActiveSounds.Count >= MaxActiveCursorSounds)
             {
-                // Top half of screen: interpolate 1000 Hz down to 440 Hz
-                float t = normalizedScreenY * 2f; // 0 at top, 1 at middle
-                frequency = MathHelper.Lerp(1000f, 440f, t);
+                return;
             }
-            else
-            {
-                // Bottom half of screen: interpolate 440 Hz down to 200 Hz
-                float t = (normalizedScreenY - 0.5f) * 2f; // 0 at middle, 1 at bottom
-                frequency = MathHelper.Lerp(440f, 200f, t);
-            }
-
-            SoundEffect tone = CreateCursorTone(frequency);
-
-            // Use Terraria-aligned pan calculation; volume uses custom falloff for cursor feedback
-            SpatialAudioPanner.SpatialAudioSample sample = SpatialAudioPanner.Compute(
-                player.Center,
-                tileCenterWorld);
 
             float baseVolume = 0.45f;
-            float loudness = SoundLoudnessUtility.ApplyDistanceFalloff(
-                baseVolume,
-                sample.DistanceTiles,
-                CursorLoudnessReferenceTiles,
-                minFactor: 0.4f);
+            SpatializedSoundEngine.SpatialAudioSample sample = SpatializedSoundEngine.Compute(
+                player.Center,
+                tileCenterWorld,
+                baseVolume);
             float configVolume = TerrariaAccessConfig.Instance?.CursorVolume ?? 1f;
-            float volume = loudness * configVolume * Main.soundVolume * AudioVolumeDefaults.WorldCueVolumeScale;
+            if (!sample.IsAudible(configVolume))
+            {
+                return;
+            }
 
-            SoundEffectInstance instance = tone.CreateInstance();
-            instance.IsLooped = false;
-            instance.Volume = volume;
-            instance.Pitch = 0f;
-            instance.Pan = sample.Pan;
-            instance.Play();
-            ActiveSounds.Add((tone, instance));
+            SoundEffect tone = EnsureCursorTone(CursorCueFrequencyHz, sample.NormalizedScreenX);
+            SoundEffectInstance? instance = SpatializedSoundEngine.PlayWorldCue(tone, sample, configVolume);
+            if (instance is not null)
+            {
+                ActiveSounds.Add(instance);
+            }
         }
 
         public static void DisposeStaticResources()
         {
-            foreach (var (effect, instance) in ActiveSounds)
-            {
-                try
-                {
-                    instance.Stop();
-                }
-                catch
-                {
-                    // ignore
-                }
-
-                instance.Dispose();
-                effect.Dispose();
-            }
-
-            ActiveSounds.Clear();
+            SpatializedSoundEngine.StopAndDisposeAll(ActiveSounds);
+            CursorToneCache.Dispose();
         }
 
-        private static SoundEffect CreateCursorTone(float frequency)
+        private static SoundEffect EnsureCursorTone(float frequency, float normalizedScreenX)
+        {
+            int frequencyKey = Math.Max(1, (int)MathF.Round(frequency / CursorToneCacheFrequencyStepHz) * CursorToneCacheFrequencyStepHz);
+            return CursorToneCache.GetOrCreate(frequencyKey, normalizedScreenX, quantizedNormalizedScreenX => CreateCursorTone(frequencyKey, quantizedNormalizedScreenX));
+        }
+
+        private static SoundEffect CreateCursorTone(float frequency, float normalizedScreenX)
         {
             const int sampleRate = 44100;
             const float durationSeconds = 0.045f;
             int sampleCount = Math.Max(1, (int)(sampleRate * durationSeconds));
-            byte[] buffer = new byte[sampleCount * sizeof(short)];
+            float[] samples = new float[sampleCount];
 
             for (int i = 0; i < sampleCount; i++)
             {
                 float t = i / (float)sampleRate;
                 float window = (float)(0.5 - 0.5 * Math.Cos((2 * Math.PI * i) / Math.Max(1, sampleCount - 1)));
-                float sample = MathF.Sin(MathHelper.TwoPi * frequency * t) * window;
-                short value = (short)Math.Clamp(sample * short.MaxValue, short.MinValue, short.MaxValue);
-
-                int index = i * 2;
-                buffer[index] = (byte)(value & 0xFF);
-                buffer[index + 1] = (byte)((value >> 8) & 0xFF);
+                samples[i] = MathF.Sin(MathHelper.TwoPi * frequency * t) * window;
             }
 
-            return new SoundEffect(buffer, sampleRate, AudioChannels.Mono);
+            return SpatializedSoundEngine.CreateSpatialFromSamples(samples, sampleRate, normalizedScreenX);
         }
 
         private static void CleanupFinishedInstances()
         {
-            for (int i = ActiveSounds.Count - 1; i >= 0; i--)
-            {
-                var (effect, instance) = ActiveSounds[i];
-                if (instance.State == SoundState.Stopped)
-                {
-                    instance.Dispose();
-                    effect.Dispose();
-                    ActiveSounds.RemoveAt(i);
-                }
-            }
+            SpatializedSoundEngine.CleanupStopped(ActiveSounds);
         }
 
         private static bool IsGamepadDpadPressed()

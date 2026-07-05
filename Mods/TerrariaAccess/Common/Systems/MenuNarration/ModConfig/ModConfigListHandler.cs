@@ -4,7 +4,6 @@ using System.Collections.Generic;
 using System.Linq;
 using TerrariaAccess.Common.Utilities;
 using Terraria;
-using Terraria.Audio;
 using Terraria.GameInput;
 using Terraria.ID;
 using Terraria.UI;
@@ -163,7 +162,7 @@ internal sealed class ModConfigListHandler
                 _gate.TryAnnounce(listName, false, isMenuContext, menuEventSink);
                 AnnounceModListElement(_modListIndex, isMenuContext, menuEventSink);
             }
-            SoundEngine.PlaySound(SoundID.MenuTick);
+            global::TerrariaAccess.Common.Services.UiSoundCuePlayer.PlayTick();
             return;
         }
 
@@ -177,7 +176,7 @@ internal sealed class ModConfigListHandler
                     _configListIndex = 0;
                 }
                 AnnounceConfigListElement(_configListIndex, isMenuContext, menuEventSink);
-                SoundEngine.PlaySound(SoundID.MenuTick);
+                global::TerrariaAccess.Common.Services.UiSoundCuePlayer.PlayTick();
             }
             else
             {
@@ -237,7 +236,7 @@ internal sealed class ModConfigListHandler
         {
             _modListIndex = newIndex;
             AnnounceModListElement(newIndex, isMenuContext, menuEventSink);
-            SoundEngine.PlaySound(SoundID.MenuTick);
+            global::TerrariaAccess.Common.Services.UiSoundCuePlayer.PlayTick();
             return true;
         }
 
@@ -273,7 +272,7 @@ internal sealed class ModConfigListHandler
         {
             _configListIndex = newIndex;
             AnnounceConfigListElement(newIndex, isMenuContext, menuEventSink);
-            SoundEngine.PlaySound(SoundID.MenuTick);
+            global::TerrariaAccess.Common.Services.UiSoundCuePlayer.PlayTick();
             return true;
         }
 
@@ -299,7 +298,7 @@ internal sealed class ModConfigListHandler
 
         if (ConfigSliderHandler.TryInvokeClick(element))
         {
-            SoundEngine.PlaySound(SoundID.MenuTick);
+            global::TerrariaAccess.Common.Services.UiSoundCuePlayer.PlayTick();
             _pendingConfigListNavigation = true;
         }
     }
@@ -323,7 +322,7 @@ internal sealed class ModConfigListHandler
 
         if (ConfigSliderHandler.TryInvokeClick(element))
         {
-            SoundEngine.PlaySound(SoundID.MenuOpen);
+            global::TerrariaAccess.Common.Services.UiSoundCuePlayer.PlayOpen();
         }
     }
 

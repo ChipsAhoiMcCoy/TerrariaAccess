@@ -2,19 +2,20 @@
 using System;
 using TerrariaAccess.Common.Services;
 using Terraria;
-using Terraria.Audio;
-using Terraria.ID;
+using static TerrariaAccess.Common.Systems.InGameNarrationSystem;
 
 namespace TerrariaAccess.Common.Systems.Audio;
 
 /// <summary>
 /// Monitors the player's breath while submerged and emits audio/verbal cues
 /// at every 10% of breath lost. Announces when breath begins depleting and
-/// plays the built-in Terraria drowning bubble sound at each threshold.
+/// plays a centered custom warning tone at each threshold.
 /// </summary>
 internal sealed class BreathEmitter : AudioEmitterBase
 {
     private const int ThresholdStep = 10;
+    private const float WarningToneFrequency = 520f;
+    private const float WarningToneVolume = 0.65f;
 
     /// <summary>
     /// Tracks whether the player was previously at full breath (not submerged).
@@ -97,7 +98,11 @@ internal sealed class BreathEmitter : AudioEmitterBase
 
     private static void PlayBreathWarningSound()
     {
-        SoundEngine.PlaySound(SoundID.Drown);
+        float configVolume = TerrariaAccessConfig.Instance?.GuidanceVolume ?? 1f;
+        FootstepToneProvider.PlayCentered(
+            WarningToneFrequency,
+            Math.Clamp(WarningToneVolume * configVolume, 0f, 1f),
+            useTriangleWave: true);
     }
 
     private static void AnnounceBreathThreshold(int thresholdPercent)

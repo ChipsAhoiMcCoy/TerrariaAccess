@@ -1,5 +1,6 @@
 #nullable enable
 using Microsoft.Xna.Framework;
+using TerrariaAccess.Common.Services;
 using Terraria;
 using Terraria.GameInput;
 using Terraria.UI;
@@ -10,11 +11,8 @@ namespace TerrariaAccess.Common.Utilities;
 internal static class UiSlotSpatialAudio
 {
     public readonly record struct SlotPosition(int Row, int Column, int MaxRows, int MaxColumns);
-    public readonly record struct SpatialTickParams(float Pan, float Pitch);
+    public readonly record struct SpatialTickParams(float NormalizedScreenX, float Pitch);
     public readonly record struct ScreenPosition(float X, float Y);
-
-    private const float MaxPitch = 0.5f;
-    private const float MinPitch = -0.5f;
 
     /// <summary>
     /// Tries to get the current UI focus position directly from Terraria's UILinkPointNavigator.
@@ -117,7 +115,7 @@ internal static class UiSlotSpatialAudio
 
     /// <summary>
     /// Tries to get the actual screen position for a slot, based on Terraria's UI layout.
-    /// This enables spatial audio to pan based on where elements actually appear on screen.
+    /// This enables spatial audio to use the actual screen position where elements appear.
     /// </summary>
     public static bool TryGetSlotScreenPosition(int context, int slot, out ScreenPosition screenPos)
     {
@@ -325,25 +323,17 @@ internal static class UiSlotSpatialAudio
 
     /// <summary>
     /// Computes spatial audio parameters from screen position.
-    /// Pan is based on horizontal position (-1 = left, +1 = right).
-    /// Pitch is based on vertical position (+0.5 = top, -0.5 = bottom).
+    /// Horizontal position is normalized visible-screen X (-1 = left, +1 = right).
+    /// Pitch is based on vertical position and clamped by the shared spatial engine.
     /// </summary>
     public static SpatialTickParams ComputeSpatialParamsFromScreen(ScreenPosition screenPos)
     {
-        int screenWidth = Main.screenWidth;
-        int screenHeight = Main.screenHeight;
-
-        // Normalize X to 0-1 range, then map to -1 to +1 for pan
-        float normalizedX = MathHelper.Clamp(screenPos.X / screenWidth, 0f, 1f);
-        float pan = (normalizedX * 2f) - 1f;
-
-        // Normalize Y to 0-1 range, then invert for pitch (top = high, bottom = low)
-        float normalizedY = MathHelper.Clamp(screenPos.Y / screenHeight, 0f, 1f);
-        float pitch = MaxPitch - (normalizedY * (MaxPitch - MinPitch));
+        float normalizedScreenX = SpatializedSoundEngine.ComputeScreenNormalizedX(screenPos.X);
+        float pitch = SpatializedSoundEngine.ComputeScreenPitch(screenPos.Y);
 
         return new SpatialTickParams(
-            MathHelper.Clamp(pan, -1f, 1f),
-            MathHelper.Clamp(pitch, MinPitch, MaxPitch));
+            MathHelper.Clamp(normalizedScreenX, -1f, 1f),
+            pitch);
     }
 
     public static bool TryGetSlotPosition(int context, int slot, out SlotPosition position)
@@ -562,12 +552,12 @@ internal static class UiSlotSpatialAudio
 
     public static SpatialTickParams ComputeSpatialParams(SlotPosition position)
     {
-        float pan = ComputePan(position.Column, position.MaxColumns);
+        float normalizedScreenX = ComputeNormalizedScreenX(position.Column, position.MaxColumns);
         float pitch = ComputePitch(position.Row, position.MaxRows);
-        return new SpatialTickParams(pan, pitch);
+        return new SpatialTickParams(normalizedScreenX, pitch);
     }
 
-    private static float ComputePan(int column, int maxColumns)
+    private static float ComputeNormalizedScreenX(int column, int maxColumns)
     {
         if (maxColumns <= 1)
         {
@@ -575,8 +565,12 @@ internal static class UiSlotSpatialAudio
         }
 
         float normalizedColumn = column / (float)(maxColumns - 1);
-        float pan = (normalizedColumn * 2f) - 1f;
-        return MathHelper.Clamp(pan, -1f, 1f);
+        if (Main.screenWidth > 0)
+        {
+            return SpatializedSoundEngine.ComputeScreenNormalizedX(normalizedColumn * Main.screenWidth);
+        }
+
+        return MathHelper.Clamp((normalizedColumn * 2f) - 1f, -1f, 1f);
     }
 
     private static float ComputePitch(int row, int maxRows)
@@ -587,7 +581,11 @@ internal static class UiSlotSpatialAudio
         }
 
         float normalizedRow = row / (float)(maxRows - 1);
-        float pitch = MaxPitch - (normalizedRow * (MaxPitch - MinPitch));
-        return MathHelper.Clamp(pitch, MinPitch, MaxPitch);
+        if (Main.screenHeight > 0)
+        {
+            return SpatializedSoundEngine.ComputeScreenPitch(normalizedRow * Main.screenHeight);
+        }
+
+        return SpatializedSoundEngine.ComputeNormalizedScreenPitch(normalizedRow);
     }
 }

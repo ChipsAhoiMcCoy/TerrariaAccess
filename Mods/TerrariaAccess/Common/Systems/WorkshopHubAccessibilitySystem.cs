@@ -8,7 +8,6 @@ using Microsoft.Xna.Framework.Graphics;
 using TerrariaAccess.Common.Services;
 using TerrariaAccess.Common.Utilities;
 using Terraria;
-using Terraria.Audio;
 using Terraria.GameContent.UI.States;
 using Terraria.ID;
 using Terraria.GameInput;
@@ -323,7 +322,7 @@ public sealed class WorkshopHubAccessibilitySystem : ModSystem
         _lastAnnouncedPointId = currentPoint;
 
         // Play menu tick sound for navigation (fancy buttons don't play sound on hover like Back/Logs do)
-        SoundEngine.PlaySound(SoundID.MenuTick);
+        global::TerrariaAccess.Common.Services.UiSoundCuePlayer.PlayTick();
 
         TerrariaAccess.Instance?.Logger.Info($"[WorkshopHub] Announcing: {announcement}");
         ScreenReaderService.Announce(announcement, force: true);

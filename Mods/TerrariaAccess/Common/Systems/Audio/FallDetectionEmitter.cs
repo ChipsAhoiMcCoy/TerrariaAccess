@@ -30,7 +30,6 @@ internal sealed class FallDetectionEmitter : AudioEmitterBase
     // Spatial tone parameters — matches local footstep frequencies exactly
     private const float GroundFrequencyMin = 190f;
     private const float GroundFrequencyMax = 220f;
-    private const float PitchShiftFactor = 0.3f; // Same factor as multiplayer footsteps
 
     // Fall damage warning parameters
     private const float DamageWarningBeepFrequency = 880f;
@@ -118,11 +117,6 @@ internal sealed class FallDetectionEmitter : AudioEmitterBase
         ResetToGrounded();
     }
 
-    public static void DisposeStaticResources()
-    {
-        // No static sound effects to dispose; we use FootstepToneProvider's cache
-    }
-
     private static bool ShouldSuppress(Player player)
     {
         if (player.mount.Active) return true;
@@ -189,7 +183,7 @@ internal sealed class FallDetectionEmitter : AudioEmitterBase
         Vector2 groundPos = new(playerCenter.X, groundWorldY);
 
         // Compute spatial parameters: pitch encodes vertical distance, volume fades with range
-        SpatialAudioPanner.SpatialAudioSample sample = SpatialAudioPanner.Compute(playerCenter, groundPos, BaseVolume);
+        SpatializedSoundEngine.SpatialAudioSample sample = SpatializedSoundEngine.Compute(playerCenter, groundPos, BaseVolume);
 
         // Use the same base frequency range as local footsteps (190-220 Hz ground tones).
         // Fall speed maps to the same range that horizontal walk speed uses for regular steps.
@@ -197,12 +191,8 @@ internal sealed class FallDetectionEmitter : AudioEmitterBase
         float normalized = MathHelper.Clamp(fallSpeed / 6f, 0f, 1f);
         float baseFrequency = MathHelper.Lerp(GroundFrequencyMin, GroundFrequencyMax, normalized);
 
-        // Apply vertical pitch shift identical to multiplayer footsteps
-        float frequency = baseFrequency * (1f + sample.Pitch * PitchShiftFactor);
-        frequency = Math.Max(frequency, 80f);
-
-        // Sine wave (useTriangleWave: false) to match normal footstep sound
-        FootstepToneProvider.Play(frequency, sample.Volume * configVolume, useTriangleWave: false, sample.Pan);
+        // Sine wave (useTriangleWave: false) to match normal footstep sound; elevation pitch is applied by PlaySpatial.
+        FootstepToneProvider.PlaySpatial(sample, Math.Max(baseFrequency, 80f), configVolume, useTriangleWave: false);
     }
 
     private void UpdateFallDamageWarning(Player player, float configVolume)
@@ -232,7 +222,7 @@ internal sealed class FallDetectionEmitter : AudioEmitterBase
         {
             _damageWarningBeepTimer = 0;
             float volume = DamageWarningBeepVolume * configVolume;
-            FootstepToneProvider.Play(DamageWarningBeepFrequency, volume, useTriangleWave: false);
+            FootstepToneProvider.PlayCentered(DamageWarningBeepFrequency, volume, useTriangleWave: false);
         }
     }
 

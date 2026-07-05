@@ -3,7 +3,6 @@ using TerrariaAccess.Common.Services;
 using TerrariaAccess.Common.Systems.ModBrowser;
 using TerrariaAccess.Common.Utilities;
 using Terraria;
-using Terraria.Audio;
 using Terraria.GameContent.UI.Elements;
 using Terraria.GameInput;
 using Terraria.ID;
@@ -115,7 +114,7 @@ public sealed class JourneyInputSystem : ModSystem
         if (_lastInfiniteItemsSearchText is not null &&
             !string.Equals(currentSearchText, _lastInfiniteItemsSearchText, System.StringComparison.Ordinal))
         {
-            SoundEngine.PlaySound(SoundID.MenuTick);
+            global::TerrariaAccess.Common.Services.UiSoundCuePlayer.PlayTick();
         }
 
         _lastInfiniteItemsSearchText = currentSearchText;

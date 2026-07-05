@@ -4,7 +4,6 @@ using TerrariaAccess.Common.Services;
 using TerrariaAccess.Common.Systems.Journey;
 using TerrariaAccess.Common.Utilities;
 using Terraria;
-using Terraria.Audio;
 using Terraria.ID;
 
 namespace TerrariaAccess.Common.Systems.ModBrowser;
@@ -164,7 +163,7 @@ internal static class SearchModeManager
         {
             // Play menu open sound and enqueue search mode text as a prefix
             // so it plays before the next announcement rather than getting interrupted
-            SoundEngine.PlaySound(SoundID.MenuOpen);
+            global::TerrariaAccess.Common.Services.UiSoundCuePlayer.PlayOpen();
             if (enqueueSearchPrefix)
             {
                 string announcement = GetSearchModeAnnouncement();
@@ -174,7 +173,7 @@ internal static class SearchModeManager
         else
         {
             // Play menu close sound when exiting search mode via Tab
-            SoundEngine.PlaySound(SoundID.MenuClose);
+            global::TerrariaAccess.Common.Services.UiSoundCuePlayer.PlayClose();
         }
 
         TerrariaAccess.Instance?.Logger.Info($"[SearchMode] Toggled to {(_isSearchModeActive ? "search" : "navigation")} mode");
@@ -191,7 +190,7 @@ internal static class SearchModeManager
         }
 
         _isSearchModeActive = false;
-        SoundEngine.PlaySound(SoundID.MenuClose);
+        global::TerrariaAccess.Common.Services.UiSoundCuePlayer.PlayClose();
         // No announcement when exiting search mode
 
         TerrariaAccess.Instance?.Logger.Info("[SearchMode] Exited search mode");

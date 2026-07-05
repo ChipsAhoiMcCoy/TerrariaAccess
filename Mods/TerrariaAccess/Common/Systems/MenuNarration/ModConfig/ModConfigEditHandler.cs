@@ -7,7 +7,6 @@ using Microsoft.Xna.Framework;
 using Microsoft.Xna.Framework.Input;
 using TerrariaAccess.Common.Utilities;
 using Terraria;
-using Terraria.Audio;
 using Terraria.GameInput;
 using Terraria.ID;
 using Terraria.UI;
@@ -180,7 +179,7 @@ internal sealed class ModConfigEditHandler
             _sliderState.ClearElementTracking();
             _gate.ClearFrameSuppression();
             AnnounceCurrentElement(isMenuContext, menuEventSink);
-            SoundEngine.PlaySound(SoundID.MenuTick);
+            global::TerrariaAccess.Common.Services.UiSoundCuePlayer.PlayTick();
         }
     }
 
@@ -264,6 +263,7 @@ internal sealed class ModConfigEditHandler
         // Try toggle boolean
         if (ConfigSliderHandler.TryToggleBoolean(element))
         {
+            global::TerrariaAccess.Common.Services.UiSoundCuePlayer.PlayTick();
             AnnounceValueOnly(element, isMenuContext, menuEventSink);
             return;
         }
@@ -271,6 +271,7 @@ internal sealed class ModConfigEditHandler
         // Try cycle enum
         if (ConfigSliderHandler.TryCycleEnum(element))
         {
+            global::TerrariaAccess.Common.Services.UiSoundCuePlayer.PlayTick();
             AnnounceValueOnly(element, isMenuContext, menuEventSink);
             return;
         }
@@ -278,7 +279,7 @@ internal sealed class ModConfigEditHandler
         // Default: click
         if (ConfigSliderHandler.TryInvokeClick(element))
         {
-            SoundEngine.PlaySound(SoundID.MenuTick);
+            global::TerrariaAccess.Common.Services.UiSoundCuePlayer.PlayTick();
             AnnounceCurrentElement(isMenuContext, menuEventSink);
         }
     }
@@ -300,7 +301,7 @@ internal sealed class ModConfigEditHandler
             string valueOnly = $"{newPercent:0} percent";
             _gate.TryAnnounce(valueOnly, true, isMenuContext, menuEventSink);
             _sliderState.TrackElement(_currentElementIndex, newPercent);
-            SoundEngine.PlaySound(SoundID.MenuTick);
+            global::TerrariaAccess.Common.Services.UiSoundCuePlayer.PlayTick();
             return;
         }
 
@@ -311,6 +312,7 @@ internal sealed class ModConfigEditHandler
         {
             if (ConfigSliderHandler.TryInvokeClick(element))
             {
+                global::TerrariaAccess.Common.Services.UiSoundCuePlayer.PlayTick();
                 AnnounceValueOnly(element, isMenuContext, menuEventSink);
             }
         }

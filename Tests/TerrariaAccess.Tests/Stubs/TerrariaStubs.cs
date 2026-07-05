@@ -11,6 +11,21 @@ namespace Terraria
     internal static class Main
     {
         public static AchievementSystem? Achievements { get; set; }
+        public static bool dedServ { get; set; }
+        public static float soundVolume { get; set; } = 1f;
+        public static int screenWidth { get; set; }
+        public static int screenHeight { get; set; }
+        public static uint GameUpdateCount { get; set; }
+        public static Vector2 screenPosition { get; set; }
+        public static GameViewMatrix GameViewMatrix { get; set; } = new();
+        public static Vector2 ViewPosition => screenPosition + GameViewMatrix.Translation;
+        public static Vector2 ViewSize => new(screenWidth / GameViewMatrix.Zoom.X, screenHeight / GameViewMatrix.Zoom.Y);
+    }
+
+    internal sealed class GameViewMatrix
+    {
+        public Vector2 Translation { get; set; }
+        public Vector2 Zoom { get; set; } = Vector2.One;
     }
 
     internal class AchievementSystem

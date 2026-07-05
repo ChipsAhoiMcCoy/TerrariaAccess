@@ -3,7 +3,6 @@ using System;
 using TerrariaAccess.Common.Services;
 using TerrariaAccess.Common.Utilities;
 using Terraria;
-using Terraria.Audio;
 using Terraria.GameContent.UI;
 using Terraria.GameInput;
 using Terraria.ID;
@@ -73,7 +72,7 @@ public sealed class AccessibleWireColorMenu
         PlayerInput.WritingText = true;
 
         // Play menu open sound
-        SoundEngine.PlaySound(SoundID.MenuOpen);
+        global::TerrariaAccess.Common.Services.UiSoundCuePlayer.PlayOpen();
 
         // Announce menu open bundled with first selection to avoid interruption
         AnnounceCurrentSelection(includeMenuOpenPrefix: true);
@@ -113,7 +112,7 @@ public sealed class AccessibleWireColorMenu
         _inputSnapshot = null;
 
         // Play menu close sound
-        SoundEngine.PlaySound(SoundID.MenuClose);
+        global::TerrariaAccess.Common.Services.UiSoundCuePlayer.PlayClose();
 
         string closedMessage = LocalizationHelper.GetTextOrFallback(
             "Mods.TerrariaAccess.WireColorMenu.Closed",
@@ -130,7 +129,7 @@ public sealed class AccessibleWireColorMenu
 
         int count = OptionCount;
         _selectedIndex = (_selectedIndex - 1 + count) % count;
-        SoundEngine.PlaySound(SoundID.MenuTick);
+        global::TerrariaAccess.Common.Services.UiSoundCuePlayer.PlayTick();
         AnnounceCurrentSelection();
     }
 
@@ -142,7 +141,7 @@ public sealed class AccessibleWireColorMenu
         }
 
         _selectedIndex = (_selectedIndex + 1) % OptionCount;
-        SoundEngine.PlaySound(SoundID.MenuTick);
+        global::TerrariaAccess.Common.Services.UiSoundCuePlayer.PlayTick();
         AnnounceCurrentSelection();
     }
 
@@ -168,7 +167,7 @@ public sealed class AccessibleWireColorMenu
         }
 
         bool isNowEnabled = !wasEnabled;
-        SoundEngine.PlaySound(SoundID.MenuTick);
+        global::TerrariaAccess.Common.Services.UiSoundCuePlayer.PlayTick();
 
         // Announce toggle change
         string locKey = isNowEnabled

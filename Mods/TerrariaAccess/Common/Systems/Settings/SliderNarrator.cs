@@ -4,7 +4,6 @@ using TerrariaAccess.Common.Services;
 using TerrariaAccess.Common.Systems.MenuNarration;
 using TerrariaAccess.Common.Utilities;
 using Terraria;
-using Terraria.Audio;
 using Terraria.ID;
 
 namespace TerrariaAccess.Common.Systems.Settings;
@@ -244,7 +243,7 @@ internal sealed class SliderNarrator
 
         _lastTickKey = key;
         _lastTickFrame = frame;
-        SoundEngine.PlaySound(SoundID.MenuTick);
+        global::TerrariaAccess.Common.Services.UiSoundCuePlayer.PlayTick();
     }
 }
 

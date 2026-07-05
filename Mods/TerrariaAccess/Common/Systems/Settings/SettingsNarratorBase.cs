@@ -3,7 +3,6 @@ using System;
 using TerrariaAccess.Common.Services;
 using TerrariaAccess.Common.Utilities;
 using Terraria;
-using Terraria.Audio;
 using Terraria.ID;
 
 namespace TerrariaAccess.Common.Systems.Settings;
@@ -148,7 +147,7 @@ internal abstract class SettingsNarratorBase : ISettingsNarrator
 
         _lastTickKey = key;
         _lastTickFrame = frame;
-        SoundEngine.PlaySound(SoundID.MenuTick);
+        global::TerrariaAccess.Common.Services.UiSoundCuePlayer.PlayTick();
     }
 
     /// <summary>

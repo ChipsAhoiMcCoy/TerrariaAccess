@@ -2,6 +2,7 @@
 using System.Collections.Generic;
 using Microsoft.Xna.Framework;
 using Microsoft.Xna.Framework.Audio;
+using TerrariaAccess.Common.Services;
 using TerrariaAccess.Common.Systems.Guidance;
 using Terraria.ModLoader.IO;
 
@@ -119,7 +120,7 @@ public sealed partial class GuidanceSystem
 
     private static int _nextPingUpdateFrame = -1;
     private static bool _arrivalAnnounced;
-    private static SoundEffect? _waypointTone;
+    private static readonly SpatializedSoundCache _waypointToneCache = new();
     private static readonly List<SoundEffectInstance> ActiveWaypointInstances = new();
     private static readonly GuidanceNamingDialogController NamingDialog = new();
     private static readonly GuidanceCustomTargetDialogController CustomTargetDialog = new();
@@ -140,6 +141,9 @@ public sealed partial class GuidanceSystem
     }
 
     internal static bool IsExplorationTrackingEnabled => _selectionMode == SelectionMode.Exploration;
+
+    internal static bool IsFocusedExplorationGuidanceActive =>
+        _selectionMode == SelectionMode.Exploration && _selectedExplorationIndex >= 0;
 
     internal static void ResetTrackingState()
     {

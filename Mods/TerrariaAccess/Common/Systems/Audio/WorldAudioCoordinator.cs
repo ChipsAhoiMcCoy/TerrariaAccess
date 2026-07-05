@@ -40,27 +40,6 @@ internal sealed class WorldAudioCoordinator
         _wallCollisionEmitter = new WallCollisionEmitter();
     }
 
-    public WorldAudioCoordinator(
-        HostileStaticEmitter hostileStaticEmitter,
-        FootstepEmitter footstepEmitter,
-        ClimbEmitter climbEmitter,
-        BiomeEmitter biomeEmitter,
-        MultiplayerFootstepEmitter multiplayerFootstepEmitter,
-        CavitySonarEmitter cavitySonarEmitter)
-    {
-        _hostileStaticEmitter = hostileStaticEmitter;
-        _footstepEmitter = footstepEmitter;
-        _climbEmitter = climbEmitter;
-        _biomeEmitter = biomeEmitter;
-        _multiplayerFootstepEmitter = multiplayerFootstepEmitter;
-        _cavitySonarEmitter = cavitySonarEmitter;
-        _passageDetectorEmitter = new PassageDetectorEmitter();
-        _breathEmitter = new BreathEmitter();
-        _heartbeatEmitter = new HeartbeatEmitter();
-        _fallDetectionEmitter = new FallDetectionEmitter();
-        _wallCollisionEmitter = new WallCollisionEmitter();
-    }
-
     /// <summary>
     /// Updates all audio emitters with appropriate cadence.
     /// </summary>
@@ -111,13 +90,11 @@ internal sealed class WorldAudioCoordinator
     /// </summary>
     public void ResetStaticResources()
     {
-        _cadenceGate.Reset();
-        HostileStaticEmitter.DisposeStaticResources();
+        Reset();
+        _hostileStaticEmitter.DisposeStaticResources();
         FootstepToneProvider.DisposeStaticResources();
-        PassageDetectorEmitter.DisposeStaticResources();
-        HeartbeatEmitter.DisposeStaticResources();
-        FallDetectionEmitter.DisposeStaticResources();
-        WallCollisionEmitter.DisposeStaticResources();
+        _passageDetectorEmitter.DisposeStaticResources();
+        _heartbeatEmitter.DisposeStaticResources();
     }
 
     private void Run(string key, uint intervalFrames, Action action)

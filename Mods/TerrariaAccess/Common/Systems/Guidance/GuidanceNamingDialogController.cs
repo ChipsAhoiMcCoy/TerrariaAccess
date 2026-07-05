@@ -3,7 +3,6 @@ using Microsoft.Xna.Framework;
 using TerrariaAccess.Common.Services;
 using TerrariaAccess.Common.Utilities;
 using Terraria;
-using Terraria.Audio;
 using Terraria.ID;
 
 namespace TerrariaAccess.Common.Systems.Guidance;
@@ -38,7 +37,7 @@ internal sealed class GuidanceNamingDialogController
 
         _textDialog.Begin(initialText: string.Empty, log);
 
-        SoundEngine.PlaySound(SoundID.MenuOpen);
+        global::TerrariaAccess.Common.Services.UiSoundCuePlayer.PlayOpen();
         Main.NewText("Waypoint naming: type a name, press Enter to save, or Escape to cancel.", Color.LightSkyBlue);
         ScreenReaderService.Announce("Type the waypoint name, then press Enter to save or Escape to cancel.");
         log("BeginNaming: Naming dialog opened, awaiting user input.");
@@ -62,7 +61,7 @@ internal sealed class GuidanceNamingDialogController
             log($"UpdateNaming: Enter pressed. RawInput=\"{rawInput}\", ResolvedName=\"{resolvedName}\", " +
                 $"WorldPos=({_worldPosition.X:F1}, {_worldPosition.Y:F1})");
 
-            SoundEngine.PlaySound(SoundID.MenuOpen);
+            global::TerrariaAccess.Common.Services.UiSoundCuePlayer.PlayOpen();
             _text = string.Empty;
             _fallbackName = string.Empty;
             int playerIndex = _playerIndex;
@@ -74,7 +73,7 @@ internal sealed class GuidanceNamingDialogController
         {
             log("UpdateNaming: Escape pressed. Cancelling waypoint creation.");
             ScreenReaderService.Announce("Waypoint creation cancelled", force: true);
-            SoundEngine.PlaySound(SoundID.MenuClose);
+            global::TerrariaAccess.Common.Services.UiSoundCuePlayer.PlayClose();
 
             int playerIndex = _playerIndex;
             _text = string.Empty;

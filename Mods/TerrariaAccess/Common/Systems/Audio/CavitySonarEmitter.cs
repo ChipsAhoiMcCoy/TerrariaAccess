@@ -26,8 +26,6 @@ internal sealed class CavitySonarEmitter : AudioEmitterBase
     // Tone parameters
     private const float PipFreqBase = 440f;          // frequency at player height (A4)
     private const float SemitoneRatio = 1.05946309f;  // 2^(1/12)
-    private const float PipDuration = 0.04f;          // 40ms per pip
-    private const float MaxPan = 0.8f;
     private const float EmptyTileVolume = 0.3f;
     private const float LiquidTileVolume = 0.15f;
 
@@ -40,6 +38,7 @@ internal sealed class CavitySonarEmitter : AudioEmitterBase
     private int _lastPlayedColumn = -1;
     private int _scanOriginX;
     private int _scanOriginY;
+    private Vector2 _scanListenerCenter;
     private TileState[,]? _scanGrid; // [col, row]
 
     private enum TileState : byte
@@ -101,6 +100,7 @@ internal sealed class CavitySonarEmitter : AudioEmitterBase
         Point foot = GetFootTile(player);
         _scanOriginX = foot.X - ScanWidth / 2;
         _scanOriginY = foot.Y - HeightAbove;
+        _scanListenerCenter = player.Center;
         _scanGrid = new TileState[ScanWidth, ScanHeight];
 
         // Snapshot the tile grid
@@ -179,11 +179,6 @@ internal sealed class CavitySonarEmitter : AudioEmitterBase
         float configVolume = TerrariaAccessConfig.Instance?.CavitySonarVolume ?? 1f;
         if (configVolume <= 0f) return;
 
-        // Pan: leftmost = -MaxPan, center = 0, rightmost = +MaxPan
-        float pan = ScanWidth > 1
-            ? MathHelper.Lerp(-MaxPan, MaxPan, (float)column / (ScanWidth - 1))
-            : 0f;
-
         // Count non-solid tiles in this column for thinning
         int emptyCount = 0;
         for (int row = 0; row < ScanHeight; row++)
@@ -215,9 +210,25 @@ internal sealed class CavitySonarEmitter : AudioEmitterBase
             float frequency = PipFreqBase * MathF.Pow(SemitoneRatio, -relativeRow);
 
             float volume = state == TileState.Liquid ? LiquidTileVolume : EmptyTileVolume;
-            volume *= configVolume;
+            Vector2 tileWorldPosition = new(
+                (_scanOriginX + column + 0.5f) * 16f,
+                (_scanOriginY + row + 0.5f) * 16f);
 
-            FootstepToneProvider.Play(frequency, volume, useTriangleWave: state == TileState.Liquid, pan);
+            SpatializedSoundEngine.SpatialAudioSample sample = SpatializedSoundEngine.Compute(
+                _scanListenerCenter,
+                tileWorldPosition,
+                volume);
+
+            if (!sample.IsAudible(configVolume))
+            {
+                continue;
+            }
+
+            FootstepToneProvider.PlaySpatialHorizontalAndDistance(
+                sample,
+                frequency,
+                configVolume,
+                useTriangleWave: state == TileState.Liquid);
         }
     }
 
@@ -225,6 +236,7 @@ internal sealed class CavitySonarEmitter : AudioEmitterBase
     {
         _isScanning = false;
         _scanGrid = null;
+        _scanListenerCenter = Vector2.Zero;
         _lastPlayedColumn = -1;
     }
 

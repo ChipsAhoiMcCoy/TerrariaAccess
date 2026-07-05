@@ -66,12 +66,12 @@ Mods: {
 
 				SpatialInventoryAudio: {
 					Label: Experimental Spatial Inventory Audio
-					Tooltip: Experimental feature. When enabled, inventory navigation clicks use panning (left/right) and pitch (high/low) to indicate slot position.
+					Tooltip: Experimental feature. When enabled, inventory navigation clicks use interaural timing for left/right position and pitch for high/low slot position.
 				}
 
 				MultiplayerFootstepsEnabled: {
 					Label: Multiplayer Footsteps
-					Tooltip: When enabled, plays spatialized footstep sounds for other players in multiplayer. The sounds use panning and pitch to indicate player positions relative to you.
+					Tooltip: When enabled, plays spatialized footstep sounds for other players in multiplayer. The sounds use interaural timing and pitch to indicate player positions relative to you.
 				}
 
 				MultiplayerFootstepVolume: {
@@ -101,7 +101,7 @@ Mods: {
 
 				WallCollisionEnabled: {
 					Label: Wall Collision
-					Tooltip: When enabled, plays a repeating tap sound when you walk into a solid wall. The tap is panned toward the wall so you can tell which side is blocked.
+					Tooltip: When enabled, plays a repeating tap sound when you walk into a solid wall. The tap is positioned toward the wall so you can tell which side is blocked.
 				}
 
 				WallCollisionVolume: {

@@ -40,6 +40,15 @@ public class ToneEnvelopeTests
     }
 
     [Fact]
+    public void Constructor_WithNonFiniteFractions_SetsFractionsToZero()
+    {
+        var envelope = new ToneEnvelope(attackFraction: float.NaN, releaseFraction: float.PositiveInfinity, applyHannWindow: false);
+
+        envelope.AttackFraction.Should().Be(0f);
+        envelope.ReleaseFraction.Should().Be(0f);
+    }
+
+    [Fact]
     public void Constructor_PreservesApplyHannWindowTrue()
     {
         var envelope = new ToneEnvelope(attackFraction: 0.1f, releaseFraction: 0.3f, applyHannWindow: true);
@@ -77,6 +86,16 @@ public class ToneEnvelopeTests
         var result = envelope.Evaluate(0.5f);
 
         result.Should().BeApproximately(1f, 0.001f);
+    }
+
+    [Fact]
+    public void Evaluate_WithNonFiniteIndex_ReturnsZero()
+    {
+        var envelope = new ToneEnvelope(attackFraction: 0f, releaseFraction: 0f, applyHannWindow: true);
+
+        var result = envelope.Evaluate(float.NaN);
+
+        result.Should().Be(0f);
     }
 
     [Fact]

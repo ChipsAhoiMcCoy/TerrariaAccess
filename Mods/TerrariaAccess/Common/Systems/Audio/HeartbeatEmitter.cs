@@ -109,8 +109,9 @@ internal sealed class HeartbeatEmitter : AudioEmitterBase
         StopAllInstances();
     }
 
-    public static void DisposeStaticResources()
+    public void DisposeStaticResources()
     {
+        StopAllInstances();
         s_lubTone?.Dispose();
         s_lubTone = null;
         s_dubTone?.Dispose();
@@ -134,63 +135,28 @@ internal sealed class HeartbeatEmitter : AudioEmitterBase
         }
 
         float configVolume = TerrariaAccessConfig.Instance?.HeartbeatVolume ?? 1f;
-        float volume = MathHelper.Clamp(
-            Main.soundVolume * configVolume * AudioVolumeDefaults.WorldCueVolumeScale,
-            0f, 1f);
+        float volume = MathHelper.Clamp(configVolume, 0f, 1f);
 
         if (volume <= 0f)
         {
             return;
         }
 
-        SoundEffectInstance instance = tone.CreateInstance();
-        instance.IsLooped = false;
-        instance.Volume = volume;
-
-        try
+        SoundEffectInstance? instance = SpatializedSoundEngine.PlayAlreadySpatializedWorldCue(tone, volume);
+        if (instance is not null)
         {
-            instance.Play();
             _liveInstances.Add(instance);
-        }
-        catch
-        {
-            instance.Dispose();
         }
     }
 
     private void CleanupFinishedInstances()
     {
-        for (int i = _liveInstances.Count - 1; i >= 0; i--)
-        {
-            SoundEffectInstance instance = _liveInstances[i];
-            if (instance.IsDisposed || instance.State == SoundState.Stopped)
-            {
-                instance.Dispose();
-                _liveInstances.RemoveAt(i);
-            }
-        }
+        SpatializedSoundEngine.CleanupStopped(_liveInstances);
     }
 
     private void StopAllInstances()
     {
-        for (int i = _liveInstances.Count - 1; i >= 0; i--)
-        {
-            SoundEffectInstance instance = _liveInstances[i];
-            try
-            {
-                if (!instance.IsDisposed)
-                {
-                    instance.Stop();
-                }
-            }
-            catch
-            {
-            }
-
-            instance.Dispose();
-        }
-
-        _liveInstances.Clear();
+        SpatializedSoundEngine.StopAndDisposeAll(_liveInstances);
     }
 
     private static SoundEffect EnsureLubTone()
@@ -201,12 +167,13 @@ internal sealed class HeartbeatEmitter : AudioEmitterBase
         }
 
         s_lubTone?.Dispose();
-        s_lubTone = SynthesizedSoundFactory.CreateAdditiveTone(
+        s_lubTone = SpatializedSoundEngine.CreateSpatialAdditiveTone(
             fundamentalFrequency: LubFundamental,
             partialMultipliers: HeartbeatPartials,
             envelope: HeartbeatEnvelope,
             durationSeconds: LubDurationSeconds,
             outputGain: LubGain,
+            normalizedScreenX: SpatializedSoundEngine.CenterNormalizedScreenX,
             partialFalloff: 0.5f);
         return s_lubTone;
     }
@@ -219,12 +186,13 @@ internal sealed class HeartbeatEmitter : AudioEmitterBase
         }
 
         s_dubTone?.Dispose();
-        s_dubTone = SynthesizedSoundFactory.CreateAdditiveTone(
+        s_dubTone = SpatializedSoundEngine.CreateSpatialAdditiveTone(
             fundamentalFrequency: DubFundamental,
             partialMultipliers: HeartbeatPartials,
             envelope: HeartbeatEnvelope,
             durationSeconds: DubDurationSeconds,
             outputGain: DubGain,
+            normalizedScreenX: SpatializedSoundEngine.CenterNormalizedScreenX,
             partialFalloff: 0.5f);
         return s_dubTone;
     }

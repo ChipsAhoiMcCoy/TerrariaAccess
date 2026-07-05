@@ -2,13 +2,11 @@
 using System;
 using System.Collections.Generic;
 using Microsoft.Xna.Framework;
-using Microsoft.Xna.Framework.Audio;
 using TerrariaAccess.Common.Players;
 using TerrariaAccess.Common.Services;
 using TerrariaAccess.Common.Systems.Guidance;
 using TerrariaAccess.Common.Utilities;
 using Terraria;
-using Terraria.Audio;
 using Terraria.GameInput;
 using Terraria.ID;
 using Terraria.Map;
@@ -34,7 +32,10 @@ public sealed partial class GuidanceSystem : ModSystem
     private const string MultiplayerExplorationModeKey = "screenReaderMultiplayerWaypointExplorationMode";
 
     internal const float ArrivalTileThreshold = 4f;
-    private const int MaxPingDelayFrames = 54;
+    private const int MinGuidancePingDelayFrames = 7;
+    private const int MaxPingDelayFrames = 32;
+    private const float GuidancePingCadenceRangeTiles = 52f;
+    private const float MinGuidancePingVolumeScale = 0.35f;
     private const float ScanRangeTiles = 90f;
     private const float ProximityAnnouncementStepTiles = 10f;
     private const float ProximityAnnouncementToleranceTiles = 0.35f;
@@ -316,7 +317,8 @@ public sealed partial class GuidanceSystem : ModSystem
             EmitPing(player, target.WorldPosition);
         }
 
-        SweepScheduler.Advance(Main.GameUpdateCount, SweepOrder.Count);
+        int delayFrames = ComputeGuidancePingDelayFrames(target.DistanceTiles);
+        SweepScheduler.Advance(Main.GameUpdateCount, SweepOrder.Count, delayFrames);
     }
 
     private static void RefreshSweepOrder(Player player)
@@ -2741,6 +2743,8 @@ public sealed partial class GuidanceSystem : ModSystem
                 {
                     _lastExplorationSelection = NearbyExplorationTargets[_selectedExplorationIndex];
                     ExplorationTargetRegistry.SetSelectedTarget(_lastExplorationSelection);
+                    RescheduleGuidancePing(player);
+                    EmitCurrentGuidancePing(player);
                 }
                 return;
             }
@@ -4026,7 +4030,7 @@ public sealed partial class GuidanceSystem : ModSystem
     {
         return _selectionMode switch
         {
-            SelectionMode.Exploration => false,
+            SelectionMode.Exploration when _selectedExplorationIndex < 0 => false,
             SelectionMode.None => false,
             SelectionMode.Waypoint when _selectedIndex < 0 => false,
             SelectionMode.Custom => CountCustomMatchesForSelection(_selectedCustomIndex) > 0,

@@ -7,7 +7,6 @@ using TerrariaAccess.Common.Services;
 using TerrariaAccess.Common.Systems.ModMenuAccessibility;
 using TerrariaAccess.Common.Utilities;
 using Terraria;
-using Terraria.Audio;
 using Terraria.GameInput;
 using Terraria.ID;
 using Terraria.Localization;
@@ -358,12 +357,12 @@ public sealed class ModInfoAccessibilitySystem : ModMenuAccessibilityBase
                 if (binding.Element is UIElement buttonElement)
                 {
                     Mod.Logger.Info($"[ModInfo] Clicking button: {binding.Label}");
-                    SoundEngine.PlaySound(SoundID.MenuTick);
+                    global::TerrariaAccess.Common.Services.UiSoundCuePlayer.PlayTick();
 
                     try
                     {
                         var clickEvent = new UIMouseEvent(buttonElement, Main.MouseScreen);
-                        buttonElement.LeftClick(clickEvent);
+                        global::TerrariaAccess.Common.Services.ProgrammaticUiClickInvoker.LeftClick(buttonElement, clickEvent);
                     }
                     catch (Exception ex)
                     {
@@ -382,12 +381,12 @@ public sealed class ModInfoAccessibilitySystem : ModMenuAccessibilityBase
                 if (binding.Type == PointType.BackButton && binding.Element is UIElement backButton)
                 {
                     Mod.Logger.Info("[ModInfo] B button pressed, clicking Back");
-                    SoundEngine.PlaySound(SoundID.MenuTick);
+                    global::TerrariaAccess.Common.Services.UiSoundCuePlayer.PlayTick();
 
                     try
                     {
                         var clickEvent = new UIMouseEvent(backButton, Main.MouseScreen);
-                        backButton.LeftClick(clickEvent);
+                        global::TerrariaAccess.Common.Services.ProgrammaticUiClickInvoker.LeftClick(backButton, clickEvent);
                     }
                     catch (Exception ex)
                     {

@@ -4,7 +4,6 @@ using Microsoft.Xna.Framework.Input;
 using TerrariaAccess.Common.Services;
 using TerrariaAccess.Common.Systems.FirstLetterNavigation;
 using Terraria;
-using Terraria.Audio;
 using Terraria.GameInput;
 using Terraria.ID;
 using Terraria.UI.Gamepad;
@@ -203,7 +202,7 @@ internal sealed class HousingQueryHandler
         }
 
         // Play tick sound to match native gamepad behavior
-        SoundEngine.PlaySound(SoundID.MenuTick);
+        global::TerrariaAccess.Common.Services.UiSoundCuePlayer.PlayTick();
     }
 
     private static void TriggerNpcMoveToPlayerPosition(int npcIndex)
@@ -229,7 +228,7 @@ internal sealed class HousingQueryHandler
         {
             // Location is valid - actually move the NPC
             WorldGen.moveRoom(tileX, tileY, npcIndex);
-            SoundEngine.PlaySound(SoundID.MenuTick);
+            global::TerrariaAccess.Common.Services.UiSoundCuePlayer.PlayTick();
         }
     }
 }

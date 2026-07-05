@@ -5,7 +5,6 @@ using System.Reflection;
 using Microsoft.Xna.Framework;
 using Microsoft.Xna.Framework.Graphics;
 using Terraria;
-using Terraria.Audio;
 using Terraria.GameContent.UI.Elements;
 using Terraria.ID;
 using Terraria.GameContent.UI.States;
@@ -547,7 +546,7 @@ public sealed class HairStyleNavigationSystem : ModSystem
         _currentHairIndex = index;
         _pendingFocusIndex = index;
         ScrollToIndex(index);
-        SoundEngine.PlaySound(SoundID.MenuTick);
+        global::TerrariaAccess.Common.Services.UiSoundCuePlayer.PlayTick();
 
         if (announceChange)
         {
@@ -588,7 +587,7 @@ public sealed class HairStyleNavigationSystem : ModSystem
             player.hair = hairId;
             _selectedHairIndex = index;
             _currentHairIndex = index;
-            SoundEngine.PlaySound(SoundID.MenuTick);
+            global::TerrariaAccess.Common.Services.UiSoundCuePlayer.PlayTick();
 
             TerrariaAccess.Instance?.Logger.Debug($"[HairStyleNav] SelectHairStyle: index={index}, hairId={hairId}, oldHair={oldHair}, newHair={player.hair}");
 

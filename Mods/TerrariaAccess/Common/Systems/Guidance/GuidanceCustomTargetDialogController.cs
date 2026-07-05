@@ -1,7 +1,6 @@
 #nullable enable
 using Microsoft.Xna.Framework;
 using Terraria;
-using Terraria.Audio;
 using Terraria.ID;
 using TerrariaAccess.Common.Services;
 
@@ -32,7 +31,7 @@ internal sealed class GuidanceCustomTargetDialogController
 
         _textDialog.Begin(initialText: string.Empty, log);
 
-        SoundEngine.PlaySound(SoundID.MenuOpen);
+        global::TerrariaAccess.Common.Services.UiSoundCuePlayer.PlayOpen();
         Main.NewText("Custom tracker: type tile, object, item, NPC, enemy, critter, or projectile ID/name. Press Enter to save, or Escape to cancel.", Color.LightSkyBlue);
         ScreenReaderService.Announce("Type a custom tracker target, such as tile 15, item 9, NPC 17, enemy 3, or projectile 12. Press Enter to save or Escape to cancel.");
         log("BeginCustomTargetInput: Dialog opened, awaiting user input.");
@@ -53,7 +52,7 @@ internal sealed class GuidanceCustomTargetDialogController
             string rawInput = dialogResult.Text.Trim();
             log($"UpdateCustomTargetInput: Enter pressed. RawInput=\"{rawInput}\"");
 
-            SoundEngine.PlaySound(SoundID.MenuOpen);
+            global::TerrariaAccess.Common.Services.UiSoundCuePlayer.PlayOpen();
             _text = string.Empty;
             int playerIndex = _playerIndex;
             _playerIndex = -1;
@@ -64,7 +63,7 @@ internal sealed class GuidanceCustomTargetDialogController
         {
             log("UpdateCustomTargetInput: Escape pressed. Cancelling custom tracker creation.");
             ScreenReaderService.Announce("Custom tracker creation cancelled", force: true);
-            SoundEngine.PlaySound(SoundID.MenuClose);
+            global::TerrariaAccess.Common.Services.UiSoundCuePlayer.PlayClose();
 
             int playerIndex = _playerIndex;
             _text = string.Empty;

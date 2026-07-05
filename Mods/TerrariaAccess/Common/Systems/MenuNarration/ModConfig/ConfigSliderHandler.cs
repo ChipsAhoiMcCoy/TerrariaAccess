@@ -77,7 +77,7 @@ internal static class ConfigSliderHandler
             return false;
         }
 
-        // Element's click handler plays its own sound, so we don't add another
+        // Suppress native click audio; callers provide explicit Terraria Access UI feedback.
         return TryInvokeClick(element);
     }
 
@@ -209,7 +209,7 @@ internal static class ConfigSliderHandler
             CalculatedStyle dims = element.GetDimensions();
             var mousePosition = new Vector2(dims.X + dims.Width / 2, dims.Y + dims.Height / 2);
             var evt = new UIMouseEvent(element, mousePosition);
-            element.LeftClick(evt);
+            global::TerrariaAccess.Common.Services.ProgrammaticUiClickInvoker.LeftClick(element, evt);
             return true;
         }
         catch (Exception ex)

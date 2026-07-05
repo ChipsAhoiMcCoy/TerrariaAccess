@@ -13,7 +13,6 @@ using TerrariaAccess.Common.Systems.ModBrowser;
 using TerrariaAccess.Common.Systems.ModMenuAccessibility;
 using TerrariaAccess.Common.Utilities;
 using Terraria;
-using Terraria.Audio;
 using Terraria.GameContent.Bestiary;
 using Terraria.GameContent.UI.Elements;
 using Terraria.GameInput;
@@ -440,7 +439,7 @@ public sealed class BestiaryAccessibilitySystem : ModMenuAccessibilityBase
             string? currentText = GetSearchString(menuState);
             if (_lastSearchText is not null && !string.Equals(currentText, _lastSearchText, StringComparison.Ordinal))
             {
-                SoundEngine.PlaySound(SoundID.MenuTick);
+                global::TerrariaAccess.Common.Services.UiSoundCuePlayer.PlayTick();
             }
             _lastSearchText = currentText;
         }
@@ -1191,7 +1190,7 @@ public sealed class BestiaryAccessibilitySystem : ModMenuAccessibilityBase
                 if (binding.Element is UIElement buttonElement)
                 {
                     Mod.Logger.Info($"[{SystemLogName}] Clicking: {binding.Label}");
-                    SoundEngine.PlaySound(SoundID.MenuTick);
+                    global::TerrariaAccess.Common.Services.UiSoundCuePlayer.PlayTick();
 
                     try
                     {
@@ -1205,7 +1204,7 @@ public sealed class BestiaryAccessibilitySystem : ModMenuAccessibilityBase
                         Main.lastMouseY = Main.mouseY;
 
                         var clickEvent = new UIMouseEvent(buttonElement, clickPos);
-                        buttonElement.LeftClick(clickEvent);
+                        global::TerrariaAccess.Common.Services.ProgrammaticUiClickInvoker.LeftClick(buttonElement, clickEvent);
 
                         Main.mouseLeft = false;
                         Main.mouseLeftRelease = false;
@@ -1233,7 +1232,8 @@ public sealed class BestiaryAccessibilitySystem : ModMenuAccessibilityBase
                 {
                     // For snap-point based buttons without element refs, use UILinkPointNavigator
                     Mod.Logger.Info($"[{SystemLogName}] Activating via snap point: {binding.Label}");
-                    SoundEngine.PlaySound(SoundID.MenuTick);
+                    global::TerrariaAccess.Common.Services.UiSoundCuePlayer.PlayTick();
+                    global::TerrariaAccess.Common.Services.NativeSoundSuppression.RequestDeferredSuppressionForCurrentFrame();
 
                     // Move mouse to the snap point position
                     Main.mouseX = (int)binding.Position.X;
@@ -1263,12 +1263,12 @@ public sealed class BestiaryAccessibilitySystem : ModMenuAccessibilityBase
             if (_exitBinding?.Element is UIElement exitButton)
             {
                 Mod.Logger.Info($"[{SystemLogName}] B button pressed, clicking Back");
-                SoundEngine.PlaySound(SoundID.MenuTick);
+                global::TerrariaAccess.Common.Services.UiSoundCuePlayer.PlayTick();
 
                 try
                 {
                     var clickEvent = new UIMouseEvent(exitButton, Main.MouseScreen);
-                    exitButton.LeftClick(clickEvent);
+                    global::TerrariaAccess.Common.Services.ProgrammaticUiClickInvoker.LeftClick(exitButton, clickEvent);
                 }
                 catch (Exception ex)
                 {

@@ -1,4 +1,5 @@
 #nullable enable
+using TerrariaAccess.Common.Services;
 using Terraria;
 
 namespace TerrariaAccess.Common.Systems.Audio;
@@ -18,7 +19,7 @@ internal abstract class AudioEmitterBase : IAudioEmitter
             return false;
         }
 
-        if (Main.dedServ || Main.gameMenu || Main.soundVolume <= 0f)
+        if (Main.gameMenu || !SpatializedSoundEngine.CanPlay())
         {
             return false;
         }

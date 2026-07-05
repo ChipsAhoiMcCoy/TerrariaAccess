@@ -8,7 +8,6 @@ using TerrariaAccess.Common.Systems.GamepadEmulation;
 using TerrariaAccess.Common.Systems.ModBrowser;
 using TerrariaAccess.Common.Utilities;
 using Terraria;
-using Terraria.Audio;
 using Terraria.Localization;
 using Terraria.GameInput;
 using Terraria.ID;
@@ -117,7 +116,7 @@ internal static class FirstLetterNavigationManager
 
         if (_isEnabled)
         {
-            SoundEngine.PlaySound(SoundID.MenuOpen);
+            global::TerrariaAccess.Common.Services.UiSoundCuePlayer.PlayOpen();
             string announcement = LocalizationHelper.GetTextOrFallback(
                 "Mods.TerrariaAccess.FirstLetterNavigation.Enabled",
                 "First Letter Navigation Enabled. Press a letter to find items.");
@@ -125,7 +124,7 @@ internal static class FirstLetterNavigationManager
         }
         else
         {
-            SoundEngine.PlaySound(SoundID.MenuClose);
+            global::TerrariaAccess.Common.Services.UiSoundCuePlayer.PlayClose();
             string announcement = LocalizationHelper.GetTextOrFallback(
                 "Mods.TerrariaAccess.FirstLetterNavigation.Disabled",
                 "First Letter Navigation Disabled");

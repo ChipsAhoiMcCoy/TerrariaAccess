@@ -636,8 +636,8 @@ public sealed class EventProgressNarrationSystem : ModSystem
         try
         {
             float volume = MathHelper.Clamp((TerrariaAccessConfig.Instance?.GuidanceVolume ?? 1f) * 0.65f, 0f, 1f);
-            InGameNarrationSystem.FootstepToneProvider.Play(880f, volume);
-            InGameNarrationSystem.FootstepToneProvider.Play(1320f, volume * 0.7f);
+            InGameNarrationSystem.FootstepToneProvider.PlayCentered(880f, volume, useTriangleWave: false);
+            InGameNarrationSystem.FootstepToneProvider.PlayCentered(1320f, volume * 0.7f, useTriangleWave: false);
         }
         catch (Exception ex)
         {

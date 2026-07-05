@@ -25,7 +25,7 @@ internal sealed class HostileStaticEmitter : AudioEmitterBase
     private static readonly float[] HostileTonePartials = { 1.24f, 1.5f };
     private static readonly ToneEnvelope HostileToneEnvelope = new(attackFraction: 0.12f, releaseFraction: 0.55f, applyHannWindow: true);
 
-    private static SoundEffect? s_hostileTone;
+    private static readonly SpatializedSoundCache s_hostileToneCache = new();
 
     private HostileCandidate? _primaryCandidate;
     private int _activeNpcId = -1;
@@ -85,10 +85,10 @@ internal sealed class HostileStaticEmitter : AudioEmitterBase
         StopAllInstances();
     }
 
-    public static void DisposeStaticResources()
+    public void DisposeStaticResources()
     {
-        s_hostileTone?.Dispose();
-        s_hostileTone = null;
+        StopAllInstances();
+        s_hostileToneCache.Dispose();
     }
 
     private HostileCandidate? FindPrimaryCandidate(Player listener)
@@ -219,39 +219,28 @@ internal sealed class HostileStaticEmitter : AudioEmitterBase
 
     private void PlayStaticCue(Vector2 listenerCenter, HostileCandidate candidate)
     {
-        SoundEffect tone = EnsureHostileTone();
+        // Use Terraria-aligned spatial audio for hostile cues
+        SpatializedSoundEngine.SpatialAudioSample sample = SpatializedSoundEngine.Compute(
+            listenerCenter,
+            candidate.WorldPosition,
+            1f);
+
+        float configVolume = TerrariaAccessConfig.Instance?.EnemySoundVolume ?? 1f;
+        if (!sample.IsAudible(configVolume))
+        {
+            return;
+        }
+
+        SoundEffect tone = EnsureHostileTone(sample.NormalizedScreenX);
         if (tone.IsDisposed)
         {
             return;
         }
 
-        // Use Terraria-aligned spatial audio for hostile cues
-        SpatialAudioPanner.SpatialAudioSample sample = SpatialAudioPanner.Compute(
-            listenerCenter,
-            candidate.WorldPosition,
-            Main.soundVolume);
-
-        float configVolume = TerrariaAccessConfig.Instance?.EnemySoundVolume ?? 1f;
-        float volume = MathHelper.Clamp(sample.Volume * configVolume * AudioVolumeDefaults.WorldCueVolumeScale, 0f, 1f);
-        if (volume <= 0f)
+        SoundEffectInstance? instance = SpatializedSoundEngine.PlayWorldCue(tone, sample, configVolume);
+        if (instance is not null)
         {
-            return;
-        }
-
-        SoundEffectInstance instance = tone.CreateInstance();
-        instance.IsLooped = false;
-        instance.Pan = sample.Pan;
-        instance.Pitch = sample.Pitch;
-        instance.Volume = volume;
-
-        try
-        {
-            instance.Play();
             _liveInstances.Add(instance);
-        }
-        catch
-        {
-            instance.Dispose();
         }
     }
 
@@ -272,55 +261,25 @@ internal sealed class HostileStaticEmitter : AudioEmitterBase
 
     private void CleanupFinishedInstances()
     {
-        for (int i = _liveInstances.Count - 1; i >= 0; i--)
-        {
-            SoundEffectInstance instance = _liveInstances[i];
-            if (instance.IsDisposed || instance.State == SoundState.Stopped)
-            {
-                instance.Dispose();
-                _liveInstances.RemoveAt(i);
-            }
-        }
+        SpatializedSoundEngine.CleanupStopped(_liveInstances);
     }
 
     private void StopAllInstances()
     {
-        for (int i = _liveInstances.Count - 1; i >= 0; i--)
-        {
-            SoundEffectInstance instance = _liveInstances[i];
-            try
-            {
-                if (!instance.IsDisposed)
-                {
-                    instance.Stop();
-                }
-            }
-            catch
-            {
-            }
-
-            instance.Dispose();
-        }
-
-        _liveInstances.Clear();
+        SpatializedSoundEngine.StopAndDisposeAll(_liveInstances);
     }
 
-    private static SoundEffect EnsureHostileTone()
+    private static SoundEffect EnsureHostileTone(float normalizedScreenX)
     {
-        if (s_hostileTone is { IsDisposed: false })
-        {
-            return s_hostileTone;
-        }
-
-        s_hostileTone?.Dispose();
-        s_hostileTone = SynthesizedSoundFactory.CreateAdditiveTone(
+        return s_hostileToneCache.GetOrCreate(normalizedScreenX, quantizedNormalizedScreenX =>
+            SpatializedSoundEngine.CreateSpatialAdditiveTone(
             fundamentalFrequency: 360f,
             partialMultipliers: HostileTonePartials,
             envelope: HostileToneEnvelope,
             durationSeconds: HostileToneDurationSeconds,
             outputGain: HostileToneGain,
-            partialFalloff: 0.75f);
-        return s_hostileTone;
+            normalizedScreenX: quantizedNormalizedScreenX,
+            partialFalloff: 0.75f));
     }
 
     private static bool IsWorldPositionApproximatelyOnScreen(Vector2 worldPosition, float paddingPixels = 48f)

@@ -7,10 +7,10 @@ using Microsoft.Xna.Framework.Audio;
 using TerrariaAccess.Common;
 using TerrariaAccess.Common.Services;
 using TerrariaAccess.Common.Systems;
+using TerrariaAccess.Common.Systems.Guidance;
 using TerrariaAccess.Common.Utilities;
 using ExplorationTargetKey = TerrariaAccess.Common.Systems.ExplorationTargetRegistry.ExplorationTargetKey;
 using Terraria;
-using Terraria.Audio;
 using Terraria.ID;
 using Terraria.ObjectData;
 
@@ -25,7 +25,7 @@ public sealed partial class InGameNarrationSystem
         private const float SelectedTargetMatchToleranceTiles = 6f;
         private const float MinimumVisibilityBrightness = 0.02f;
 
-        private static readonly Dictionary<string, SoundEffect> ToneCache = new();
+        private static readonly SpatializedSoundCache<string> ToneCache = new();
         private static readonly HashSet<int> RescuableNpcTypes = new()
         {
             NPCID.OldMan,
@@ -206,7 +206,7 @@ public sealed partial class InGameNarrationSystem
 
         public void Update(Player player, bool isEnabled)
         {
-            if (Main.dedServ || Main.soundVolume <= 0f)
+            if (!SpatializedSoundEngine.CanPlay())
             {
                 StopAllInstances();
                 ClearAllCueSchedules();
@@ -347,6 +347,14 @@ public sealed partial class InGameNarrationSystem
                 UpdateArrivalState(entry);
             }
 
+            if (focused && GuidanceSystem.IsFocusedExplorationGuidanceActive)
+            {
+                ResetSweepSchedule();
+                TrimInactiveKeys();
+                CleanupFinishedInstances();
+                return;
+            }
+
             // Snapshot the sweep order only when starting a new cycle.
             // During an active cycle, play through the existing snapshot so
             // player movement doesn't cause jitter or restart mid-sweep.
@@ -421,14 +429,10 @@ public sealed partial class InGameNarrationSystem
             }
         }
 
-        public static void DisposeStaticResources()
+        public void DisposeStaticResources()
         {
-            foreach ((string key, SoundEffect tone) in ToneCache)
-            {
-                tone.Dispose();
-            }
-
-            ToneCache.Clear();
+            StopAllInstances();
+            ToneCache.Dispose();
         }
 
         private void RebuildCandidateList(Player player)
@@ -495,7 +499,7 @@ public sealed partial class InGameNarrationSystem
             PlayCue(playerCenter, entry, isPrimaryCue: true);
 
             _emittedThisSweep.Add(entry.Candidate.Key);
-            _sweepScheduler.Advance(Main.GameUpdateCount, _sweepOrder.Count);
+            _sweepScheduler.Advance(Main.GameUpdateCount, _sweepOrder.Count, ComputeCueDelayFrames(entry));
         }
 
         private void TrimInactiveKeys()
@@ -592,104 +596,60 @@ public sealed partial class InGameNarrationSystem
 
         private void PlayCue(Vector2 playerCenter, CandidateDistance entry, bool isPrimaryCue)
         {
-            if (Main.soundVolume <= 0f)
+            if (!SpatializedSoundEngine.CanPlay())
             {
                 return;
             }
 
             int currentFrame = (int)Main.GameUpdateCount;
             TrackedInteractableKey cueKey = entry.Candidate.Key;
+            int delayFrames = ComputeCueDelayFrames(entry);
             if (_nextCueFrame.TryGetValue(cueKey, out int readyFrame) && currentFrame < readyFrame)
             {
                 return;
             }
 
-            SpatialAudioPanner.SpatialAudioSample sample = SpatialAudioPanner.Compute(
+            SpatializedSoundEngine.SpatialAudioSample sample = SpatializedSoundEngine.Compute(
                 playerCenter,
                 entry.Candidate.WorldPosition,
-                Main.soundVolume);
+                1f);
             InteractableCueProfile profile = entry.Candidate.Profile;
             float configVolume = TerrariaAccessConfig.Instance?.InteractableCueVolume ?? 1f;
 
-            if (profile.SoundStyle.HasValue)
-            {
-                // For SoundStyle with position, Terraria handles pan and volume falloff natively.
-                // We only apply our pitch offset and the cue volume scales.
-                float soundStyleVolumeScale = (isPrimaryCue ? 1f : SecondaryCueVolumeScale) * configVolume * AudioVolumeDefaults.WorldCueVolumeScale;
-                if (soundStyleVolumeScale <= 0f)
-                {
-                    return;
-                }
-
-                SoundStyle style = profile.SoundStyle.Value
-                    .WithVolumeScale(soundStyleVolumeScale)
-                    .WithPitchOffset(sample.Pitch);
-                SoundEngine.PlaySound(style, entry.Candidate.WorldPosition);
-                _nextCueFrame[cueKey] = currentFrame + Math.Max(1, profile.MinIntervalFrames);
-                return;
-            }
-
-            // For synthesized tones, we apply pan/pitch/volume manually since we're not using SoundEngine.
-            float scaledVolume = MathHelper.Clamp(
-                sample.Volume * (isPrimaryCue ? 1f : SecondaryCueVolumeScale) * configVolume * AudioVolumeDefaults.WorldCueVolumeScale,
-                0f,
-                1f);
-            if (scaledVolume <= 0f)
+            float localVolumeScale = (isPrimaryCue ? 1f : SecondaryCueVolumeScale) * configVolume;
+            if (!sample.IsAudible(localVolumeScale))
             {
                 return;
             }
 
-            SoundEffect tone = EnsureTone(profile);
-            SoundEffectInstance instance = tone.CreateInstance();
-            instance.IsLooped = false;
-            instance.Pitch = sample.Pitch;
-            instance.Pan = sample.Pan;
-            instance.Volume = scaledVolume;
-
-            try
+            SoundEffect tone = EnsureTone(profile, sample.NormalizedScreenX);
+            SoundEffectInstance? instance = SpatializedSoundEngine.PlayWorldCue(tone, sample, localVolumeScale);
+            if (instance is not null)
             {
-                instance.Play();
                 _liveInstances.Add(instance);
-                _nextCueFrame[cueKey] = currentFrame + Math.Max(1, profile.MinIntervalFrames);
+                _nextCueFrame[cueKey] = currentFrame + delayFrames;
             }
-            catch
-            {
-                instance.Dispose();
-            }
+        }
+
+        private static int ComputeCueDelayFrames(CandidateDistance entry)
+        {
+            InteractableCueProfile profile = entry.Candidate.Profile;
+            return GuidancePingCadence.ComputeDistanceDelayFrames(
+                entry.DistanceTiles,
+                GuidanceSystem.ArrivalTileThreshold,
+                profile.MinIntervalFrames,
+                profile.MaxIntervalFrames,
+                profile.MaxAudibleDistanceTiles);
         }
 
         private void CleanupFinishedInstances()
         {
-            for (int i = _liveInstances.Count - 1; i >= 0; i--)
-            {
-                SoundEffectInstance instance = _liveInstances[i];
-                if (instance.IsDisposed || instance.State == SoundState.Stopped)
-                {
-                    instance.Dispose();
-                    _liveInstances.RemoveAt(i);
-                }
-            }
+            SpatializedSoundEngine.CleanupStopped(_liveInstances);
         }
 
         private void StopAllInstances()
         {
-            foreach (SoundEffectInstance instance in _liveInstances)
-            {
-                try
-                {
-                    if (!instance.IsDisposed)
-                    {
-                        instance.Stop();
-                    }
-                }
-                catch
-                {
-                }
-
-                instance.Dispose();
-            }
-
-            _liveInstances.Clear();
+            SpatializedSoundEngine.StopAndDisposeAll(_liveInstances);
         }
 
         private void ResetSweepSchedule()
@@ -706,23 +666,18 @@ public sealed partial class InGameNarrationSystem
             _nextCueFrame.Clear();
         }
 
-        private static SoundEffect EnsureTone(InteractableCueProfile profile)
+        private static SoundEffect EnsureTone(InteractableCueProfile profile, float normalizedScreenX)
         {
-            if (ToneCache.TryGetValue(profile.Id, out SoundEffect? cached) && cached is { IsDisposed: false })
-            {
-                return cached;
-            }
-
-            cached?.Dispose();
-            SoundEffect created = SynthesizedSoundFactory.CreateAdditiveTone(
-                profile.FundamentalFrequency,
-                profile.PartialMultipliers,
-                profile.Envelope,
-                profile.DurationSeconds,
-                profile.BaseGain);
-
-            ToneCache[profile.Id] = created;
-            return created;
+            return ToneCache.GetOrCreate(
+                profile.Id,
+                normalizedScreenX,
+                quantizedNormalizedScreenX => SpatializedSoundEngine.CreateSpatialAdditiveTone(
+                    profile.FundamentalFrequency,
+                    profile.PartialMultipliers,
+                    profile.Envelope,
+                    profile.DurationSeconds,
+                    profile.BaseGain,
+                    quantizedNormalizedScreenX));
         }
 
         private void RegisterSource(WorldInteractableSource source)
@@ -1400,8 +1355,7 @@ public sealed partial class InGameNarrationSystem
             float maxAudibleDistanceTiles,
             int minIntervalFrames,
             int maxIntervalFrames,
-            string arrivalLabel = "",
-            SoundStyle? soundStyle = null)
+            string arrivalLabel = "")
         {
             Id = id;
             FundamentalFrequency = fundamentalFrequency;
@@ -1413,7 +1367,6 @@ public sealed partial class InGameNarrationSystem
             MinIntervalFrames = minIntervalFrames;
             MaxIntervalFrames = maxIntervalFrames;
             ArrivalLabel = arrivalLabel ?? string.Empty;
-            SoundStyle = soundStyle;
         }
 
         public string Id { get; }
@@ -1426,13 +1379,12 @@ public sealed partial class InGameNarrationSystem
         public int MinIntervalFrames { get; }
         public int MaxIntervalFrames { get; }
         public string ArrivalLabel { get; }
-        public SoundStyle? SoundStyle { get; }
 
         public static InteractableCueProfile Chest { get; } = new(
             id: "chest",
             fundamentalFrequency: 620f,
             partialMultipliers: new[] { 1.5f },
-            envelope: SynthesizedSoundFactory.ToneEnvelopes.WorldCue,
+            envelope: SpatializedSoundEngine.ToneEnvelopes.WorldCue,
             durationSeconds: 0.18f,
             baseGain: 0.4f,
             maxAudibleDistanceTiles: 85f,
@@ -1444,7 +1396,7 @@ public sealed partial class InGameNarrationSystem
             id: "heart-crystal",
             fundamentalFrequency: 880f,
             partialMultipliers: new[] { 2f, 2.5f },
-            envelope: SynthesizedSoundFactory.ToneEnvelopes.WorldCue,
+            envelope: SpatializedSoundEngine.ToneEnvelopes.WorldCue,
             durationSeconds: 0.22f,
             baseGain: 0.4f,
             maxAudibleDistanceTiles: 90f,
@@ -1456,7 +1408,7 @@ public sealed partial class InGameNarrationSystem
             id: "life-fruit",
             fundamentalFrequency: 940f,
             partialMultipliers: new[] { 1.6f, 2.15f },
-            envelope: SynthesizedSoundFactory.ToneEnvelopes.WorldCue,
+            envelope: SpatializedSoundEngine.ToneEnvelopes.WorldCue,
             durationSeconds: 0.22f,
             baseGain: 0.4f,
             maxAudibleDistanceTiles: 90f,
@@ -1468,7 +1420,7 @@ public sealed partial class InGameNarrationSystem
             id: "plantera-bulb",
             fundamentalFrequency: 520f,
             partialMultipliers: new[] { 1.35f, 1.75f },
-            envelope: SynthesizedSoundFactory.ToneEnvelopes.WorldCue,
+            envelope: SpatializedSoundEngine.ToneEnvelopes.WorldCue,
             durationSeconds: 0.22f,
             baseGain: 0.4f,
             maxAudibleDistanceTiles: 90f,
@@ -1480,7 +1432,7 @@ public sealed partial class InGameNarrationSystem
             id: "demon-altar",
             fundamentalFrequency: 480f,
             partialMultipliers: new[] { 1.25f, 1.5f },
-            envelope: SynthesizedSoundFactory.ToneEnvelopes.WorldCue,
+            envelope: SpatializedSoundEngine.ToneEnvelopes.WorldCue,
             durationSeconds: 0.2f,
             baseGain: 0.38f,
             maxAudibleDistanceTiles: 85f,
@@ -1492,7 +1444,7 @@ public sealed partial class InGameNarrationSystem
             id: "crimson-altar",
             fundamentalFrequency: 540f,
             partialMultipliers: new[] { 1.15f, 1.45f },
-            envelope: SynthesizedSoundFactory.ToneEnvelopes.WorldCue,
+            envelope: SpatializedSoundEngine.ToneEnvelopes.WorldCue,
             durationSeconds: 0.2f,
             baseGain: 0.38f,
             maxAudibleDistanceTiles: 85f,
@@ -1504,7 +1456,7 @@ public sealed partial class InGameNarrationSystem
             id: "shadow-orb",
             fundamentalFrequency: 360f,
             partialMultipliers: new[] { 1.33f },
-            envelope: SynthesizedSoundFactory.ToneEnvelopes.WorldCue,
+            envelope: SpatializedSoundEngine.ToneEnvelopes.WorldCue,
             durationSeconds: 0.2f,
             baseGain: 0.38f,
             maxAudibleDistanceTiles: 80f,
@@ -1516,7 +1468,7 @@ public sealed partial class InGameNarrationSystem
             id: "crimson-heart",
             fundamentalFrequency: 430f,
             partialMultipliers: new[] { 1.25f, 1.6f },
-            envelope: SynthesizedSoundFactory.ToneEnvelopes.WorldCue,
+            envelope: SpatializedSoundEngine.ToneEnvelopes.WorldCue,
             durationSeconds: 0.2f,
             baseGain: 0.38f,
             maxAudibleDistanceTiles: 80f,
@@ -1528,7 +1480,7 @@ public sealed partial class InGameNarrationSystem
             id: "bee-larva",
             fundamentalFrequency: 720f,
             partialMultipliers: new[] { 1.25f, 1.75f },
-            envelope: SynthesizedSoundFactory.ToneEnvelopes.WorldCue,
+            envelope: SpatializedSoundEngine.ToneEnvelopes.WorldCue,
             durationSeconds: 0.2f,
             baseGain: 0.42f,
             maxAudibleDistanceTiles: 70f,
@@ -1540,7 +1492,7 @@ public sealed partial class InGameNarrationSystem
             id: "rescue-npc",
             fundamentalFrequency: 760f,
             partialMultipliers: new[] { 1.25f, 1.55f },
-            envelope: SynthesizedSoundFactory.ToneEnvelopes.WorldCue,
+            envelope: SpatializedSoundEngine.ToneEnvelopes.WorldCue,
             durationSeconds: 0.2f,
             baseGain: 0.36f,
             maxAudibleDistanceTiles: 80f,
@@ -1552,25 +1504,23 @@ public sealed partial class InGameNarrationSystem
             id: "ore",
             fundamentalFrequency: 460f,
             partialMultipliers: new[] { 1.5f },
-            envelope: SynthesizedSoundFactory.ToneEnvelopes.WorldCue,
+            envelope: SpatializedSoundEngine.ToneEnvelopes.WorldCue,
             durationSeconds: 0.2f,
             baseGain: 0.36f,
             maxAudibleDistanceTiles: 92f,
             minIntervalFrames: SweepIntervalFrames,
-            maxIntervalFrames: 48,
-            soundStyle: SoundID.Tink);
+            maxIntervalFrames: 48);
 
         public static InteractableCueProfile Gem { get; } = new(
             id: "gem",
             fundamentalFrequency: 660f,
             partialMultipliers: new[] { 1.3f, 1.6f },
-            envelope: SynthesizedSoundFactory.ToneEnvelopes.WorldCue,
+            envelope: SpatializedSoundEngine.ToneEnvelopes.WorldCue,
             durationSeconds: 0.22f,
             baseGain: 0.38f,
             maxAudibleDistanceTiles: 92f,
             minIntervalFrames: SweepIntervalFrames,
-            maxIntervalFrames: 48,
-            soundStyle: SoundID.Shatter);
+            maxIntervalFrames: 48);
 
         /// <summary>
         /// Lihzahrd Altar - ancient stone altar found in the Lihzahrd Temple (Jungle Temple).
@@ -1581,7 +1531,7 @@ public sealed partial class InGameNarrationSystem
             id: "lihzahrd-altar",
             fundamentalFrequency: 400f,
             partialMultipliers: new[] { 1.4f, 1.8f, 2.2f },
-            envelope: SynthesizedSoundFactory.ToneEnvelopes.WorldCue,
+            envelope: SpatializedSoundEngine.ToneEnvelopes.WorldCue,
             durationSeconds: 0.24f,
             baseGain: 0.4f,
             maxAudibleDistanceTiles: 85f,
@@ -1593,7 +1543,7 @@ public sealed partial class InGameNarrationSystem
             id: "enchanted-sword",
             fundamentalFrequency: 820f,
             partialMultipliers: new[] { 2f, 2.5f, 3.2f },
-            envelope: SynthesizedSoundFactory.ToneEnvelopes.WorldCue,
+            envelope: SpatializedSoundEngine.ToneEnvelopes.WorldCue,
             durationSeconds: 0.26f,
             baseGain: 0.4f,
             maxAudibleDistanceTiles: 90f,
@@ -1605,7 +1555,7 @@ public sealed partial class InGameNarrationSystem
             id: "natures-gift-plant",
             fundamentalFrequency: 700f,
             partialMultipliers: new[] { 1.4f, 1.85f, 2.35f },
-            envelope: SynthesizedSoundFactory.ToneEnvelopes.WorldCue,
+            envelope: SpatializedSoundEngine.ToneEnvelopes.WorldCue,
             durationSeconds: 0.22f,
             baseGain: 0.4f,
             maxAudibleDistanceTiles: 85f,
@@ -1621,7 +1571,7 @@ public sealed partial class InGameNarrationSystem
             id: "statue",
             fundamentalFrequency: 580f,
             partialMultipliers: new[] { 1.18f, 1.4f },
-            envelope: SynthesizedSoundFactory.ToneEnvelopes.WorldCue,
+            envelope: SpatializedSoundEngine.ToneEnvelopes.WorldCue,
             durationSeconds: 0.22f,
             baseGain: 0.36f,
             maxAudibleDistanceTiles: 80f,
@@ -1638,13 +1588,12 @@ public sealed partial class InGameNarrationSystem
             id: "gelatin-crystal",
             fundamentalFrequency: 1040f,
             partialMultipliers: new[] { 1.5f, 2f, 2.4f },
-            envelope: SynthesizedSoundFactory.ToneEnvelopes.WorldCue,
+            envelope: SpatializedSoundEngine.ToneEnvelopes.WorldCue,
             durationSeconds: 0.22f,
             baseGain: 0.4f,
             maxAudibleDistanceTiles: 90f,
             minIntervalFrames: SweepIntervalFrames,
             maxIntervalFrames: 50,
-            arrivalLabel: "a Gelatin Crystal",
-            soundStyle: SoundID.Shatter);
+            arrivalLabel: "a Gelatin Crystal");
     }
 }

@@ -11,7 +11,6 @@ using TerrariaAccess.Common.Systems.ModBrowser;
 using TerrariaAccess.Common.Systems.ModMenuAccessibility;
 using TerrariaAccess.Common.Utilities;
 using Terraria;
-using Terraria.Audio;
 using Terraria.GameContent.UI.Elements;
 using Terraria.GameInput;
 using Terraria.ID;
@@ -1093,12 +1092,12 @@ public sealed class AchievementsAccessibilitySystem : ModSystem
                 if (binding.Element is UIElement buttonElement)
                 {
                     Mod.Logger.Info($"[{SystemLogName}] Clicking: {binding.Label}");
-                    SoundEngine.PlaySound(SoundID.MenuTick);
+                    global::TerrariaAccess.Common.Services.UiSoundCuePlayer.PlayTick();
 
                     try
                     {
                         var clickEvent = new UIMouseEvent(buttonElement, Main.MouseScreen);
-                        buttonElement.LeftClick(clickEvent);
+                        global::TerrariaAccess.Common.Services.ProgrammaticUiClickInvoker.LeftClick(buttonElement, clickEvent);
 
                         // Consume input to prevent native UI from also processing it
                         Main.mouseLeft = false;
@@ -1127,12 +1126,12 @@ public sealed class AchievementsAccessibilitySystem : ModSystem
                 if (binding.Type == PointType.BackButton && binding.Element is UIElement backButton)
                 {
                     Mod.Logger.Info($"[{SystemLogName}] B button pressed, clicking Back");
-                    SoundEngine.PlaySound(SoundID.MenuTick);
+                    global::TerrariaAccess.Common.Services.UiSoundCuePlayer.PlayTick();
 
                     try
                     {
                         var clickEvent = new UIMouseEvent(backButton, Main.MouseScreen);
-                        backButton.LeftClick(clickEvent);
+                        global::TerrariaAccess.Common.Services.ProgrammaticUiClickInvoker.LeftClick(backButton, clickEvent);
                     }
                     catch (Exception ex)
                     {
@@ -1152,12 +1151,12 @@ public sealed class AchievementsAccessibilitySystem : ModSystem
             if (targetBinding?.Element is UIElement button)
             {
                 Mod.Logger.Info($"[{SystemLogName}] Dialog action: {targetBinding.Value.Label}");
-                SoundEngine.PlaySound(SoundID.MenuTick);
+                global::TerrariaAccess.Common.Services.UiSoundCuePlayer.PlayTick();
 
                 try
                 {
                     var clickEvent = new UIMouseEvent(button, Main.MouseScreen);
-                    button.LeftClick(clickEvent);
+                    global::TerrariaAccess.Common.Services.ProgrammaticUiClickInvoker.LeftClick(button, clickEvent);
 
                     Main.mouseLeft = false;
                     Main.mouseLeftRelease = false;
@@ -1173,12 +1172,12 @@ public sealed class AchievementsAccessibilitySystem : ModSystem
         if (_currentInput.BackPressed && _dialogNoBinding?.Element is UIElement noButton)
         {
             Mod.Logger.Info($"[{SystemLogName}] B button in dialog, clicking No");
-            SoundEngine.PlaySound(SoundID.MenuTick);
+            global::TerrariaAccess.Common.Services.UiSoundCuePlayer.PlayTick();
 
             try
             {
                 var clickEvent = new UIMouseEvent(noButton, Main.MouseScreen);
-                noButton.LeftClick(clickEvent);
+                global::TerrariaAccess.Common.Services.ProgrammaticUiClickInvoker.LeftClick(noButton, clickEvent);
             }
             catch (Exception ex)
             {
@@ -1255,7 +1254,7 @@ public sealed class AchievementsAccessibilitySystem : ModSystem
 
         _lastAnnouncedPointId = currentPoint;
 
-        SoundEngine.PlaySound(SoundID.MenuTick);
+        global::TerrariaAccess.Common.Services.UiSoundCuePlayer.PlayTick();
         Mod.Logger.Info($"[{SystemLogName}] Announcing: {announcement}");
         ScreenReaderService.Announce(announcement, force: true);
     }

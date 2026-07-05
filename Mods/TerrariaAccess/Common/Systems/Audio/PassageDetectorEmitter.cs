@@ -61,7 +61,7 @@ internal sealed class PassageDetectorEmitter : AudioEmitterBase
     /// <summary>
     /// Cached chirp SoundEffect - a short ascending frequency sweep that sounds like a bird chirp.
     /// </summary>
-    private static SoundEffect? s_chirpTone;
+    private static readonly SpatializedSoundCache s_chirpToneCache = new();
 
     /// <summary>
     /// Live sound instances for cleanup tracking.
@@ -157,10 +157,10 @@ internal sealed class PassageDetectorEmitter : AudioEmitterBase
     /// <summary>
     /// Disposes of the static chirp tone. Called on mod unload.
     /// </summary>
-    public static void DisposeStaticResources()
+    public void DisposeStaticResources()
     {
-        s_chirpTone?.Dispose();
-        s_chirpTone = null;
+        StopAllInstances();
+        s_chirpToneCache.Dispose();
     }
 
     /// <summary>
@@ -304,19 +304,18 @@ internal sealed class PassageDetectorEmitter : AudioEmitterBase
         Vector2 gapCenter = new(wallX * 16f + 8f, midY * 16f + 8f);
 
         // Use spatial audio to position the chirp relative to the player
-        SpatialAudioPanner.SpatialAudioSample sample = SpatialAudioPanner.Compute(
+        SpatializedSoundEngine.SpatialAudioSample sample = SpatializedSoundEngine.Compute(
             player.Center,
             gapCenter,
             ChirpVolume);
 
         float configVolume = TerrariaAccessConfig.Instance?.FootstepVolume ?? 1f;
-        float volume = MathHelper.Clamp(sample.Volume * configVolume * AudioVolumeDefaults.WorldCueVolumeScale, 0f, 1f);
-        if (volume <= 0f)
+        if (!sample.IsAudible(configVolume))
         {
             return;
         }
 
-        PlayChirp(volume, sample.Pan);
+        PlayChirp(sample, configVolume);
     }
 
     /// <summary>
@@ -339,22 +338,24 @@ internal sealed class PassageDetectorEmitter : AudioEmitterBase
     }
 
     /// <summary>
-    /// Plays the ascending frequency-sweep chirp at the given volume and pan.
+    /// Plays the ascending frequency-sweep chirp from the given spatial sample.
     /// </summary>
-    private void PlayChirp(float volume, float pan)
+    private void PlayChirp(SpatializedSoundEngine.SpatialAudioSample sample, float localVolumeScale)
     {
-        SoundEffect tone = EnsureChirpTone();
+        SoundEffect tone = EnsureChirpTone(sample.NormalizedScreenX);
         if (tone.IsDisposed)
         {
             return;
         }
 
-        SoundEffectInstance instance = tone.CreateInstance();
-        instance.IsLooped = false;
-        instance.Volume = MathHelper.Clamp(volume, 0f, 1f) * Main.soundVolume;
-        instance.Pan = MathHelper.Clamp(pan, -1f, 1f);
-        instance.Play();
-        _liveInstances.Add(instance);
+        SoundEffectInstance? instance = SpatializedSoundEngine.PlayWorldCue(
+            tone,
+            sample,
+            localVolumeScale);
+        if (instance is not null)
+        {
+            _liveInstances.Add(instance);
+        }
     }
 
     /// <summary>
@@ -393,42 +394,21 @@ internal sealed class PassageDetectorEmitter : AudioEmitterBase
 
     private void CleanupFinishedInstances()
     {
-        for (int i = _liveInstances.Count - 1; i >= 0; i--)
-        {
-            SoundEffectInstance inst = _liveInstances[i];
-            if (inst.State == SoundState.Stopped)
-            {
-                inst.Dispose();
-                _liveInstances.RemoveAt(i);
-            }
-        }
+        SpatializedSoundEngine.CleanupStopped(_liveInstances);
     }
 
     private void StopAllInstances()
     {
-        foreach (SoundEffectInstance inst in _liveInstances)
-        {
-            try { inst.Stop(); } catch { /* ignore audio backend failures */ }
-            inst.Dispose();
-        }
-
-        _liveInstances.Clear();
+        SpatializedSoundEngine.StopAndDisposeAll(_liveInstances);
     }
 
     /// <summary>
     /// Lazily creates and caches the chirp SoundEffect - a short ascending frequency sweep
     /// from 1100 Hz to 2200 Hz over 55ms that sounds like a quick bird chirp.
     /// </summary>
-    private static SoundEffect EnsureChirpTone()
+    private static SoundEffect EnsureChirpTone(float normalizedScreenX)
     {
-        if (s_chirpTone is { IsDisposed: false })
-        {
-            return s_chirpTone;
-        }
-
-        s_chirpTone?.Dispose();
-        s_chirpTone = CreateChirpTone();
-        return s_chirpTone;
+        return s_chirpToneCache.GetOrCreate(normalizedScreenX, CreateChirpTone);
     }
 
     /// <summary>
@@ -436,10 +416,10 @@ internal sealed class PassageDetectorEmitter : AudioEmitterBase
     /// <see cref="ChirpStartFrequency"/> to <see cref="ChirpEndFrequency"/>
     /// with a fast attack and exponential decay envelope.
     /// </summary>
-    private static SoundEffect CreateChirpTone()
+    private static SoundEffect CreateChirpTone(float normalizedScreenX)
     {
         int sampleCount = Math.Max(1, (int)(ChirpSampleRate * ChirpDurationSeconds));
-        byte[] buffer = new byte[sampleCount * sizeof(short)];
+        float[] samples = new float[sampleCount];
         float phase = 0f;
 
         for (int i = 0; i < sampleCount; i++)
@@ -468,14 +448,9 @@ internal sealed class PassageDetectorEmitter : AudioEmitterBase
                 envelope = MathF.Exp(-6f * (progress - attackEnd));
             }
 
-            float sample = MathF.Sin(phase) * envelope;
-            short quantized = (short)MathHelper.Clamp(sample * short.MaxValue, short.MinValue, short.MaxValue);
-
-            int index = i * 2;
-            buffer[index] = (byte)(quantized & 0xFF);
-            buffer[index + 1] = (byte)((quantized >> 8) & 0xFF);
+            samples[i] = MathF.Sin(phase) * envelope;
         }
 
-        return new SoundEffect(buffer, ChirpSampleRate, AudioChannels.Mono);
+        return SpatializedSoundEngine.CreateSpatialFromSamples(samples, ChirpSampleRate, normalizedScreenX);
     }
 }

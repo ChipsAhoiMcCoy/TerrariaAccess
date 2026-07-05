@@ -8,7 +8,6 @@ using TerrariaAccess.Common.Services;
 using TerrariaAccess.Common.Systems.MenuNarration;  // For MenuUiSelectionTracker, MenuUiLabel
 using TerrariaAccess.Common.Utilities;
 using Terraria;
-using Terraria.Audio;
 using Terraria.GameContent.UI.Elements;
 using Terraria.GameContent.UI.States;
 using Terraria.GameInput;
@@ -512,7 +511,7 @@ internal sealed class ControlsMenuNarrator : SettingsNarratorBase
         {
             UILinkPointNavigator.ChangePoint(requested);
             MoveCursorToLink(requested);
-            SoundEngine.PlaySound(SoundID.MenuTick);
+            global::TerrariaAccess.Common.Services.UiSoundCuePlayer.PlayTick();
             AnnounceNavigatedElement(targetLink.Position);
             return true;
         }

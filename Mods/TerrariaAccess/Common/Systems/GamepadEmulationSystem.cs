@@ -14,7 +14,6 @@ using TerrariaAccess.Common.Systems.InGameNarration;
 using TerrariaAccess.Common.Systems.ModBrowser;
 using TerrariaAccess.Common.Utilities;
 using Terraria;
-using Terraria.Audio;
 using Terraria.GameContent.UI.States;
 using Terraria.GameInput;
 using Terraria.ID;
@@ -715,7 +714,7 @@ public sealed class GamepadEmulationSystem : ModSystem
         }
 
         item.favorited = !item.favorited;
-        SoundEngine.PlaySound(SoundID.MenuTick);
+        global::TerrariaAccess.Common.Services.UiSoundCuePlayer.PlayTick();
         ConsumeSmartCursorFavoriteTrigger();
         return true;
     }
@@ -776,7 +775,7 @@ public sealed class GamepadEmulationSystem : ModSystem
         int originalType = item.type;
         int originalStack = item.stack;
 
-        ItemSlot.SellOrTrash(player.inventory, context, slot);
+        global::TerrariaAccess.Common.Services.NativeSoundSuppression.RunSynchronous(() => ItemSlot.SellOrTrash(player.inventory, context, slot));
 
         Item remainingItem = player.inventory[slot];
         bool sold = remainingItem.IsAir ||
@@ -791,6 +790,7 @@ public sealed class GamepadEmulationSystem : ModSystem
         PlayerInput.Triggers.JustPressed.KeyStatus[TriggerNames.SmartSelect] = false;
         PlayerInput.LockGamepadButtons(TriggerNames.SmartSelect);
 
+        global::TerrariaAccess.Common.Services.UiSoundCuePlayer.PlayTick();
         ScreenReaderService.Announce($"Sold {soldLabel}", force: true);
     }
 
@@ -966,12 +966,22 @@ public sealed class GamepadEmulationSystem : ModSystem
 
         if (justPressed)
         {
+            global::TerrariaAccess.Common.Services.UiSoundCuePlayer.PlayTick();
+            if (!IsAudioSettingsMenuMode())
+            {
+                global::TerrariaAccess.Common.Services.NativeSoundSuppression.RequestDeferredSuppressionForCurrentFrame();
+            }
+
             Main.mouseLeft = true;
             Main.mouseLeftRelease = true;
         }
     }
 
     private static bool _mainMenuSelectWasPressed;
+
+    private const int AudioSettingsMenuMode = 26;
+
+    private static bool IsAudioSettingsMenuMode() => Main.menuMode == AudioSettingsMenuMode;
 
     /// <summary>
     /// Menu type names where our accessibility systems handle the I key (InventorySelect) action

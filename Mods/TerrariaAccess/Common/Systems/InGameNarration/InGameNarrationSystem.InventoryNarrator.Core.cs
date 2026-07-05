@@ -8,7 +8,6 @@ using System.Reflection;
 using System.Text;
 using System.Runtime.CompilerServices;
 using Microsoft.Xna.Framework;
-using Microsoft.Xna.Framework.Audio;
 using Microsoft.Xna.Framework.Graphics;
 using TerrariaAccess.Common.Services;
 using TerrariaAccess.Common.Systems.InGameNarration;
@@ -17,7 +16,6 @@ using TerrariaAccess.Common.Systems.ModBrowser;
 using TerrariaAccess.Common.Systems.Journey;
 using TerrariaAccess.Common.Utilities;
 using Terraria;
-using Terraria.Audio;
 using Terraria.GameContent;
 using Terraria.GameContent.UI;
 using Terraria.GameContent.UI.BigProgressBar;
@@ -870,7 +868,7 @@ public sealed partial class InGameNarrationSystem
             if (UiSlotSpatialAudio.TryGetCurrentLinkPointPosition(out var linkPointPos))
             {
                 var spatial = UiSlotSpatialAudio.ComputeSpatialParamsFromScreen(linkPointPos);
-                UiTickSoundPlayer.PlaySpatialTick(spatial.Pan, spatial.Pitch, debugContext: debugContext);
+                UiTickSoundPlayer.PlaySpatialTick(spatial.NormalizedScreenX, spatial.Pitch, debugContext: debugContext);
                 return;
             }
 
@@ -878,7 +876,7 @@ public sealed partial class InGameNarrationSystem
             if (UiSlotSpatialAudio.TryGetCursorPosition(out var cursorPos))
             {
                 var spatial = UiSlotSpatialAudio.ComputeSpatialParamsFromScreen(cursorPos);
-                UiTickSoundPlayer.PlaySpatialTick(spatial.Pan, spatial.Pitch, debugContext: debugContext);
+                UiTickSoundPlayer.PlaySpatialTick(spatial.NormalizedScreenX, spatial.Pitch, debugContext: debugContext);
                 return;
             }
 
@@ -886,12 +884,12 @@ public sealed partial class InGameNarrationSystem
             if (UiSlotSpatialAudio.TryGetCraftingGridScreenPosition(craftingAvailableIndex, out var screenPos))
             {
                 var spatial = UiSlotSpatialAudio.ComputeSpatialParamsFromScreen(screenPos);
-                UiTickSoundPlayer.PlaySpatialTick(spatial.Pan, spatial.Pitch, debugContext: debugContext);
+                UiTickSoundPlayer.PlaySpatialTick(spatial.NormalizedScreenX, spatial.Pitch, debugContext: debugContext);
                 return;
             }
 
             // No position available, play centered tick
-            UiTickSoundPlayer.PlaySpatialTick(0f, 0f, debugContext: debugContext);
+            UiTickSoundPlayer.PlaySpatialTick(SpatializedSoundEngine.CenterNormalizedScreenX, 0f, debugContext: debugContext);
         }
 
         private static void PlaySpatialInventoryTick(SlotFocus? focus, string? debugContext = null)
@@ -906,7 +904,7 @@ public sealed partial class InGameNarrationSystem
             if (UiSlotSpatialAudio.TryGetBestScreenPosition(context, slot, out var screenPos))
             {
                 var spatial = UiSlotSpatialAudio.ComputeSpatialParamsFromScreen(screenPos);
-                UiTickSoundPlayer.PlaySpatialTick(spatial.Pan, spatial.Pitch, debugContext: debugContext);
+                UiTickSoundPlayer.PlaySpatialTick(spatial.NormalizedScreenX, spatial.Pitch, debugContext: debugContext);
                 return;
             }
 
@@ -917,13 +915,13 @@ public sealed partial class InGameNarrationSystem
                 if (UiSlotSpatialAudio.TryGetSlotPosition(value.Context, value.Slot, out var position))
                 {
                     var fallbackSpatial = UiSlotSpatialAudio.ComputeSpatialParams(position);
-                    UiTickSoundPlayer.PlaySpatialTick(fallbackSpatial.Pan, fallbackSpatial.Pitch, debugContext: debugContext);
+                    UiTickSoundPlayer.PlaySpatialTick(fallbackSpatial.NormalizedScreenX, fallbackSpatial.Pitch, debugContext: debugContext);
                     return;
                 }
             }
 
             // No position available, play centered tick
-            UiTickSoundPlayer.PlaySpatialTick(0f, 0f, debugContext: debugContext);
+            UiTickSoundPlayer.PlaySpatialTick(SpatializedSoundEngine.CenterNormalizedScreenX, 0f, debugContext: debugContext);
         }
 
         private static string BuildTickDebugContext(string source, string key, SlotFocus? focus, int? craftingAvailableIndex)

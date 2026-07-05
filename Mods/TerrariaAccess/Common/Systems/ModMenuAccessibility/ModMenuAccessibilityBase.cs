@@ -6,7 +6,6 @@ using Microsoft.Xna.Framework.Input;
 using TerrariaAccess.Common.Services;
 using TerrariaAccess.Common.Utilities;
 using Terraria;
-using Terraria.Audio;
 using Terraria.GameContent.UI.Elements;
 using Terraria.GameInput;
 using Terraria.ID;
@@ -520,7 +519,7 @@ public abstract class ModMenuAccessibilityBase : ModSystem
 
         LastAnnouncedPointId = currentPoint;
 
-        SoundEngine.PlaySound(SoundID.MenuTick);
+        global::TerrariaAccess.Common.Services.UiSoundCuePlayer.PlayTick();
 
         Mod.Logger.Info($"[{SystemLogName}] Announcing: {announcement}");
         ScreenReaderService.Announce(announcement, force: true);
@@ -536,7 +535,7 @@ public abstract class ModMenuAccessibilityBase : ModSystem
             return;
         }
 
-        SoundEngine.PlaySound(SoundID.MenuTick);
+        global::TerrariaAccess.Common.Services.UiSoundCuePlayer.PlayTick();
         ScreenReaderService.Announce(announcement, force: true);
         Mod.Logger.Info($"[{SystemLogName}] Force announced: {announcement}");
     }

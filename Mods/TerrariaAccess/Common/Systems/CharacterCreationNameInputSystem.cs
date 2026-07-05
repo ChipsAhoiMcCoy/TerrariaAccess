@@ -6,7 +6,6 @@ using Microsoft.Xna.Framework.Input;
 using TerrariaAccess.Common.Services;
 using TerrariaAccess.Common.Utilities;
 using Terraria;
-using Terraria.Audio;
 using Terraria.GameInput;
 using Terraria.ID;
 using Terraria.ModLoader;
@@ -123,7 +122,7 @@ public sealed class CharacterCreationNameInputSystem : ModSystem
         ConfigureTextInput(nameButton);
         BlockTabForCurrentFrame();
 
-        SoundEngine.PlaySound(SoundID.MenuOpen);
+        global::TerrariaAccess.Common.Services.UiSoundCuePlayer.PlayOpen();
         ScreenReaderService.Announce(
             LocalizationHelper.GetTextOrFallback(
                 "Mods.TerrariaAccess.CharacterCreationNameInput.TextEditingEnabled",
@@ -180,7 +179,7 @@ public sealed class CharacterCreationNameInputSystem : ModSystem
             _replaceExistingTextOnFirstInput = false;
             _editingText = updatedText;
             SetName(player, nameButton, _editingText);
-            SoundEngine.PlaySound(SoundID.MenuTick);
+            global::TerrariaAccess.Common.Services.UiSoundCuePlayer.PlayTick();
         }
     }
 
@@ -213,7 +212,7 @@ public sealed class CharacterCreationNameInputSystem : ModSystem
             return;
         }
 
-        SoundEngine.PlaySound(save ? SoundID.MenuClose : SoundID.MenuTick);
+        global::TerrariaAccess.Common.Services.UiSoundCuePlayer.PlayCloseOrTick(save);
         string fallback = save
             ? $"Name saved. {announcedName}."
             : $"Name edit canceled. {announcedName}.";

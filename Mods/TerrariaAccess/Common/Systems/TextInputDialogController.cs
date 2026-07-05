@@ -1,6 +1,5 @@
 #nullable enable
 using Terraria;
-using Terraria.Audio;
 using Terraria.GameInput;
 using Terraria.ID;
 using Microsoft.Xna.Framework.Input;
@@ -88,12 +87,12 @@ internal sealed class TextInputDialogController
 
         if (!string.Equals(newText, _text, System.StringComparison.Ordinal))
         {
-            SoundEngine.PlaySound(SoundID.MenuTick);
+            global::TerrariaAccess.Common.Services.UiSoundCuePlayer.PlayTick();
         }
         else if (TryApplyRawKeyboardInput(keyboard, _text, maxLength, out string rawText))
         {
             newText = rawText;
-            SoundEngine.PlaySound(SoundID.MenuTick);
+            global::TerrariaAccess.Common.Services.UiSoundCuePlayer.PlayTick();
         }
 
         _previousKeyboardState = keyboard;

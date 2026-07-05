@@ -5,7 +5,6 @@ using TerrariaAccess.Common.Services;
 using TerrariaAccess.Common.Systems.GamepadEmulation;
 using TerrariaAccess.Common.Utilities;
 using Terraria;
-using Terraria.Audio;
 using Terraria.GameInput;
 using Terraria.ID;
 using Terraria.ModLoader;
@@ -204,7 +203,7 @@ public sealed class SignInputModeSystem : ModSystem
 
         LogState("Entered button navigation");
 
-        SoundEngine.PlaySound(SoundID.MenuClose);
+        global::TerrariaAccess.Common.Services.UiSoundCuePlayer.PlayClose();
         AnnounceSelectedButton(includeModeHint: true);
     }
 
@@ -224,7 +223,7 @@ public sealed class SignInputModeSystem : ModSystem
 
         LogState(fromViewingState ? "Entered text entry from view mode" : "Returned to text entry");
 
-        SoundEngine.PlaySound(SoundID.MenuOpen);
+        global::TerrariaAccess.Common.Services.UiSoundCuePlayer.PlayOpen();
         ScreenReaderService.Announce(
             LocalizationHelper.GetTextOrFallback(
                 "Mods.TerrariaAccess.SignInput.TextEditingEnabled",
@@ -359,7 +358,7 @@ public sealed class SignInputModeSystem : ModSystem
         // Sign button navigation bypasses vanilla hover focus to avoid the
         // rapid refocus loop, so we emit the same tick sound here when the
         // logical selection changes.
-        SoundEngine.PlaySound(SoundID.MenuTick);
+        global::TerrariaAccess.Common.Services.UiSoundCuePlayer.PlayTick();
         LogState($"Selected {_selectedButton}");
         return true;
     }

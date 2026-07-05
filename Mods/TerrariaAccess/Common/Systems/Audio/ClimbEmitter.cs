@@ -1,7 +1,7 @@
 #nullable enable
 using System;
 using Microsoft.Xna.Framework;
-using TerrariaAccess.Common.Services;
+using TerrariaAccess.Common;
 using Terraria;
 using static TerrariaAccess.Common.Systems.InGameNarrationSystem;
 
@@ -97,7 +97,13 @@ internal sealed class ClimbEmitter : AudioEmitterBase
     private static void PlayClimbTone(Player player, bool movingUp)
     {
         ComputeClimbAudio(player, movingUp, out float frequency, out float loudness);
-        FootstepToneProvider.Play(frequency, loudness);
+        float configVolume = TerrariaAccessConfig.Instance?.FootstepVolume ?? 1f;
+        if (configVolume <= 0f)
+        {
+            return;
+        }
+
+        FootstepToneProvider.PlayCentered(frequency, loudness * configVolume, useTriangleWave: false);
     }
 
     private static void ComputeClimbAudio(Player player, bool movingUp, out float frequency, out float loudness)
@@ -107,8 +113,7 @@ internal sealed class ClimbEmitter : AudioEmitterBase
         frequency = movingUp
             ? MathHelper.Lerp(520f, 680f, normalized)
             : MathHelper.Lerp(420f, 560f, normalized);
-        float baseVolume = 0.45f;
-        loudness = SoundLoudnessUtility.ApplyDistanceFalloff(baseVolume, distanceTiles: 0f, referenceTiles: 1f);
+        loudness = 0.45f;
     }
 
     private void ResetState()

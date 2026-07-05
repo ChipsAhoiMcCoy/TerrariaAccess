@@ -6,8 +6,6 @@ using Microsoft.Xna.Framework.Audio;
 using TerrariaAccess.Common;
 using TerrariaAccess.Common.Systems;
 using Terraria;
-using Terraria.Audio;
-using Terraria.ID;
 
 namespace TerrariaAccess.Common.Services;
 
@@ -26,7 +24,7 @@ internal static class UiTickSoundPlayer
         releaseFraction: 0.6f,
         applyHannWindow: true);
 
-    private static SoundEffect? _tickSound;
+    private static readonly SpatializedSoundCache TickSounds = new();
     private static readonly List<SoundEffectInstance> ActiveInstances = new();
     private static bool _initialized;
 
@@ -39,11 +37,6 @@ internal static class UiTickSoundPlayer
 
         try
         {
-            _tickSound = SynthesizedSoundFactory.CreateSineTone(
-                TickFrequency,
-                TickDuration,
-                TickEnvelope,
-                TickGain);
             _initialized = true;
         }
         catch (Exception ex)
@@ -52,9 +45,9 @@ internal static class UiTickSoundPlayer
         }
     }
 
-    public static void PlaySpatialTick(float pan, float pitch, float volume = 1f, string? debugContext = null)
+    public static void PlaySpatialTick(float normalizedScreenX, float pitch, float volume = 1f, string? debugContext = null)
     {
-        if (Main.dedServ || Main.soundVolume <= 0f)
+        if (!SpatializedSoundEngine.CanPlay(volume))
         {
             return;
         }
@@ -62,20 +55,15 @@ internal static class UiTickSoundPlayer
         bool spatialEnabled = TerrariaAccessConfig.Instance?.SpatialInventoryAudio ?? true;
         if (!spatialEnabled)
         {
-            LogTickDebug("vanilla-fallback", pan, pitch, volume, debugContext);
-            SoundEngine.PlaySound(SoundID.MenuTick);
+            LogTickDebug("spatial-disabled-suppressed", normalizedScreenX, pitch, volume, debugContext);
             return;
         }
 
-        if (_tickSound is null or { IsDisposed: true })
+        SoundEffect? tickSound = EnsureTickSound(normalizedScreenX);
+        if (tickSound is null or { IsDisposed: true })
         {
-            Initialize();
-            if (_tickSound is null or { IsDisposed: true })
-            {
-                LogTickDebug("synth-unavailable-fallback", pan, pitch, volume, debugContext);
-                SoundEngine.PlaySound(SoundID.MenuTick);
-                return;
-            }
+            LogTickDebug("synth-unavailable-suppressed", normalizedScreenX, pitch, volume, debugContext);
+            return;
         }
 
         try
@@ -84,26 +72,18 @@ internal static class UiTickSoundPlayer
 
             if (ActiveInstances.Count >= MaxActiveInstances)
             {
-                LogTickDebug("dropped-max-instances", pan, pitch, volume, debugContext);
+                LogTickDebug("dropped-max-instances", normalizedScreenX, pitch, volume, debugContext);
                 return;
             }
 
-            SoundEffectInstance instance = _tickSound.CreateInstance();
-            instance.IsLooped = false;
-            instance.Pan = MathHelper.Clamp(pan, -1f, 1f);
-            instance.Pitch = MathHelper.Clamp(pitch, -1f, 1f);
-            instance.Volume = MathHelper.Clamp(volume * Main.soundVolume * AudioVolumeDefaults.WorldCueVolumeScale, 0f, 1f);
-
-            try
+            SoundEffectInstance? instance = SpatializedSoundEngine.PlayAlreadySpatializedInterfaceCue(
+                tickSound,
+                volume,
+                pitch);
+            if (instance is not null)
             {
-                instance.Play();
                 ActiveInstances.Add(instance);
-                LogTickDebug("play", instance.Pan, instance.Pitch, instance.Volume, debugContext);
-            }
-            catch (Exception inner)
-            {
-                instance.Dispose();
-                global::TerrariaAccess.TerrariaAccess.Instance?.Logger.Debug($"[UiTickSoundPlayer] Play failed: {inner.Message}");
+                LogTickDebug("play", normalizedScreenX, instance.Pitch, instance.Volume, debugContext);
             }
         }
         catch (Exception ex)
@@ -117,49 +97,40 @@ internal static class UiTickSoundPlayer
         CleanupFinishedInstances();
     }
 
+    private static SoundEffect? EnsureTickSound(float normalizedScreenX)
+    {
+        Initialize();
+
+        try
+        {
+            return TickSounds.GetOrCreate(normalizedScreenX, quantizedNormalizedScreenX =>
+                SpatializedSoundEngine.CreateSpatialSineTone(
+                TickFrequency,
+                TickDuration,
+                TickEnvelope,
+                TickGain,
+                quantizedNormalizedScreenX));
+        }
+        catch (Exception ex)
+        {
+            global::TerrariaAccess.TerrariaAccess.Instance?.Logger.Warn($"[UiTickSoundPlayer] Failed to create spatial tick sound: {ex.Message}");
+            return null;
+        }
+    }
+
     public static void Dispose()
     {
-        foreach (SoundEffectInstance instance in ActiveInstances)
-        {
-            try
-            {
-                if (!instance.IsDisposed)
-                {
-                    instance.Stop();
-                }
-            }
-            catch
-            {
-            }
-
-            instance.Dispose();
-        }
-
-        ActiveInstances.Clear();
-
-        if (_tickSound is { IsDisposed: false })
-        {
-            _tickSound.Dispose();
-        }
-
-        _tickSound = null;
+        SpatializedSoundEngine.StopAndDisposeAll(ActiveInstances);
+        TickSounds.Dispose();
         _initialized = false;
     }
 
     private static void CleanupFinishedInstances()
     {
-        for (int i = ActiveInstances.Count - 1; i >= 0; i--)
-        {
-            SoundEffectInstance instance = ActiveInstances[i];
-            if (instance.IsDisposed || instance.State == SoundState.Stopped)
-            {
-                instance.Dispose();
-                ActiveInstances.RemoveAt(i);
-            }
-        }
+        SpatializedSoundEngine.CleanupStopped(ActiveInstances);
     }
 
-    private static void LogTickDebug(string action, float pan, float pitch, float volume, string? debugContext)
+    private static void LogTickDebug(string action, float normalizedScreenX, float pitch, float volume, string? debugContext)
     {
         if (!UiTickDebugEnabled)
         {
@@ -169,7 +140,7 @@ internal static class UiTickSoundPlayer
         int linkPoint = Terraria.UI.Gamepad.UILinkPointNavigator.CurrentPoint;
         bool usingGamepad = Terraria.GameInput.PlayerInput.UsingGamepadUI;
         global::TerrariaAccess.TerrariaAccess.Instance?.Logger.Info(
-            $"[UiTickDebug] action={action} pan={pan:F3} pitch={pitch:F3} volume={volume:F3} " +
+            $"[UiTickDebug] action={action} normalizedScreenX={normalizedScreenX:F3} pitch={pitch:F3} volume={volume:F3} " +
             $"activeInstances={ActiveInstances.Count} linkPoint={linkPoint} usingGamepad={usingGamepad} " +
             $"inputMode={Terraria.GameInput.PlayerInput.CurrentInputMode} context={debugContext ?? "<none>"}");
     }

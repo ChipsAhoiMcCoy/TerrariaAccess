@@ -5,7 +5,6 @@ using Microsoft.Xna.Framework;
 using Microsoft.Xna.Framework.Graphics;
 using MonoMod.RuntimeDetour;
 using Terraria;
-using Terraria.Audio;
 using Terraria.ID;
 using Terraria.ModLoader;
 using Terraria.UI;
@@ -124,7 +123,7 @@ public sealed class SearchModeInputHook : ModSystem
                     // Only play sound if there was previous text (not on first frame)
                     if (_previousSearchText is not null)
                     {
-                        SoundEngine.PlaySound(SoundID.MenuTick);
+                        global::TerrariaAccess.Common.Services.UiSoundCuePlayer.PlayTick();
                     }
                     _previousSearchText = currentText;
                 }
