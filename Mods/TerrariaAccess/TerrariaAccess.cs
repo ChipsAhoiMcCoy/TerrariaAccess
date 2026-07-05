@@ -33,7 +33,6 @@ public class TerrariaAccess : Mod
 
         ScreenReaderService.Initialize();
         WorldAnnouncementService.Initialize();
-        UiTickSoundPlayer.Initialize();
         GuidanceKeybinds.EnsureInitialized(this);
         GamepadEmulationKeybinds.EnsureInitialized(this);
         SpeechInterruptKeybinds.EnsureInitialized(this);
@@ -53,7 +52,6 @@ public class TerrariaAccess : Mod
         CavitySonarKeybinds.Unload();
         GuidanceKeybinds.Unload();
         UiSoundCuePlayer.Dispose();
-        UiTickSoundPlayer.Dispose();
         WorldAnnouncementService.Unload();
         ScreenReaderService.Unload();
         Instance = null;

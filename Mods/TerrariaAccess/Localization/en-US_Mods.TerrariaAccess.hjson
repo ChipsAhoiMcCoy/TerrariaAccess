@@ -64,11 +64,6 @@ Mods: {
 					Tooltip: Announces selected boss attack windups and dangerous projectiles with brief dodge guidance.
 				}
 
-				SpatialInventoryAudio: {
-					Label: Experimental Spatial Inventory Audio
-					Tooltip: Experimental feature. When enabled, inventory navigation clicks use interaural timing for left/right position and pitch for high/low slot position.
-				}
-
 				MultiplayerFootstepsEnabled: {
 					Label: Multiplayer Footsteps
 					Tooltip: When enabled, plays spatialized footstep sounds for other players in multiplayer. The sounds use interaural timing and pitch to indicate player positions relative to you.
@@ -734,11 +729,6 @@ Configs: {
 
 		BossWarningsEnabled: {
 			Label: Boss Warnings
-			Tooltip: ""
-		}
-
-		SpatialInventoryAudio: {
-			Label: Experimental Spatial Inventory Audio
 			Tooltip: ""
 		}
 

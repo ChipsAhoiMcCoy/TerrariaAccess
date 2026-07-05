@@ -14,7 +14,7 @@ using Terraria.ID;
 using Terraria.ModLoader;
 using Terraria.UI.Gamepad;
 
-// Note: Spatial audio feedback is handled automatically by InventoryNarrator
+// Note: Inventory narration is handled automatically by InventoryNarrator
 // when focus changes via UILinkPointNavigator.ChangePoint().
 
 namespace TerrariaAccess.Common.Systems.FirstLetterNavigation;
@@ -304,7 +304,7 @@ internal static class FirstLetterNavigationManager
 
     /// <summary>
     /// Moves the UI focus to the specified link point.
-    /// The existing InventoryNarrator will handle spatial audio feedback.
+    /// The existing InventoryNarrator will handle focus-change feedback.
     /// </summary>
     private static void MoveFocusToSlot(int linkPointId)
     {

@@ -51,10 +51,6 @@ public class TerrariaAccessConfig : ModConfig
     [DefaultValue(true)]
     public bool CursorTileSounds { get; set; } = true;
 
-    // Experimental features
-    [DefaultValue(true)]
-    public bool SpatialInventoryAudio { get; set; } = true;
-
     // Volume controls
     [DefaultValue(1f)]
     [Range(0f, 1f)]

@@ -5,7 +5,7 @@ namespace TerrariaAccess.Common.Services;
 
 /// <summary>
 /// Invokes Terraria UI click handlers for accessibility-driven navigation without letting those
-/// handlers emit their own native menu sounds. Callers should play explicit Terraria Access UI cues.
+/// handlers emit duplicate native menu sounds. Callers should play explicit Terraria Access UI cues.
 /// </summary>
 internal static class ProgrammaticUiClickInvoker
 {

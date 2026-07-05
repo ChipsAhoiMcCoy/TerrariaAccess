@@ -6,7 +6,7 @@ namespace TerrariaAccess.Common.Services;
 
 /// <summary>
 /// Suppresses synchronous native Terraria sounds for accessibility-driven actions that provide
-/// explicit Terraria Access custom audio feedback instead.
+/// explicit feedback instead.
 /// </summary>
 internal static class NativeSoundSuppression
 {

@@ -293,7 +293,7 @@ public sealed partial class InGameNarrationSystem
                 if (craftingAvailableIndex >= 0 &&
                     CraftingNarrator.TryFocusRecipeAtAvailableIndex(craftingAvailableIndex))
                 {
-                    PlayCraftingTickIfNew($"craft-{craftingAvailableIndex}", craftingAvailableIndex);
+                    PlayCraftingTickIfNew($"craft-{craftingAvailableIndex}");
                     ResetHoverSlotsAndTooltips();
                     return;
                 }
@@ -845,10 +845,10 @@ public sealed partial class InGameNarrationSystem
 
             _pendingGamepadFallbackFocusKey = null;
             _lastFocusKey = key;
-            PlaySpatialInventoryTick(focus, debugContext);
+            UiSoundCuePlayer.PlayTick();
         }
 
-        private void PlayCraftingTickIfNew(string key, int craftingAvailableIndex)
+        private void PlayCraftingTickIfNew(string key)
         {
             if (string.IsNullOrWhiteSpace(key) || string.Equals(key, _lastFocusKey, StringComparison.Ordinal))
             {
@@ -857,71 +857,7 @@ public sealed partial class InGameNarrationSystem
 
             _pendingGamepadFallbackFocusKey = null;
             _lastFocusKey = key;
-            PlaySpatialCraftingTick(
-                craftingAvailableIndex,
-                BuildTickDebugContext("crafting-grid", key, null, craftingAvailableIndex));
-        }
-
-        private static void PlaySpatialCraftingTick(int craftingAvailableIndex, string? debugContext = null)
-        {
-            // First try: Get position directly from game's UILinkPointNavigator (most accurate)
-            if (UiSlotSpatialAudio.TryGetCurrentLinkPointPosition(out var linkPointPos))
-            {
-                var spatial = UiSlotSpatialAudio.ComputeSpatialParamsFromScreen(linkPointPos);
-                UiTickSoundPlayer.PlaySpatialTick(spatial.NormalizedScreenX, spatial.Pitch, debugContext: debugContext);
-                return;
-            }
-
-            // Second try: Get cursor position (synced during gamepad navigation)
-            if (UiSlotSpatialAudio.TryGetCursorPosition(out var cursorPos))
-            {
-                var spatial = UiSlotSpatialAudio.ComputeSpatialParamsFromScreen(cursorPos);
-                UiTickSoundPlayer.PlaySpatialTick(spatial.NormalizedScreenX, spatial.Pitch, debugContext: debugContext);
-                return;
-            }
-
-            // Fallback: Use calculated screen position for crafting grid
-            if (UiSlotSpatialAudio.TryGetCraftingGridScreenPosition(craftingAvailableIndex, out var screenPos))
-            {
-                var spatial = UiSlotSpatialAudio.ComputeSpatialParamsFromScreen(screenPos);
-                UiTickSoundPlayer.PlaySpatialTick(spatial.NormalizedScreenX, spatial.Pitch, debugContext: debugContext);
-                return;
-            }
-
-            // No position available, play centered tick
-            UiTickSoundPlayer.PlaySpatialTick(SpatializedSoundEngine.CenterNormalizedScreenX, 0f, debugContext: debugContext);
-        }
-
-        private static void PlaySpatialInventoryTick(SlotFocus? focus, string? debugContext = null)
-        {
-            // Try to get the best available screen position:
-            // 1) UILinkPointNavigator position (most accurate, directly from game)
-            // 2) Cursor position (synced to selected element during gamepad navigation)
-            // 3) Calculated position based on context/slot (fallback)
-            int context = focus?.Context ?? 0;
-            int slot = focus?.Slot ?? 0;
-
-            if (UiSlotSpatialAudio.TryGetBestScreenPosition(context, slot, out var screenPos))
-            {
-                var spatial = UiSlotSpatialAudio.ComputeSpatialParamsFromScreen(screenPos);
-                UiTickSoundPlayer.PlaySpatialTick(spatial.NormalizedScreenX, spatial.Pitch, debugContext: debugContext);
-                return;
-            }
-
-            // Ultimate fallback: logical grid-based positioning
-            if (focus.HasValue)
-            {
-                SlotFocus value = focus.Value;
-                if (UiSlotSpatialAudio.TryGetSlotPosition(value.Context, value.Slot, out var position))
-                {
-                    var fallbackSpatial = UiSlotSpatialAudio.ComputeSpatialParams(position);
-                    UiTickSoundPlayer.PlaySpatialTick(fallbackSpatial.NormalizedScreenX, fallbackSpatial.Pitch, debugContext: debugContext);
-                    return;
-                }
-            }
-
-            // No position available, play centered tick
-            UiTickSoundPlayer.PlaySpatialTick(SpatializedSoundEngine.CenterNormalizedScreenX, 0f, debugContext: debugContext);
+            UiSoundCuePlayer.PlayTick();
         }
 
         private static string BuildTickDebugContext(string source, string key, SlotFocus? focus, int? craftingAvailableIndex)
