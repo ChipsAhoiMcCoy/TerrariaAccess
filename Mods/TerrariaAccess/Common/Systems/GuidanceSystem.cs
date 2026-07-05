@@ -4030,7 +4030,7 @@ public sealed partial class GuidanceSystem : ModSystem
     {
         return _selectionMode switch
         {
-            SelectionMode.Exploration when _selectedExplorationIndex < 0 => false,
+            SelectionMode.Exploration => false,
             SelectionMode.None => false,
             SelectionMode.Waypoint when _selectedIndex < 0 => false,
             SelectionMode.Custom => CountCustomMatchesForSelection(_selectedCustomIndex) > 0,

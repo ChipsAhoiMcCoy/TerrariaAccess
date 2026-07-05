@@ -33,6 +33,13 @@ public sealed partial class GuidanceSystem
 
     private static void EmitCurrentGuidancePing(Player player)
     {
+        if (_selectionMode == SelectionMode.Exploration)
+        {
+            ExplorationTargetRegistry.RequestSelectedTargetCue();
+            _nextPingUpdateFrame = -1;
+            return;
+        }
+
         if (!IsPingEnabledForCurrentSelection())
         {
             _nextPingUpdateFrame = -1;

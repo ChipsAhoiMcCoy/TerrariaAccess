@@ -15,6 +15,7 @@ internal static class ExplorationTargetRegistry
 
     private static readonly List<ExplorationTarget> Targets = new();
     private static ExplorationTarget? _selectedTarget;
+    private static bool _selectedTargetCueRequested;
 
     public static void UpdateTargets(IEnumerable<ExplorationTarget> entries)
     {
@@ -30,6 +31,10 @@ internal static class ExplorationTargetRegistry
     public static void SetSelectedTarget(ExplorationTarget? target)
     {
         _selectedTarget = target;
+        if (!_selectedTarget.HasValue)
+        {
+            _selectedTargetCueRequested = false;
+        }
     }
 
     public static bool TryGetSelectedTarget(out ExplorationTarget target)
@@ -42,5 +47,17 @@ internal static class ExplorationTargetRegistry
 
         target = default;
         return false;
+    }
+
+    public static void RequestSelectedTargetCue()
+    {
+        _selectedTargetCueRequested = _selectedTarget.HasValue;
+    }
+
+    public static bool ConsumeSelectedTargetCueRequest()
+    {
+        bool requested = _selectedTargetCueRequested;
+        _selectedTargetCueRequested = false;
+        return requested;
     }
 }

@@ -4,6 +4,7 @@ using System.Collections.Generic;
 using System.Linq;
 using Microsoft.Xna.Framework;
 using Microsoft.Xna.Framework.Audio;
+using ReLogic.Utilities;
 using TerrariaAccess.Common;
 using TerrariaAccess.Common.Services;
 using TerrariaAccess.Common.Systems;
@@ -11,6 +12,7 @@ using TerrariaAccess.Common.Systems.Guidance;
 using TerrariaAccess.Common.Utilities;
 using ExplorationTargetKey = TerrariaAccess.Common.Systems.ExplorationTargetRegistry.ExplorationTargetKey;
 using Terraria;
+using Terraria.Audio;
 using Terraria.ID;
 using Terraria.ObjectData;
 
@@ -56,6 +58,7 @@ public sealed partial class InGameNarrationSystem
         private readonly HashSet<TrackedInteractableKey> _emittedThisSweep = new();
         private readonly Dictionary<TrackedInteractableKey, int> _nextCueFrame = new();
         private readonly List<SoundEffectInstance> _liveInstances = new();
+        private readonly List<SlotId> _liveNativeCueSlots = new();
 
         private int _ticksUntilNextScan;
         private readonly AudioSweepScheduler _sweepScheduler = new();
@@ -349,6 +352,12 @@ public sealed partial class InGameNarrationSystem
 
             if (focused && GuidanceSystem.IsFocusedExplorationGuidanceActive)
             {
+                bool forceCue = ExplorationTargetRegistry.ConsumeSelectedTargetCueRequest();
+                if (_distanceScratch.Count > 0)
+                {
+                    PlayCue(playerCenter, _distanceScratch[0], isPrimaryCue: true, force: forceCue);
+                }
+
                 ResetSweepSchedule();
                 TrimInactiveKeys();
                 CleanupFinishedInstances();
@@ -594,7 +603,7 @@ public sealed partial class InGameNarrationSystem
             return true;
         }
 
-        private void PlayCue(Vector2 playerCenter, CandidateDistance entry, bool isPrimaryCue)
+        private void PlayCue(Vector2 playerCenter, CandidateDistance entry, bool isPrimaryCue, bool force = false)
         {
             if (!SpatializedSoundEngine.CanPlay())
             {
@@ -604,7 +613,7 @@ public sealed partial class InGameNarrationSystem
             int currentFrame = (int)Main.GameUpdateCount;
             TrackedInteractableKey cueKey = entry.Candidate.Key;
             int delayFrames = ComputeCueDelayFrames(entry);
-            if (_nextCueFrame.TryGetValue(cueKey, out int readyFrame) && currentFrame < readyFrame)
+            if (!force && _nextCueFrame.TryGetValue(cueKey, out int readyFrame) && currentFrame < readyFrame)
             {
                 return;
             }
@@ -619,6 +628,14 @@ public sealed partial class InGameNarrationSystem
             float localVolumeScale = (isPrimaryCue ? 1f : SecondaryCueVolumeScale) * configVolume;
             if (!sample.IsAudible(localVolumeScale))
             {
+                return;
+            }
+
+            if (profile.UseNativeTileHitSound &&
+                entry.Candidate.SoundAnchor is Point soundAnchor &&
+                TryPlayNativeTileCue(soundAnchor, sample, localVolumeScale))
+            {
+                _nextCueFrame[cueKey] = currentFrame + delayFrames;
                 return;
             }
 
@@ -645,11 +662,13 @@ public sealed partial class InGameNarrationSystem
         private void CleanupFinishedInstances()
         {
             SpatializedSoundEngine.CleanupStopped(_liveInstances);
+            CleanupFinishedNativeCueSlots();
         }
 
         private void StopAllInstances()
         {
             SpatializedSoundEngine.StopAndDisposeAll(_liveInstances);
+            StopAllNativeCueSlots();
         }
 
         private void ResetSweepSchedule()
@@ -678,6 +697,82 @@ public sealed partial class InGameNarrationSystem
                     profile.DurationSeconds,
                     profile.BaseGain,
                     quantizedNormalizedScreenX));
+        }
+
+        private bool TryPlayNativeTileCue(
+            Point soundAnchor,
+            SpatializedSoundEngine.SpatialAudioSample sample,
+            float localVolumeScale)
+        {
+            if (!WorldGen.InWorld(soundAnchor.X, soundAnchor.Y, 1))
+            {
+                return false;
+            }
+
+            Tile tile = Main.tile[soundAnchor.X, soundAnchor.Y];
+            if (!tile.HasTile ||
+                !WorldTileSoundResolver.TryResolveTileHitSound(tile, out SoundStyle style, out float tileVolumeScale, out float pitchOffset))
+            {
+                return false;
+            }
+
+            CleanupFinishedNativeCueSlots();
+            float volume = sample.ScaleVolume(localVolumeScale * tileVolumeScale) * AudioVolumeDefaults.WorldCueVolumeScale;
+            if (volume <= 0f)
+            {
+                return false;
+            }
+
+            float pan = MathHelper.Clamp(sample.NormalizedScreenX, -1f, 1f);
+            float pitch = MathHelper.Clamp(sample.Pitch + pitchOffset, -1f, 1f);
+            SlotId slot = SoundEngine.PlaySound(
+                style with { MaxInstances = 0 },
+                position: null,
+                sound =>
+                {
+                    sound.Position = null;
+                    sound.Volume = volume;
+                    sound.Pitch = pitch;
+                    if (sound.Sound is not null && !sound.Sound.IsDisposed)
+                    {
+                        sound.Sound.Pan = pan;
+                    }
+
+                    return true;
+                });
+
+            if (!slot.IsValid)
+            {
+                return false;
+            }
+
+            _liveNativeCueSlots.Add(slot);
+            return true;
+        }
+
+        private void CleanupFinishedNativeCueSlots()
+        {
+            for (int i = _liveNativeCueSlots.Count - 1; i >= 0; i--)
+            {
+                if (!SoundEngine.TryGetActiveSound(_liveNativeCueSlots[i], out ActiveSound? activeSound) ||
+                    !activeSound.IsPlayingOrPaused)
+                {
+                    _liveNativeCueSlots.RemoveAt(i);
+                }
+            }
+        }
+
+        private void StopAllNativeCueSlots()
+        {
+            for (int i = _liveNativeCueSlots.Count - 1; i >= 0; i--)
+            {
+                if (SoundEngine.TryGetActiveSound(_liveNativeCueSlots[i], out ActiveSound? activeSound))
+                {
+                    activeSound.Stop();
+                }
+            }
+
+            _liveNativeCueSlots.Clear();
         }
 
         private void RegisterSource(WorldInteractableSource source)
@@ -774,7 +869,7 @@ public sealed partial class InGameNarrationSystem
 
                         Vector2 worldPosition = definition.GetWorldCenter(anchor);
                         int localId = HashCode.Combine(definition.DefinitionId, anchor.X, anchor.Y);
-                        buffer.Add(new Candidate(new TrackedInteractableKey(SourceId, localId), worldPosition, definition.Profile, null));
+                        buffer.Add(new Candidate(new TrackedInteractableKey(SourceId, localId), worldPosition, definition.Profile, null, anchor));
                     }
                 }
             }
@@ -852,7 +947,7 @@ public sealed partial class InGameNarrationSystem
                         Vector2 worldPosition = definition.GetWorldCenter(anchor);
                         int localId = HashCode.Combine(definition.DefinitionId, anchor.X, anchor.Y);
                         string label = ResolveChestLabel(anchor, tile);
-                        buffer.Add(new Candidate(new TrackedInteractableKey(SourceId, localId), worldPosition, definition.Profile, label));
+                        buffer.Add(new Candidate(new TrackedInteractableKey(SourceId, localId), worldPosition, definition.Profile, label, anchor));
                     }
                 }
             }
@@ -942,7 +1037,7 @@ public sealed partial class InGameNarrationSystem
                         Vector2 worldPosition = definition.GetWorldCenter(anchor);
                         int localId = HashCode.Combine(definition.DefinitionId, anchor.X, anchor.Y);
                         string label = ResolveStatueLabel(anchor);
-                        buffer.Add(new Candidate(new TrackedInteractableKey(SourceId, localId), worldPosition, definition.Profile, label));
+                        buffer.Add(new Candidate(new TrackedInteractableKey(SourceId, localId), worldPosition, definition.Profile, label, anchor));
                     }
                 }
             }
@@ -1059,7 +1154,7 @@ public sealed partial class InGameNarrationSystem
                     int localId = HashCode.Combine(oreGroupKey.TileType, oreGroupKey.Style, bestAnchor.X, bestAnchor.Y);
                     string oreLabel = ResolveOreLabel(bestAnchor.X, bestAnchor.Y, oreType);
                     InteractableCueProfile profile = IsGem(oreType) ? InteractableCueProfile.Gem : InteractableCueProfile.Ore;
-                    buffer.Add(new Candidate(new TrackedInteractableKey(SourceId, localId), worldPosition, profile, oreLabel));
+                    buffer.Add(new Candidate(new TrackedInteractableKey(SourceId, localId), worldPosition, profile, oreLabel, bestAnchor));
                 }
             }
         }
@@ -1264,7 +1359,12 @@ public sealed partial class InGameNarrationSystem
         }
     }
 
-    private readonly record struct Candidate(TrackedInteractableKey Key, Vector2 WorldPosition, InteractableCueProfile Profile, string? ArrivalLabelOverride);
+    private readonly record struct Candidate(
+        TrackedInteractableKey Key,
+        Vector2 WorldPosition,
+        InteractableCueProfile Profile,
+        string? ArrivalLabelOverride,
+        Point? SoundAnchor = null);
 
     private readonly record struct CandidateDistance(Candidate Candidate, float DistanceTiles);
 
@@ -1355,7 +1455,8 @@ public sealed partial class InGameNarrationSystem
             float maxAudibleDistanceTiles,
             int minIntervalFrames,
             int maxIntervalFrames,
-            string arrivalLabel = "")
+            string arrivalLabel = "",
+            bool useNativeTileHitSound = false)
         {
             Id = id;
             FundamentalFrequency = fundamentalFrequency;
@@ -1367,6 +1468,7 @@ public sealed partial class InGameNarrationSystem
             MinIntervalFrames = minIntervalFrames;
             MaxIntervalFrames = maxIntervalFrames;
             ArrivalLabel = arrivalLabel ?? string.Empty;
+            UseNativeTileHitSound = useNativeTileHitSound;
         }
 
         public string Id { get; }
@@ -1379,6 +1481,7 @@ public sealed partial class InGameNarrationSystem
         public int MinIntervalFrames { get; }
         public int MaxIntervalFrames { get; }
         public string ArrivalLabel { get; }
+        public bool UseNativeTileHitSound { get; }
 
         public static InteractableCueProfile Chest { get; } = new(
             id: "chest",
@@ -1509,7 +1612,8 @@ public sealed partial class InGameNarrationSystem
             baseGain: 0.36f,
             maxAudibleDistanceTiles: 92f,
             minIntervalFrames: SweepIntervalFrames,
-            maxIntervalFrames: 48);
+            maxIntervalFrames: 48,
+            useNativeTileHitSound: true);
 
         public static InteractableCueProfile Gem { get; } = new(
             id: "gem",
@@ -1520,7 +1624,8 @@ public sealed partial class InGameNarrationSystem
             baseGain: 0.38f,
             maxAudibleDistanceTiles: 92f,
             minIntervalFrames: SweepIntervalFrames,
-            maxIntervalFrames: 48);
+            maxIntervalFrames: 48,
+            useNativeTileHitSound: true);
 
         /// <summary>
         /// Lihzahrd Altar - ancient stone altar found in the Lihzahrd Temple (Jungle Temple).
