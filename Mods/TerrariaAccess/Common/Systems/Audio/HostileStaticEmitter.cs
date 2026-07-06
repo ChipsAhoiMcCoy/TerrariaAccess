@@ -4,6 +4,7 @@ using System.Collections.Generic;
 using Microsoft.Xna.Framework;
 using Microsoft.Xna.Framework.Audio;
 using TerrariaAccess.Common.Services;
+using TerrariaAccess.Common.Systems.Guidance;
 using Terraria;
 using Terraria.ID;
 using Terraria.GameInput;
@@ -211,13 +212,12 @@ internal sealed class HostileStaticEmitter : AudioEmitterBase
             return;
         }
 
-        PlayStaticCue(listenerCenter, candidate);
-
         int delay = ComputeDelayFrames(candidate);
+        PlayStaticCue(listenerCenter, candidate, delay);
         _nextPingFrame = currentFrame + Math.Max(1, delay);
     }
 
-    private void PlayStaticCue(Vector2 listenerCenter, HostileCandidate candidate)
+    private void PlayStaticCue(Vector2 listenerCenter, HostileCandidate candidate, int intervalFrames)
     {
         // Use Terraria-aligned spatial audio for hostile cues
         SpatializedSoundEngine.SpatialAudioSample sample = SpatializedSoundEngine.Compute(
@@ -241,6 +241,10 @@ internal sealed class HostileStaticEmitter : AudioEmitterBase
         if (instance is not null)
         {
             _liveInstances.Add(instance);
+            ReferenceToneCuePlayer.QueueGeneratedCue(
+                EnsureHostileTone(SpatializedSoundEngine.CenterNormalizedScreenX),
+                sample.ScaleVolume(configVolume),
+                intervalFrames);
         }
     }
 
@@ -256,7 +260,7 @@ internal sealed class HostileStaticEmitter : AudioEmitterBase
             frames *= 0.65f;
         }
 
-        return Math.Max(1, (int)MathF.Round(frames));
+        return GuidancePingCadence.ApplyDistanceCueRateReduction(Math.Max(1, (int)MathF.Round(frames)));
     }
 
     private void CleanupFinishedInstances()

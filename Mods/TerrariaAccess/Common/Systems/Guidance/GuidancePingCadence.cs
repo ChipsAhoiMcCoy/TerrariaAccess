@@ -5,6 +5,8 @@ namespace TerrariaAccess.Common.Systems.Guidance;
 
 internal static class GuidancePingCadence
 {
+    private const float DistanceCueDelayMultiplier = 1.35f;
+
     public static int ComputeDistanceDelayFrames(
         float distanceTiles,
         float arrivalThresholdTiles,
@@ -16,7 +18,7 @@ internal static class GuidancePingCadence
         int safeMax = Math.Max(safeMin, maxDelayFrames);
         if (!float.IsFinite(distanceTiles))
         {
-            return safeMax;
+            return ApplyDistanceCueRateReduction(safeMax);
         }
 
         if (distanceTiles <= arrivalThresholdTiles)
@@ -27,7 +29,14 @@ internal static class GuidancePingCadence
         float range = Math.Max(1f, maxDistanceTiles - arrivalThresholdTiles);
         float normalized = Math.Clamp((distanceTiles - arrivalThresholdTiles) / range, 0f, 1f);
         float frames = safeMin + ((safeMax - safeMin) * normalized);
-        return Math.Max(1, (int)MathF.Round(frames));
+        return ApplyDistanceCueRateReduction(Math.Max(1, (int)MathF.Round(frames)));
+    }
+
+    public static int ApplyDistanceCueRateReduction(int delayFrames)
+    {
+        int safeDelay = Math.Max(1, delayFrames);
+        float slowedDelay = safeDelay * DistanceCueDelayMultiplier;
+        return Math.Max(safeDelay, (int)MathF.Ceiling(slowedDelay));
     }
 
     public static float ComputeDistanceVolumeScale(

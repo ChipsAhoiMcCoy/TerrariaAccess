@@ -30,7 +30,7 @@ public class GuidancePingCadenceTests
                 maxDelayFrames: 54,
                 maxDistanceTiles: 80f)
             .Should()
-            .Be(10);
+            .Be(14);
     }
 
     [Fact]
@@ -43,7 +43,7 @@ public class GuidancePingCadenceTests
                 maxDelayFrames: 54,
                 maxDistanceTiles: 80f)
             .Should()
-            .Be(54);
+            .Be(73);
     }
 
     [Fact]
@@ -56,7 +56,7 @@ public class GuidancePingCadenceTests
                 maxDelayFrames: 54,
                 maxDistanceTiles: 80f)
             .Should()
-            .Be(54);
+            .Be(73);
     }
 
     [Fact]
@@ -69,7 +69,7 @@ public class GuidancePingCadenceTests
                 maxDelayFrames: 54,
                 maxDistanceTiles: 80f)
             .Should()
-            .Be(32);
+            .Be(44);
     }
 
     [Fact]
@@ -82,7 +82,7 @@ public class GuidancePingCadenceTests
                 maxDelayFrames: 54,
                 maxDistanceTiles: 80f)
             .Should()
-            .Be(54);
+            .Be(73);
     }
 
     [Fact]

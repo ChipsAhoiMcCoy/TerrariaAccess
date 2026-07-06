@@ -5,6 +5,7 @@ using Microsoft.Xna.Framework;
 using Microsoft.Xna.Framework.Audio;
 using TerrariaAccess.Common;
 using TerrariaAccess.Common.Services;
+using TerrariaAccess.Common.Systems.Audio;
 using TerrariaAccess.Common.Systems.Guidance;
 using Terraria;
 using Terraria.ID;
@@ -99,6 +100,7 @@ public sealed partial class GuidanceSystem
             float distanceTiles = Vector2.Distance(player.Center, worldPosition) / 16f;
             float distanceVolumeScale = ComputeGuidancePingVolumeScale(distanceTiles);
             float localVolumeScale = configVolume * distanceVolumeScale;
+            int intervalFrames = ComputeGuidancePingDelayFrames(distanceTiles);
             if (!sample.IsAudible(localVolumeScale))
             {
                 return;
@@ -112,6 +114,10 @@ public sealed partial class GuidanceSystem
             if (instance is not null)
             {
                 ActiveWaypointInstances.Add(instance);
+                ReferenceToneCuePlayer.QueueGeneratedCue(
+                    EnsureWaypointTone(SpatializedSoundEngine.CenterNormalizedScreenX),
+                    sample.ScaleVolume(localVolumeScale),
+                    intervalFrames);
             }
         }
         catch (Exception ex)
@@ -166,6 +172,8 @@ public sealed partial class GuidanceSystem
                 player.Center,
                 worldPosition,
                 1f);
+            float distanceTiles = Vector2.Distance(player.Center, worldPosition) / 16f;
+            int intervalFrames = ComputeHostilePingDelayFrames(player, distanceTiles);
             if (!sample.IsAudible(configVolume))
             {
                 return;
@@ -179,6 +187,10 @@ public sealed partial class GuidanceSystem
             if (instance is not null)
             {
                 ActiveWaypointInstances.Add(instance);
+                ReferenceToneCuePlayer.QueueGeneratedCue(
+                    EnsureHostileTone(SpatializedSoundEngine.CenterNormalizedScreenX),
+                    sample.ScaleVolume(configVolume),
+                    intervalFrames);
             }
         }
         catch (Exception ex)
@@ -290,7 +302,7 @@ public sealed partial class GuidanceSystem
             frames *= 0.65f;
         }
 
-        return Math.Max(1, (int)MathF.Round(frames));
+        return GuidancePingCadence.ApplyDistanceCueRateReduction(Math.Max(1, (int)MathF.Round(frames)));
     }
 
     private static int ComputeNextPingFrameFromDelay(int delayFrames)

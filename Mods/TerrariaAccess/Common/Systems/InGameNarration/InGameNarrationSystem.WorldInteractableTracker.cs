@@ -8,6 +8,7 @@ using ReLogic.Utilities;
 using TerrariaAccess.Common;
 using TerrariaAccess.Common.Services;
 using TerrariaAccess.Common.Systems;
+using TerrariaAccess.Common.Systems.Audio;
 using TerrariaAccess.Common.Systems.Guidance;
 using TerrariaAccess.Common.Utilities;
 using ExplorationTargetKey = TerrariaAccess.Common.Systems.ExplorationTargetRegistry.ExplorationTargetKey;
@@ -633,7 +634,7 @@ public sealed partial class InGameNarrationSystem
 
             if (profile.UseNativeTileHitSound &&
                 entry.Candidate.SoundAnchor is Point soundAnchor &&
-                TryPlayNativeTileCue(soundAnchor, sample, localVolumeScale))
+                TryPlayNativeTileCue(soundAnchor, sample, localVolumeScale, delayFrames))
             {
                 _nextCueFrame[cueKey] = currentFrame + delayFrames;
                 return;
@@ -645,6 +646,10 @@ public sealed partial class InGameNarrationSystem
             {
                 _liveInstances.Add(instance);
                 _nextCueFrame[cueKey] = currentFrame + delayFrames;
+                ReferenceToneCuePlayer.QueueGeneratedCue(
+                    EnsureTone(profile, SpatializedSoundEngine.CenterNormalizedScreenX),
+                    sample.ScaleVolume(localVolumeScale),
+                    delayFrames);
             }
         }
 
@@ -702,7 +707,8 @@ public sealed partial class InGameNarrationSystem
         private bool TryPlayNativeTileCue(
             Point soundAnchor,
             SpatializedSoundEngine.SpatialAudioSample sample,
-            float localVolumeScale)
+            float localVolumeScale,
+            int intervalFrames)
         {
             if (!WorldGen.InWorld(soundAnchor.X, soundAnchor.Y, 1))
             {
@@ -747,6 +753,11 @@ public sealed partial class InGameNarrationSystem
             }
 
             _liveNativeCueSlots.Add(slot);
+            ReferenceToneCuePlayer.QueueNativeCue(
+                style,
+                sample.ScaleVolume(localVolumeScale * tileVolumeScale),
+                intervalFrames,
+                pitchOffset);
             return true;
         }
 
