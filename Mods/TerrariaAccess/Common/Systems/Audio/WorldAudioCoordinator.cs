@@ -21,6 +21,7 @@ internal sealed class WorldAudioCoordinator
     private readonly HeartbeatEmitter _heartbeatEmitter;
     private readonly FallDetectionEmitter _fallDetectionEmitter;
     private readonly WallCollisionEmitter _wallCollisionEmitter;
+    private readonly WallToneEmitter _wallToneEmitter;
     private readonly CadenceGate _cadenceGate = new();
 
     public WorldAudioCoordinator()
@@ -34,6 +35,7 @@ internal sealed class WorldAudioCoordinator
         _heartbeatEmitter = new HeartbeatEmitter();
         _fallDetectionEmitter = new FallDetectionEmitter();
         _wallCollisionEmitter = new WallCollisionEmitter();
+        _wallToneEmitter = new WallToneEmitter();
     }
 
     /// <summary>
@@ -57,6 +59,7 @@ internal sealed class WorldAudioCoordinator
         Run("breath", 1, () => _breathEmitter.Update(player));
         Run("heartbeat", 1, () => _heartbeatEmitter.Update(player));
         Run("fall-detection", 1, () => _fallDetectionEmitter.Update(player));
+        Run("wall-tones", 1, () => _wallToneEmitter.Update(player));
         Run("wall-collision", 1, () => _wallCollisionEmitter.Update(player));
     }
 
@@ -73,6 +76,7 @@ internal sealed class WorldAudioCoordinator
         _breathEmitter.Reset();
         _heartbeatEmitter.Reset();
         _fallDetectionEmitter.Reset();
+        _wallToneEmitter.Reset();
         _wallCollisionEmitter.Reset();
         _cadenceGate.Reset();
     }
@@ -86,6 +90,7 @@ internal sealed class WorldAudioCoordinator
         _hostileStaticEmitter.DisposeStaticResources();
         FootstepToneProvider.DisposeStaticResources();
         _heartbeatEmitter.DisposeStaticResources();
+        _wallToneEmitter.DisposeStaticResources();
     }
 
     private void Run(string key, uint intervalFrames, Action action)

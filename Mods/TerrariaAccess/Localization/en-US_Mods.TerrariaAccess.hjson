@@ -84,6 +84,16 @@ Mods: {
 					Tooltip: Maximum number of tiles that can be mined at once when chunk mining. Higher values allow larger veins to be mined in one hit, but may cause brief lag on very large deposits.
 				}
 
+				WallTonesEnabled: {
+					Label: Wall Tones
+					Tooltip: When enabled, plays quiet continuous tones for nearby solid tiles to your left, right, and above. These indicate terrain blockage and stop while inventory or UI screens are open.
+				}
+
+				WallToneVolume: {
+					Label: Wall Tone Volume
+					Tooltip: Adjusts the volume of the continuous wall tones.
+				}
+
 				WallCollisionEnabled: {
 					Label: Wall Collision
 					Tooltip: When enabled, plays a repeating tap sound when you walk into a solid wall. The tap is positioned toward the wall so you can tell which side is blocked.
@@ -740,6 +750,16 @@ Configs: {
 
 		HeartbeatVolume: {
 			Label: Heartbeat Volume
+			Tooltip: ""
+		}
+
+		WallTonesEnabled: {
+			Label: Wall Tones
+			Tooltip: ""
+		}
+
+		WallToneVolume: {
+			Label: Wall Tone Volume
 			Tooltip: ""
 		}
 

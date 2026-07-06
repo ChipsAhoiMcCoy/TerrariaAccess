@@ -180,7 +180,7 @@ public sealed partial class InGameNarrationSystem : ModSystem
             {
                 _worldPositionalAudioService.Update(ctx);
             },
-            "biome/footstep/hostile static/treasure beacon");
+            "biome/footstep/hostile static/wall tones/treasure beacon");
         _interactableTrackerNarrationService = new DelegatedNarrationService(
             "InteractableTracker",
             ctx => _worldInteractableTracker.Update(ctx.Player, GuidanceSystem.IsExplorationTrackingEnabled));
