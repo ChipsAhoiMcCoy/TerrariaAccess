@@ -30,10 +30,6 @@ internal sealed class FootstepEmitter : AudioEmitterBase
     private SoundEffectInstance? _harmfulLoopInstance;
     private float _lastHarmfulFrequency;
 
-    // Edge beep state
-    private const float EdgeBeepVolume = 0.35f;       // Volume for edge beeps
-    private const float EdgeBeepFrequency = 3000f;    // High-pitched pure tone
-    private const int EdgeBeepIntervalFrames = 6;     // Consistent beep rate (~10 beeps/sec)
     private int _edgeBeepTimer;
 
     // Edge static (white noise) state
@@ -721,20 +717,11 @@ internal sealed class FootstepEmitter : AudioEmitterBase
         EdgeScanResult nearestEdge = edge.Value;
 
         // Increment timer and check if it's time to beep
-        _edgeBeepTimer++;
-        if (_edgeBeepTimer >= EdgeBeepIntervalFrames)
+        if (EdgeBeepCue.TickCadence(ref _edgeBeepTimer))
         {
-            _edgeBeepTimer = 0;
-
-            // Compute spatial audio with distance-based volume falloff
-            SpatializedSoundEngine.SpatialAudioSample sample = SpatializedSoundEngine.Compute(
-                player.Center,
-                nearestEdge.WorldPosition,
-                EdgeBeepVolume);
-
-            // Play a beep (pure sine wave) with screen-space ITD and distance volume.
+            // Play a high-pitched sine beep with screen-space ITD and distance volume.
             float configVolume = TerrariaAccessConfig.Instance?.FootstepVolume ?? 1f;
-            FootstepToneProvider.PlaySpatial(sample, EdgeBeepFrequency, configVolume, useTriangleWave: false);
+            EdgeBeepCue.Play(player, nearestEdge.WorldPosition, configVolume);
         }
     }
 

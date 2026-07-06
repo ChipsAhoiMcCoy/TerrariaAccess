@@ -11,12 +11,6 @@ public enum EdgeDetectionMode
     Beeps
 }
 
-public enum FallProximityMode
-{
-    Tone,
-    Beeps
-}
-
 public enum GuidanceAllMode
 {
     Sweep,
@@ -85,10 +79,6 @@ public class TerrariaAccessConfig : ModConfig
     [Slider]
     public float CursorVolume { get; set; } = 1f;
 
-    // Passage detection (side tunnel chirps while falling)
-    [DefaultValue(true)]
-    public bool PassageDetectionEnabled { get; set; } = true;
-
     // Health heartbeat
     [DefaultValue(true)]
     public bool HeartbeatEnabled { get; set; } = true;
@@ -110,9 +100,6 @@ public class TerrariaAccessConfig : ModConfig
     // Fall detection
     [DefaultValue(true)]
     public bool FallDetectionEnabled { get; set; } = true;
-
-    [DefaultValue(FallProximityMode.Tone)]
-    public FallProximityMode FallDetectionMode { get; set; } = FallProximityMode.Tone;
 
     [DefaultValue(1f)]
     [Range(0f, 1f)]

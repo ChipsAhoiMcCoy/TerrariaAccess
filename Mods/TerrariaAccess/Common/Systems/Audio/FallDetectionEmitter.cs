@@ -1,53 +1,37 @@
 #nullable enable
 using System;
 using Microsoft.Xna.Framework;
-using TerrariaAccess.Common.Services;
 using Terraria;
 using Terraria.ID;
-using static TerrariaAccess.Common.Systems.InGameNarrationSystem;
 
 namespace TerrariaAccess.Common.Systems.Audio;
 
 /// <summary>
-/// Detects when the player is falling and provides spatialized audio feedback.
-/// Emits one tone per tile crossed, positioned at the ground below the player
-/// so that pitch naturally lowers when far from ground and rises when approaching it.
-/// Also provides a fall damage warning past the 25-tile threshold.
+/// Detects sustained falls and reuses the edge-detection beep from the landing point
+/// below the player's feet as the ground approaches.
 /// </summary>
 internal sealed class FallDetectionEmitter : AudioEmitterBase
 {
     private enum FallState { Grounded, Debouncing, Falling }
 
     // Thresholds
-    private const float FallingVelocityThreshold = 2.0f;
+    private const float FallingVelocityThreshold = 0.75f;
     private const float GroundedVelocityThreshold = 0.02f;
-    private const int DebounceFrames = 5;
+    private const int DebounceFrames = 8;
+    private const int MinFallingFrames = 15;
+    private const float MinFallenDistanceTiles = 8f;
     private const int MaxGroundScanTiles = 200;
     private const int GroundScanInterval = 3;
-    private const int ProximityToneStartTiles = 30; // Only play tones when ground is within this range
-    private const float FallDamageTileThreshold = 25f;
-
-    // Spatial tone parameters — matches local footstep frequencies exactly
-    private const float GroundFrequencyMin = 190f;
-    private const float GroundFrequencyMax = 220f;
-
-    // Fall damage warning parameters
-    private const float DamageWarningBeepFrequency = 880f;
-    private const int DamageWarningBeepInterval = 20;
-
-    // Volume — matches local footstep base volume
-    private const float BaseVolume = 0.45f;
-    private const float DamageWarningBeepVolume = 0.5f;
+    private const int LandingWarningStartTiles = 15;
 
     // State
     private FallState _state = FallState.Grounded;
     private int _debounceCounter;
-    private float _fallStartY;
+    private int _fallingFrames;
+    private float _fallStartFootY;
     private int _groundScanTimer;
     private int _cachedGroundDistance = MaxGroundScanTiles;
-    private int _lastFootTileY = -1;
-    private int _damageWarningBeepTimer;
-    private bool _damageWarningAnnounced;
+    private int _landingBeepTimer = EdgeBeepCue.IntervalFrames - 1;
 
     public override void Update(Player player)
     {
@@ -135,12 +119,11 @@ internal sealed class FallDetectionEmitter : AudioEmitterBase
     private void EnterFallingState(Player player)
     {
         _state = FallState.Falling;
-        _fallStartY = player.Bottom.Y;
-        _cachedGroundDistance = MaxGroundScanTiles;
+        _fallingFrames = 0;
+        _fallStartFootY = GetFootWorldY(player);
+        _cachedGroundDistance = ScanGroundDistance(player);
         _groundScanTimer = 0;
-        _lastFootTileY = GetFootTileY(player);
-        _damageWarningBeepTimer = 0;
-        _damageWarningAnnounced = false;
+        _landingBeepTimer = EdgeBeepCue.IntervalFrames - 1;
     }
 
     private void UpdateFalling(Player player)
@@ -148,8 +131,11 @@ internal sealed class FallDetectionEmitter : AudioEmitterBase
         float configVolume = TerrariaAccessConfig.Instance?.FallDetectionVolume ?? 1f;
         if (configVolume <= 0f)
         {
+            ResetLandingBeepCadence();
             return;
         }
+
+        _fallingFrames++;
 
         // Scan for ground distance periodically
         _groundScanTimer++;
@@ -159,71 +145,37 @@ internal sealed class FallDetectionEmitter : AudioEmitterBase
             _cachedGroundDistance = ScanGroundDistance(player);
         }
 
-        // Check if we crossed into a new tile row
-        int currentTileY = GetFootTileY(player);
-        bool crossedTile = currentTileY != _lastFootTileY && _lastFootTileY >= 0;
-        _lastFootTileY = currentTileY;
-
-        if (crossedTile && _cachedGroundDistance <= ProximityToneStartTiles)
+        if (_cachedGroundDistance > LandingWarningStartTiles || !HasFallenLongEnough(player))
         {
-            PlaySpatialFallTone(player, configVolume);
-        }
-
-        // Check fall damage warning
-        UpdateFallDamageWarning(player, configVolume);
-    }
-
-    private void PlaySpatialFallTone(Player player, float configVolume)
-    {
-        // Position the sound at the ground below (or above in inverted gravity) the player
-        Vector2 playerCenter = player.Center;
-        float groundWorldY = player.gravDir >= 0
-            ? player.Bottom.Y + _cachedGroundDistance * 16f
-            : player.Top.Y - _cachedGroundDistance * 16f;
-        Vector2 groundPos = new(playerCenter.X, groundWorldY);
-
-        // Compute spatial parameters: pitch encodes vertical distance, volume fades with range
-        SpatializedSoundEngine.SpatialAudioSample sample = SpatializedSoundEngine.Compute(playerCenter, groundPos, BaseVolume);
-
-        // Use the same base frequency range as local footsteps (190-220 Hz ground tones).
-        // Fall speed maps to the same range that horizontal walk speed uses for regular steps.
-        float fallSpeed = Math.Abs(player.velocity.Y);
-        float normalized = MathHelper.Clamp(fallSpeed / 6f, 0f, 1f);
-        float baseFrequency = MathHelper.Lerp(GroundFrequencyMin, GroundFrequencyMax, normalized);
-
-        // Sine wave (useTriangleWave: false) to match normal footstep sound; elevation pitch is applied by PlaySpatial.
-        FootstepToneProvider.PlaySpatial(sample, Math.Max(baseFrequency, 80f), configVolume, useTriangleWave: false);
-    }
-
-    private void UpdateFallDamageWarning(Player player, float configVolume)
-    {
-        // Don't warn if player has fall damage immunity or slow fall
-        if (player.noFallDmg || player.slowFall)
-        {
+            ResetLandingBeepCadence();
             return;
         }
 
-        float fallDistance = Math.Abs(player.Bottom.Y - _fallStartY) / 16f;
-        if (fallDistance < FallDamageTileThreshold)
+        if (EdgeBeepCue.TickCadence(ref _landingBeepTimer))
         {
-            return;
+            Vector2 landingPosition = GetLandingWarningPosition(player, _cachedGroundDistance);
+            EdgeBeepCue.Play(player, landingPosition, configVolume);
         }
+    }
 
-        // One-shot speech announcement
-        if (!_damageWarningAnnounced)
-        {
-            _damageWarningAnnounced = true;
-            ScreenReaderService.Announce("Fall damage warning", force: true);
-        }
+    private bool HasFallenLongEnough(Player player)
+    {
+        float fallenDistanceTiles = (GetFootWorldY(player) - _fallStartFootY) * player.gravDir / 16f;
+        return _fallingFrames >= MinFallingFrames && fallenDistanceTiles >= MinFallenDistanceTiles;
+    }
 
-        // Periodic warning beeps
-        _damageWarningBeepTimer++;
-        if (_damageWarningBeepTimer >= DamageWarningBeepInterval)
-        {
-            _damageWarningBeepTimer = 0;
-            float volume = DamageWarningBeepVolume * configVolume;
-            FootstepToneProvider.PlayCentered(DamageWarningBeepFrequency, volume, useTriangleWave: false);
-        }
+    private static Vector2 GetLandingWarningPosition(Player player, int groundDistanceTiles)
+    {
+        float landingWorldY = player.gravDir >= 0f
+            ? player.Bottom.Y + groundDistanceTiles * 16f
+            : player.Top.Y - groundDistanceTiles * 16f;
+
+        return new Vector2(player.Center.X, landingWorldY);
+    }
+
+    private static float GetFootWorldY(Player player)
+    {
+        return player.gravDir >= 0f ? player.Bottom.Y : player.Top.Y;
     }
 
     private static int ScanGroundDistance(Player player)
@@ -277,20 +229,19 @@ internal sealed class FallDetectionEmitter : AudioEmitterBase
         return MaxGroundScanTiles;
     }
 
-    private static int GetFootTileY(Player player)
-    {
-        float footY = player.gravDir >= 0 ? player.Bottom.Y : player.Top.Y;
-        return Math.Clamp((int)(footY / 16f), 0, Main.maxTilesY - 1);
-    }
-
     private void ResetToGrounded()
     {
         _state = FallState.Grounded;
         _debounceCounter = 0;
+        _fallingFrames = 0;
+        _fallStartFootY = 0f;
         _groundScanTimer = 0;
         _cachedGroundDistance = MaxGroundScanTiles;
-        _lastFootTileY = -1;
-        _damageWarningBeepTimer = 0;
-        _damageWarningAnnounced = false;
+        ResetLandingBeepCadence();
+    }
+
+    private void ResetLandingBeepCadence()
+    {
+        _landingBeepTimer = EdgeBeepCue.IntervalFrames - 1;
     }
 }

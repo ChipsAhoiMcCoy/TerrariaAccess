@@ -17,7 +17,6 @@ internal sealed class WorldAudioCoordinator
     private readonly ClimbEmitter _climbEmitter;
     private readonly BiomeEmitter _biomeEmitter;
     private readonly MultiplayerFootstepEmitter _multiplayerFootstepEmitter;
-    private readonly PassageDetectorEmitter _passageDetectorEmitter;
     private readonly BreathEmitter _breathEmitter;
     private readonly HeartbeatEmitter _heartbeatEmitter;
     private readonly FallDetectionEmitter _fallDetectionEmitter;
@@ -31,7 +30,6 @@ internal sealed class WorldAudioCoordinator
         _climbEmitter = new ClimbEmitter();
         _biomeEmitter = new BiomeEmitter();
         _multiplayerFootstepEmitter = new MultiplayerFootstepEmitter();
-        _passageDetectorEmitter = new PassageDetectorEmitter();
         _breathEmitter = new BreathEmitter();
         _heartbeatEmitter = new HeartbeatEmitter();
         _fallDetectionEmitter = new FallDetectionEmitter();
@@ -56,7 +54,6 @@ internal sealed class WorldAudioCoordinator
         Run("climb", 1, () => _climbEmitter.Update(player));
         Run("biome", 12, () => _biomeEmitter.Update(player));
         Run("multiplayer-footstep", 1, () => _multiplayerFootstepEmitter.Update(player));
-        Run("passage-detector", 1, () => _passageDetectorEmitter.Update(player));
         Run("breath", 1, () => _breathEmitter.Update(player));
         Run("heartbeat", 1, () => _heartbeatEmitter.Update(player));
         Run("fall-detection", 1, () => _fallDetectionEmitter.Update(player));
@@ -73,7 +70,6 @@ internal sealed class WorldAudioCoordinator
         _climbEmitter.Reset();
         _biomeEmitter.Reset();
         _multiplayerFootstepEmitter.Reset();
-        _passageDetectorEmitter.Reset();
         _breathEmitter.Reset();
         _heartbeatEmitter.Reset();
         _fallDetectionEmitter.Reset();
@@ -89,7 +85,6 @@ internal sealed class WorldAudioCoordinator
         Reset();
         _hostileStaticEmitter.DisposeStaticResources();
         FootstepToneProvider.DisposeStaticResources();
-        _passageDetectorEmitter.DisposeStaticResources();
         _heartbeatEmitter.DisposeStaticResources();
     }
 
