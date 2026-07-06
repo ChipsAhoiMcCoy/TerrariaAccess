@@ -1,17 +1,15 @@
 #nullable enable
 using System;
 using Microsoft.Xna.Framework;
-using TerrariaAccess.Common.Services;
 using Terraria;
-using Terraria.ID;
 using static TerrariaAccess.Common.Systems.InGameNarrationSystem;
 
 namespace TerrariaAccess.Common.Systems.Audio;
 
 /// <summary>
 /// Plays a repeating tap sound when the player holds a movement key into a solid wall,
-/// providing immediate feedback that they are blocked. The tap is spatialized slightly toward
-/// the wall so the player can tell which side it is on.
+/// providing immediate feedback that they are blocked. The tap emits from the same centered
+/// position as the player's ordinary footstep cue for consistent movement audio.
 /// </summary>
 internal sealed class WallCollisionEmitter : AudioEmitterBase
 {
@@ -90,13 +88,7 @@ internal sealed class WallCollisionEmitter : AudioEmitterBase
             return;
         }
 
-        Vector2 wallContactWorld = player.Center + new Vector2(direction * (player.width * 0.5f + 8f), 0f);
-        SpatializedSoundEngine.SpatialAudioSample sample = SpatializedSoundEngine.Compute(
-            player.Center,
-            wallContactWorld,
-            BaseVolume);
-
-        FootstepToneProvider.PlaySpatial(sample, TapFrequency, configVolume, useTriangleWave: true);
+        FootstepToneProvider.PlayCentered(TapFrequency, BaseVolume * configVolume, useTriangleWave: true);
     }
 
     private static bool IsPressingIntoSolidWall(Player player, int moveDirection)
