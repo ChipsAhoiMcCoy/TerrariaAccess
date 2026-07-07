@@ -4,6 +4,7 @@ using Microsoft.Xna.Framework;
 using Microsoft.Xna.Framework.Audio;
 using TerrariaAccess.Common.Services;
 using Terraria;
+using Terraria.Audio;
 using Terraria.ID;
 using static TerrariaAccess.Common.Systems.InGameNarrationSystem;
 
@@ -16,7 +17,20 @@ namespace TerrariaAccess.Common.Systems.Audio;
 internal sealed class FootstepEmitter : AudioEmitterBase
 {
     private const float MinLandingDisplacement = 6f;
-    private const float ElevationPitchShiftHz = 20f; // Pitch shift per tile of elevation change
+    private const float StepVolume = 0.45f;
+    private const float PlatformStepPitchOffset = 0.08f;
+    private const float SpeedStepPitchRange = 0.04f;
+    private const float ElevationStepPitchOffset = 0.035f;
+    private const int FootstepVariantCount = 4;
+
+    private static readonly SoundStyle FootstepSound = new("TerrariaAccess/Assets/Sounds/Footsteps/Footstep_", 0, FootstepVariantCount)
+    {
+        Volume = StepVolume,
+        PitchVariance = 0.035f,
+        MaxInstances = 6,
+        LimitsArePerVariant = true,
+        SoundLimitBehavior = SoundLimitBehavior.ReplaceOldest
+    };
 
     // Edge detection configuration
     private const int EdgeScanRangeTiles = 18;      // How far ahead to scan
@@ -127,8 +141,7 @@ internal sealed class FootstepEmitter : AudioEmitterBase
         _lastFootTile = footTile;
         _lastFootX = footX;
         bool onPlatform = IsPlatform(footTile.X, footTile.Y);
-        bool onHarmfulTile = IsHarmfulTile(player, footTile);
-        PlayStep(player, onPlatform, onHarmfulTile, elevationDelta);
+        PlayStep(player, onPlatform, elevationDelta);
         MaybePlayOverheadTraversalCue(player, footTile);
     }
 
@@ -163,11 +176,23 @@ internal sealed class FootstepEmitter : AudioEmitterBase
         return new Point(tileX, tileY);
     }
 
-    private void PlayStep(Player player, bool onPlatform, bool onHarmfulTile, int elevationDelta)
+    private static void PlayStep(Player player, bool onPlatform, int elevationDelta)
     {
-        ComputeStepAudio(player, onPlatform, elevationDelta, out float frequency, out float loudness);
+        ComputeStepAudio(player, onPlatform, elevationDelta, out float pitchOffset, out float loudness);
         float configVolume = TerrariaAccessConfig.Instance?.FootstepVolume ?? 1f;
-        FootstepToneProvider.PlayCentered(frequency, loudness * configVolume, useTriangleWave: onHarmfulTile);
+        float finalVolume = MathHelper.Clamp(loudness * configVolume, 0f, 1f);
+        if (finalVolume <= 0f)
+        {
+            return;
+        }
+
+        SoundStyle style = FootstepSound with
+        {
+            Volume = finalVolume,
+            Pitch = pitchOffset
+        };
+
+        SoundEngine.PlaySound(in style);
     }
 
     private void ResetState()
@@ -384,23 +409,17 @@ internal sealed class FootstepEmitter : AudioEmitterBase
         return false;
     }
 
-    private static void ComputeStepAudio(Player player, bool onPlatform, int elevationDelta, out float frequency, out float loudness)
+    private static void ComputeStepAudio(Player player, bool onPlatform, int elevationDelta, out float pitchOffset, out float loudness)
     {
         float horizontalSpeed = Math.Abs(player.velocity.X);
         float normalized = MathHelper.Clamp(horizontalSpeed / 6f, 0f, 1f);
-        frequency = onPlatform
-            ? MathHelper.Lerp(360f, 430f, normalized)
-            : MathHelper.Lerp(190f, 220f, normalized);
-
-        // Shift the local step tone frequency when tile elevation changes: up = higher, down = lower.
-        // 20 Hz per tile, capped at 3 tiles (60 Hz max shift).
-        if (elevationDelta != 0)
-        {
-            int clampedDelta = Math.Clamp(elevationDelta, -3, 3);
-            frequency += ElevationPitchShiftHz * clampedDelta;
-        }
-
-        loudness = 0.45f;
+        int clampedDelta = Math.Clamp(elevationDelta, -3, 3);
+        pitchOffset =
+            (onPlatform ? PlatformStepPitchOffset : 0f) +
+            normalized * SpeedStepPitchRange +
+            clampedDelta * ElevationStepPitchOffset;
+        pitchOffset = MathHelper.Clamp(pitchOffset, -0.25f, 0.25f);
+        loudness = StepVolume;
     }
 
     private void MaybePlayOverheadTraversalCue(Player player, Point footTile)

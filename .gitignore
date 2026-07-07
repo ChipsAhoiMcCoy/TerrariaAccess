@@ -57,3 +57,6 @@ Optimization.md
 
 # Ignore local Codex navigation notes and scratch files
 .codex-local/
+
+# Ignore locally downloaded reference sound packs
+Royalty Free Sounds/
