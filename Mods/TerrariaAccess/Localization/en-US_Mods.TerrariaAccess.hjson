@@ -86,12 +86,12 @@ Mods: {
 
 				WallTonesEnabled: {
 					Label: Wall Tones
-					Tooltip: When enabled, plays quiet continuous tones for nearby solid tiles to your left, right, and above. These indicate terrain blockage and stop while inventory or UI screens are open.
+					Tooltip: When enabled, plays tones for nearby solid blocks to your left, right, and above. These indicate collision geometry, not decorative background walls, and stop while inventory or UI screens are open.
 				}
 
 				WallToneVolume: {
 					Label: Wall Tone Volume
-					Tooltip: Adjusts the volume of the continuous wall tones.
+					Tooltip: Adjusts the volume of the wall proximity tones.
 				}
 
 				WallCollisionEnabled: {

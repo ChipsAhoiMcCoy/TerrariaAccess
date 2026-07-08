@@ -39,6 +39,7 @@
     <Compile Include="..\..\Mods\TerrariaAccess\Common\Services\SpatializedSoundCache.cs" Link="Sources\SpatializedSoundCache.cs" />
     <Compile Include="..\..\Mods\TerrariaAccess\Common\Services\SynthesizedSoundFactory.cs" Link="Sources\SynthesizedSoundFactory.cs" />
     <Compile Include="..\..\Mods\TerrariaAccess\Common\Systems\AudioVolumeDefaults.cs" Link="Sources\AudioVolumeDefaults.cs" />
+    <Compile Include="..\..\Mods\TerrariaAccess\Common\Systems\Audio\WallToneGeometry.cs" Link="Sources\WallToneGeometry.cs" />
     <Compile Include="..\..\Mods\TerrariaAccess\Common\Systems\Guidance\GuidanceEntry.cs" Link="Sources\GuidanceEntry.cs" />
     <Compile Include="..\..\Mods\TerrariaAccess\Common\Systems\Guidance\GuidancePingCadence.cs" Link="Sources\GuidancePingCadence.cs" />
     <Compile Include="..\..\Mods\TerrariaAccess\Common\Systems\Guidance\GuidanceTeleportMath.cs" Link="Sources\GuidanceTeleportMath.cs" />

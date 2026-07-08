@@ -1,41 +1,39 @@
 #nullable enable
 using System;
 using Microsoft.Xna.Framework;
-using Microsoft.Xna.Framework.Audio;
 using Terraria;
+using Terraria.ID;
 using TerrariaAccess.Common.Services;
 
 namespace TerrariaAccess.Common.Systems.Audio;
 
 /// <summary>
-/// Emits quiet continuous tones for nearby solid collision on the player's left, right, and above.
-/// These are proximity probes, separate from wall-collision taps that only play while pushing into a wall.
+/// Emits short pulses for nearby solid collision geometry.
 /// </summary>
 internal sealed class WallToneEmitter : AudioEmitterBase
 {
-    private const int SideProbeRangeTiles = 3;
-    private const int CeilingProbeRangeTiles = 5;
-    private const int ProbeIntervalFrames = 3;
-    private const float ProbeInsetPixels = 2f;
+    private const int ScanIntervalFrames = 3;
+    private const int MinPulseSeparationFrames = 8;
+    private const int MinSidePulseIntervalFrames = 8;
+    private const int MaxSidePulseIntervalFrames = 24;
+    private const int MinCeilingPulseIntervalFrames = 10;
+    private const int MaxCeilingPulseIntervalFrames = 30;
 
-    private const float LeftFrequency = 260f;
-    private const float RightFrequency = 340f;
-    private const float CeilingFrequency = 560f;
-
-    private const float LeftNormalizedScreenX = -0.85f;
-    private const float RightNormalizedScreenX = 0.85f;
-    private const float CeilingNormalizedScreenX = 0f;
-
-    private const float SideBaseVolume = 0.12f;
-    private const float CeilingBaseVolume = 0.09f;
+    private const float SideBaseVolume = 0.30f;
+    private const float CeilingBaseVolume = 0.24f;
     private const float FarDistanceVolumeScale = 0.35f;
+    private const float SidePitchDrop = 0.16f;
+    private const float MaxSidePitch = -0.06f;
+    private const float CeilingPitchLift = 0.34f;
+    private const float MinCeilingPitch = 0.28f;
 
-    private readonly LoopingToneChannel _leftTone = new(LeftFrequency, LeftNormalizedScreenX);
-    private readonly LoopingToneChannel _rightTone = new(RightFrequency, RightNormalizedScreenX);
-    private readonly LoopingToneChannel _ceilingTone = new(CeilingFrequency, CeilingNormalizedScreenX);
-
-    private int _probeTimer;
-    private WallProbeState _lastProbeState;
+    private int _scanTimer;
+    private WallToneScanResult _lastScan;
+    private long _nextLeftPulseFrame;
+    private long _nextRightPulseFrame;
+    private long _nextCeilingPulseFrame;
+    private long _nextAnyPulseFrame;
+    private WallToneCueKind _nextCueKind = WallToneCueKind.Left;
 
     public override void Update(Player player)
     {
@@ -54,32 +52,23 @@ internal sealed class WallToneEmitter : AudioEmitterBase
             return;
         }
 
-        if (_probeTimer <= 0)
-        {
-            _lastProbeState = Probe(player);
-            _probeTimer = ProbeIntervalFrames;
-        }
-        else
-        {
-            _probeTimer--;
-        }
-
-        ApplyProbeState(configVolume);
+        UpdateScan(player);
+        EmitDuePulse(player, configVolume);
     }
 
     public override void Reset()
     {
-        _probeTimer = 0;
-        _lastProbeState = default;
-        _leftTone.Stop();
-        _rightTone.Stop();
-        _ceilingTone.Stop();
+        _scanTimer = 0;
+        _lastScan = default;
+        _nextLeftPulseFrame = 0;
+        _nextRightPulseFrame = 0;
+        _nextCeilingPulseFrame = 0;
+        _nextAnyPulseFrame = 0;
+        _nextCueKind = WallToneCueKind.Left;
     }
 
     public void DisposeStaticResources()
     {
-        Reset();
-        LoopingToneChannel.DisposeStaticResources();
     }
 
     private static bool ShouldSuppress(Player player)
@@ -108,176 +97,241 @@ internal sealed class WallToneEmitter : AudioEmitterBase
         return Main.InGameUI?.CurrentState is not null;
     }
 
-    private void ApplyProbeState(float configVolume)
+    private void UpdateScan(Player player)
     {
-        _leftTone.SetVolume(ComputeVolume(_lastProbeState.LeftDistanceTiles, SideProbeRangeTiles, SideBaseVolume, configVolume));
-        _rightTone.SetVolume(ComputeVolume(_lastProbeState.RightDistanceTiles, SideProbeRangeTiles, SideBaseVolume, configVolume));
-        _ceilingTone.SetVolume(ComputeVolume(_lastProbeState.CeilingDistanceTiles, CeilingProbeRangeTiles, CeilingBaseVolume, configVolume));
+        if (_scanTimer <= 0)
+        {
+            _lastScan = WallToneGeometry.Scan(
+                player.Hitbox,
+                player.gravDir,
+                IsBlockingWallToneTile,
+                Main.maxTilesX,
+                Main.maxTilesY);
+            _scanTimer = ScanIntervalFrames;
+            return;
+        }
+
+        _scanTimer--;
     }
 
-    private static float ComputeVolume(int distanceTiles, int maxDistanceTiles, float baseVolume, float configVolume)
+    private void EmitDuePulse(Player player, float configVolume)
     {
-        if (distanceTiles <= 0 || maxDistanceTiles <= 0)
+        long currentFrame = (long)Main.GameUpdateCount;
+        ResetUnavailableCueTimers();
+
+        if (currentFrame < _nextAnyPulseFrame)
+        {
+            return;
+        }
+
+        if (!TrySelectDuePulse(currentFrame, out WallToneCueKind cueKind, out WallToneContact contact))
+        {
+            return;
+        }
+
+        switch (cueKind)
+        {
+            case WallToneCueKind.Left:
+                PlaySidePulse(player, contact, configVolume);
+                _nextLeftPulseFrame = currentFrame + ComputeIntervalFrames(
+                    contact.DistanceTiles,
+                    WallToneGeometry.SideProbeRangeTiles,
+                    MinSidePulseIntervalFrames,
+                    MaxSidePulseIntervalFrames);
+                break;
+
+            case WallToneCueKind.Right:
+                PlaySidePulse(player, contact, configVolume);
+                _nextRightPulseFrame = currentFrame + ComputeIntervalFrames(
+                    contact.DistanceTiles,
+                    WallToneGeometry.SideProbeRangeTiles,
+                    MinSidePulseIntervalFrames,
+                    MaxSidePulseIntervalFrames);
+                break;
+
+            case WallToneCueKind.Ceiling:
+                PlayCeilingPulse(player, contact, configVolume);
+                _nextCeilingPulseFrame = currentFrame + ComputeIntervalFrames(
+                    contact.DistanceTiles,
+                    WallToneGeometry.CeilingProbeRangeTiles,
+                    MinCeilingPulseIntervalFrames,
+                    MaxCeilingPulseIntervalFrames);
+                break;
+        }
+
+        _nextAnyPulseFrame = currentFrame + MinPulseSeparationFrames;
+        _nextCueKind = GetNextCueKind(cueKind);
+    }
+
+    private void ResetUnavailableCueTimers()
+    {
+        if (!_lastScan.HasLeftWall)
+        {
+            _nextLeftPulseFrame = 0;
+        }
+
+        if (!_lastScan.HasRightWall)
+        {
+            _nextRightPulseFrame = 0;
+        }
+
+        if (!_lastScan.HasCeiling)
+        {
+            _nextCeilingPulseFrame = 0;
+        }
+    }
+
+    private bool TrySelectDuePulse(long currentFrame, out WallToneCueKind cueKind, out WallToneContact contact)
+    {
+        for (int offset = 0; offset < 3; offset++)
+        {
+            WallToneCueKind candidate = GetCueKindOffset(_nextCueKind, offset);
+            if (TryGetCueContact(candidate, out WallToneContact candidateContact) &&
+                currentFrame >= GetNextPulseFrame(candidate))
+            {
+                cueKind = candidate;
+                contact = candidateContact;
+                return true;
+            }
+        }
+
+        cueKind = default;
+        contact = default;
+        return false;
+    }
+
+    private bool TryGetCueContact(WallToneCueKind cueKind, out WallToneContact contact)
+    {
+        WallToneContact? candidate = cueKind switch
+        {
+            WallToneCueKind.Left => _lastScan.Left,
+            WallToneCueKind.Right => _lastScan.Right,
+            WallToneCueKind.Ceiling => _lastScan.Ceiling,
+            _ => null
+        };
+
+        contact = candidate.GetValueOrDefault();
+        return candidate.HasValue && contact.DistanceTiles > 0;
+    }
+
+    private long GetNextPulseFrame(WallToneCueKind cueKind)
+    {
+        return cueKind switch
+        {
+            WallToneCueKind.Left => _nextLeftPulseFrame,
+            WallToneCueKind.Right => _nextRightPulseFrame,
+            WallToneCueKind.Ceiling => _nextCeilingPulseFrame,
+            _ => long.MaxValue
+        };
+    }
+
+    private static WallToneCueKind GetCueKindOffset(WallToneCueKind cueKind, int offset)
+    {
+        int index = ((int)cueKind + offset) % 3;
+        return (WallToneCueKind)index;
+    }
+
+    private static WallToneCueKind GetNextCueKind(WallToneCueKind cueKind) =>
+        GetCueKindOffset(cueKind, 1);
+
+    private static void PlaySidePulse(Player player, WallToneContact contact, float configVolume)
+    {
+        float distanceVolume = ComputeDistanceVolumeScale(contact.DistanceTiles, WallToneGeometry.SideProbeRangeTiles);
+        Vector2 targetPosition = GetTileCenter(contact.Tile);
+        SpatializedSoundEngine.SpatialAudioSample sample = SpatializedSoundEngine.Compute(
+            player.Center,
+            targetPosition,
+            SideBaseVolume * distanceVolume);
+        sample = sample with
+        {
+            Pitch = MathHelper.Clamp(Math.Min(sample.Pitch - SidePitchDrop, MaxSidePitch), -1f, 1f)
+        };
+
+        AccessibilityCueSoundPlayer.PlaySpatialInteraural(AccessibilityCueAssets.WallTone, sample, configVolume);
+    }
+
+    private static void PlayCeilingPulse(Player player, WallToneContact contact, float configVolume)
+    {
+        float distanceVolume = ComputeDistanceVolumeScale(contact.DistanceTiles, WallToneGeometry.CeilingProbeRangeTiles);
+        Vector2 targetPosition = GetTileCenter(contact.Tile);
+        SpatializedSoundEngine.SpatialAudioSample computed = SpatializedSoundEngine.Compute(
+            player.Center,
+            targetPosition,
+            CeilingBaseVolume * distanceVolume);
+        SpatializedSoundEngine.SpatialAudioSample sample = computed with
+        {
+            NormalizedScreenX = SpatializedSoundEngine.CenterNormalizedScreenX,
+            Pitch = MathHelper.Clamp(Math.Max(computed.Pitch + CeilingPitchLift, MinCeilingPitch), -1f, 1f)
+        };
+
+        AccessibilityCueSoundPlayer.PlaySpatialInteraural(AccessibilityCueAssets.WallTone, sample, configVolume);
+    }
+
+    private static Vector2 GetTileCenter(Point tile) =>
+        new(tile.X * 16f + 8f, tile.Y * 16f + 8f);
+
+    private static float ComputeDistanceVolumeScale(int distanceTiles, int maxDistanceTiles)
+    {
+        float closeness = ComputeCloseness(distanceTiles, maxDistanceTiles);
+        return MathHelper.Lerp(FarDistanceVolumeScale, 1f, closeness * closeness);
+    }
+
+    private static int ComputeIntervalFrames(
+        int distanceTiles,
+        int maxDistanceTiles,
+        int minIntervalFrames,
+        int maxIntervalFrames)
+    {
+        float closeness = ComputeCloseness(distanceTiles, maxDistanceTiles);
+        float frames = MathHelper.Lerp(maxIntervalFrames, minIntervalFrames, closeness);
+        return Math.Max(1, (int)MathF.Round(frames));
+    }
+
+    private static float ComputeCloseness(int distanceTiles, int maxDistanceTiles)
+    {
+        if (distanceTiles <= 0 || maxDistanceTiles <= 1)
         {
             return 0f;
         }
 
-        float normalizedDistance = MathHelper.Clamp((distanceTiles - 1f) / Math.Max(1f, maxDistanceTiles - 1f), 0f, 1f);
-        float closeness = 1f - normalizedDistance;
-        float distanceScale = MathHelper.Lerp(FarDistanceVolumeScale, 1f, closeness * closeness);
-        return MathHelper.Clamp(baseVolume * distanceScale * configVolume, 0f, 1f);
+        float normalizedDistance = MathHelper.Clamp(
+            (distanceTiles - 1f) / (maxDistanceTiles - 1f),
+            0f,
+            1f);
+        return 1f - normalizedDistance;
     }
 
-    private static WallProbeState Probe(Player player)
+    private static bool IsBlockingWallToneTile(int tileX, int tileY)
     {
-        return new WallProbeState(
-            LeftDistanceTiles: MeasureHorizontalCollision(player, -1),
-            RightDistanceTiles: MeasureHorizontalCollision(player, 1),
-            CeilingDistanceTiles: MeasureCeilingCollision(player));
+        if (tileX < 0 || tileY < 0 || tileX >= Main.maxTilesX || tileY >= Main.maxTilesY)
+        {
+            return false;
+        }
+
+        Tile tile = Framing.GetTileSafely(tileX, tileY);
+        if (!tile.HasTile || tile.IsActuated)
+        {
+            return false;
+        }
+
+        int tileType = tile.TileType;
+        if (IsSetMember(Main.tileRope, tileType) ||
+            IsSetMember(TileID.Sets.Platforms, tileType) ||
+            tileType == TileID.MinecartTrack)
+        {
+            return false;
+        }
+
+        return IsSetMember(Main.tileSolid, tileType) && !IsSetMember(Main.tileSolidTop, tileType);
     }
 
-    private static int MeasureHorizontalCollision(Player player, int direction)
+    private static bool IsSetMember(bool[] values, int index) =>
+        index >= 0 && index < values.Length && values[index];
+
+    private enum WallToneCueKind
     {
-        Rectangle hitbox = player.Hitbox;
-        Vector2 basePosition = new(hitbox.X, hitbox.Y + ProbeInsetPixels);
-        int probeHeight = Math.Max(1, (int)(hitbox.Height - ProbeInsetPixels * 2f));
-
-        for (int distance = 1; distance <= SideProbeRangeTiles; distance++)
-        {
-            Vector2 probePosition = basePosition + new Vector2(direction * distance * 16f, 0f);
-            if (Collision.SolidCollision(probePosition, hitbox.Width, probeHeight))
-            {
-                return distance;
-            }
-        }
-
-        return 0;
-    }
-
-    private static int MeasureCeilingCollision(Player player)
-    {
-        Rectangle hitbox = player.Hitbox;
-        Vector2 basePosition = new(hitbox.X + ProbeInsetPixels, hitbox.Y);
-        int probeWidth = Math.Max(1, (int)(hitbox.Width - ProbeInsetPixels * 2f));
-
-        for (int distance = 1; distance <= CeilingProbeRangeTiles; distance++)
-        {
-            Vector2 probePosition = basePosition + new Vector2(0f, -distance * 16f);
-            if (Collision.SolidCollision(probePosition, probeWidth, hitbox.Height))
-            {
-                return distance;
-            }
-        }
-
-        return 0;
-    }
-
-    private readonly record struct WallProbeState(
-        int LeftDistanceTiles,
-        int RightDistanceTiles,
-        int CeilingDistanceTiles);
-
-    private sealed class LoopingToneChannel
-    {
-        private const int SampleRate = 44100;
-        private const float LoopDurationSeconds = 0.2f;
-        private const float OutputGain = 0.65f;
-
-        private static readonly SpatializedSoundCache<int> ToneCache = new();
-
-        private readonly float _frequency;
-        private readonly float _normalizedScreenX;
-        private SoundEffectInstance? _instance;
-
-        public LoopingToneChannel(float frequency, float normalizedScreenX)
-        {
-            _frequency = frequency;
-            _normalizedScreenX = normalizedScreenX;
-        }
-
-        public void SetVolume(float volume)
-        {
-            float safeVolume = SpatializedSoundEngine.NormalizeVolume(volume);
-            if (safeVolume <= 0f)
-            {
-                Stop();
-                return;
-            }
-
-            if (!IsInstanceUsable(_instance))
-            {
-                SoundEffect tone = EnsureTone(_frequency, _normalizedScreenX);
-                _instance = SpatializedSoundEngine.PlayAlreadySpatializedWorldCue(
-                    tone,
-                    safeVolume,
-                    looped: true);
-                return;
-            }
-
-            SpatializedSoundEngine.SetWorldCueVolume(_instance, safeVolume);
-        }
-
-        public void Stop()
-        {
-            if (_instance is null)
-            {
-                return;
-            }
-
-            SpatializedSoundEngine.StopAndDispose(_instance);
-            _instance = null;
-        }
-
-        public static void DisposeStaticResources()
-        {
-            ToneCache.Dispose();
-        }
-
-        private static SoundEffect EnsureTone(float frequency, float normalizedScreenX)
-        {
-            int cacheFrequency = Math.Clamp((int)MathF.Round(frequency), 40, 12000);
-            return ToneCache.GetOrCreate(
-                cacheFrequency,
-                normalizedScreenX,
-                quantizedNormalizedScreenX => CreateLoopingTone(cacheFrequency, quantizedNormalizedScreenX));
-        }
-
-        private static SoundEffect CreateLoopingTone(float frequency, float normalizedScreenX)
-        {
-            int sampleCount = Math.Max(1, (int)(SampleRate * LoopDurationSeconds));
-            float[] samples = new float[sampleCount];
-
-            for (int i = 0; i < sampleCount; i++)
-            {
-                float time = i / (float)SampleRate;
-                float phase = MathHelper.TwoPi * frequency * time;
-                float fundamental = MathF.Sin(phase);
-                float secondPartial = MathF.Sin(phase * 2f) * 0.18f;
-                samples[i] = (fundamental + secondPartial) * OutputGain;
-            }
-
-            return SpatializedSoundEngine.CreateSpatialFromSamples(
-                samples,
-                SampleRate,
-                normalizedScreenX,
-                wrapDelay: true);
-        }
-
-        private static bool IsInstanceUsable(SoundEffectInstance? instance)
-        {
-            if (instance is null)
-            {
-                return false;
-            }
-
-            try
-            {
-                return !instance.IsDisposed && instance.State != SoundState.Stopped;
-            }
-            catch
-            {
-                return false;
-            }
-        }
+        Left,
+        Right,
+        Ceiling
     }
 }
